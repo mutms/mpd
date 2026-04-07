@@ -1,0 +1,22 @@
+#!/bin/bash
+# behat — run Behat tests for the current project.
+# All arguments are passed through to vendor/bin/behat.
+set -euo pipefail
+
+source /mnt/assets/runtimes/php/project_types/moodle/scripts/mpd-env.sh
+
+cd "${PROJECT_DIR}"
+
+BEHAT_CONFIG="/srv/data/${PROJECT}/dataroot_behat/behatrun/behat/behat.yml"
+
+if [ ! -f "vendor/bin/behat" ]; then
+    echo "Error: vendor/bin/behat not found — run 'behat-init' first" >&2
+    exit 1
+fi
+
+if [ ! -f "${BEHAT_CONFIG}" ]; then
+    echo "Error: ${BEHAT_CONFIG} not found — run 'behat-init' first" >&2
+    exit 1
+fi
+
+exec php vendor/bin/behat --config "${BEHAT_CONFIG}" "$@"

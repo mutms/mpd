@@ -1,0 +1,9 @@
+{
+  "stop": {
+    "systemdStop": false
+  },
+  "nextSteps": [
+    "ssh -A trixie.runtime.mpd.test",
+    "cd /srv/projects/%%PROJECT%%"
+  ]
+}

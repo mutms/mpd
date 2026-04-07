@@ -1,0 +1,10 @@
+{
+  "sidecars": [],
+  "stop": {
+    "systemdStop": false
+  },
+  "nextSteps": [
+    "Open https://%%PROJECT%%.mpd.test/ to complete the install wizard",
+    "ssh php.runtime.mpd.test          # SSH in, then `cd /srv/projects/%%PROJECT%% && mdl-upgrade` after a git pull"
+  ]
+}

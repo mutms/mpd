@@ -1,0 +1,34 @@
+#!/bin/bash
+# Tool: install Composer phar to /usr/local/bin/composer.
+# Idempotent: no-op if already installed (per ARCHITECTURE.md §7).
+# Runs as the dev user; uses `sudo` only for the final write into
+# /usr/local/bin/. The dev/AI invokes this as a bare `composer-install`,
+# never `sudo composer-install`.
+set -euo pipefail
+
+TARGET="/usr/local/bin/composer"
+if [ -x "$TARGET" ]; then
+    echo "Composer already installed at $TARGET — skipping."
+    exit 0
+fi
+
+# Sury packages give us several PHP versions; we use 8.2 explicitly here
+# because Composer's installer.sig is reliable on it. The installed
+# composer.phar runs against any of the installed PHP versions.
+EXPECTED_CHECKSUM="$(php8.2 -r 'copy("https://composer.github.io/installer.sig", "php://stdout");')"
+TMPDIR="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR"' EXIT
+
+php8.2 -r "copy('https://getcomposer.org/installer', '$TMPDIR/composer-setup.php');"
+ACTUAL_CHECKSUM="$(php8.2 -r "echo hash_file('sha384', '$TMPDIR/composer-setup.php');")"
+
+if [ "$EXPECTED_CHECKSUM" != "$ACTUAL_CHECKSUM" ]; then
+    echo "ERROR: Composer installer checksum mismatch" >&2
+    exit 1
+fi
+
+# The phar landing in /usr/local/bin/ is the only operation that needs
+# root. Everything else (download, checksum, tmpdir cleanup) runs as
+# the calling user.
+sudo php8.2 "$TMPDIR/composer-setup.php" --quiet --install-dir=/usr/local/bin --filename=composer
+echo "Composer installed at $TARGET"

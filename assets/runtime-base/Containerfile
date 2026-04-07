@@ -1,0 +1,8 @@
+FROM debian:trixie
+RUN apt-get update -qq && \
+    DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    systemd systemd-sysv \
+    curl wget ca-certificates gnupg2 lsb-release \
+    openssh-server git unzip && \
+    rm -rf /var/lib/apt/lists/*

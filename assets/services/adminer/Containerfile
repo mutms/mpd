@@ -1,0 +1,34 @@
+# mpd adminer service — Debian-based.
+#
+# We build our own image rather than using `docker.io/library/adminer`.
+# Despite living under Docker Hub's `library/` namespace, that image is
+# user-contributed — Vrana (adminer's author) explicitly disclaims it —
+# and ships Alpine/musl. libpq's getaddrinfo() on musl fails to resolve
+# multi-label hostnames like `postgres-latest.db.mpd.test`, even when
+# shell `getent hosts` and PHP's `gethostbyname` succeed in the same
+# container. Building on glibc avoids the issue and keeps the supply
+# chain under our control.
+#
+# Adminer itself is a single self-contained PHP file. We pin a release for
+# reproducibility — bump ADMINER_VERSION to refresh.
+
+FROM docker.io/library/debian:trixie
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        php-cli \
+        php-pgsql \
+        php-mysql \
+        php-sqlite3 \
+        ca-certificates \
+        curl && \
+    rm -rf /var/lib/apt/lists/*
+
+ARG ADMINER_VERSION=5.4.2
+RUN mkdir -p /var/www/html && \
+    curl -fsSL "https://github.com/vrana/adminer/releases/download/v${ADMINER_VERSION}/adminer-${ADMINER_VERSION}.php" \
+        -o /var/www/html/index.php
+
+EXPOSE 8080
+WORKDIR /var/www/html
+CMD ["php", "-S", "[::]:8080", "-t", "/var/www/html"]

@@ -1,0 +1,14 @@
+# mpd Caddyfile header — emitted once at the top of the generated config.
+# Per-vhost blocks below each `import deny_sensitive` to share these rules.
+
+{
+    # No public-CA HTTPS certs — mpd's CA signs everything internally.
+    auto_https off
+}
+
+(deny_sensitive) {
+    # Block well-known sensitive paths even on a single-developer LAN.
+    # 404 (not 403) — don't acknowledge the file exists.
+    @denied path_regexp ^/(\.git/|.*/(vendor|node_modules)/|(mpd\.env|mpd-config\.php|compose\.yaml|phpunit\.xml|.*\.phar)$)
+    respond @denied 404
+}

@@ -1,0 +1,20 @@
+#compdef mpd
+
+# mpd zsh completion shim.
+#
+# Forwards to `mpd --complete` for the actual candidate set — see
+# mpd/CLI/Complete.swift. Adding new flags/verbs only needs Swift edits;
+# this shim doesn't have to change.
+
+_mpd() {
+    emulate -L zsh
+    local -a candidates
+    local IFS=$'\n'
+    # CURRENT is 1-based; --complete expects 0-based cword.
+    candidates=( ${(f)"$(command mpd --complete $((CURRENT - 1)) "${words[@]}" 2>/dev/null)"} )
+    if (( ${#candidates} )); then
+        compadd -- "${candidates[@]}"
+    fi
+}
+
+_mpd "$@"

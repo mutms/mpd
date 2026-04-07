@@ -1,0 +1,15 @@
+#!/bin/bash
+# phpunit — run PHPUnit tests for the current project.
+# All arguments are passed through to vendor/bin/phpunit.
+set -euo pipefail
+
+source /mnt/assets/runtimes/php/project_types/moodle/scripts/mpd-env.sh
+
+cd "${PROJECT_DIR}"
+
+if [ ! -f "vendor/bin/phpunit" ]; then
+    echo "Error: vendor/bin/phpunit not found — run 'phpunit-init' first" >&2
+    exit 1
+fi
+
+exec php vendor/bin/phpunit "$@"

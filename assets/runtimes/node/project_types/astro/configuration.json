@@ -1,0 +1,8 @@
+{
+  "stop": {
+    "systemdStop": true
+  },
+  "nextSteps": [
+    "mpd %%PROJECT%% rebuild          # reinstall node_modules + restart"
+  ]
+}

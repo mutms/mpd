@@ -1,0 +1,33 @@
+# mpd fileaccess sshd config.
+# Hardened: pubkey-only, single user, no PAM, no sudo, no agent forwarding,
+# no TCP forwarding. The container only listens on the internal podman
+# network — there's no port mapping to the host.
+
+Port 22
+
+# Persisted via /etc/ssh/keys bind-mount; entry.sh generates on first run.
+HostKey /etc/ssh/keys/ssh_host_ed25519_key
+
+# Auth: pubkey only.
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+PermitRootLogin no
+PermitEmptyPasswords no
+UsePAM no
+
+# authorized_keys is bind-mounted read-only at /home/<user>/.ssh/authorized_keys.
+AuthorizedKeysFile %h/.ssh/authorized_keys
+
+# Surface area trimming.
+AllowAgentForwarding no
+AllowTcpForwarding no
+GatewayPorts no
+X11Forwarding no
+PermitTunnel no
+PrintMotd no
+PrintLastLog no
+
+# Subsystems — sftp is the whole point of this service for non-shell users.
+Subsystem sftp /usr/lib/openssh/sftp-server

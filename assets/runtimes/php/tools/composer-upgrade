@@ -1,0 +1,22 @@
+#!/bin/bash
+# Tool: re-install Composer phar to /usr/local/bin/composer.
+# Use this instead of `composer self-update` — composer's self-update
+# would fail because /usr/local/bin/composer is root-owned and not
+# writable by the dev user. This tool runs the same checksum-verified
+# install flow as composer-install, just without the idempotency
+# short-circuit.
+# Invoke bare: `composer-upgrade`. Internal sudo handles the
+# privileged write to /usr/local/bin/.
+set -euo pipefail
+
+TARGET="/usr/local/bin/composer"
+
+if [ ! -x "$TARGET" ]; then
+    echo "Composer not installed yet — run composer-install first." >&2
+    exit 1
+fi
+
+# Remove the existing phar so composer-install proceeds with a fresh
+# checksum-verified install.
+sudo rm -f "$TARGET"
+exec /srv/tools/php/composer-install

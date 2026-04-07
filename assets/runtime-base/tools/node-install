@@ -1,0 +1,43 @@
+#!/bin/bash
+# node-install — install nvm + Node.js into $HOME/.nvm (upstream-standard).
+# Idempotent: no-op if nvm is already installed (per ARCHITECTURE.md §7).
+# Default version is "lts"; pass an explicit version to override.
+# Runs as the dev user; uses sudo only to drop the /etc/profile.d shim.
+#
+# Available in any runtime: bootstrap.sh symlinks runtime-base tools into
+# /srv/tools/_base/ and adds that directory to PATH for every login shell.
+# The php and node runtimes' build.sh also invoke it directly during
+# provisioning to seed the LTS Node version.
+set -euo pipefail
+
+# Drop the standard nvm shell hook (upstream's ~/.bashrc snippet) into
+# /etc/profile.d/ so every login shell picks up node + nvm + completion.
+# Always (re)write — cheap and idempotent.
+sudo tee /etc/profile.d/mpd-nvm.sh >/dev/null <<'EOF'
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+EOF
+sudo chmod 0644 /etc/profile.d/mpd-nvm.sh
+
+if [ -s "$HOME/.nvm/nvm.sh" ]; then
+    echo "nvm already installed at \$HOME/.nvm — open a new shell to use node/nvm."
+    exit 0
+fi
+
+NODE_VER="${1:-lts}"
+export NVM_DIR="$HOME/.nvm"
+
+# Standard upstream nvm install: lands in $NVM_DIR (= $HOME/.nvm), owned
+# by the dev user, no privileged setup needed.
+NVM_VERSION=$(curl -fsSL "https://api.github.com/repos/nvm-sh/nvm/releases/latest" \
+    | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh" | bash
+
+. "${NVM_DIR}/nvm.sh"
+
+if [ "$NODE_VER" = "lts" ]; then
+    nvm install --lts
+else
+    nvm install "$NODE_VER"
+fi
