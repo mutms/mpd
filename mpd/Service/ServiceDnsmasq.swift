@@ -148,9 +148,11 @@ extension Mpd.Service.Dnsmasq {
             guard Mpd.Podman.startQuietly(containerName) == 0 else {
                 throw RuntimeError("Failed to start \(containerName). Run: mpd --setup")
             }
+            waitUntilReady()
             if verbose { ok("dnsmasq running.") }
         } else if serviceDNSChanged || databaseDNSChanged {
             _ = Mpd.Podman.restart(containerName)
+            waitUntilReady()
             if verbose {
                 if databaseDNSChanged {
                     ok("dnsmasq reloaded service and database DNS records.")
@@ -161,6 +163,23 @@ extension Mpd.Service.Dnsmasq {
         } else if verbose {
             ok("Already running.")
         }
+    }
+
+    /// Block until dnsmasq is answering queries. Called after restart/start
+    /// so callers (project create, runtime create, etc.) don't race against
+    /// a half-up resolver. Probes a known internal record from inside the
+    /// dnsmasq container (nslookup is in the image). Non-fatal: warns and
+    /// returns on timeout, letting the caller surface its own error if DNS
+    /// is genuinely broken.
+    static func waitUntilReady(maxSeconds: Double = 5.0) {
+        let probe = ["nslookup", "mpd.test", "127.0.0.1"]
+        let interval: Double = 0.25
+        let attempts = max(1, Int(maxSeconds / interval))
+        for _ in 0..<attempts {
+            if Mpd.Podman.execQuietly(containerName, probe) == 0 { return }
+            Thread.sleep(forTimeInterval: interval)
+        }
+        print("Warning: dnsmasq did not become ready within \(Int(maxSeconds))s — DNS lookups may fail.")
     }
 
     private static func ensureServiceDNSRecords(in dnsmasqDir: String) throws -> Bool {

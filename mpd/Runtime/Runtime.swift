@@ -300,6 +300,7 @@ extension Mpd.Runtime {
                               atomically: true, encoding: .utf8)
         try? Mpd.Core.State.syncBindMountFiles()
         Mpd.Podman.restart(Mpd.Service.Dnsmasq.containerName)
+        Mpd.Service.Dnsmasq.waitUntilReady()
 
         // Write runtime meta
         Mpd.Runtime.State.saveRuntimeStateEntry(RuntimeStateEntry(
@@ -476,6 +477,7 @@ extension Mpd.Runtime {
         _ = Mpd.Podman.volumeToolRun(command: ["rm", "-rf", "/srv/meta/_runtime-\(name)"])
         try? Mpd.Core.State.syncBindMountFiles()
         Mpd.Podman.restart(Mpd.Service.Dnsmasq.containerName)
+        Mpd.Service.Dnsmasq.waitUntilReady()
         Mpd.Runtime.State.deleteRuntimeStateEntry(name)
         ok("Runtime '\(name)' removed.")
     }

@@ -220,6 +220,7 @@ extension Mpd.Project {
         }
         try? Mpd.Core.State.syncBindMountFiles()
         Mpd.Podman.restart(Mpd.Service.Dnsmasq.containerName)
+        Mpd.Service.Dnsmasq.waitUntilReady()
     }
 
     /// Remove dnsmasq conf for a project.
@@ -228,6 +229,7 @@ extension Mpd.Project {
         try? FileManager.default.removeItem(atPath: confPath)
         try? Mpd.Core.State.syncBindMountFiles()
         Mpd.Podman.restart(Mpd.Service.Dnsmasq.containerName)
+        Mpd.Service.Dnsmasq.waitUntilReady()
     }
 
     // MARK: - Per-project TLS cert
