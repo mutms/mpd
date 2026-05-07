@@ -152,8 +152,7 @@ extension Mpd.Environment.Action.Uninstall {
           sudo update-ca-certificates --fresh
 
           # Remove the Firefox-ESR enterprise policy
-          sudo rm -f /etc/firefox-esr/policies/policies.json
-          sudo rmdir --ignore-fail-on-non-empty /etc/firefox-esr/policies 2>/dev/null || true
+          sudo rm -f /usr/lib/firefox-esr/distribution/policies.json
 
           # Optional: remove persisted CA / service cert material for a clean next setup
           rm -rf ~/Developer/mpd/conf
@@ -177,7 +176,7 @@ extension Mpd.Environment.Action.Uninstall {
         let trustPath = "/usr/local/share/ca-certificates/mpd-local.crt"
         let trustRemoved = !FileManager.default.fileExists(atPath: trustPath)
 
-        let firefoxPolicyPath = "/etc/firefox-esr/policies/policies.json"
+        let firefoxPolicyPath = "/usr/lib/firefox-esr/distribution/policies.json"
         let firefoxPolicyRemoved = !FileManager.default.fileExists(atPath: firefoxPolicyPath)
 
         let persistedCAPath = "\(Mpd.Environment.confCARootDir)/rootCA.pem"

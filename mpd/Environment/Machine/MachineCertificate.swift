@@ -44,8 +44,15 @@ extension Mpd.Environment.Certificate {
     /// `Certificates.Install` policy which loads PEM files directly into NSS.
     /// The referenced CA file is the same one `trustCA` already manages.
     /// Idempotent. Harmless when firefox-esr is not installed.
+    ///
+    /// Path note: Firefox resolves the policy file via `XREAppDist`, which
+    /// on Linux is `<install-dir>/distribution/`. For Debian's firefox-esr
+    /// package that's `/usr/lib/firefox-esr/distribution/policies.json`.
+    /// The Debian-side `/etc/firefox-esr/policies/` directory looks
+    /// official but is *not* read by Firefox itself — wrong path, no
+    /// effect.
     static func installFirefoxPolicy() {
-        let policyPath = "/etc/firefox-esr/policies/policies.json"
+        let policyPath = "/usr/lib/firefox-esr/distribution/policies.json"
         let caInPolicy = "/usr/local/share/ca-certificates/mpd-local.crt"
         let policyJSON = #"{"policies":{"Certificates":{"Install":["\#(caInPolicy)"]}}}"# + "\n"
 

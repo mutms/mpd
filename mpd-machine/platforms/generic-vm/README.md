@@ -242,9 +242,10 @@ Chromium and Firefox-ESR with no warnings and no clicks:
   `mpd --setup` imports the mpd CA into `~/.pki/nssdb/`, which these browsers
   read on Linux for SSL trust.
 - **Firefox-ESR** (the only Firefox in Debian Trixie's main archive):
-  `mpd --setup` writes `/etc/firefox-esr/policies/policies.json` referencing
-  the mpd CA. Firefox loads this policy at every launch, applies to every
-  profile and every user on the VM. No `certutil`, no per-profile setup.
+  `mpd --setup` writes `/usr/lib/firefox-esr/distribution/policies.json`
+  referencing the mpd CA. Firefox loads this policy at every launch and
+  applies it to every profile and every user on the VM. No `certutil`,
+  no per-profile setup.
 
 **Shareable VM image.** Once provisioned, a VM disk image is portable. Export
 from your hypervisor, hand it to a teammate, they import and boot — `mpd
