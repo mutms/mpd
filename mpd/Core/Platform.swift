@@ -1,7 +1,7 @@
 // mpd — Mpd.Core.Platform namespace
 // Reads/writes ~/Developer/mpd/conf/platform.env — the host-side identity file
 // that records *which* kind of mpd setup this is and where it lives:
-//   MPD_PLATFORM=desktop | macos-utm | generic-vm
+//   MPD_PLATFORM=desktop | macos-utm | generic-vm | windows-hyperv
 //   MPD_CLIENT_OS=macos | linux | windows
 //   MPD_VM_IP=<ip>           (empty for desktop)
 //   MPD_INSTANCE_SUFFIX=<-suffix>   (e.g. "-161"; empty for the unsuffixed
@@ -26,9 +26,10 @@ import Foundation
 extension Mpd.Core.Platform {
 
     enum PlatformKind: String {
-        case desktop      = "desktop"
-        case macosUTM     = "macos-utm"
-        case genericVM    = "generic-vm"
+        case desktop        = "desktop"
+        case macosUTM       = "macos-utm"
+        case genericVM      = "generic-vm"
+        case windowsHyperV  = "windows-hyperv"
     }
 
     enum ClientOS: String {
@@ -57,16 +58,17 @@ extension Mpd.Core.Platform {
             throw RuntimeError(
                 "Missing \(path).\n" +
                 "Run the matching bootstrap script first:\n" +
-                "  • macOS+UTM:  mpd-machine/platforms/macos-utm/create-vm.sh\n" +
-                "  • generic VM: mpd-machine/platforms/generic-vm/provision-vm.sh\n" +
-                "  • desktop:    re-run `mpd --setup` (will write the file).")
+                "  • macOS+UTM:       mpd-machine/platforms/macos-utm/create-vm.sh\n" +
+                "  • Windows Hyper-V: mpd-machine/platforms/windows-hyperv/setup.cmd\n" +
+                "  • generic VM:      mpd-machine/platforms/generic-vm/provision-vm.sh\n" +
+                "  • desktop:         re-run `mpd --setup` (will write the file).")
         }
 
         let raw = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
         let kv = parseKV(raw)
 
         guard let platformRaw = kv["MPD_PLATFORM"], let platform = PlatformKind(rawValue: platformRaw) else {
-            throw RuntimeError("\(path): MPD_PLATFORM missing or invalid (expected: desktop, macos-utm, generic-vm).")
+            throw RuntimeError("\(path): MPD_PLATFORM missing or invalid (expected: desktop, macos-utm, generic-vm, windows-hyperv).")
         }
         guard let clientRaw = kv["MPD_CLIENT_OS"], let clientOS = ClientOS(rawValue: clientRaw) else {
             throw RuntimeError("\(path): MPD_CLIENT_OS missing or invalid (expected: macos, debian, fedora, windows).")
