@@ -18,6 +18,39 @@
 
 import Foundation
 
+/// Extract the hostname from a git URL. Handles `https://host/...`,
+/// `git@host:owner/repo.git`, `ssh://user@host:port/path`. Returns nil
+/// for shapes we don't recognise (local paths etc.) so the caller skips
+/// the DNS pre-check.
+private func gitHostFromURL(_ url: String) -> String? {
+    if let comps = URLComponents(string: url), let host = comps.host, !host.isEmpty {
+        return host
+    }
+    // scp-like SCP form: user@host:path
+    if let at = url.firstIndex(of: "@"), let colon = url[url.index(after: at)...].firstIndex(of: ":") {
+        let host = String(url[url.index(after: at)..<colon])
+        if !host.isEmpty, !host.contains("/") { return host }
+    }
+    return nil
+}
+
+/// Resolve `host` from inside `container` by polling `getent hosts <host>`
+/// (succeeds on any A/AAAA record) every 250ms up to ~5s. Non-fatal:
+/// warns and returns on timeout, letting `git clone` produce its own
+/// "Could not resolve host" message if DNS is genuinely unreachable.
+/// The point is to absorb the brief settling window after dnsmasq
+/// restart during runtime create — not to gate on internet availability.
+private func waitForHostResolves(host: String, container: String, maxSeconds: Double = 5.0) {
+    let probe = ["getent", "hosts", host]
+    let interval: Double = 0.25
+    let attempts = max(1, Int(maxSeconds / interval))
+    for _ in 0..<attempts {
+        if Mpd.Podman.execQuietly(container, probe) == 0 { return }
+        Thread.sleep(forTimeInterval: interval)
+    }
+    print("Warning: '\(host)' did not resolve from inside the runtime within \(Int(maxSeconds))s. The next operation may fail with a DNS error.")
+}
+
 extension Mpd.Project {
 
     // MARK: - show
@@ -132,6 +165,16 @@ extension Mpd.Project {
 
         // Clone repo if requested.
         if !gitRepo.isEmpty {
+            // Pre-clone DNS check: when the runtime was just created in the
+            // same `mpd create` call, dnsmasq was restarted moments ago and
+            // the runtime's resolver path can race against the clone. Verify
+            // the git host resolves from inside the runtime, retrying briefly,
+            // before issuing the clone — surfaces a clear error and avoids
+            // the user having to retry.
+            if let host = gitHostFromURL(gitRepo) {
+                waitForHostResolves(host: host, container: createContainer)
+            }
+
             step("Cloning \(gitRepo)")
             // --progress forces git to print progress even when it can't
             // detect a TTY on stderr. podman exec -it allocates a pseudo-TTY
