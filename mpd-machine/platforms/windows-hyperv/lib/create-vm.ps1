@@ -293,7 +293,7 @@ set -e
 sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -qq
 sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
     build-essential pkg-config make swiftlang \
-    git curl libnss3-tools
+    git curl libnss3-tools hyperv-daemons
 if ! command -v swift >/dev/null 2>&1; then
     echo "Swift not on PATH after install" >&2; exit 1
 fi
@@ -322,7 +322,34 @@ Write-Step "Running 'mpd --setup'"
 Invoke-Ssh -User $VmUser -RemoteHost $VmIp -Command "mpd --setup"
 Write-Ok "mpd --setup complete"
 
-# ── 13. Login banner ──────────────────────────────────────────────────────────
+# ── 13. Auto-start on VM boot ─────────────────────────────────────────────────
+
+Write-Step "Enabling mpd auto-start on VM boot"
+
+Send-SshScript -User $VmUser -RemoteHost $VmIp -Script @"
+set -e
+sudo loginctl enable-linger "`$(id -un)"
+mkdir -p "`$HOME/.config/systemd/user"
+cat > "`$HOME/.config/systemd/user/mpd-autostart.service" << 'UNIT_EOF'
+[Unit]
+Description=mpd autostart
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/mpd --start
+RemainAfterExit=yes
+
+[Install]
+WantedBy=default.target
+UNIT_EOF
+systemctl --user daemon-reload
+systemctl --user enable mpd-autostart.service
+"@
+Write-Ok "mpd will start automatically on VM boot"
+
+# ── 14. Login banner ──────────────────────────────────────────────────────────
 
 Write-Step "Setting login banner"
 
