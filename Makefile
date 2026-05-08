@@ -3,8 +3,18 @@
 build:
 	swift build
 
-release:
-	swift build -c release
+release: install
+	@mkdir -p mpd-machine/release
+	@for platform in macos-utm windows-hyperv generic-vm; do \
+		out="mpd-machine/release/$$platform.zip"; \
+		rm -f "$$out"; \
+		(cd mpd-machine/platforms && zip -qr "../../$$out" "$$platform" \
+			--exclude "*/.DS_Store" \
+			--exclude "*/temp/*" \
+			--exclude "*/__MACOSX/*"); \
+		echo "  $$out"; \
+	done
+	@echo "Platform zips in mpd-machine/release/"
 
 install:
 	@os=$$(uname -s); \
