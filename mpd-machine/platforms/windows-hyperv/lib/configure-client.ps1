@@ -1,35 +1,31 @@
 #Requires -RunAsAdministrator
-# setup-host.ps1 - Configure Windows host networking for mpd-machine on Hyper-V.
+# configure-client.ps1 -- configure Windows networking for an mpd-machine VM.
 # Idempotent: safe to run multiple times.
 #
 # What it does:
-#   1. Adds a persistent route so Windows can reach the container subnet (10.163.0.0/24)
+#   1. Adds a persistent route so Windows reaches the container subnet (10.163.0.0/24)
 #      through the VM.
-#   2. Adds an NRPT rule so Windows resolves *.mpd.test via the dnsmasq container.
-#   3. Fetches the mpd CA certificate from the VM and imports it into the Windows
-#      trusted root store so browsers accept *.mpd.test HTTPS without warnings.
+#   2. Adds an NRPT rule so Windows resolves *.mpd.test via dnsmasq inside the VM.
+#   3. Fetches the mpd CA certificate from the VM over SCP and imports it into the
+#      Windows trusted root store so browsers accept *.mpd.test HTTPS without warnings.
 #
-# Usage (from an elevated PowerShell prompt):
-#   powershell -ExecutionPolicy Bypass -File setup-host.ps1 -VmIp 172.19.108.153
-#   powershell -ExecutionPolicy Bypass -File setup-host.ps1 -VmIp 172.19.108.153 -SshUser skodak
+# Called automatically by setup.cmd after VM creation or when switching VMs.
 
 param(
-    [Parameter(Mandatory, HelpMessage="IP address of the mpd-machine VM on the Hyper-V network")]
-    [string]$VmIp,
-
+    [Parameter(Mandatory)][string]$VmIp,
     [string]$SshUser = $env:USERNAME
 )
 
 $ErrorActionPreference = "Stop"
 
-$ContainerPrefix  = "10.163.0.0/24"
 $ContainerSubnet  = "10.163.0.0"
+$ContainerPrefix  = "10.163.0.0/24"
 $ContainerMask    = "255.255.255.0"
 $DnsmasqIp        = "10.163.0.3"
 $NrptNamespace    = ".mpd.test"
 $CaCertRemote     = "~/Developer/mpd/conf/caroot/rootCA.pem"
 
-function Write-Step { param([string]$Text) Write-Host "`n--- $Text" }
+function Write-Step { param([string]$Text) Write-Host "`n==> $Text" }
 function Write-Ok   { param([string]$Text) Write-Host "    ok: $Text" }
 function Write-Skip { param([string]$Text) Write-Host "    skip: $Text (already correct)" }
 
@@ -49,7 +45,7 @@ if ($correct) {
         $stale | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
     }
     route add $ContainerSubnet mask $ContainerMask $VmIp -p | Out-Null
-    if ($LASTEXITCODE -ne 0) { Write-Error "route add failed"; exit 1 }
+    if ($LASTEXITCODE -ne 0) { throw "route add failed" }
     Write-Ok "persistent route added"
 }
 
@@ -57,7 +53,7 @@ if ($correct) {
 
 Write-Step "NRPT rule $NrptNamespace -> $DnsmasqIp"
 
-$existing = @(Get-DnsClientNrptRule | Where-Object { $_.Namespace -eq $NrptNamespace })
+$existing  = @(Get-DnsClientNrptRule | Where-Object { $_.Namespace -eq $NrptNamespace })
 $isCorrect = ($existing.Count -eq 1) -and ($existing[0].NameServers -contains $DnsmasqIp)
 
 if ($isCorrect) {
@@ -77,8 +73,8 @@ Write-Step "mpd CA certificate"
 
 $TempCert = Join-Path $env:TEMP "mpd-rootCA.pem"
 Write-Host "    fetching from ${SshUser}@${VmIp} ..."
-scp "${SshUser}@${VmIp}:${CaCertRemote}" $TempCert
-if ($LASTEXITCODE -ne 0) { Write-Error "scp failed - is the VM running and reachable at $VmIp?"; exit 1 }
+& scp -o StrictHostKeyChecking=no -o BatchMode=yes "${SshUser}@${VmIp}:${CaCertRemote}" $TempCert
+if ($LASTEXITCODE -ne 0) { throw "scp failed -- is the VM running and reachable at $VmIp?" }
 
 try {
     $newCert    = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $TempCert
@@ -90,7 +86,6 @@ try {
     if ($inStore) {
         Write-Skip "CA cert (thumbprint $thumbprint)"
     } else {
-        # Remove stale mpd CA certs (same subject, different thumbprint after mpd --uninstall + reinstall)
         $stale = Get-ChildItem Cert:\LocalMachine\Root |
                  Where-Object { $_.Subject -match "mpd\.test local development CA" }
         if ($stale) {
@@ -107,4 +102,4 @@ try {
 # ── Done ──────────────────────────────────────────────────────────────────────
 
 Write-Host ""
-Write-Host "Host networking configured. Open https://mpd.test to reach the portal."
+Write-Host "Windows client configured. Open https://mpd.test to reach the portal."

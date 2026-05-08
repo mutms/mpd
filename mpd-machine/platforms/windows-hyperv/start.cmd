@@ -1,5 +1,5 @@
 @echo off
-:: setup.cmd -- create a new mpd VM or switch the active VM.
+:: start.cmd -- start the current mpd VM (detected from the persistent route).
 :: Triggers a UAC prompt if not already running as Administrator.
 
 net session >nul 2>&1
@@ -9,5 +9,5 @@ powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
 exit /b
 
 :elevated
-powershell -ExecutionPolicy Bypass -File "%~dp0lib\setup.ps1" %*
+powershell -ExecutionPolicy Bypass -File "%~dp0lib\start.ps1" %*
 pause

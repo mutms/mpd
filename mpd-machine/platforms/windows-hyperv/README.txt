@@ -6,19 +6,22 @@ Windows 10/11 Pro and Enterprise). For the platform-agnostic manual
 bootstrap (any Debian Trixie VM you've already created yourself), see
 ../generic-vm/README.md.
 
-This directory contains:
+Files in this directory:
 
-  setup.cmd               -- double-click to run everything (triggers UAC prompt)
-  create-headless-vm.ps1  -- one-shot: creates the VM end-to-end
-  configure-client.ps1        -- idempotent: configures Windows networking (called automatically
-                             by create-headless-vm.ps1; also usable standalone)
+  setup.cmd      -- create a new mpd VM or switch the active VM (double-click)
+  start.cmd      -- start the current VM
+  stop.cmd       -- suspend all mpd VMs (state is preserved)
+  uninstall.cmd  -- delete all mpd VMs and remove the mpd switch
+
+All scripts trigger a UAC prompt for Administrator access.
+
+Implementation lives under lib/ (PS1 scripts -- no need to open them).
 
 
 Prerequisites
 -------------
 
-  * Windows 10 or 11 Pro / Enterprise (Home edition does not include
-    Hyper-V).
+  * Windows 10 or 11 Pro / Enterprise (Home edition does not include Hyper-V).
 
   * Hyper-V enabled. If you have not done this yet:
       Settings > Apps > Optional Features > More Windows features
@@ -27,11 +30,30 @@ Prerequisites
   * An SSH key. The script will detect whether you have one and offer
     to generate one if not.
 
+  * Windows Terminal (optional but recommended -- avoids the Quick Edit
+    Mode freeze issue in the old conhost). Install from the Microsoft
+    Store or: winget install Microsoft.WindowsTerminal
 
-create-headless-vm.ps1 -- create a VM from scratch
----------------------------------------------------
 
-This script provisions a Debian Trixie VM end-to-end:
+setup.cmd -- create a VM or switch the active VM
+-------------------------------------------------
+
+Double-click setup.cmd. Windows will show a UAC prompt -- click Yes.
+
+The script:
+
+  1. Explains the 'mpd' Hyper-V Internal switch and asks for confirmation.
+     Any VM you connect to this switch (including custom ones) will use
+     NAT through Windows for internet access.
+
+  2. Lists all existing mpd-machine-NN VMs. Shows which one is currently
+     active (detected from the persistent route to the container subnet).
+
+  3. Asks for a VM number:
+       - Enter an existing number to switch to that VM or re-verify it.
+       - Enter a new number to create a new VM end-to-end.
+
+When creating a new VM, the script:
 
   1. Downloads the Debian cloud image (~200 MB, cached for reuse).
   2. Converts and resizes the disk image to VHDX format.
@@ -49,113 +71,72 @@ This script provisions a Debian Trixie VM end-to-end:
 The whole process takes 10-20 minutes depending on internet speed and
 your machine. You can leave it running unattended after the prompts.
 
-How to run:
+When switching to a different VM:
 
-  1. Download setup.cmd and create-headless-vm.ps1 into the same folder
-     (e.g. %USERPROFILE%\Downloads\).
+  1. The current VM is suspended (state preserved on disk, resumes in
+     seconds).
+  2. The selected VM starts (or resumes from a previous suspension).
+  3. Windows networking is updated to point to the new VM.
 
-  2. Double-click setup.cmd.
-     Windows will show a UAC prompt -- click Yes to allow admin access.
 
-  3. The script prompts for two values:
+start.cmd / stop.cmd
+--------------------
 
-     * Last IP octet (default 200). This drives the VM name
-       (mpd-machine-200), its static IP on the Hyper-V Default Switch,
-       and the hostname inside the VM. Pick a different number to run
-       multiple VMs side-by-side (e.g. 200 and 201 at the same time).
+start.cmd -- starts the VM that is currently configured (detected from
+             the persistent route). No prompts.
 
-     * Disk size in GB (default 200). The cloud image is ~3 GB; the
-       disk grows to fill whatever you choose here.
+stop.cmd  -- suspends all running mpd VMs. State is preserved on disk
+             so they resume instantly. Useful before shutting down the
+             host or switching VMs via setup.cmd.
 
-  4. If no SSH key is found, the script pauses and runs ssh-keygen so
-     you can set a passphrase. Follow the on-screen prompts.
+Both require Administrator access (UAC prompt).
 
-After it finishes:
 
-  * Double-click "mpd SSH" on the Desktop to open an SSH session.
-  * Open https://mpd.test in Edge or Chrome -- should load with a
-    padlock (the CA cert was imported automatically).
-  * Run "mpd --help" inside the VM to see available commands.
+uninstall.cmd
+-------------
+
+Asks for confirmation, then:
+
+  1. Stops and deletes all mpd-machine-NN VMs (including their VHDX files).
+  2. Removes the NRPT DNS rule for *.mpd.test.
+  3. Removes the persistent route to the container subnet.
+  4. Removes the mpd CA certificate from the trusted root store.
+  5. Removes the Hyper-V switch, NAT rule, and host IP.
+
+This is irreversible -- run setup.cmd again to start fresh.
 
 
 Why the VM IP is pinned
 -----------------------
 
-The script assigns a static IP to the VM (e.g. 172.19.111.200) via
+setup.cmd assigns a static IP to the VM (e.g. 10.164.0.158) via
 cloud-init. A static IP is required because the bootstrap automation
 needs to SSH into the VM before it is fully up -- DHCP would give an
 unknown address that the script cannot predict.
 
-The static IP is placed in the highest /24 of the Hyper-V Default
-Switch subnet to avoid conflicts with the switch's own DHCP pool.
-It is recorded in the VM as conf/platform.env (MPD_VM_IP) and on the
-Windows side as the route target in configure-client.ps1.
+The static IP is recorded in the VM as conf/platform.env (MPD_VM_IP).
 
-Note: the Hyper-V Default Switch subnet (e.g. 172.19.96.0/20) can
-change after a major Windows upgrade. If it does, the route and NRPT
-rule will be stale. Run configure-client.ps1 again (as Administrator) with
-the new VM IP to fix it.
+The active VM is tracked via the persistent route: the route to
+10.163.0.0/24 (the container subnet) points to the VM's IP, so
+start.cmd can detect the current VM even after a host reboot.
 
-
-configure-client.ps1 -- configure Windows networking only
-------------------------------------------------------
-
-This script is called automatically at the end of create-headless-vm.ps1,
-so you do not need to run it manually for a fresh install. Use it if:
-
-  * You set up the VM manually using ../generic-vm/README.md.
-  * Windows networking stopped working after a host reboot or upgrade.
-
-How to run (elevated):
-
-  powershell -ExecutionPolicy Bypass -File configure-client.ps1 -VmIp 172.19.111.200 -SshUser yourname
-
-Replace the IP and username with the actual values for your VM.
-
-The script is idempotent: it skips any step that is already correct,
-so it is safe to run multiple times.
-
-What it does:
-
-  * Adds a persistent route: Windows sends 10.163.0.0/24 traffic
-    (the container subnet) through the VM.
-  * Adds an NRPT rule: Windows resolves *.mpd.test via the dnsmasq
-    container at 10.163.0.3 (inside the VM).
-  * Fetches the mpd CA certificate from the VM over SCP and imports
-    it into the Windows trusted root store, so browsers accept
-    https://mpd.test without a certificate warning.
-
-
-Helper scripts in %USERPROFILE%\mpd\
--------------------------------------
-
-After create-headless-vm.ps1 finishes, it creates a small set of
-scripts in %USERPROFILE%\mpd\ with the VM details already filled in:
-
-  ssh-vm.ps1        -- open an SSH session (no arguments needed)
-  start-vm.ps1      -- start the VM (run as Administrator)
-  stop-vm.ps1       -- shut down the VM gracefully (run as Administrator)
-  configure-client.ps1  -- re-run Windows networking setup (as Administrator)
-
-These are convenience wrappers. The VM is also set to start
-automatically with Windows, so you normally do not need start-vm.ps1.
+Note: the Hyper-V 'mpd' switch subnet (10.164.0.0/24) is fixed and
+does not change after Windows upgrades. If networking stops working
+after an upgrade, run setup.cmd and select your VM number to
+re-verify the route and re-import the CA certificate.
 
 
 Multiple VMs side-by-side
 --------------------------
 
-Run create-headless-vm.ps1 again with a different octet to create a
-second VM:
+Run setup.cmd and enter a different octet to create a second VM:
 
-  powershell -ExecutionPolicy Bypass -File create-headless-vm.ps1 -VmOctet 201
+  e.g. enter 159 alongside an existing 158 VM
 
-Each VM gets its own static IP and Hyper-V display name. The "mpd SSH"
-shortcut on the Desktop always connects to the first VM (mpd-machine).
-To connect to a specific VM:
-
-  ssh yourname@172.19.111.201
-  -- or --
-  ssh mpd-machine-201   (after adding a Host entry to ~/.ssh/config)
+Each VM gets its own static IP and Hyper-V display name. Only one VM
+is "current" at a time (the one the container route points to). To
+switch, run setup.cmd and enter the other VM's number -- the current
+VM is suspended and the selected VM resumes.
 
 
 Recovery: lost SSH key
@@ -167,10 +148,9 @@ cannot log into the VM through normal means.
 
 Options:
 
-  1. Rebuild the VM (fastest). Delete the VM in Hyper-V Manager,
-     then run create-headless-vm.ps1 again. Any local project state
-     (databases, generated CA, build artifacts) will be lost. Code
-     that was pushed to a remote git remote is unaffected.
+  1. Rebuild the VM (fastest). Run uninstall.cmd, then setup.cmd again.
+     Any local project state (databases, generated CA, build artifacts)
+     will be lost. Code pushed to a remote git remote is unaffected.
 
   2. Recover via Hyper-V console.
 
@@ -190,16 +170,14 @@ Options:
 
      e. Replace the authorized_keys file:
           vi /home/<your-user>/.ssh/authorized_keys
-        Paste your new public key (the contents of id_ed25519.pub
-        from your Windows machine, found at %USERPROFILE%\.ssh\).
+        Paste your new public key (contents of %USERPROFILE%\.ssh\id_ed25519.pub).
 
      f. Save and reboot:
           sync
           exec /sbin/init
 
-     g. After the VM comes back, run configure-client.ps1 again to
-        refresh the CA certificate (the SSH key change does not
-        affect the cert, but it is a good time to re-verify).
+     g. After the VM comes back, run setup.cmd and select the VM's
+        number to re-verify networking and re-import the CA certificate.
 
 
 File transfer (Windows <-> VM)
@@ -208,10 +186,10 @@ File transfer (Windows <-> VM)
 The simplest path is scp:
 
   # Copy a file from Windows to the VM:
-  scp "C:\path\to\file.txt" yourname@172.19.111.200:~/
+  scp "C:\path\to\file.txt" yourname@10.164.0.158:~/
 
   # Copy a file from the VM to Windows:
-  scp yourname@172.19.111.200:~/file.txt "C:\Users\yourname\Downloads\"
+  scp yourname@10.164.0.158:~/file.txt "C:\Users\yourname\Downloads\"
 
 For bulk transfers, the mpd fileaccess service exposes /srv/backups/
 inside the VM as an SSH endpoint at fileaccess.service.mpd.test after
