@@ -16,13 +16,12 @@ no WSL, no manual networking). Same workflow either way; same
 
 ## What you get
 
-- **`https://<project>.mpd.test/` for every project** — real cert
-  (signed by a name-constrained local CA), no warnings, no `--insecure`,
-  works the moment `mpd start <project>` returns.
-- **Mailpit for outbound mail** — visit `https://mail.<project>.mpd.test/`
-  and you land on the runtime's shared mailpit UI with the project's
-  mail pre-filtered. Activation links, password resets, notifications —
-  all caught, nothing leaves the pod.
+- **`https://<project>.mpd.test/` for every project** — browser-trusted
+  HTTPS via a name-constrained local CA; available as soon as
+  `mpd start <project>` returns.
+- **Mailpit for outbound mail** — mail sent from the project is captured
+  by Mailpit at `https://mail.<project>.mpd.test/`, pre-filtered per
+  project. Mail does not leave the runtime.
 - **Postgres / MariaDB / MySQL** — pick a version with
   `MPD_DB=postgres:18`; the matching container provisions on demand.
   Adminer is always running at `https://adminer.service.mpd.test/`
@@ -33,8 +32,8 @@ no WSL, no manual networking). Same workflow either way; same
   runtime** — IDE on your host, language server / Xdebug / phpunit /
   composer running inside the isolated container. AI agents land in
   the same place.
-- **Sandbox VM** (`mpd-machine`) — let an agent do anything; if you
-  don't like the result, throw the VM away and start over.
+- **Sandbox VM** (`mpd-machine`) — disposable; rebuild from scratch when
+  needed.
 
 ## Two modes
 
@@ -42,7 +41,7 @@ no WSL, no manual networking). Same workflow either way; same
 |---|---|---|
 | **Host OS** | macOS only | macOS, Linux, Windows, or cloud |
 | **Backend** | Podman Desktop + WireGuard tunnel | Rootful Podman in a sandbox VM |
-| **Best for** | Native macOS workflows; simplest setup on a Mac | Non-macOS hosts; sandbox you can wipe and rebuild; letting an AI agent run wild |
+| **Best for** | Native macOS workflows; simplest setup on a Mac | Non-macOS hosts; sandbox you can wipe and rebuild; untrusted or AI-driven workloads |
 | **Network model** | gvproxy + WireGuard | Plain L3 routing from laptop to VM |
 
 Same CLI surface, same `*.mpd.test` URLs, same per-project configuration
@@ -104,9 +103,8 @@ model.
 ## Roadmap (short form)
 
 - Public preview URLs via **Cloudflare Tunnel + Cloudflare Access** —
-  for sharing a project with a teammate, client, or an iPad-armed
-  friend doing vibe-coding from across the country. Exposed as a
-  `publish` tool inside the runtime, invoked over SSH.
+  share a project URL with a teammate, client, or external collaborator.
+  Exposed as a `publish` tool inside the runtime, invoked over SSH.
 - `mdl-backup` / `mdl-restore` — Moodle-only tools that produce /
   consume one tar bundle per project (dataroot + DB dump).
 
