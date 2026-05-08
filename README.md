@@ -96,7 +96,6 @@ model.
 
 ## Roadmap (short form)
 
-- Automated **Windows + Hyper-V** bootstrap (`platforms/windows-hyperv/`).
 - Public preview URLs via **Cloudflare Tunnel + Cloudflare Access** —
   for sharing a project with a teammate, client, or an iPad-armed
   friend doing vibe-coding from across the country. Exposed as a
