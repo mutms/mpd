@@ -6,6 +6,5 @@
   comes with ABSOLUTELY NO WARRANTY, to the extent permitted by law.
 
   Open https://mpd.test           — list of all your projects
-  Type  demo moodle v5.2.0        — spin up a Moodle 5.2.0 demo site
-  Type  demo mutms MuTMS-5.2.0-01 — spin up a MuTMS 5.2.0 demo site
-
+  Type  [33mdemo moodle v5.2.0[0m        — spin up a Moodle 5.2.0 demo site
+  Type  [33mdemo mutms MuTMS-5.2.0-01[0m — spin up a MuTMS 5.2.0 demo site

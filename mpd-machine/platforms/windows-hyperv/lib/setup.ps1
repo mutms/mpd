@@ -271,7 +271,7 @@ if ($vmRecord) {
 # ── Done ──────────────────────────────────────────────────────────────────────
 
 Write-Host ""
-Write-Host "========================================"
-Write-Host "  Look for 'mpd-machine' on your desktop."
-Write-Host "========================================"
+Write-Host "===========================================" -ForegroundColor Green
+Write-Host "  Look for 'mpd-machine' on your desktop." -ForegroundColor Green
+Write-Host "===========================================" -ForegroundColor Green
 Write-Host ""
