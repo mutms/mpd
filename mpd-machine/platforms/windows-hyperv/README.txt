@@ -82,10 +82,9 @@ When setup finishes:
   * https://mpd.test opens in your Windows browser and shows the mpd
     portal (project list, Adminer database UI, etc.).
 
-  * To create your first Moodle project, SSH into the VM and run:
-      mpd create myproject
-
-    Then open https://myproject.mpd.test in your browser.
+  * The shell greets you with a short welcome message and a hint to
+    run 'demo moodle52'. Do that to get a fully installed Moodle 5.2
+    site in one command -- URL and credentials printed at the end.
 
   * For day-to-day usage see docs/machine/USAGE.md in the mpd repo.
 

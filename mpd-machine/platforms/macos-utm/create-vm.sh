@@ -545,6 +545,18 @@ ssh_cmd "$VM_IP" "$VM_USER" 'mpd --setup'
 
 ok "mpd --setup complete"
 
+# --- Login banner ---
+
+step "Setting login banner"
+
+ssh_cmd "$VM_IP" "$VM_USER" 'bash -se' <<'EOF'
+set -e
+sudo chmod -x /etc/update-motd.d/* 2>/dev/null || true
+sudo cp "$HOME/Developer/mpd/assets/machine/motd" /etc/motd
+EOF
+
+ok "Login banner set"
+
 # --- Show follow up instructions ---
 
 cat <<EOF

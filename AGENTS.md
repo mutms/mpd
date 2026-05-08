@@ -41,6 +41,8 @@ The Swift binary lives under `mpd/`. Each subdirectory is a `Mpd.<X>` namespace:
 - `mpd/main.swift` — CLI entry, ArgumentParser dispatch
 
 Runtime/project-type behavior + service container assets live under `assets/`:
+- `assets/machine/` — VM-level assets deployed to the mpd-machine VM itself
+  (e.g. `motd` — installed to `/etc/motd` by provisioning scripts)
 - `assets/runtimes/<runtime>/...` — runtime definitions, project types, tools
 - `assets/services/<n>/...` — always-on infra services
 - `assets/sidecars/<n>/...` — per-runtime-pod sidecars

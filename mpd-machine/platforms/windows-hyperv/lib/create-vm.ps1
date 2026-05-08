@@ -322,7 +322,18 @@ Write-Step "Running 'mpd --setup'"
 Invoke-Ssh -User $VmUser -RemoteHost $VmIp -Command "mpd --setup"
 Write-Ok "mpd --setup complete"
 
-# ── 13. Helper scripts in %USERPROFILE%\mpd\ ─────────────────────────────────
+# ── 13. Login banner ──────────────────────────────────────────────────────────
+
+Write-Step "Setting login banner"
+
+Send-SshScript -User $VmUser -RemoteHost $VmIp -Script @"
+set -e
+sudo chmod -x /etc/update-motd.d/* 2>/dev/null || true
+sudo cp "`$HOME/Developer/mpd/assets/machine/motd" /etc/motd
+"@
+Write-Ok "Login banner set"
+
+# ── 15. Helper scripts in %USERPROFILE%\mpd\ ─────────────────────────────────
 
 Write-Step "Creating helper scripts in $MpdUserDir"
 
@@ -346,7 +357,7 @@ Write-Host "VM '$VmName' suspended."
 
 Write-Ok "Helper scripts created"
 
-# ── 14. Desktop shortcut ──────────────────────────────────────────────────────
+# ── 16. Desktop shortcut ──────────────────────────────────────────────────────
 
 Write-Step "Creating desktop shortcut"
 

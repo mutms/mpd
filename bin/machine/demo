@@ -1,0 +1,56 @@
+#!/bin/bash
+# demo — create and start a demo Moodle project in one command.
+# Available on the mpd-machine VM after `mpd --setup` adds bin/machine/ to PATH.
+#
+# Usage: demo moodle52
+set -euo pipefail
+
+FLAVOR="${1:-}"
+
+if [ -z "$FLAVOR" ]; then
+    echo "Usage: demo moodle<version>  (e.g. demo moodle52)" >&2
+    exit 1
+fi
+
+if [[ ! "$FLAVOR" =~ ^moodle([0-9])([0-9]+)$ ]]; then
+    echo "demo: unrecognised flavour '$FLAVOR'. Try: demo moodle52" >&2
+    exit 1
+fi
+
+MAJOR="${BASH_REMATCH[1]}"
+MINOR="${BASH_REMATCH[2]}"
+BRANCH="MOODLE_${MAJOR}${MINOR}_STABLE"
+PROJECT="moodle${MAJOR}${MINOR}"
+RUNTIME="php"
+URL="https://${PROJECT}.mpd.test/"
+
+echo ""
+
+if mpd show "$PROJECT" > /dev/null 2>&1; then
+    echo "Project '$PROJECT' already exists -- starting..."
+    mpd start "$PROJECT"
+else
+    echo "Creating Moodle $MAJOR.$MINOR demo (clones repo + builds runtime -- a few minutes)..."
+    echo ""
+
+    mpd create "$PROJECT" \
+        --git-repo=https://github.com/moodle/moodle \
+        --git-branch="$BRANCH" \
+        --git-depth=1
+
+    mpd start "$PROJECT"
+
+    echo ""
+    echo "Installing Moodle database..."
+    ssh -q -o StrictHostKeyChecking=no -o BatchMode=yes \
+        "$USER@${RUNTIME}.runtime.mpd.test" \
+        "cd /srv/projects/${PROJECT} && mdl-install --agree-license --adminpass=Admin1234! --adminemail=admin@example.com"
+fi
+
+echo ""
+echo "  Moodle $MAJOR.$MINOR is ready."
+echo ""
+echo "  URL:      $URL"
+echo "  Login:    admin"
+echo "  Password: Admin1234!"
+echo ""

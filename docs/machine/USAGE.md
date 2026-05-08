@@ -85,6 +85,21 @@ Verify with `ping mpd.test` and `curl -sS https://mpd.test/`.
 
 ## First project — Moodle
 
+### Quick demo (one command)
+
+Inside the VM, `demo` creates a fully installed Moodle site in one shot:
+
+```bash
+demo moodle52
+```
+
+This clones Moodle 5.2 from GitHub, provisions the runtime, runs the
+database installer, and prints the URL and admin credentials when done.
+Takes a few minutes. Idempotent — re-running just starts the existing
+project.
+
+### Manual setup (full control)
+
 Inside the VM:
 
 ```bash

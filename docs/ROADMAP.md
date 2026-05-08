@@ -23,6 +23,14 @@ Concrete shape, a use case driving it.
 
 Real possibilities, not committed work.
 
+- **Runtime SSH banner** — install a branded `/etc/motd` inside each
+  runtime container (php, node, trixie) so users see a welcome message
+  and tool hints when they SSH into `<rt>.runtime.mpd.test`. Common
+  content in `assets/runtime-base/motd` (installed by `bootstrap.sh`),
+  runtime-specific additions in `assets/runtimes/<rt>/motd` (appended
+  by `build.sh`). Written directly to `/etc/motd` — no PAM/update-motd.d
+  needed in containers.
+
 - **`mpd --gc`** — sweep unreferenced DB containers, orphaned data
   dirs, dnsmasq records for deleted projects. Open question: destructive
   default or interactive plan + `--yes`?
