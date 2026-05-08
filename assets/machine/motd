@@ -5,6 +5,7 @@
   license terms are in /usr/share/doc/*/copyright. Debian GNU/Linux
   comes with ABSOLUTELY NO WARRANTY, to the extent permitted by law.
 
-  Open https://mpd.test   — portal, Adminer, and all running services
-  Type  demo moodle52     — spin up a Moodle 5.2 demo site
+  Open https://mpd.test           — list of all your projects
+  Type  demo moodle v5.2.0        — spin up a Moodle 5.2.0 demo site
+  Type  demo mutms MuTMS-5.2.0-01 — spin up a MuTMS 5.2.0 demo site
 

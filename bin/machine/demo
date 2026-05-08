@@ -1,54 +1,67 @@
 #!/bin/bash
-# demo — create and start a demo Moodle project in one command.
+# demo — create and start a demo project in one command.
 # Available on the mpd-machine VM after `mpd --setup` adds bin/machine/ to PATH.
 #
-# Usage: demo moodle52
+# Usage: demo <flavor> <tag>
+#   demo moodle v5.2.0
+#   demo mutms MuTMS-5.2.0-01
 set -euo pipefail
 
 FLAVOR="${1:-}"
+TAG="${2:-}"
 
-if [ -z "$FLAVOR" ]; then
-    echo "Usage: demo moodle<version>  (e.g. demo moodle52)" >&2
+if [ -z "$FLAVOR" ] || [ -z "$TAG" ]; then
+    echo "Usage: demo <flavor> <tag>  (e.g. demo moodle v5.2.0)" >&2
     exit 1
 fi
 
-if [[ ! "$FLAVOR" =~ ^moodle([0-9])([0-9]+)$ ]]; then
-    echo "demo: unrecognised flavour '$FLAVOR'. Try: demo moodle52" >&2
+case "$FLAVOR" in
+    moodle) REPO="https://github.com/moodle/moodle" ;;
+    mutms)  REPO="https://github.com/mutms/mutms" ;;
+    *)
+        echo "demo: unknown flavor '$FLAVOR'" >&2
+        echo "Known flavors: moodle, mutms" >&2
+        exit 1
+        ;;
+esac
+
+# Derive project name: flavor + all digit runs from the tag concatenated.
+# v5.2.0 → 520, MuTMS-5.2.0-01 → 52001
+DIGITS="$(echo "$TAG" | grep -oE '[0-9]+' | tr -d '\n')"
+if [ -z "$DIGITS" ]; then
+    echo "demo: cannot derive project name from '$TAG' (no digits found)" >&2
     exit 1
 fi
 
-MAJOR="${BASH_REMATCH[1]}"
-MINOR="${BASH_REMATCH[2]}"
-BRANCH="MOODLE_${MAJOR}${MINOR}_STABLE"
-PROJECT="moodle${MAJOR}${MINOR}"
+PROJECT="${FLAVOR}${DIGITS}"
 RUNTIME="php"
 URL="https://${PROJECT}.mpd.test/"
 
 echo ""
 
-if mpd show "$PROJECT" > /dev/null 2>&1; then
+if [ -d "/srv/projects/$PROJECT" ]; then
     echo "Project '$PROJECT' already exists -- starting..."
     mpd start "$PROJECT"
 else
-    echo "Creating Moodle $MAJOR.$MINOR demo (clones repo + builds runtime -- a few minutes)..."
+    echo "Creating $FLAVOR $TAG demo (clones repo + builds runtime -- a few minutes)..."
     echo ""
 
     mpd create "$PROJECT" \
-        --git-repo=https://github.com/moodle/moodle \
-        --git-branch="$BRANCH" \
+        --git-repo="$REPO" \
+        --git-branch="$TAG" \
         --git-depth=1
 
     mpd start "$PROJECT"
 
     echo ""
-    echo "Installing Moodle database..."
+    echo "Installing database..."
     ssh -q -o StrictHostKeyChecking=no -o BatchMode=yes \
         "$USER@${RUNTIME}.runtime.mpd.test" \
         "cd /srv/projects/${PROJECT} && mdl-install --agree-license --adminpass=Admin1234! --adminemail=admin@example.com"
 fi
 
 echo ""
-echo "  Moodle $MAJOR.$MINOR is ready."
+echo "  $FLAVOR $TAG is ready."
 echo ""
 echo "  URL:      $URL"
 echo "  Login:    admin"

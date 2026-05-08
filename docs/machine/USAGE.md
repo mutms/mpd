@@ -90,13 +90,13 @@ Verify with `ping mpd.test` and `curl -sS https://mpd.test/`.
 Inside the VM, `demo` creates a fully installed Moodle site in one shot:
 
 ```bash
-demo moodle52
+demo moodle v5.2.0
 ```
 
-This clones Moodle 5.2 from GitHub, provisions the runtime, runs the
+This clones Moodle 5.2.0 from GitHub by tag, provisions the runtime, runs the
 database installer, and prints the URL and admin credentials when done.
 Takes a few minutes. Idempotent — re-running just starts the existing
-project.
+project. Other supported flavors: `demo mutms <tag>`.
 
 ### Manual setup (full control)
 

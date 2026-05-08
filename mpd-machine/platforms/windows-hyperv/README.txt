@@ -83,8 +83,8 @@ When setup finishes:
     portal (project list, Adminer database UI, etc.).
 
   * The shell greets you with a short welcome message and a hint to
-    run 'demo moodle52'. Do that to get a fully installed Moodle 5.2
-    site in one command -- URL and credentials printed at the end.
+    run 'demo moodle v5.2.0'. Do that to get a fully installed Moodle
+    5.2.0 site in one command -- URL and credentials printed at the end.
 
   * For day-to-day usage see docs/machine/USAGE.md in the mpd repo.
 
