@@ -12,6 +12,23 @@ function h(string $s): string {
 }
 
 /**
+ * Display name for the portal heading + title. Written by Swift's
+ * Mpd.Service.Portal.setup() to /mpd-state/portal/display-name.txt:
+ *   • mpd-machine: VM hostname (e.g. "mpd-machine-158")
+ *   • mpd-desktop: machineName (e.g. "mpd-desktop" or "mpd-desktop-foo")
+ * Falls back to "mpd" if the file is missing (older setups, transient
+ * read errors).
+ */
+function displayName(): string {
+    $path = '/mpd-state/portal/display-name.txt';
+    if (is_readable($path)) {
+        $name = trim((string)@file_get_contents($path));
+        if ($name !== '') return $name;
+    }
+    return 'mpd';
+}
+
+/**
  * Cheap state hash — md5 of name+mtime+size for every file the portal reads.
  * Used by the client to detect changes without re-rendering the full page,
  * so an open popover survives idle polling.
@@ -295,7 +312,7 @@ foreach ($services as $svc) {
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>mpd</title>
+    <title><?= h(displayName()) ?></title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -305,7 +322,7 @@ foreach ($services as $svc) {
             margin: 0;
             padding: 2rem;
         }
-        h1 { font-size: 1.2rem; margin: 0 0 2rem; color: #333; }
+        h1 { font-size: 2rem; font-weight: 700; margin: 0 0 2rem; color: #111; letter-spacing: -0.01em; }
         h2 { font-size: 0.85rem; color: #999; margin: 1.5rem 0 0.5rem; text-transform: uppercase; letter-spacing: 0.06em; }
         table { border-collapse: collapse; }
         td { padding: 0.25rem 1.5rem 0.25rem 0; vertical-align: top; }
@@ -403,7 +420,7 @@ foreach ($services as $svc) {
     </style>
 </head>
 <body>
-<h1>mpd</h1>
+<h1><?= h(displayName()) ?></h1>
 
 <h2>Projects</h2>
 <?php if (empty($projects)): ?>

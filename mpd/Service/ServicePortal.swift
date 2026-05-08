@@ -83,6 +83,25 @@ extension Mpd.Service.Portal {
         try fm.createDirectory(atPath: portalCertsDir, withIntermediateDirectories: true)
         try fm.createDirectory(atPath: certOpsDir, withIntermediateDirectories: true)
 
+        // Display name for the portal's H1 / title. The portal already mounts
+        // machineDir at /mpd-state read-only, so the file is reachable inside
+        // the container without a new bind mount. PHP reads it on every
+        // request — refreshes pick up changes immediately.
+        //   • mpd-machine: VM hostname (cloud-init set this to mpd-machine-NN
+        //     on the polished platforms; generic-vm reflects whatever the
+        //     user installed).
+        //   • mpd-desktop: machineName (mpd-desktop[-suffix] from State).
+        let displayName: String
+        if let identity = try? Mpd.Core.Platform.load(), identity.platform == .desktop {
+            displayName = machineName
+        } else {
+            displayName = ProcessInfo.processInfo.hostName
+        }
+        try? displayName.write(
+            toFile: "\(portalStateDir)/display-name.txt",
+            atomically: true,
+            encoding: .utf8)
+
         let proxyArtifactsChanged = try ensurePortalProxyArtifacts(
             vhostTemplatePath: vhostTemplate,
             portalStateDir: portalStateDir,
