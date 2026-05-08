@@ -191,6 +191,9 @@ resize_rootfs: true
 package_update: true
 packages:
   - git
+  - curl
+  - libnss3-tools
+  - qemu-guest-agent
 
 runcmd:
   - ssh-keygen -A
@@ -354,9 +357,10 @@ set -e
 # `boot-finished` gets written either way. Defensively ensure git is present
 # before we try to clone; --retries lets a transient mirror error self-heal.
 if ! command -v git >/dev/null 2>&1; then
-    echo "  git missing (cloud-init apt likely flaked) — installing now"
+    echo "  packages missing (cloud-init apt likely flaked) — installing now"
     sudo apt-get -o Acquire::Retries=3 update
-    sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends git
+    sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
+        git curl libnss3-tools qemu-guest-agent
 fi
 
 mkdir -p "$HOME/Developer"

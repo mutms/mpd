@@ -135,6 +135,13 @@ users:
       - $SshPubKey
 
 ssh_pwauth: false
+
+package_update: true
+packages:
+  - git
+  - curl
+  - libnss3-tools
+  - hyperv-daemons
 "@, $utf8NoBom)
 
 [System.IO.File]::WriteAllText((Join-Path $CidataDir "network-config"), @"
@@ -216,7 +223,8 @@ Send-SshScript -User $VmUser -RemoteHost $VmIp -Script @"
 set -e
 if ! command -v git >/dev/null 2>&1; then
     sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -qq
-    sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends git
+    sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
+        git curl libnss3-tools hyperv-daemons
 fi
 mkdir -p "`$HOME/Developer"
 mkdir -p "`$HOME/.ssh"
@@ -292,8 +300,7 @@ Send-SshScript -User $VmUser -RemoteHost $VmIp -Script @"
 set -e
 sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -qq
 sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
-    build-essential pkg-config make swiftlang \
-    git curl libnss3-tools hyperv-daemons
+    build-essential pkg-config make swiftlang
 if ! command -v swift >/dev/null 2>&1; then
     echo "Swift not on PATH after install" >&2; exit 1
 fi
