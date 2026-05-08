@@ -250,6 +250,24 @@ APPLESCRIPT
 
 ok "VM created"
 
+# --- Enable memory ballooning ---
+# UTM's QEMU backend leaves virtio-balloon off for AppleScript-created VMs,
+# so the full ${VM_MEMORY} MiB sits pinned in macOS even when the guest is
+# idle. Adding the balloon device lets macOS reclaim unused guest pages.
+
+step "Enabling memory ballooning"
+
+osascript <<APPLESCRIPT
+tell application "UTM"
+    set vm to virtual machine named "${VM_NAME}"
+    set config to configuration of vm
+    set qemu additional arguments of config to {{argument string:"-device"}, {argument string:"virtio-balloon-pci"}}
+    update configuration of vm with config
+end tell
+APPLESCRIPT
+
+ok "virtio-balloon-pci attached"
+
 # --- Start the VM ---
 
 step "Starting VM (cloud-init runs on first boot — takes 1-3 minutes)"
