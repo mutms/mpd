@@ -45,6 +45,14 @@ Real possibilities, not committed work.
   source checkout at `/srv/projects/<project>/`. Useful when a demo or
   experiment is fully thrown away and disk space matters.
 
+- **Pre-built runtime images** — publish versioned OCI images for the
+  php, node, and trixie runtimes to a registry (GitHub Container
+  Registry or similar) so `mpd --runtime-create` pulls instead of
+  builds. Cuts the first-run wait from several minutes to seconds.
+  `demo` becomes near-instant after the image pull. `make images`
+  builds and pushes all runtime images; CI runs it on release tags.
+  Local `--runtime-build` flag kept for dev iteration.
+
 - **`mpd --gc`** — sweep unreferenced DB containers, orphaned data
   dirs, dnsmasq records for deleted projects. Open question: destructive
   default or interactive plan + `--yes`?
