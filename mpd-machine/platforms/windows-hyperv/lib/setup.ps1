@@ -131,7 +131,8 @@ if ($vms.Count -gt 0) {
     # If the route points to an octet that isn't a known mpd VM (stale route),
     # fall back to the Running VM, or the first VM in the list.
     if (-not $defaultOctet -or -not ($vms | Where-Object { $_.Name -eq "$VmNamePrefix$defaultOctet" })) {
-        $fallback = ($vms | Where-Object { $_.State -eq 'Running' } | Select-Object -First 1) ?? $vms[0]
+        $running  = $vms | Where-Object { $_.State -eq 'Running' } | Select-Object -First 1
+        $fallback = if ($running) { $running } else { $vms[0] }
         $defaultOctet = if ($fallback.Name -match "$([regex]::Escape($VmNamePrefix))(\d+)$") { [int]$Matches[1] } else { $null }
     }
     $prompt = if ($defaultOctet) { "Enter VM number [$defaultOctet]" } else { "Enter VM number" }
@@ -277,7 +278,8 @@ if ($vmRecord) {
 # ── Done ──────────────────────────────────────────────────────────────────────
 
 Write-Host ""
-Write-Host "===========================================" -ForegroundColor Green
-Write-Host "  Look for 'mpd-machine' on your desktop." -ForegroundColor Green
-Write-Host "===========================================" -ForegroundColor Green
+Write-Host "=============================================" -ForegroundColor Green
+Write-Host "  Your mpd-machine is ready!"            -ForegroundColor Green
+Write-Host "  Double-click the desktop icon to connect." -ForegroundColor Green
+Write-Host "=============================================" -ForegroundColor Green
 Write-Host ""
