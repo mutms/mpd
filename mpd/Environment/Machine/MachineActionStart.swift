@@ -42,6 +42,23 @@ extension Mpd.Environment.Action.Start {
         step("DNS resolution")
         Mpd.Environment.Integration.verifyDNS()
 
+        // Restore runtimes that had running projects before the last shutdown.
+        let runtimesToRestore = Set(
+            Mpd.Runtime.State.loadProjects().projects
+                .filter { $0.status == .running && !$0.runtimeName.isEmpty }
+                .map { $0.runtimeName }
+        )
+        for runtimeName in runtimesToRestore.sorted() {
+            let cName = Mpd.Runtime.containerName(runtimeName)
+            guard Mpd.Podman.exists(cName), !Mpd.Podman.running(cName) else { continue }
+            step("Restoring runtime '\(runtimeName)'")
+            do {
+                try Mpd.Runtime.start(runtimeName)
+            } catch {
+                print("  Warning: could not restore runtime '\(runtimeName)': \(error)")
+            }
+        }
+
         print("""
 
         \u{001B}[1;32m✓ mpd started.\u{001B}[0m
