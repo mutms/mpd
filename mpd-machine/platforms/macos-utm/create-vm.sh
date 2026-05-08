@@ -30,8 +30,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # --- Configuration ---
-VM_MEMORY=12288     # MiB (12 GB) — can be changed later in UTM (stop VM > Edit > System)
-VM_CPUS=4           # can be changed later in UTM (stop VM > Edit > System)
+VM_CPUS=4                   # can be changed later in UTM (stop VM > Edit > System)
+VM_MEMORY_DEFAULT=12        # GB — prompted at runtime; upper bound only (virtio-balloon + free-page-reporting let macOS reclaim unused pages); can be changed later in UTM (stop VM > Edit > System)
 VM_DISK_SIZE_DEFAULT=200    # GB — prompted at runtime; cloud image is ~3 GB, resized to the chosen size before UTM imports it into the VM bundle
 VM_OCTET_DEFAULT=158        # last octet of vmnet IP — prompted at runtime; drives VM name + IP + in-VM hostname
 VM_GATEWAY="192.168.64.1"   # vmnet shared bridge gateway (fixed by macOS vmnet.framework)
@@ -111,6 +111,42 @@ if "$UTMCTL" status "$VM_NAME" >/dev/null 2>&1; then
     die "VM '$VM_NAME' already exists in UTM. Delete it first or pick a different octet."
 fi
 
+# --- Prompt for username on the VM ---
+# Mirrors windows-hyperv/lib/setup.ps1: derive a guess from the host login
+# (lowercased, stripped to a-z0-9-) and let the user override. Cloud-init
+# creates this user inside the VM with NOPASSWD sudo.
+
+VM_USER_GUESS=$(whoami | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-')
+[ -z "$VM_USER_GUESS" ] && VM_USER_GUESS="dev"
+
+VM_USER=""
+while [ -z "$VM_USER" ]; do
+    read -r -p "Username on the VM [${VM_USER_GUESS}]: " VM_USER
+    VM_USER="${VM_USER:-$VM_USER_GUESS}"
+    if ! [[ "$VM_USER" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+        echo "  Username must start with a letter or digit and contain only a-z, 0-9, hyphens. Try again."
+        VM_USER=""
+    fi
+done
+ok "Username: ${VM_USER}"
+
+# --- Prompt for VM memory ---
+# Maximum RAM the VM may use. virtio-balloon + free-page-reporting let macOS
+# reclaim unused guest pages, so this is an upper bound rather than a fixed
+# reservation — `top` inside the VM will still show the full amount.
+
+VM_MEMORY_GB=""
+while [ -z "$VM_MEMORY_GB" ]; do
+    read -r -p "VM memory in GB (maximum) [${VM_MEMORY_DEFAULT}]: " VM_MEMORY_GB
+    VM_MEMORY_GB="${VM_MEMORY_GB:-$VM_MEMORY_DEFAULT}"
+    if ! [[ "$VM_MEMORY_GB" =~ ^[0-9]+$ ]] || [ "$VM_MEMORY_GB" -lt 2 ]; then
+        echo "  Memory must be a whole number of GB ≥ 2. Try again."
+        VM_MEMORY_GB=""
+    fi
+done
+VM_MEMORY_MIB=$((VM_MEMORY_GB * 1024))
+ok "Memory: ${VM_MEMORY_GB} GB (${VM_MEMORY_MIB} MiB)"
+
 # --- Prompt for disk size ---
 
 VM_DISK_SIZE=""
@@ -164,7 +200,6 @@ ok "Disk extracted and resized to ${VM_DISK_SIZE} GB (sparse)"
 step "Creating cloud-init configuration"
 
 SSH_PUB_KEY=$(cat "$SSH_KEY")
-MAC_USER=$(whoami)
 
 CIDATA_DIR="${TEMP_DIR}/cidata"
 mkdir -p "$CIDATA_DIR"
@@ -180,7 +215,7 @@ hostname: ${VM_NAME}
 manage_etc_hosts: true
 
 users:
-  - name: ${MAC_USER}
+  - name: ${VM_USER}
     sudo: ALL=(ALL) NOPASSWD:ALL
     shell: /bin/bash
     lock_passwd: true
@@ -236,7 +271,7 @@ tell application "UTM"
         configuration:{ ¬
             name:"${VM_NAME}", ¬
             architecture:"aarch64", ¬
-            memory:${VM_MEMORY}, ¬
+            memory:${VM_MEMORY_MIB}, ¬
             cpu cores:${VM_CPUS}, ¬
             drives:{ ¬
                 {source:diskFile}, ¬
@@ -261,12 +296,12 @@ osascript <<APPLESCRIPT
 tell application "UTM"
     set vm to virtual machine named "${VM_NAME}"
     set config to configuration of vm
-    set qemu additional arguments of config to {{argument string:"-device"}, {argument string:"virtio-balloon-pci"}}
+    set qemu additional arguments of config to {{argument string:"-device"}, {argument string:"virtio-balloon-pci,free-page-reporting=on"}}
     update configuration of vm with config
 end tell
 APPLESCRIPT
 
-ok "virtio-balloon-pci attached"
+ok "virtio-balloon-pci attached (free-page-reporting on)"
 
 # --- Start the VM ---
 
@@ -300,7 +335,6 @@ done
 
 step "Waiting for SSH at ${VM_IP} (cloud-init is installing packages)"
 
-VM_USER="$MAC_USER"
 elapsed=0
 timeout=300
 while [ $elapsed -lt $timeout ]; do

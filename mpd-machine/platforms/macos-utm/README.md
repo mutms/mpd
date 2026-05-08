@@ -31,7 +31,7 @@ cd ~/Developer/mpd
 bash mpd-machine/platforms/macos-utm/create-vm.sh
 ```
 
-The script prompts for two values:
+The script prompts for four values:
 
 - **Last IP octet** on the vmnet shared bridge (default `158`). Drives
   the VM name (`mpd-machine-158`), its static IP (`192.168.64.158`),
@@ -39,6 +39,16 @@ The script prompts for two values:
   to add concurrent VMs side-by-side (e.g. `.158` + `.159`); each gets
   its own UTM display name, IP, and prompt name so shell sessions and
   PHPStorm connections are unambiguous.
+- **Username on the VM** (defaults to your macOS login name,
+  lowercased and stripped to `a-z 0-9 -`). Cloud-init creates this
+  user with NOPASSWD sudo and your SSH key in `authorized_keys`.
+  Must start with a letter or digit and contain only `a-z`, `0-9`,
+  hyphens.
+- **VM memory** in GB (default `12`). Maximum RAM the VM may use;
+  `create-vm.sh` attaches `virtio-balloon-pci,free-page-reporting=on`
+  so macOS reclaims pages the guest isn't using. The guest still sees
+  the full amount in `top` — it's an upper bound, not a fixed
+  reservation. Can be changed later in UTM (stop VM > Edit > System).
 - **Disk size** in GB (default `200`). The cloud image is ~3 GB and
   is resized to the chosen size before UTM imports it.
 
