@@ -2,8 +2,8 @@
 
 Automation for `mpd-machine` on macOS using **UTM with its QEMU
 backend** (arm64). For the platform-agnostic bootstrap (any Debian
-Trixie VM you've already created yourself), see
-`../generic-vm/README.md`.
+Trixie VM you've already created yourself), see the generic-vm
+platform at https://github.com/mutms/mpd
 
 This directory is the supported flavor for laptop-driven Moodle plugin
 development on Apple Silicon. QEMU+SPICE gives us clipboard sync,
@@ -55,13 +55,13 @@ network config so the bootstrap automation has a known IP to `scp`/`ssh`
 to before the VM is fully up. The same IP is recorded as `MPD_VM_IP`
 in the VM's `~/Developer/mpd/conf/platform.env`, and the laptop-side
 recipes that `mpd --setup-info` prints reuse it. If you'd rather run
-DHCP, follow `../generic-vm/README.md` instead — UTM's QEMU GUI shows
+DHCP, follow the generic-vm guide (https://github.com/mutms/mpd) instead — UTM's QEMU GUI shows
 DHCP-leased IPs in the VM details panel.
 
 After the script finishes, SSH into the VM and run `mpd --setup`. The
 post-bootstrap `mpd --setup` / `--status` / verification steps are the
-same as on any VM platform — see `../generic-vm/README.md` §"Run setup"
-and §"Verify".
+same as on any VM platform — see the generic-vm guide §"Run setup"
+and §"Verify" at https://github.com/mutms/mpd
 
 ### Switching between VMs sharing an IP
 

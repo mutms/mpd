@@ -10,8 +10,8 @@ hypervisor.
 
 If you're on macOS + UTM and want the VM created for you (cloud-image
 path with cloud-init, no installer prompts), start with
-`../macos-utm/README.md` instead. Its `create-vm.sh` ends where this guide
-begins. Note: the macOS + UTM automation is arm64-only.
+the macos-utm platform (https://github.com/mutms/mpd) instead. Its
+`create-vm.sh` ends where this guide begins. Note: arm64-only.
 
 > **Supported install only.** We test exclusively against the Debian 13
 > Trixie netinst ISO (`debian-13.4.0-arm64-netinst.iso` or
@@ -295,7 +295,7 @@ When `--setup` produces artifacts the host needs:
 If you lose the laptop's private SSH key, recovery depends on what console
 access the hypervisor offers (single-user mode, rescue boot, snapshot
 restore). The UTM-specific recovery procedure — including the
-serial-console gotcha — is in `../macos-utm/README.md`.
+serial-console gotcha — is in the macos-utm guide at https://github.com/mutms/mpd
 
 For other hypervisors: boot into single-user mode (typically by appending
 `init=/bin/bash` to the kernel command line in GRUB), `mount -o remount,rw
