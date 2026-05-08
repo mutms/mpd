@@ -212,7 +212,7 @@ function Write-MpdCurrentEnv {
     # Current pointer -- overwritten on every create/switch/reverify.
     [System.IO.File]::WriteAllText((Join-Path $MpdUserDir "current.env"), $content, $utf8)
 
-    $sshCmd = Join-Path $MpdUserDir "ssh-mpd.cmd"
+    $sshCmd = Join-Path $MpdUserDir "mpd-machine.cmd"
     if (-not (Test-Path $sshCmd)) {
         [System.IO.File]::WriteAllText($sshCmd, "@echo off`r`nssh mpd-machine`r`n", $utf8)
     }
