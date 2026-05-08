@@ -215,7 +215,7 @@ for h in "${VM_IP}" "${VM_NAME}"; do
     ssh-keygen -R "$h" >/dev/null 2>&1 || true
 done
 
-step "Waiting for SSH at ${VM_IP} (cloud-init is installing packages)"
+step "Waiting for SSH at ${VM_IP} (VM first boot — user creation, disk grow)"
 wait_for_ssh "$VM_IP" "$VM_USER" 300 \
     || die "SSH not available after 300s. Check the VM in UTM — cloud-init may still be running."
 ok "SSH ready (${VM_USER}@${VM_IP})"
@@ -258,11 +258,12 @@ step "Cloning mpd repository in VM"
 
 ssh_cmd "$VM_IP" "$VM_USER" "export MPD_REPO=$(printf '%q' "$MPD_REPO"); bash -se" <<'EOF'
 set -e
-# cloud-init's package install can silently miss on flaky Debian mirrors —
-# `boot-finished` gets written either way. Defensively ensure git is present
-# before we try to clone; --retries lets a transient mirror error self-heal.
+# Debian generic cloud image is minimal — git/curl/libnss3-tools/qemu-guest-agent
+# are not preinstalled. Install them now (we don't put apt installs in cloud-init
+# itself because cloud-init's package phase is racy on flaky Debian mirrors;
+# doing it here gives us retries and visible output).
 if ! command -v git >/dev/null 2>&1; then
-    echo "    packages missing (cloud-init apt likely flaked) — installing now"
+    echo "    installing base packages (git, curl, libnss3-tools, qemu-guest-agent)"
     sudo apt-get -o Acquire::Retries=3 update
     sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
         git curl libnss3-tools qemu-guest-agent
