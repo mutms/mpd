@@ -95,6 +95,13 @@ try {
         Import-Certificate -FilePath $TempCert -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
         Write-Ok "CA cert imported (thumbprint $thumbprint)"
     }
+
+    # Record the thumbprint so uninstall.ps1 can remove this exact cert
+    # without scanning the keychain by subject string.
+    $mpdUserDir = Join-Path $env:USERPROFILE "mpd"
+    $caSha1Path = Join-Path $mpdUserDir "ca.sha1"
+    New-Item -ItemType Directory -Force -Path $mpdUserDir | Out-Null
+    Set-Content -Path $caSha1Path -Value $thumbprint -Encoding UTF8 -NoNewline
 } finally {
     Remove-Item $TempCert -Force -ErrorAction SilentlyContinue
 }

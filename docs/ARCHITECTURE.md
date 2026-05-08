@@ -76,6 +76,71 @@ text in [`AGENTS.md` §"Mandatory privilege rule"](../AGENTS.md), with
 the in-depth tool-level explanation in §7 below. Enforced by `make
 check-privilege-boundary`.
 
+### Sister rule: host-side fenced `sudo` (macos-utm bootstrap)
+
+Bootstrap-stage shell scripts under
+`mpd-machine/platforms/macos-utm/lib/` run on the macOS host (not in a
+container or VM) and need `sudo` for three operations: adding a route
+to the container subnet, writing `/etc/resolver/mpd.test`, and
+importing the mpd CA into the System keychain. The pattern these
+scripts follow:
+
+1. **Detect first, no `sudo`.** Read current state with unprivileged
+   tools (`route get`, `cat /etc/resolver/...`,
+   `security find-certificate -a -Z`). Decide which operations are
+   actually needed.
+2. **Single fenced privileged block.** All `sudo` calls live in one
+   contiguous block, gated by a single `sudo -v` (with a one-line
+   explanation of *which* operations need it printed first), and
+   terminated by an explicit `sudo -k` to invalidate the cached
+   credential immediately.
+3. **No `sudo` outside the fence.** Discovery, reporting, and state
+   writes (`~/.mpd-machine/`, `~/.ssh/config`, `~/Desktop/`) all run
+   as the user with no cached creds — a later bug cannot accidentally
+   piggy-back on the elevated session.
+4. **EXIT trap as backstop.** `trap 'sudo -k' EXIT` ensures cached
+   creds are dropped even if the script errors before reaching the
+   explicit `sudo -k`.
+5. **Skip the fence entirely** when nothing needs to change. On a
+   re-run where route, resolver, and CA are already correct, the user
+   sees no password prompt at all.
+6. **Generate the CA on the host before VM creation** when possible.
+   `prepare_host_ca` in `lib/common.sh` either reuses an existing CA
+   at `~/Developer/mpd/conf/caroot/` or generates a fresh one (in
+   `caroot/` or in a per-platform scratch dir) using the bash twin of
+   `Mpd.Environment.Certificate.generateCA`
+   (`mpd/Environment/Certificate.swift`). The CA is then uploaded
+   into the VM, where mpd's reuse check
+   (`MachineActionSetup.swift:331`) picks it up. With this pattern
+   route, resolver, **and** CA-trust all collapse into a single
+   upfront fenced block, after which the long unattended VM-creation
+   phase runs holding no sudo creds. The two CA generators —
+   `generate_mpd_ca` (bash) and `generateCA` (Swift) — must stay
+   in sync; the file-level comments in both call this out.
+7. **Optional dev override.** Before the fenced block opens,
+   `print_sudo_recipe` in `lib/common.sh` lists the exact runnable
+   commands and lets the dev choose to run them in another terminal
+   instead of providing a password to the script. The recipe ends
+   with a trailing `sudo -k` so the dev's terminal also drops cached
+   creds. Idempotent predicates let the script re-check after the
+   prompt and skip whatever the dev already did — the fenced block
+   then runs only what's actually still missing, possibly nothing.
+
+Reference implementations: `lib/setup.sh` (new-VM path: upfront fence,
+host-first CA), `lib/configure-client.sh` (existing-VM and `start.sh`
+warm path), and `lib/uninstall.sh` (teardown path).
+
+This rule applies only to **macos-utm bootstrap scripts**:
+
+- **windows-hyperv** runs each entry script wholesale via UAC
+  elevation (the `.cmd` shim's `Start-Process -Verb RunAs` is the
+  privilege gate); the whole script body is the "fenced section" by
+  design, and there is no per-operation `sudo`.
+- **generic-vm** is a manual bootstrap — the user types each command
+  themselves, and there are no scripts to fence.
+- **Inside the VM and runtime containers**, the previous sister rule
+  applies (per-command `sudo`, no whole-script elevation).
+
 ## 4) Repository Directory Contract
 
 Fixed source checkout path: `~/Developer/mpd`
@@ -466,7 +531,7 @@ and Platform can share the same file without clobbering each other.
 | Path | Writer | Values | Behavior |
 |---|---|---|---|
 | `mpd-desktop` | `Mpd.Core.Platform.ensureWritten(...)` from `DesktopActionSetup` | `desktop`, `macos`, `""` | bootstrap on first `mpd --setup`; no prompt |
-| `mpd-machine` via UTM | `mpd-machine/platforms/macos-utm/create-vm.sh` (over SSH) | `macos-utm`, `macos`, `${VM_IP}` | written before `mpd --setup` runs in the VM |
+| `mpd-machine` via UTM | `mpd-machine/platforms/macos-utm/lib/create-vm.sh` (over SSH) | `macos-utm`, `macos`, `${VM_IP}` | written before `mpd --setup` runs in the VM |
 | `mpd-machine` via Windows/Hyper-V | `mpd-machine/platforms/windows-hyperv/lib/create-vm.ps1` (over SSH) | `windows-hyperv`, `windows`, `${VmIp}` | written before `mpd --setup` runs in the VM |
 | `mpd-machine` via generic VM | `mpd-machine/platforms/generic-vm/provision-vm.sh` | `generic-vm` + interactive prompt for `MPD_CLIENT_OS` and `MPD_VM_IP` | prompts at the very start of the user phase; idempotent (skips if all keys present) |
 

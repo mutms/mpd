@@ -167,37 +167,71 @@ function Wait-ForSsh {
 
 # ── SSH config + current-VM state ─────────────────────────────────────────────
 
+# Managed `Host mpd-machine ...` block in ~/.ssh/config is bracketed with
+# explicit start/end markers so re-runs are idempotent (the previous comment-
+# only delimiter form leaked the `Host mpd-machine` line on every switch).
+
+$SshBlockStart = "# >>> mpd-machine (managed by windows-hyperv) >>>"
+$SshBlockEnd   = "# <<< mpd-machine <<<"
+
+# Strip any existing mpd-machine block (new marker form OR legacy formats
+# left over from earlier setup runs). Returns kept lines as a List[string].
+function Strip-MpdSshConfigBlock {
+    param([string]$Path)
+    $kept = [System.Collections.Generic.List[string]]::new()
+    if (-not (Test-Path $Path)) { return $kept }
+    $inMarker    = $false
+    $inHostBlock = $false
+    foreach ($line in (Get-Content $Path)) {
+        if ($line -eq $SshBlockStart)              { $inMarker = $true; continue }
+        if ($inMarker -and $line -eq $SshBlockEnd) { $inMarker = $false; continue }
+        if ($inMarker)                             { continue }
+        # Legacy `# mpd-machine (...)` standalone comment — drop.
+        if ($line -match "^# mpd-machine\b")       { continue }
+        # Legacy `Host mpd-machine ...` block — drop start + indented body.
+        if ($line -match "^Host\s+mpd-machine\b")  { $inHostBlock = $true; continue }
+        if ($inHostBlock) {
+            if ($line -match "^\s+")               { continue }
+            $inHostBlock = $false
+        }
+        $kept.Add($line)
+    }
+    while ($kept.Count -gt 0 -and $kept[$kept.Count - 1].Trim() -eq '') {
+        $kept.RemoveAt($kept.Count - 1)
+    }
+    return $kept
+}
+
 function Set-MpdSshConfig {
     param([string]$VmName, [string]$VmIp, [string]$VmUser)
     $dir  = Join-Path $env:USERPROFILE ".ssh"
     $path = Join-Path $dir "config"
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
 
+    $kept = Strip-MpdSshConfigBlock -Path $path
+
     $newLines = @(
-        "# mpd-machine ($VmName)",
+        $SshBlockStart,
         "Host mpd-machine $VmName",
         "    HostName $VmIp",
         "    User $VmUser",
-        "    StrictHostKeyChecking no"
+        "    StrictHostKeyChecking no",
+        $SshBlockEnd
     )
-
-    if (Test-Path $path) {
-        $kept = [System.Collections.Generic.List[string]]::new()
-        $skip = $false
-        foreach ($line in (Get-Content $path)) {
-            if ($line -match "^# mpd-machine\b") { $skip = $true; continue }
-            if ($skip -and $line -match "^Host\s")  { $skip = $false }
-            if (-not $skip) { $kept.Add($line) }
-        }
-        while ($kept.Count -gt 0 -and $kept[$kept.Count - 1].Trim() -eq '') {
-            $kept.RemoveAt($kept.Count - 1)
-        }
+    if ($kept.Count -gt 0) {
         $all = @($kept) + @('') + $newLines
-        [System.IO.File]::WriteAllLines($path, $all, [System.Text.UTF8Encoding]::new($false))
     } else {
-        [System.IO.File]::WriteAllLines($path, $newLines, [System.Text.UTF8Encoding]::new($false))
+        $all = $newLines
     }
+    [System.IO.File]::WriteAllLines($path, $all, [System.Text.UTF8Encoding]::new($false))
     Write-Ok "SSH config: 'ssh mpd-machine' -> $VmIp ($VmUser)"
+}
+
+function Remove-MpdSshConfig {
+    $path = Join-Path $env:USERPROFILE ".ssh\config"
+    if (-not (Test-Path $path)) { return }
+    $kept = Strip-MpdSshConfigBlock -Path $path
+    [System.IO.File]::WriteAllLines($path, $kept, [System.Text.UTF8Encoding]::new($false))
 }
 
 function Write-MpdCurrentEnv {

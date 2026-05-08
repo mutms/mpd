@@ -72,7 +72,8 @@ model.
   your desktop. No WSL, no manual steps.
 
 **`mpd-machine` on macOS**
-- A Debian Trixie VM via UTM — `create-vm.sh` does the full setup.
+- A Debian Trixie VM via UTM — `setup.command` does the full setup,
+  including macOS networking and a desktop SSH shortcut.
 - Or any Debian Trixie VM you created yourself (netinst ISO, cloud
   image, KVM, etc.) — follow the generic-vm guide.
 - Don't run `mpd-machine` on a Linux box you care about. mpd makes

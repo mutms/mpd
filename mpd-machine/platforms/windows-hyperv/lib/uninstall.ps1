@@ -58,11 +58,32 @@ if ($route) {
 
 # ── Remove CA certificate ─────────────────────────────────────────────────────
 
-$certs = Get-ChildItem Cert:\LocalMachine\Root |
+# Prefer the exact thumbprint recorded on install (~/mpd/ca.sha1). Fall back
+# to a subject-pattern sweep so we still clean up VMs created before that
+# tracking existed, or any stale leftovers from prior installs.
+$caSha1Path = Join-Path $env:USERPROFILE "mpd\ca.sha1"
+$tracked    = $false
+if (Test-Path $caSha1Path) {
+    $thumbprint = (Get-Content $caSha1Path -Raw).Trim()
+    if ($thumbprint) {
+        $cert = Get-ChildItem Cert:\LocalMachine\Root |
+                Where-Object { $_.Thumbprint -eq $thumbprint }
+        if ($cert) {
+            Remove-Item "Cert:\LocalMachine\Root\$thumbprint" -ErrorAction SilentlyContinue
+            Write-Host "mpd CA certificate removed (thumbprint $thumbprint)."
+            $tracked = $true
+        }
+    }
+}
+$stale = Get-ChildItem Cert:\LocalMachine\Root |
          Where-Object { $_.Subject -match "mpd\.test local development CA" }
-if ($certs) {
-    $certs | ForEach-Object { Remove-Item "Cert:\LocalMachine\Root\$($_.Thumbprint)" }
-    Write-Host "mpd CA certificate removed."
+if ($stale) {
+    $stale | ForEach-Object { Remove-Item "Cert:\LocalMachine\Root\$($_.Thumbprint)" -ErrorAction SilentlyContinue }
+    if ($tracked) {
+        Write-Host "$($stale.Count) stale mpd CA certificate(s) also removed."
+    } else {
+        Write-Host "mpd CA certificate(s) removed."
+    }
 }
 
 # ── Remove switch, NAT, IP ────────────────────────────────────────────────────
@@ -93,17 +114,8 @@ if (Test-Path $MpdUserDir) {
 
 # ── Remove SSH config entry ───────────────────────────────────────────────────
 
-$sshConfig = "$env:USERPROFILE\.ssh\config"
-if (Test-Path $sshConfig) {
-    $lines      = Get-Content $sshConfig
-    $filtered   = [System.Collections.Generic.List[string]]::new()
-    $inBlock    = $false
-    foreach ($line in $lines) {
-        if ($line -match '^\s*Host\s+mpd-machine\s*$') { $inBlock = $true; continue }
-        if ($inBlock -and $line -match '^\s*Host\s+') { $inBlock = $false }
-        if (-not $inBlock) { $filtered.Add($line) }
-    }
-    [System.IO.File]::WriteAllLines($sshConfig, $filtered)
+if (Test-Path "$env:USERPROFILE\.ssh\config") {
+    Remove-MpdSshConfig
     Write-Host "SSH config entry removed."
 }
 

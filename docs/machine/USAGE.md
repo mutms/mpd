@@ -16,8 +16,10 @@ Pick the path that matches your host:
 
 - **macOS + UTM (automated)** —
   [`platforms/macos-utm/`](../../mpd-machine/platforms/macos-utm/README.md).
-  `create-vm.sh` does VM creation, cloud-init, repo clone, and `mpd`
-  build in one shot.
+  Double-click `setup.command` for end-to-end VM creation, cloud-init,
+  repo clone, `mpd` build, and macOS networking (route, resolver, CA);
+  `start.command` / `stop.command` / `uninstall.command` cover the
+  lifecycle.
 - **Windows + Hyper-V (automated)** —
   [`platforms/windows-hyperv/`](../../mpd-machine/platforms/windows-hyperv/README.txt).
   `setup.cmd` does the same end-to-end and also configures Windows

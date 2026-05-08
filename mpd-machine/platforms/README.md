@@ -9,7 +9,7 @@ mpd flow is identical regardless of which path you took to get the VM.
 
 | Platform | Status | Path | What it gives you |
 |---|---|---|---|
-| **macOS + UTM** (Apple Silicon) | **Ships** | [`macos-utm/`](macos-utm/README.md) | One-shot `create-vm.sh`: downloads the Debian cloud image, prepares cloud-init, imports into UTM, builds `bin/mpd` inside the VM. End state: `mpd --setup` ready. |
+| **macOS + UTM** (Apple Silicon) | **Ships** | [`macos-utm/`](macos-utm/README.md) | Double-click `setup.command`: downloads the Debian cloud image, prepares cloud-init, imports into UTM, builds `bin/mpd` inside the VM, and configures macOS networking (route, NRPT-equivalent DNS resolver, CA trust). `start.command` / `stop.command` / `uninstall.command` cover the lifecycle. |
 | **Any Debian Trixie VM** (UTM, QEMU, libvirt/KVM, Hyper-V, VirtualBox, cloud, bare hardware sandbox) | **Ships** | [`generic-vm/`](generic-vm/README.md) | Manual five-step bootstrap from the official netinst ISO (`debian-13.4.0-{arm64,amd64}-netinst.iso`). Works anywhere a Debian VM does. |
 | **Windows + Hyper-V** | **Ships** | [`windows-hyperv/`](windows-hyperv/README.txt) | Automated PowerShell bootstrap: `setup.cmd` downloads the Debian cloud image, provisions a Hyper-V Generation 2 VM with cloud-init, builds `bin/mpd` inside the VM, and configures Windows networking (route, NRPT DNS, CA certificate). |
 

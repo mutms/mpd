@@ -68,7 +68,10 @@ When creating a new VM, the script:
   6. Configures Windows networking: static route to the container
      subnet, DNS rule for *.mpd.test, and imports the mpd CA
      certificate so browsers trust https://mpd.test without warnings.
-  7. Creates helper scripts in %USERPROFILE%\mpd\ and a desktop
+  7. Pre-warms the demo stack: builds the PHP runtime image and creates
+     a postgres:latest DB container inside the VM so the first
+     "demo moodle v5.2.0" doesn't pay the build/pull cost.
+  8. Creates helper scripts in %USERPROFILE%\mpd\ and a desktop
      shortcut "mpd-machine" for quick access.
 
 The whole process takes 10-20 minutes depending on internet speed and
@@ -84,7 +87,8 @@ When setup finishes:
 
   * The shell greets you with a short welcome message and a hint to
     run 'demo moodle v5.2.0'. Do that to get a fully installed Moodle
-    5.2.0 site in one command -- URL and credentials printed at the end.
+    5.2.0 site in one command -- URL and credentials printed at the
+    end (typically ready in 2-3 minutes thanks to the pre-warm).
 
   * For day-to-day usage see docs/machine/USAGE.md in the mpd repo.
 

@@ -271,6 +271,18 @@ if ($vmRecord) {
         -DiskSizeGb $DiskSizeGb
 
     & "$PSScriptRoot\configure-client.ps1" -VmIp $VmIp -SshUser $VmUser
+
+    # Pre-warm the demo stack so the user's first `demo moodle ...` is
+    # fast (PHP runtime image build + postgres pull are the slow bits).
+    # Best-effort: a failure here just means lazy provisioning later.
+    Write-Step "Pre-warming demo runtime and database"
+    & ssh -o BatchMode=yes -o StrictHostKeyChecking=no "${VmUser}@${VmIp}" 'mpd --runtime-create=php'
+    if ($LASTEXITCODE -eq 0) { Write-Ok "PHP runtime built" }
+    else                     { Write-Host "    warn: PHP runtime pre-warm failed; demo will provision on first run" }
+    & ssh -o BatchMode=yes -o StrictHostKeyChecking=no "${VmUser}@${VmIp}" 'mpd --db-create=postgres:latest'
+    if ($LASTEXITCODE -eq 0) { Write-Ok "postgres:latest ready" }
+    else                     { Write-Host "    warn: postgres:latest pre-warm failed; demo will provision on first run" }
+
     Set-MpdSshConfig    -VmName $VmName -VmIp $VmIp -VmUser $VmUser
     Write-MpdCurrentEnv -VmName $VmName -VmIp $VmIp -VmUser $VmUser
 }

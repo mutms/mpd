@@ -5,6 +5,15 @@ import Foundation
 
 extension Mpd.Environment.Certificate {
 
+    /// CA generation — KEEP IN SYNC with the bash twin
+    /// `generate_mpd_ca` in
+    /// `mpd-machine/platforms/macos-utm/lib/common.sh`. The macOS
+    /// host-side bootstrap generates (or reuses) a CA *before* VM
+    /// creation and uploads it; mpd inside the VM detects the existing
+    /// CA via the `fileExists` check in
+    /// `Mpd.Environment.Machine.MachineActionSetup` and reuses it.
+    /// Both implementations must produce certs with identical DN,
+    /// v3_ca extensions, and name constraints.
     static func generateCA(caKeyPath: String, caCertPath: String, certsDir: String) throws {
         let caConf = "\(certsDir)/mpd-ca.conf"
         let caConfContent = """

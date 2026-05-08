@@ -10,8 +10,9 @@ hypervisor.
 
 If you're on macOS + UTM and want the VM created for you (cloud-image
 path with cloud-init, no installer prompts), start with
-the macos-utm platform (https://github.com/mutms/mpd) instead. Its
-`create-vm.sh` ends where this guide begins. Note: arm64-only.
+the macos-utm platform (https://github.com/mutms/mpd) instead — its
+`setup.command` (delegating to `lib/create-vm.sh`) ends where this
+guide begins. Note: arm64-only.
 
 > **Supported install only.** We test exclusively against the Debian 13
 > Trixie netinst ISO (`debian-13.4.0-arm64-netinst.iso` or

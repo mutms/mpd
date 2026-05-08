@@ -52,7 +52,7 @@ recommendations per host OS:
 
 | Host OS | Recommended | Notes |
 |---|---|---|
-| **macOS** (Apple Silicon) | UTM with QEMU backend | Use the [`platforms/macos-utm/`](../../mpd-machine/platforms/macos-utm/README.md) automated bootstrap — `create-vm.sh` does VM creation + cloud-init + repo clone + `mpd` build in one shot. QEMU+SPICE gives clipboard sync, dynamic display resize, and visible DHCP leases in UTM's GUI. |
+| **macOS** (Apple Silicon) | UTM with QEMU backend | Use the [`platforms/macos-utm/`](../../mpd-machine/platforms/macos-utm/README.md) automated bootstrap — double-click `setup.command` to do VM creation + cloud-init + repo clone + `mpd` build + macOS networking (route, resolver, CA) in one shot, plus `start.command` / `stop.command` / `uninstall.command` for the lifecycle. QEMU+SPICE gives clipboard sync, dynamic display resize, and visible DHCP leases in UTM's GUI. |
 | **Linux** | libvirt/KVM, QEMU, or anything you already drive | Follow [`platforms/generic-vm/`](../../mpd-machine/platforms/generic-vm/README.md). Five-step manual install from the netinst ISO. |
 | **Windows** | Hyper-V (free with Windows Pro) | [`platforms/windows-hyperv/`](../../mpd-machine/platforms/windows-hyperv/README.txt) automated bootstrap — `setup.cmd` does VM creation + cloud-init + repo clone + `mpd` build + Windows networking in one shot. |
 | **Cloud** | Hetzner Cloud, Hyperstack, AWS/GCP/Azure, etc. | Provision a Debian Trixie instance, follow [`platforms/generic-vm/`](../../mpd-machine/platforms/generic-vm/README.md). The "VM" can be a real cloud server. |
@@ -100,10 +100,12 @@ lifecycle, SSH workflow), see [USAGE.md](USAGE.md).
   bootstrap script or by `provision-vm.sh`'s prompt; the macOS+UTM
   bootstrap prompts for the last IP octet on the vmnet shared bridge
   with default `158`, see
-  [`platforms/macos-utm/README.md`](../../mpd-machine/platforms/macos-utm/README.md#how-the-vm-ip-is-chosen)).
-- Laptop-side route + DNS resolver setup is manual on macOS and Linux
-  (printed by `mpd --setup` and `mpd --setup-info`). On Windows + Hyper-V,
-  `setup.cmd` handles it automatically.
+  [`platforms/macos-utm/README.md`](../../mpd-machine/platforms/macos-utm/README.md#why-the-vm-ip-is-pinned)).
+- Laptop-side route + DNS resolver + CA trust are configured
+  automatically by the platform setup scripts on macOS+UTM
+  (`setup.command`) and Windows+Hyper-V (`setup.cmd`). On the
+  generic-vm path (any other Linux / hand-built VM), they are manual —
+  printed by `mpd --setup` and `mpd --setup-info` for the user to run.
 
 ## Directory model (in the VM)
 

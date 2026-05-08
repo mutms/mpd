@@ -518,7 +518,7 @@ build_mpd() {
 }
 
 # Symlink the built binary into /usr/local/bin so `mpd` resolves on PATH for
-# every shell. Matches macos-utm/create-vm.sh. `ln -sf` is idempotent.
+# every shell. Matches macos-utm/lib/create-vm.sh. `ln -sf` is idempotent.
 install_mpd_on_path() {
     local source_bin="$HOME/Developer/mpd/bin/mpd"
     [[ -x "$source_bin" ]] || die "Expected $source_bin after 'make install' but it is missing or not executable."
