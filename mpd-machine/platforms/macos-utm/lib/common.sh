@@ -472,8 +472,12 @@ record_ca_fingerprint() {
 # sudo.
 #
 # Args: each command as a separate string. The function appends a final
-# `sudo -k` so the dev's terminal also drops cached creds the moment the
-# manual recipe finishes — symmetric with the script's own fence.
+# bare `sudo -k` so the dev's terminal also drops cached creds the moment
+# the manual recipe finishes — symmetric with the script's own fence.
+# The lines are emitted with NO inline `#` comments so they paste cleanly
+# into either bash *or* zsh (zsh's `interactive_comments` is off by default
+# on macOS, which would otherwise turn `# invalidate ...` into command
+# arguments).
 print_sudo_recipe() {
     echo
     echo "    The following commands need to run as root:"
@@ -481,10 +485,14 @@ print_sudo_recipe() {
     for cmd in "$@"; do
         printf '        %s\n' "$cmd"
     done
-    printf '        %s\n' "sudo -k   # invalidate cached sudo credential"
+    printf '        %s\n' "sudo -k"
+    echo
+    echo "    (The trailing 'sudo -k' invalidates your cached sudo credential"
+    echo "    after the recipe completes — same fence the script applies on"
+    echo "    its own privileged block.)"
     echo
     echo "    You can either:"
-    echo "      (a) Open another Terminal, run them yourself, and press Enter here."
+    echo "      (a) Open another Terminal, run the recipe yourself, and press Enter here."
     echo "      (b) Press Enter and let setup.command sudo for you (you'll be asked for your password)."
     echo
     read -r -p "    Press Enter to continue: " _
