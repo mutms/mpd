@@ -46,10 +46,13 @@ else
     echo "Creating $FLAVOR $TAG demo (clones repo + builds runtime -- a few minutes)..."
     echo ""
 
-    mpd create "$PROJECT" \
+    GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=advice.detachedHead GIT_CONFIG_VALUE_0=false \
+        mpd create "$PROJECT" \
         --git-repo="$REPO" \
         --git-branch="$TAG" \
         --git-depth=1
+
+    mpd configure "$PROJECT"
 
     mpd start "$PROJECT"
 
