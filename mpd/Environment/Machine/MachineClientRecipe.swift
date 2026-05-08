@@ -77,8 +77,6 @@ extension Mpd.Environment.Integration {
         caPath: String,
         sshUser: String
     ) -> String {
-        let subnetNet = subnet.components(separatedBy: "/").first ?? subnet
-        let subnetMask = "255.255.255.0"
         switch os {
         case .macOS:
             return """
