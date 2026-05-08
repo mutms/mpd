@@ -23,6 +23,15 @@ Concrete shape, a use case driving it.
 
 Real possibilities, not committed work.
 
+- **macOS + UTM setup parity** — bring `macos-utm/` up to the level of
+  `windows-hyperv/`: a `setup.sh` that lists UTM VMs (via `utmctl`),
+  detects the current one from the route, and handles create / switch /
+  re-verify in one flow; `start.sh`, `stop.sh`, `uninstall.sh` wrappers;
+  a `configure-client.sh` that automates the macOS laptop side (route,
+  `/etc/resolver/mpd.test`, CA cert via `security add-trusted-cert`).
+  Rough edge: macOS has no persistent static route flag (`-p`), so a
+  LaunchDaemon plist is needed to survive reboots.
+
 - **Runtime SSH banner** — install a branded `/etc/motd` inside each
   runtime container (php, node, trixie) so users see a welcome message
   and tool hints when they SSH into `<rt>.runtime.mpd.test`. Common
