@@ -140,16 +140,23 @@ fi
 # Extract raw disk from tar.xz and resize to VM_DISK_SIZE
 DISK_PATH="${TEMP_DIR}/${VM_NAME}.raw"
 echo "  Extracting raw disk image..."
+# Clear any leftover raw images from prior runs so the freshly-extracted file
+# is unambiguous (the extracted name varies by Debian release).
+find "$TEMP_DIR" -maxdepth 1 \( -name "*.raw" -o -name "disk.*" \) -delete 2>/dev/null || true
 tar -xJf "$CACHED_ARCHIVE" -C "$TEMP_DIR"
-# Find the extracted .raw file (name varies by Debian release)
-RAW_FILE=$(find "$TEMP_DIR" -maxdepth 1 -name "*.raw" ! -name "${VM_NAME}.raw" -print -quit)
+RAW_FILE=$(find "$TEMP_DIR" -maxdepth 1 -name "*.raw" -print -quit)
 if [ -z "$RAW_FILE" ]; then
     # Some archives use disk.raw
     RAW_FILE=$(find "$TEMP_DIR" -maxdepth 1 -name "disk.*" -print -quit)
 fi
 [ -z "$RAW_FILE" ] && die "Could not find raw disk image in archive"
 mv "$RAW_FILE" "$DISK_PATH"
-dd if=/dev/zero of="$DISK_PATH" bs=1 count=0 seek=$((VM_DISK_SIZE * 1024 * 1024 * 1024)) 2>/dev/null
+TARGET_BYTES=$((VM_DISK_SIZE * 1024 * 1024 * 1024))
+CURRENT_BYTES=$(stat -f %z "$DISK_PATH")
+if [ "$TARGET_BYTES" -lt "$CURRENT_BYTES" ]; then
+    die "Requested disk size ${VM_DISK_SIZE} GB is smaller than the cloud image ($((CURRENT_BYTES / 1024 / 1024 / 1024)) GB). Pick a larger size."
+fi
+dd if=/dev/zero of="$DISK_PATH" bs=1 count=0 seek="$TARGET_BYTES" 2>/dev/null
 ok "Disk extracted and resized to ${VM_DISK_SIZE} GB (sparse)"
 
 # --- Create cloud-init seed ISO ---
@@ -189,7 +196,6 @@ growpart:
 resize_rootfs: true
 
 runcmd:
-  - ssh-keygen -A
   - systemctl enable --now ssh
 EOF
 
@@ -414,12 +420,6 @@ tell application "UTM"
             stop vm
         end if
     end repeat
-end tell
-APPLESCRIPT
-
-osascript <<APPLESCRIPT
-tell application "UTM"
-    set vm to virtual machine named "${VM_NAME}"
     set config to configuration of vm
     set vmDrives to drives of config
     set keptDrives to {}
@@ -441,8 +441,10 @@ osascript <<APPLESCRIPT
 tell application "UTM"
     set vm to virtual machine named "${VM_NAME}"
     start vm
+    set deadline to (current date) + 60
     repeat
         if status of vm is started then exit repeat
+        if (current date) > deadline then exit repeat
         delay 1
     end repeat
 end tell
@@ -497,7 +499,7 @@ fi
 
 EOF
 
-ok "Requried packages were installed"
+ok "Required packages were installed"
 
 # --- Build mpd binary and add it to path---
 
