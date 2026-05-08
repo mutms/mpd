@@ -364,7 +364,7 @@ sudo cp "`$HOME/Developer/mpd/assets/machine/motd" /etc/motd
 "@
 Write-Ok "Login banner set"
 
-# ── 15. Helper scripts in %USERPROFILE%\mpd\ ─────────────────────────────────
+# ── 15. Helper scripts in %USERPROFILE%\mpd-machine\ ─────────────────────────
 
 Write-Step "Creating helper scripts in $MpdUserDir"
 

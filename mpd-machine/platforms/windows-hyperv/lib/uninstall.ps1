@@ -61,7 +61,7 @@ if ($route) {
 # Prefer the exact thumbprint recorded on install (~/mpd/ca.sha1). Fall back
 # to a subject-pattern sweep so we still clean up VMs created before that
 # tracking existed, or any stale leftovers from prior installs.
-$caSha1Path = Join-Path $env:USERPROFILE "mpd\ca.sha1"
+$caSha1Path = Join-Path $env:USERPROFILE "mpd-machine\ca.sha1"
 $tracked    = $false
 if (Test-Path $caSha1Path) {
     $thumbprint = (Get-Content $caSha1Path -Raw).Trim()

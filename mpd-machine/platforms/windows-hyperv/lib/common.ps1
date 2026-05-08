@@ -14,7 +14,7 @@ $CloudBase      = "https://cloud.debian.org/images/cloud/trixie/20260501-2465"
 $CloudFile      = "debian-13-genericcloud-amd64-20260501-2465.tar.xz"
 $CacheDir       = Join-Path $env:LOCALAPPDATA "mpd\cache"
 $TempDir        = Join-Path $env:TEMP "mpd-vm-build"
-$MpdUserDir     = Join-Path $env:USERPROFILE "mpd"
+$MpdUserDir     = Join-Path $env:USERPROFILE "mpd-machine"
 
 # ── Output helpers ────────────────────────────────────────────────────────────
 

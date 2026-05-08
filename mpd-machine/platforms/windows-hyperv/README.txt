@@ -71,7 +71,7 @@ When creating a new VM, the script:
   7. Pre-warms the demo stack: builds the PHP runtime image and creates
      a postgres:latest DB container inside the VM so the first
      "demo moodle v5.2.0" doesn't pay the build/pull cost.
-  8. Creates helper scripts in %USERPROFILE%\mpd\ and a desktop
+  8. Creates helper scripts in %USERPROFILE%\mpd-machine\ and a desktop
      shortcut "mpd-machine" for quick access.
 
 The whole process takes 10-20 minutes depending on internet speed and
@@ -123,7 +123,7 @@ Asks for confirmation, then:
   3. Removes the persistent route to the container subnet.
   4. Removes the mpd CA certificate from the trusted root store.
   5. Removes the Hyper-V switch, NAT rule, and host IP.
-  6. Deletes %USERPROFILE%\mpd\ (helper scripts, current.env, mpd-machine.cmd).
+  6. Deletes %USERPROFILE%\mpd-machine\ (helper scripts, current.env, mpd-machine.cmd).
   7. Removes the "mpd-machine" desktop shortcut.
   8. Removes the 'Host mpd-machine' entry from ~/.ssh/config.
 

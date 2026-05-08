@@ -98,7 +98,7 @@ try {
 
     # Record the thumbprint so uninstall.ps1 can remove this exact cert
     # without scanning the keychain by subject string.
-    $mpdUserDir = Join-Path $env:USERPROFILE "mpd"
+    $mpdUserDir = Join-Path $env:USERPROFILE "mpd-machine"
     $caSha1Path = Join-Path $mpdUserDir "ca.sha1"
     New-Item -ItemType Directory -Force -Path $mpdUserDir | Out-Null
     Set-Content -Path $caSha1Path -Value $thumbprint -Encoding UTF8 -NoNewline
