@@ -171,6 +171,10 @@ Write-Step "Creating VM '$VmName' in Hyper-V"
 
 New-VM -Name $VmName -MemoryStartupBytes ($VmMemoryGb * 1GB) -Generation 2 `
        -SwitchName $SwitchName -NoVHD | Out-Null
+Set-VMMemory -VMName $VmName -DynamicMemoryEnabled $true `
+             -MinimumBytes 4GB `
+             -StartupBytes ($VmMemoryGb * 1GB) `
+             -MaximumBytes ($VmMemoryGb * 1GB)
 Set-VMProcessor -VMName $VmName -Count $VmCpuCount
 Set-VM -VMName $VmName -AutomaticStartAction Start -AutomaticStopAction ShutDown `
        -CheckpointType Disabled
