@@ -25,15 +25,30 @@ if ! vm_exists "$vm_name"; then
     exit 1
 fi
 
-state=$(get_vm_state "$vm_name")
-if [ "$state" = "started" ]; then
-    echo "${vm_name} is already running (${vm_ip})."
+# SSH liveness is the source of truth. `utmctl status` can report
+# "started" while the in-guest QEMU process has exited (in-VM
+# `shutdown -h now`, kernel panic, etc.), so trusting it alone leaves
+# zombie cases where the VM is dead but we never restart it.
+if ssh -o ConnectTimeout=3 -o BatchMode=yes -o StrictHostKeyChecking=no \
+       "${vm_user}@${vm_ip}" true 2>/dev/null; then
+    echo "${vm_name} is already reachable (${vm_ip})."
 else
-    echo "Starting ${vm_name} ..."
-    vm_start "$vm_name"
+    # If UTM still thinks the VM is started but it's unreachable, force-stop
+    # first to clear UTM's view; otherwise `start vm` might no-op.
+    state=$(get_vm_state "$vm_name")
+    if [ "$state" = "started" ]; then
+        echo "${vm_name} reports as started but is unreachable — recycling..."
+        vm_force_stop "$vm_name" >/dev/null 2>&1 || true
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            [ "$(get_vm_state "$vm_name")" = "stopped" ] && break
+            sleep 1
+        done
+    fi
+    echo "Starting ${vm_name}..."
+    vm_start "$vm_name" >/dev/null 2>&1 || true
     wait_for_ssh "$vm_ip" "$vm_user" 120 \
         || die "SSH not available after 120s. Open UTM to inspect the VM."
-    echo "Started. SSH: ssh ${vm_user}@${vm_ip}"
+    echo "${vm_name} started (${vm_ip})."
 fi
 
 # The persistent route to 10.163.0.0/24 is not preserved across host
