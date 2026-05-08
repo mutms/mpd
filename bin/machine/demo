@@ -6,6 +6,7 @@
 #   demo moodle v5.2.0
 #   demo mutms MuTMS-5.2.0-01
 set -euo pipefail
+trap 'echo ""; echo "Interrupted."; exit 130' INT TERM
 
 FLAVOR="${1:-}"
 TAG="${2:-}"
@@ -60,7 +61,7 @@ else
     echo "Installing database..."
     ssh -q -o StrictHostKeyChecking=no -o BatchMode=yes \
         "$USER@${RUNTIME}.runtime.mpd.test" \
-        "cd /srv/projects/${PROJECT} && mdl-install --agree-license --adminpass=Admin1234! --adminemail=admin@example.com"
+        "bash -l -c 'cd /srv/projects/${PROJECT} && mdl-install --agree-license --adminpass=Admin1234! --adminemail=admin@example.com'"
 fi
 
 echo ""
