@@ -288,6 +288,11 @@ ensure_desktop_shortcut() {
 # Opens an SSH session to the active mpd-machine VM via the
 # `Host mpd-machine` block in ~/.ssh/config. If the VM is offline,
 # starts it first via lib/start.sh so a normie double-click "just works".
+#
+# Failure paths exit non-zero so Terminal's default "Close the window
+# if the shell exited cleanly" keeps the window open with the error
+# message visible. No `read -p "Press Enter..."` pauses; users who
+# prefer "always close" can set their profile accordingly.
 
 START_SH="$HOME/Developer/mpd/mpd-machine/platforms/macos-utm/lib/start.sh"
 
@@ -305,14 +310,10 @@ if ! ssh -o ConnectTimeout=3 -o BatchMode=yes -o StrictHostKeyChecking=no \
         echo "    $START_SH"
         echo
         echo "  Run setup.command in mpd-machine/platforms/macos-utm/ to repair."
-        echo
-        read -r -p "  Press Enter to close... " _
         exit 1
     fi
 fi
 
-# Interactive SSH. If this fails (still unreachable after the start
-# attempt), pause so the error is visible before Terminal closes.
 ssh mpd-machine
 status=$?
 if [ "$status" -eq 255 ]; then
@@ -320,8 +321,7 @@ if [ "$status" -eq 255 ]; then
     echo "  Could not connect to mpd-machine."
     echo "  Open UTM and check that the VM is running, or run"
     echo "  start.command from mpd-machine/platforms/macos-utm/ ."
-    echo
-    read -r -p "  Press Enter to close... " _
+    exit 1
 fi
 EOF
     chmod +x "$DESKTOP_SHORTCUT"
