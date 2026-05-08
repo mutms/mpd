@@ -479,6 +479,22 @@ extension Mpd.Runtime {
         Mpd.Podman.restart(Mpd.Service.Dnsmasq.containerName)
         Mpd.Service.Dnsmasq.waitUntilReady()
         Mpd.Runtime.State.deleteRuntimeStateEntry(name)
+
+        // Cascade — mark every project on this runtime as stopped so
+        // `mpd list` doesn't show stale "running" status after delete.
+        var allProjects = Mpd.Runtime.State.loadProjects()
+        var cascaded = 0
+        for i in allProjects.projects.indices
+            where allProjects.projects[i].runtimeName == name
+                && allProjects.projects[i].status == .running {
+            allProjects.projects[i].status = .stopped
+            Mpd.Project.removeDnsmasqRecord(project: allProjects.projects[i].name)
+            cascaded += 1
+        }
+        if cascaded > 0 {
+            Mpd.Runtime.State.saveProjects(allProjects)
+        }
+
         ok("Runtime '\(name)' removed.")
     }
 
