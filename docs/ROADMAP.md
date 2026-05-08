@@ -27,6 +27,18 @@ Real possibilities, not committed work.
   will need a way to upgrade mpd without re-provisioning. Shape TBD
   (standalone tool, `mpd --self-update`, or something else).
 
+- **Ubuntu + KVM as a third polished `mpd-machine` platform** —
+  feature-parity with `macos-utm/` and `windows-hyperv/`: a
+  `setup.sh` that drives QEMU with KVM acceleration (likely via
+  libvirt's default network), prepares the mpd CA on the host, and
+  configures host networking (`ip route`, systemd-resolved drop-in
+  for `*.mpd.test`, `update-ca-certificates`) inside the same
+  upfront fenced sudo block; pre-warm + lifecycle scripts mirror
+  the other two. Detailed brief for the implementer in
+  [`mpd-machine/platforms/ubuntu-kvm/README.md`](../mpd-machine/platforms/ubuntu-kvm/README.md).
+  Ubuntu desktop users use [`generic-vm/`](../mpd-machine/platforms/generic-vm/README.md)
+  in the meantime.
+
 - **Runtime SSH banner** — install a branded `/etc/motd` inside each
   runtime container (php, node, trixie) so users see a welcome message
   and tool hints when they SSH into `<rt>.runtime.mpd.test`. Common
