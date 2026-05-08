@@ -135,13 +135,6 @@ users:
       - $SshPubKey
 
 ssh_pwauth: false
-
-package_update: true
-packages:
-  - git
-  - curl
-  - libnss3-tools
-  - hyperv-daemons
 "@, $utf8NoBom)
 
 [System.IO.File]::WriteAllText((Join-Path $CidataDir "network-config"), @"

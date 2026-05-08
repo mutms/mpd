@@ -188,13 +188,6 @@ growpart:
 
 resize_rootfs: true
 
-package_update: true
-packages:
-  - git
-  - curl
-  - libnss3-tools
-  - qemu-guest-agent
-
 runcmd:
   - ssh-keygen -A
   - systemctl enable --now ssh
