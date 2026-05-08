@@ -23,6 +23,10 @@ Concrete shape, a use case driving it.
 
 Real possibilities, not committed work.
 
+- **Self-update** — after the first stable release, long-lived VMs
+  will need a way to upgrade mpd without re-provisioning. Shape TBD
+  (standalone tool, `mpd --self-update`, or something else).
+
 - **macOS + UTM setup parity** — bring `macos-utm/` up to the level of
   `windows-hyperv/`: a `setup.sh` that lists UTM VMs (via `utmctl`),
   detects the current one from the route, and handles create / switch /
