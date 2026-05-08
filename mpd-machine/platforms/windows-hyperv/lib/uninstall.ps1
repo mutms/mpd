@@ -21,7 +21,8 @@ Write-Host "  - Hyper-V switch '$SwitchName' and its NAT rule"
 Write-Host "  - Persistent route to the container subnet"
 Write-Host "  - NRPT rule for *.mpd.test"
 Write-Host "  - mpd CA certificate from the trusted root store"
-Write-Host "  - $MpdUserDir (helper scripts, current.env, mpd-machine.cmd)"
+Write-Host "  - $MpdUserDir (helper scripts, current.env, mpd-machine.cmd)
+  - 'Host mpd-machine' block from ~/.ssh/config"
 Write-Host ""
 $confirm = Read-Host "Type YES to confirm"
 if ($confirm -ne "YES") { Write-Host "Aborted."; exit 0 }
@@ -88,6 +89,22 @@ if ($sw) {
 if (Test-Path $MpdUserDir) {
     Remove-Item $MpdUserDir -Recurse -Force
     Write-Host "Removed $MpdUserDir."
+}
+
+# ── Remove SSH config entry ───────────────────────────────────────────────────
+
+$sshConfig = "$env:USERPROFILE\.ssh\config"
+if (Test-Path $sshConfig) {
+    $lines      = Get-Content $sshConfig
+    $filtered   = [System.Collections.Generic.List[string]]::new()
+    $inBlock    = $false
+    foreach ($line in $lines) {
+        if ($line -match '^\s*Host\s+mpd-machine\s*$') { $inBlock = $true; continue }
+        if ($inBlock -and $line -match '^\s*Host\s+') { $inBlock = $false }
+        if (-not $inBlock) { $filtered.Add($line) }
+    }
+    [System.IO.File]::WriteAllLines($sshConfig, $filtered)
+    Write-Host "SSH config entry removed."
 }
 
 # ── Remove desktop shortcut ───────────────────────────────────────────────────

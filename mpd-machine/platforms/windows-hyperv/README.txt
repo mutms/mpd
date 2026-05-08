@@ -121,6 +121,7 @@ Asks for confirmation, then:
   5. Removes the Hyper-V switch, NAT rule, and host IP.
   6. Deletes %USERPROFILE%\mpd\ (helper scripts, current.env, mpd-machine.cmd).
   7. Removes the "mpd-machine" desktop shortcut.
+  8. Removes the 'Host mpd-machine' entry from ~/.ssh/config.
 
 This is irreversible -- run setup.cmd again to start fresh.
 

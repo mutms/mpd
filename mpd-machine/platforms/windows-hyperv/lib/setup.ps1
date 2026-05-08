@@ -128,6 +128,12 @@ if ($vms.Count -gt 0) {
     }
     Write-Host ""
     $defaultOctet = $currentOctet
+    # If the route points to an octet that isn't a known mpd VM (stale route),
+    # fall back to the Running VM, or the first VM in the list.
+    if (-not $defaultOctet -or -not ($vms | Where-Object { $_.Name -eq "$VmNamePrefix$defaultOctet" })) {
+        $fallback = ($vms | Where-Object { $_.State -eq 'Running' } | Select-Object -First 1) ?? $vms[0]
+        $defaultOctet = if ($fallback.Name -match "$([regex]::Escape($VmNamePrefix))(\d+)$") { [int]$Matches[1] } else { $null }
+    }
     $prompt = if ($defaultOctet) { "Enter VM number [$defaultOctet]" } else { "Enter VM number" }
 } else {
     Write-Host "No mpd VMs found yet."
