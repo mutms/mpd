@@ -28,7 +28,9 @@ fi
 # SSH liveness is the source of truth. `utmctl status` can report
 # "started" while the in-guest QEMU process has exited (in-VM
 # `shutdown -h now`, kernel panic, etc.), so trusting it alone leaves
-# zombie cases where the VM is dead but we never restart it.
+# zombie cases where the VM is dead but we never restart it. utmctl's
+# status reporting is also lagged ~15s in practice — see upstream
+# issues utmapp/UTM#4820 ("utmctl bugs") and #6882 (stuck at "stopping").
 if ssh -o ConnectTimeout=3 -o BatchMode=yes -o StrictHostKeyChecking=no \
        "${vm_user}@${vm_ip}" true 2>/dev/null; then
     echo "${vm_name} is already reachable (${vm_ip})."
@@ -39,9 +41,13 @@ else
     if [ "$state" = "started" ]; then
         echo "${vm_name} reports as started but is unreachable — recycling..."
         vm_force_stop "$vm_name" >/dev/null 2>&1 || true
-        for _ in 1 2 3 4 5 6 7 8 9 10; do
+        # UTM/utmctl status updates lag ~15s after a stop in practice;
+        # poll up to 20s before giving up.
+        elapsed=0
+        while [ "$elapsed" -lt 20 ]; do
             [ "$(get_vm_state "$vm_name")" = "stopped" ] && break
             sleep 1
+            elapsed=$((elapsed + 1))
         done
     fi
     echo "Starting ${vm_name}..."

@@ -50,10 +50,12 @@ for entry in "${vms[@]}"; do
     if [ "$state" != "stopped" ]; then
         echo "Stopping ${name} ..."
         vm_force_stop "$name" 2>/dev/null || true
-        # Wait briefly for stop to complete.
-        for _ in 1 2 3 4 5 6 7 8 9 10; do
+        # UTM/utmctl status updates lag ~15s after a stop; poll up to 20s.
+        elapsed=0
+        while [ "$elapsed" -lt 20 ]; do
             [ "$(get_vm_state "$name")" = "stopped" ] && break
             sleep 1
+            elapsed=$((elapsed + 1))
         done
     fi
     echo "Deleting ${name} ..."
