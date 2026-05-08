@@ -9,8 +9,10 @@ Codex, Cursor, Aider) waiting for you there. Project dependencies
 and the AI itself stay confined to the runtime.
 
 Two modes: native macOS (`mpd-desktop`) or a Linux sandbox VM
-(`mpd-machine`). Same workflow either way; run both side-by-side,
-switch without relearning.
+(`mpd-machine`). `mpd-machine` runs on macOS, Linux, and Windows —
+Windows users get a fully automated setup via `setup.cmd` (Hyper-V,
+no WSL, no manual networking). Same workflow either way; same
+`*.mpd.test` URLs, same CLI, switch without relearning.
 
 ## What you get
 
@@ -53,7 +55,7 @@ model.
 | `mpd-desktop` (macOS native) | [docs/desktop/USAGE.md](docs/desktop/USAGE.md) |
 | `mpd-machine` — automated UTM bootstrap on macOS | [mpd-machine/platforms/macos-utm/README.md](mpd-machine/platforms/macos-utm/README.md) |
 | `mpd-machine` — manual bootstrap on any Debian Trixie VM | [mpd-machine/platforms/generic-vm/README.md](mpd-machine/platforms/generic-vm/README.md) |
-| `mpd-machine` — Windows + Hyper-V | [mpd-machine/platforms/windows-hyperv/README.txt](mpd-machine/platforms/windows-hyperv/README.txt) |
+| `mpd-machine` — Windows + Hyper-V (automated) | [mpd-machine/platforms/windows-hyperv/README.txt](mpd-machine/platforms/windows-hyperv/README.txt) |
 
 ## Prerequisites at a glance
 
@@ -63,12 +65,16 @@ model.
 - [WireGuard for macOS](https://apps.apple.com/app/wireguard/id1451685025)
 - Xcode command-line tools (for building `bin/mpd`)
 
-**`mpd-machine`**
-- A Debian Trixie VM — official Debian cloud image with cloud-init
-  (the macOS + UTM automation does this for you), or a manual install
-  from the netinst ISO (`debian-13.4.0-arm64-netinst.iso` on arm64 /
-  Apple Silicon hosts, `debian-13.4.0-amd64-netinst.iso` on amd64 /
-  Intel / AMD hosts).
+**`mpd-machine` on Windows**
+- Windows 10/11 Pro or Enterprise (Hyper-V required; not available on Home).
+- Double-click `setup.cmd` — it creates the VM, configures networking,
+  imports the CA certificate, and puts an `mpd-machine` shortcut on
+  your desktop. No WSL, no manual steps.
+
+**`mpd-machine` on macOS**
+- A Debian Trixie VM via UTM — `create-vm.sh` does the full setup.
+- Or any Debian Trixie VM you created yourself (netinst ISO, cloud
+  image, KVM, etc.) — follow the generic-vm guide.
 - Don't run `mpd-machine` on a Linux box you care about. mpd makes
   invasive changes (apt installs, systemd config, passwordless sudo);
   use a sandbox VM you're willing to wipe.
