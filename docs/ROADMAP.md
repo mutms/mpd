@@ -40,6 +40,11 @@ Real possibilities, not committed work.
   by `build.sh`). Written directly to `/etc/motd` — no PAM/update-motd.d
   needed in containers.
 
+- **`mpd purge` vs `mpd delete` split** — `delete` removes containers,
+  DB, and mpd state (today's behavior); `purge` additionally wipes the
+  source checkout at `/srv/projects/<project>/`. Useful when a demo or
+  experiment is fully thrown away and disk space matters.
+
 - **`mpd --gc`** — sweep unreferenced DB containers, orphaned data
   dirs, dnsmasq records for deleted projects. Open question: destructive
   default or interactive plan + `--yes`?
