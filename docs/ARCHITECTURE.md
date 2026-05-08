@@ -442,7 +442,7 @@ Sibling to `caroot/`, `service/`, `wireguard/`. Lives under `conf/` so it
 **survives `mpd --uninstall`** (which wipes `~/.mpd/`).
 
 ```
-MPD_PLATFORM=desktop | macos-utm | generic-vm
+MPD_PLATFORM=desktop | macos-utm | windows-hyperv | generic-vm
 MPD_CLIENT_OS=macos | debian | fedora | windows
 MPD_VM_IP=<ip>                  # empty for desktop
 MPD_INSTANCE_SUFFIX=<-suffix>   # e.g. "-161"; empty for the unsuffixed instance
@@ -467,6 +467,7 @@ and Platform can share the same file without clobbering each other.
 |---|---|---|---|
 | `mpd-desktop` | `Mpd.Core.Platform.ensureWritten(...)` from `DesktopActionSetup` | `desktop`, `macos`, `""` | bootstrap on first `mpd --setup`; no prompt |
 | `mpd-machine` via UTM | `mpd-machine/platforms/macos-utm/create-vm.sh` (over SSH) | `macos-utm`, `macos`, `${VM_IP}` | written before `mpd --setup` runs in the VM |
+| `mpd-machine` via Windows/Hyper-V | `mpd-machine/platforms/windows-hyperv/lib/create-vm.ps1` (over SSH) | `windows-hyperv`, `windows`, `${VmIp}` | written before `mpd --setup` runs in the VM |
 | `mpd-machine` via generic VM | `mpd-machine/platforms/generic-vm/provision-vm.sh` | `generic-vm` + interactive prompt for `MPD_CLIENT_OS` and `MPD_VM_IP` | prompts at the very start of the user phase; idempotent (skips if all keys present) |
 
 **Reader:** `Mpd.Core.Platform.load()` (Swift). Throws with a fix-it message

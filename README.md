@@ -53,7 +53,7 @@ model.
 | `mpd-desktop` (macOS native) | [docs/desktop/USAGE.md](docs/desktop/USAGE.md) |
 | `mpd-machine` — automated UTM bootstrap on macOS | [mpd-machine/platforms/macos-utm/README.md](mpd-machine/platforms/macos-utm/README.md) |
 | `mpd-machine` — manual bootstrap on any Debian Trixie VM | [mpd-machine/platforms/generic-vm/README.md](mpd-machine/platforms/generic-vm/README.md) |
-| `mpd-machine` — Windows + Hyper-V | manual today via the `generic-vm/` path; automated PowerShell bootstrap [in development](docs/ROADMAP.md) |
+| `mpd-machine` — Windows + Hyper-V | [mpd-machine/platforms/windows-hyperv/README.txt](mpd-machine/platforms/windows-hyperv/README.txt) |
 
 ## Prerequisites at a glance
 

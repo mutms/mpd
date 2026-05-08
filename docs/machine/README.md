@@ -54,7 +54,7 @@ recommendations per host OS:
 |---|---|---|
 | **macOS** (Apple Silicon) | UTM with QEMU backend | Use the [`platforms/macos-utm/`](../../mpd-machine/platforms/macos-utm/README.md) automated bootstrap — `create-vm.sh` does VM creation + cloud-init + repo clone + `mpd` build in one shot. QEMU+SPICE gives clipboard sync, dynamic display resize, and visible DHCP leases in UTM's GUI. |
 | **Linux** | libvirt/KVM, QEMU, or anything you already drive | Follow [`platforms/generic-vm/`](../../mpd-machine/platforms/generic-vm/README.md). Five-step manual install from the netinst ISO. |
-| **Windows** | Hyper-V (free with Windows Pro) | Today: manual via [`platforms/generic-vm/`](../../mpd-machine/platforms/generic-vm/README.md). Coming: automated PowerShell `setup.ps1` parallel to `create-vm.sh` — see [`../ROADMAP.md`](../ROADMAP.md). |
+| **Windows** | Hyper-V (free with Windows Pro) | [`platforms/windows-hyperv/`](../../mpd-machine/platforms/windows-hyperv/README.txt) automated bootstrap — `setup.cmd` does VM creation + cloud-init + repo clone + `mpd` build + Windows networking in one shot. |
 | **Cloud** | Hetzner Cloud, Hyperstack, AWS/GCP/Azure, etc. | Provision a Debian Trixie instance, follow [`platforms/generic-vm/`](../../mpd-machine/platforms/generic-vm/README.md). The "VM" can be a real cloud server. |
 
 The mpd flow itself is identical regardless of hypervisor — pick whatever
@@ -66,8 +66,8 @@ Two phases: get a VM ready, then run `mpd --setup` inside it.
 
 1. **Pick a path** from
    [`mpd-machine/platforms/`](../../mpd-machine/platforms/README.md) —
-   the automated `macos-utm/` route or the manual `generic-vm/` route.
-   End state of either: a Debian Trixie VM with `mpd` built and
+   automated (`macos-utm/` or `windows-hyperv/`) or manual (`generic-vm/`).
+   End state of any path: a Debian Trixie VM with `mpd` built and
    reachable over SSH.
 2. **`mpd --setup`** inside the VM (interactive where system changes
    are required). Does the rest: CA + service certs, dnsmasq +
@@ -101,8 +101,9 @@ lifecycle, SSH workflow), see [USAGE.md](USAGE.md).
   bootstrap prompts for the last IP octet on the vmnet shared bridge
   with default `158`, see
   [`platforms/macos-utm/README.md`](../../mpd-machine/platforms/macos-utm/README.md#how-the-vm-ip-is-chosen)).
-- Laptop-side route + DNS resolver setup is manual (printed by
-  `mpd --setup` and `mpd --setup-info`).
+- Laptop-side route + DNS resolver setup is manual on macOS and Linux
+  (printed by `mpd --setup` and `mpd --setup-info`). On Windows + Hyper-V,
+  `setup.cmd` handles it automatically.
 
 ## Directory model (in the VM)
 
@@ -129,5 +130,7 @@ For full directory-contract detail (including data-volume layout under
 - [SECURITY.md](SECURITY.md) — trust boundaries, intentional compromises
 - [`platforms/macos-utm/README.md`](../../mpd-machine/platforms/macos-utm/README.md)
   — automated UTM bootstrap on macOS + recovery
+- [`platforms/windows-hyperv/README.txt`](../../mpd-machine/platforms/windows-hyperv/README.txt)
+  — automated Hyper-V bootstrap on Windows
 - [`platforms/generic-vm/README.md`](../../mpd-machine/platforms/generic-vm/README.md)
   — manual bootstrap on any Debian Trixie VM

@@ -277,14 +277,13 @@ route. Right answer if:
 - you don't want any container surface area on your primary machine
   — the VM is the wall.
 
-**For Windows users specifically**, mpd-machine is often the simplest
-way to start coding Moodle plugins *with zero Windows configuration*:
-install the Debian VM with a Gnome desktop, log into it via Hyper-V's
-console window, and you have a complete Linux dev workstation —
-Firefox, terminal, IDE, Claude Code — all running *inside* the VM.
-Windows itself stays untouched. The forthcoming Hyper-V bootstrap on
-the roadmap will collapse this to one PowerShell command, taking the
-"do nothing to your Windows install" pitch all the way to the click.
+**For Windows users specifically**, mpd-machine is the path: double-click
+`setup.cmd`, answer a few prompts, and you have a complete Linux dev
+workstation — terminal, IDE, Claude Code — running inside a Hyper-V VM.
+Windows itself stays untouched. The automated Hyper-V bootstrap handles
+everything: VM creation, cloud-init, repo clone, `mpd` build, route, DNS,
+and CA certificate — all the way to `https://mpd.test` working in your
+Windows browser.
 
 Both modes share the same `mpd.env` configuration model, the same
 `https://<project>.mpd.test/` URLs, the same SSH-into-runtime pattern.

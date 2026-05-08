@@ -13,13 +13,6 @@ Concrete shape, a use case driving it.
   `cloudflared` sidecar attaches to the runtime pod; auth happens at
   Cloudflare's edge. For sharing a project with a teammate, client,
   or vibe-coding friend on an iPad.
-- **Automated Windows + Hyper-V bootstrap** —
-  `mpd-machine/platforms/windows-hyperv/setup.ps1` parallel to
-  `macos-utm/create-vm.sh`: drive `New-VM`, boot the Debian Trixie
-  cloud image with cloud-init, install pubkey, run `provision-vm.sh`
-  inside the VM. Until then, Windows users follow
-  [`platforms/generic-vm/`](../mpd-machine/platforms/generic-vm/README.md);
-  the manual flow already works on Hyper-V with the netinst ISO.
 - **`mdl-backup` / `mdl-restore` (Moodle)** — one tar bundle per
   project (dataroot + DB dump + config snapshot), pulled via the
   fileaccess SSH endpoint. Moodle-only because the dataroot ↔ DB

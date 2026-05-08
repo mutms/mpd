@@ -90,7 +90,13 @@ sudo systemctl restart systemd-resolved
 For persistence: NetworkManager `nmcli connection modify <conn> +ipv4.routes`,
 or systemd-networkd config.
 
-### Windows (admin)
+### Windows + Hyper-V
+
+`setup.cmd` configures everything automatically — route, NRPT DNS rule,
+and CA certificate import. Re-run `setup.cmd` and select the current VM
+number to re-apply after a Windows upgrade or networking reset.
+
+For reference, the commands it runs under the hood (admin PowerShell):
 
 ```
 route add 10.163.0.0 mask 255.255.255.0 <vm-ip> -p

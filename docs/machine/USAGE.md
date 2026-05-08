@@ -12,15 +12,19 @@ see [../VISION.md](../VISION.md).
 ## Bootstrap (one-time)
 
 You need a Debian Trixie VM with `mpd` built and reachable over SSH.
-Two paths:
+Pick the path that matches your host:
 
 - **macOS + UTM (automated)** —
   [`platforms/macos-utm/`](../../mpd-machine/platforms/macos-utm/README.md).
   `create-vm.sh` does VM creation, cloud-init, repo clone, and `mpd`
   build in one shot.
+- **Windows + Hyper-V (automated)** —
+  [`platforms/windows-hyperv/`](../../mpd-machine/platforms/windows-hyperv/README.txt).
+  `setup.cmd` does the same end-to-end and also configures Windows
+  networking (route, NRPT DNS, CA certificate import).
 - **Any Debian Trixie VM (manual)** —
   [`platforms/generic-vm/`](../../mpd-machine/platforms/generic-vm/README.md).
-  Five-step install from the official netinst ISO. Works on Hyper-V,
+  Five-step install from the official netinst ISO. Works on
   libvirt/KVM, QEMU, VirtualBox, cloud, bare-metal sandbox — anywhere
   Debian boots.
 

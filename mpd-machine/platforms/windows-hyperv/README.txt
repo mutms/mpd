@@ -30,9 +30,12 @@ Prerequisites
   * An SSH key. The script will detect whether you have one and offer
     to generate one if not.
 
-  * Windows Terminal (optional but recommended -- avoids the Quick Edit
-    Mode freeze issue in the old conhost). Install from the Microsoft
-    Store or: winget install Microsoft.WindowsTerminal
+  * winget (App Installer). Pre-installed on Windows 11. On Windows 10,
+    install from the Microsoft Store if missing.
+
+setup.cmd installs the remaining required tools automatically via winget
+(qemu-img for disk conversion, Windows Terminal for a proper console)
+and will prompt before installing each one.
 
 
 setup.cmd -- create a VM or switch the active VM
@@ -71,6 +74,21 @@ When creating a new VM, the script:
 The whole process takes 10-20 minutes depending on internet speed and
 your machine. You can leave it running unattended after the prompts.
 
+When setup finishes:
+
+  * An "mpd SSH" shortcut appears on your desktop. Double-click it to
+    open a terminal connected to the VM.
+
+  * https://mpd.test opens in your Windows browser and shows the mpd
+    portal (project list, Adminer database UI, etc.).
+
+  * To create your first Moodle project, SSH into the VM and run:
+      mpd create myproject
+
+    Then open https://myproject.mpd.test in your browser.
+
+  * For day-to-day usage see docs/machine/USAGE.md in the mpd repo.
+
 When switching to a different VM:
 
   1. The current VM is suspended (state preserved on disk, resumes in
@@ -102,6 +120,8 @@ Asks for confirmation, then:
   3. Removes the persistent route to the container subnet.
   4. Removes the mpd CA certificate from the trusted root store.
   5. Removes the Hyper-V switch, NAT rule, and host IP.
+  6. Deletes %USERPROFILE%\mpd\ (helper scripts, current.env, ssh-mpd.cmd).
+  7. Removes the "mpd SSH" desktop shortcut.
 
 This is irreversible -- run setup.cmd again to start fresh.
 

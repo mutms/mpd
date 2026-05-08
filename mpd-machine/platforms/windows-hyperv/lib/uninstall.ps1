@@ -21,6 +21,7 @@ Write-Host "  - Hyper-V switch '$SwitchName' and its NAT rule"
 Write-Host "  - Persistent route to the container subnet"
 Write-Host "  - NRPT rule for *.mpd.test"
 Write-Host "  - mpd CA certificate from the trusted root store"
+Write-Host "  - $MpdUserDir (helper scripts, current.env, ssh-mpd.cmd)"
 Write-Host ""
 $confirm = Read-Host "Type YES to confirm"
 if ($confirm -ne "YES") { Write-Host "Aborted."; exit 0 }
@@ -80,6 +81,21 @@ $sw = Get-VMSwitch -Name $SwitchName -ErrorAction SilentlyContinue
 if ($sw) {
     Remove-VMSwitch -Name $SwitchName -Force
     Write-Host "Switch '$SwitchName' removed."
+}
+
+# ── Remove user state directory ───────────────────────────────────────────────
+
+if (Test-Path $MpdUserDir) {
+    Remove-Item $MpdUserDir -Recurse -Force
+    Write-Host "Removed $MpdUserDir."
+}
+
+# ── Remove desktop shortcut ───────────────────────────────────────────────────
+
+$shortcut = Join-Path ([Environment]::GetFolderPath("Desktop")) "mpd SSH.lnk"
+if (Test-Path $shortcut) {
+    Remove-Item $shortcut -Force
+    Write-Host "Desktop shortcut removed."
 }
 
 Write-Host ""

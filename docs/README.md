@@ -37,13 +37,15 @@ Plus the bootstrap docs under
 
 - [`platforms/macos-utm/`](../mpd-machine/platforms/macos-utm/README.md)
   — automated UTM bootstrap (macOS)
+- [`platforms/windows-hyperv/`](../mpd-machine/platforms/windows-hyperv/README.txt)
+  — automated Hyper-V bootstrap (Windows)
 - [`platforms/generic-vm/`](../mpd-machine/platforms/generic-vm/README.md)
-  — manual bootstrap on any Debian Trixie VM (works on Hyper-V, libvirt/KVM, QEMU, cloud, etc.)
+  — manual bootstrap on any Debian Trixie VM (libvirt/KVM, QEMU, cloud, etc.)
 
 ## Vision and direction
 
 - [`VISION.md`](VISION.md) — *Why mpd* — origin lineage, design principles, what working with mpd feels like
-- [`ROADMAP.md`](ROADMAP.md) — what's queued next (Windows + Hyper-V bootstrap, `mpd <project> publish`, `mdl-backup` / `mdl-restore` tools)
+- [`ROADMAP.md`](ROADMAP.md) — what's queued next (`mpd <project> publish`, `mdl-backup` / `mdl-restore` tools)
 
 ## Reference
 
