@@ -93,7 +93,12 @@ get_current_vm_octet() {
 
 # SSH user for a VM. Lookup order: state file, ssh config, host login fallback.
 get_vm_ssh_user() {
-    local name="$1" envfile="${STATE_DIR}/${name}.env"
+    # Split into two `local` statements. macOS ships bash 3.2, which expands
+    # all RHS values in a single `local` BEFORE assigning any LHS — so a
+    # combined `local a=$1 b=$a` would look up the (still-unbound) `a` and
+    # trip `set -u` in our callers (e.g. start.sh).
+    local name="$1"
+    local envfile="${STATE_DIR}/${name}.env"
     if [ -f "$envfile" ]; then
         local v
         v=$(awk -F= '/^MPD_VM_USER=/ { sub(/^MPD_VM_USER=/, ""); print; exit }' "$envfile")
