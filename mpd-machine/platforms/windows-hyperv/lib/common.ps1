@@ -231,6 +231,7 @@ function Remove-MpdSshConfig {
     $path = Join-Path $env:USERPROFILE ".ssh\config"
     if (-not (Test-Path $path)) { return }
     $kept = Strip-MpdSshConfigBlock -Path $path
+    if ($null -eq $kept) { $kept = [System.Collections.Generic.List[string]]::new() }
     [System.IO.File]::WriteAllLines($path, $kept, [System.Text.UTF8Encoding]::new($false))
 }
 
