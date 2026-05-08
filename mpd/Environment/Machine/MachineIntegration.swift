@@ -150,8 +150,8 @@ extension Mpd.Environment.Integration {
         let vmIP = identity.vmIP.isEmpty ? primaryHostIP : identity.vmIP
         let os = clientOSToRecipe(identity.clientOS)
 
-        let setup = clientSetupBlock(for: os, platform: identity.platform, vmIP: vmIP,
-                                     dnsmasqIP: dnsmasqIP, subnet: subnet, caPath: caPath, sshUser: sshUser)
+        let setup = clientSetupBlock(for: os, vmIP: vmIP, dnsmasqIP: dnsmasqIP,
+                                     subnet: subnet, caPath: caPath, sshUser: sshUser)
         let uninstall = clientUninstallBlock(for: os, subnet: subnet)
         print("\n\u{001B}[1m── Laptop client setup — \(os.label) ──\u{001B}[0m\n")
         print(setup)
@@ -182,7 +182,7 @@ extension Mpd.Environment.Integration {
         let caPath = "\(Mpd.Environment.confCARootDir)/rootCA.pem"
         let sshUser = Mpd.Environment.detectUserAndUID().user
         let body = setupTxtBody(
-            for: os, platform: identity.platform, vmIP: vmIP, dnsmasqIP: Mpd.Service.Dnsmasq.ip,
+            for: os, vmIP: vmIP, dnsmasqIP: Mpd.Service.Dnsmasq.ip,
             subnet: Mpd.internalSubnet, caPath: caPath, sshUser: sshUser)
         print(body)
     }

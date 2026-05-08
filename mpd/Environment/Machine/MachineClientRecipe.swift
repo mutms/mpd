@@ -71,7 +71,6 @@ extension Mpd.Environment.Integration {
     /// `mpd --setup-info`.
     static func clientSetupBlock(
         for os: MachineClientOS,
-        platform: Mpd.Core.Platform.PlatformKind? = nil,
         vmIP: String,
         dnsmasqIP: String,
         subnet: String,
@@ -138,25 +137,8 @@ extension Mpd.Environment.Integration {
                 # certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n mpd -i mpd-rootCA.pem
                 """
         case .windows:
-            if platform == .windowsHyperV {
-                return """
-                    :: Hyper-V setup: configure-client.ps1 was run automatically by setup.cmd.
-                    :: If networking stops working after a host reboot or Windows upgrade,
-                    :: re-run as Administrator:
-                    ::
-                    ::   %USERPROFILE%\\mpd\\configure-client.ps1
-                    """
-            }
             return """
-                :: Route to mpd containers (admin cmd; -p persists across reboots)
-                route add \(subnetNet) mask \(subnetMask) \(vmIP) -p
-
-                # DNS resolver — split DNS for *.mpd.test (admin PowerShell)
-                Add-DnsClientNrptRule -Namespace ".mpd.test" -NameServers "\(dnsmasqIP)"
-
-                # Optional: trust the mpd CA system-wide for clean HTTPS.
-                # Copy mpd-rootCA.pem from VM (WinSCP, scp, or shared folder), then in admin PowerShell:
-                Import-Certificate -FilePath mpd-rootCA.pem -CertStoreLocation Cert:\\LocalMachine\\Root
+                :: Run setup.cmd as Administrator to configure the Windows client.
                 """
         }
     }
@@ -166,14 +148,13 @@ extension Mpd.Environment.Integration {
     /// a clear "back out anytime" exit.
     static func setupTxtBody(
         for os: MachineClientOS,
-        platform: Mpd.Core.Platform.PlatformKind? = nil,
         vmIP: String,
         dnsmasqIP: String,
         subnet: String,
         caPath: String,
         sshUser: String
     ) -> String {
-        let setup = clientSetupBlock(for: os, platform: platform, vmIP: vmIP, dnsmasqIP: dnsmasqIP,
+        let setup = clientSetupBlock(for: os, vmIP: vmIP, dnsmasqIP: dnsmasqIP,
                                      subnet: subnet, caPath: caPath, sshUser: sshUser)
         let uninstall = clientUninstallBlock(for: os, subnet: subnet)
         return """
