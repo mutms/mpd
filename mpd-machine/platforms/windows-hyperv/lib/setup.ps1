@@ -132,8 +132,8 @@ if ($vms.Count -gt 0) {
 } else {
     Write-Host "No mpd VMs found yet."
     Write-Host ""
-    $defaultOctet = $null
-    $prompt = "Enter last IP octet for the new VM (2-254)"
+    $defaultOctet = 158
+    $prompt = "Enter last IP octet for the new VM [$defaultOctet]"
 }
 
 $selectedOctet = $null
