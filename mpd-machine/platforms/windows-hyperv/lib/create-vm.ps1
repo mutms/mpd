@@ -378,7 +378,7 @@ Write-Step "Creating helper scripts in $MpdUserDir"
 New-Item -ItemType Directory -Force -Path $MpdUserDir | Out-Null
 $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 
-[System.IO.File]::WriteAllText((Join-Path $MpdUserDir "ssh-mpd.cmd"),
+[System.IO.File]::WriteAllText((Join-Path $MpdUserDir "mpd-machine.cmd"),
     "@echo off`r`nssh mpd-machine`r`n", $utf8NoBom)
 
 [System.IO.File]::WriteAllText((Join-Path $MpdUserDir "start-vm.ps1"), @"
@@ -400,9 +400,9 @@ Write-Ok "Helper scripts created"
 Write-Step "Creating desktop shortcut"
 
 $WshShell     = New-Object -ComObject WScript.Shell
-$ShortcutPath = Join-Path ([Environment]::GetFolderPath("Desktop")) "mpd SSH.lnk"
+$ShortcutPath = Join-Path ([Environment]::GetFolderPath("Desktop")) "mpd-machine.lnk"
 $Shortcut     = $WshShell.CreateShortcut($ShortcutPath)
-$sshMpdCmd    = Join-Path $MpdUserDir "ssh-mpd.cmd"
+$sshMpdCmd    = Join-Path $MpdUserDir "mpd-machine.cmd"
 
 $wt = Get-Command wt.exe -ErrorAction SilentlyContinue
 if ($wt) {
@@ -414,7 +414,7 @@ if ($wt) {
 }
 $Shortcut.Description = "SSH into the current mpd-machine"
 $Shortcut.Save()
-Write-Ok "Desktop shortcut: 'mpd SSH'"
+Write-Ok "Desktop shortcut: 'mpd-machine'"
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 

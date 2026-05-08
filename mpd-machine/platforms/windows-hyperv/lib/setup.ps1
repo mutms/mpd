@@ -271,8 +271,7 @@ if ($vmRecord) {
 # ── Done ──────────────────────────────────────────────────────────────────────
 
 Write-Host ""
-Write-Host "Done. VM '$VmName' is active at $VmIp."
-Write-Host ""
-Write-Host "  SSH into VM:    ssh mpd-machine"
-Write-Host "  Portal:         https://mpd.test"
+Write-Host "========================================"
+Write-Host "  Look for 'mpd-machine' on your desktop."
+Write-Host "========================================"
 Write-Host ""

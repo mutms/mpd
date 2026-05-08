@@ -69,14 +69,14 @@ When creating a new VM, the script:
      subnet, DNS rule for *.mpd.test, and imports the mpd CA
      certificate so browsers trust https://mpd.test without warnings.
   7. Creates helper scripts in %USERPROFILE%\mpd\ and a desktop
-     shortcut "mpd SSH" for quick access.
+     shortcut "mpd-machine" for quick access.
 
 The whole process takes 10-20 minutes depending on internet speed and
 your machine. You can leave it running unattended after the prompts.
 
 When setup finishes:
 
-  * An "mpd SSH" shortcut appears on your desktop. Double-click it to
+  * An "mpd-machine" shortcut appears on your desktop. Double-click it to
     open a terminal connected to the VM.
 
   * https://mpd.test opens in your Windows browser and shows the mpd
@@ -119,8 +119,8 @@ Asks for confirmation, then:
   3. Removes the persistent route to the container subnet.
   4. Removes the mpd CA certificate from the trusted root store.
   5. Removes the Hyper-V switch, NAT rule, and host IP.
-  6. Deletes %USERPROFILE%\mpd\ (helper scripts, current.env, ssh-mpd.cmd).
-  7. Removes the "mpd SSH" desktop shortcut.
+  6. Deletes %USERPROFILE%\mpd\ (helper scripts, current.env, mpd-machine.cmd).
+  7. Removes the "mpd-machine" desktop shortcut.
 
 This is irreversible -- run setup.cmd again to start fresh.
 
