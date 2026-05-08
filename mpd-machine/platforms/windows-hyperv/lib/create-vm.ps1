@@ -272,6 +272,20 @@ Write-Ok "VM back online"
 
 # ── 11. Install packages and build mpd ───────────────────────────────────────
 
+Write-Step "Creating swap file (4 GB)"
+
+Send-SshScript -User $VmUser -RemoteHost $VmIp -Script @"
+set -e
+if [ ! -f /swapfile ]; then
+    sudo fallocate -l 4G /swapfile
+    sudo chmod 600 /swapfile
+    sudo mkswap /swapfile
+    sudo swapon /swapfile
+    echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+fi
+"@
+Write-Ok "Swap ready"
+
 Write-Step "Installing build prerequisites (swiftlang + dependencies)"
 
 Send-SshScript -User $VmUser -RemoteHost $VmIp -Script @"

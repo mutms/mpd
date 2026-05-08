@@ -470,6 +470,21 @@ ok "VM restarted"
 
 # Install all necessary Debian packages
 
+step "Creating swap file (4 GB)"
+
+ssh_cmd "$VM_IP" "$VM_USER" 'bash -se' <<'EOF'
+set -e
+if [ ! -f /swapfile ]; then
+    sudo fallocate -l 4G /swapfile
+    sudo chmod 600 /swapfile
+    sudo mkswap /swapfile
+    sudo swapon /swapfile
+    echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+fi
+EOF
+
+ok "Swap ready"
+
 step "Installing required packages to build mpd binary"
 
 ssh_cmd "$VM_IP" "$VM_USER" 'bash -se' <<'EOF'
