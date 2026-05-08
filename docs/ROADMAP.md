@@ -23,6 +23,14 @@ Concrete shape, a use case driving it.
 
 Real possibilities, not committed work.
 
+- **Alternate repo/branch for VM provisioning** — an env var (e.g.
+  `MPD_REPO`, `MPD_BRANCH`) that `create-vm.ps1` / `create-vm.sh`
+  pass to cloud-init so the VM clones a feature branch or a fork
+  instead of the default `main`. Useful during development of mpd
+  itself: test a branch end-to-end without changing the scripts
+  permanently. Needs a matching override in `configure-client.ps1`
+  so the self-update and branch-awareness story is consistent.
+
 - **Self-update** — after the first stable release, long-lived VMs
   will need a way to upgrade mpd without re-provisioning. Shape TBD
   (standalone tool, `mpd --self-update`, or something else).
