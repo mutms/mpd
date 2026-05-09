@@ -4,45 +4,62 @@ Index for the `mpd` documentation tree. New here? Start with the top-level
 [`../README.md`](../README.md) for the pitch and the mode picker, then
 come back here once you've decided which mode to install.
 
-Naming convention across docs: **mpd-desktop** and **mpd-machine**
-(hyphenated).
+Three modes — Sandbox VM, **mpd-machine** (host-integrated cloud-init
+VM), **mpd-desktop** (native Podman Desktop on macOS). Same CLI, same
+URLs, switch without relearning.
 
 ## Reading order
 
 If you're installing mpd for the first time:
 
 1. [`../README.md`](../README.md) — overview and mode picker.
-2. The mode README that fits your host — [`desktop/README.md`](desktop/README.md) or [`machine/README.md`](machine/README.md).
-3. The matching `USAGE.md` — install, first project, day-to-day commands.
+2. The bootstrap doc that fits the mode you picked — see the three
+   sections below.
+3. [`machine/USAGE.md`](machine/USAGE.md) for the universal day-to-day
+   handbook (project lifecycle, SSH-into-runtime, tools) — the `mpd`
+   CLI is identical across all three modes once installed.
 4. Optional, on-demand: `NETWORKING.md`, `SECURITY.md`, `ARCHITECTURE.md`.
 
 [`VISION.md`](VISION.md) covers the origin and design principles.
 
-## mpd-desktop — native macOS
+## Mode 1 — Sandbox VM (you live inside the VM)
+
+Full GNOME desktop inside the VM. Install Ubuntu 26.04 in any
+hypervisor, snapshot, run one script inside the VM. GNOME terminal
+runs `mpd`; GNOME Firefox sees `mpd.test`. Host stays untouched.
+Lowest friction.
+
+- [`../setup/sandbox/README.md`](../setup/sandbox/README.md) — install,
+  prerequisites (hostname rename), revert.
+
+## Mode 2 — mpd-machine (you stay on your host; SSH into a headless VM)
+
+Automated headless Debian Trixie VM. The matched-host bootstrap
+creates the VM, builds `mpd`, and configures host-side networking +
+DNS + CA trust. Host browser visits `*.mpd.test` directly; host
+terminal SSH'es into the VM for the `mpd` CLI (or PHPStorm Gateway /
+VSCode Remote-SSH for IDE work).
+
+- [`machine/README.md`](machine/README.md) — what mpd-machine is, when to pick it, picking a hypervisor
+- [`machine/USAGE.md`](machine/USAGE.md) — bootstrap, setup, first project, day-to-day (universal handbook)
+- [`machine/NETWORKING.md`](machine/NETWORKING.md) — host ↔ VM ↔ container routing model, per-OS laptop recipes
+- [`machine/SECURITY.md`](machine/SECURITY.md) — trust boundaries
+- Per-platform bootstrap:
+  - [`../setup/macos-utm/README.md`](../setup/macos-utm/README.md) — UTM on macOS
+  - [`../setup/ubuntu-kvm/README.md`](../setup/ubuntu-kvm/README.md) — libvirt/KVM on Ubuntu
+  - [`../setup/windows-hyperv/README.txt`](../setup/windows-hyperv/README.txt) — Hyper-V on Windows
+
+## Mode 3 — mpd-desktop (native macOS binary in your local Terminal)
+
+`mpd` is a native macOS binary you run directly in your local
+Terminal — no SSH hop. macOS browser sees `*.mpd.test` via a
+WireGuard tunnel; Podman Desktop manages the Linux container machine
+in the background. No hypervisor to drive yourself.
 
 - [`desktop/README.md`](desktop/README.md) — what mpd-desktop is, when to pick it, prerequisites
 - [`desktop/USAGE.md`](desktop/USAGE.md) — install, setup, first project, day-to-day
 - [`desktop/NETWORKING.md`](desktop/NETWORKING.md) — gvproxy / WireGuard / dnsmasq design
 - [`desktop/SECURITY.md`](desktop/SECURITY.md) — trust boundaries
-
-## mpd-machine — Linux sandbox VM
-
-- [`machine/README.md`](machine/README.md) — what mpd-machine is, when to pick it, picking a hypervisor
-- [`machine/USAGE.md`](machine/USAGE.md) — bootstrap, setup, first project, day-to-day
-- [`machine/NETWORKING.md`](machine/NETWORKING.md) — host ↔ VM ↔ container routing model, per-OS laptop recipes
-- [`machine/SECURITY.md`](machine/SECURITY.md) — trust boundaries
-
-Plus the bootstrap docs under
-[`../setup/`](../setup/README.md):
-
-- [`platforms/macos-utm/`](../setup/macos-utm/README.md)
-  — automated UTM bootstrap (macOS)
-- [`platforms/ubuntu-kvm/`](../setup/ubuntu-kvm/README.md)
-  — automated libvirt/KVM bootstrap (Ubuntu)
-- [`platforms/windows-hyperv/`](../setup/windows-hyperv/README.txt)
-  — automated Hyper-V bootstrap (Windows)
-- [`platforms/sandbox/`](../setup/sandbox/README.md)
-  — graphical "live in the VM" Ubuntu 26.04 sandbox (any hypervisor)
 
 ## Vision and direction
 

@@ -13,20 +13,31 @@ page is the "what is it, when do I pick it, what do I need" reference.
 
 Pick this mode if you want:
 
-- **Native macOS workflows** — host-side filesystem access to the
-  source checkout, native Spotlight / Time Machine / Finder visibility,
-  no VM layer between you and the code.
-- **The simplest setup on a Mac** — Podman Desktop installs from a
-  `.dmg`, WireGuard installs from the App Store, `make install` builds
-  `bin/mpd`, `mpd --setup` does the rest.
-- **Direct IP access to every container** — once the WireGuard tunnel
-  is up, every project URL (`https://<project>.mpd.test/`), every
-  runtime SSH (`ssh user@php.runtime.mpd.test`), every database is
-  reachable directly from the Mac.
+- **Direct IP access to every container from macOS** — once the
+  WireGuard tunnel is up, every project URL
+  (`https://<project>.mpd.test/`), every runtime SSH
+  (`ssh user@php.runtime.mpd.test`), every database is reachable
+  directly from the Mac.
+- **No hypervisor to drive yourself** — Podman Desktop manages its
+  Linux machine for you. You don't pick a hypervisor, you don't
+  snapshot, you don't power-cycle a VM. The machine spins up when
+  containers run.
+- **Existing Podman Desktop investment** — if you're already using
+  Podman Desktop for other container work on macOS, mpd fits into
+  that workflow.
 
-Prefer [`mpd-machine`](../machine/README.md) instead if you're not on
-macOS, or if you want the agent to be able to wreck the dev environment
-without any chance of touching your host.
+Note that project source code, the AI agent's working directory, and
+all generated state still live inside Podman Desktop's Linux machine
+(at `/srv/projects/...`), not on the macOS filesystem — same shape as
+mpd-machine. macOS Finder / Time Machine / Spotlight do not see
+project files; only the mpd source checkout (`~/Developer/mpd/`) is
+on the host.
+
+Prefer [`mpd-machine`](../machine/README.md) on macOS if you'd rather
+drive the VM yourself (UTM) for explicit lifecycle control, or want
+a snapshottable VM. Prefer
+[Sandbox VM](../../setup/sandbox/README.md) if you want the strongest
+isolation and don't need anything on the host configured.
 
 ## Prerequisites
 

@@ -8,11 +8,24 @@ Remote-SSH) and find PHP, Composer, and your AI agent (Claude Code,
 Codex, Cursor, Aider) waiting for you there. Project dependencies
 and the AI itself stay confined to the runtime.
 
-Two modes: native macOS (`mpd-desktop`) or a Linux sandbox VM
-(`mpd-machine`). `mpd-machine` runs on macOS, Linux, and Windows —
-Windows users get a fully automated setup via `setup.cmd` (Hyper-V,
-no WSL, no manual networking). Same workflow either way; same
-`*.mpd.test` URLs, same CLI, switch without relearning.
+Three modes, distinguished by where you sit and where `mpd` runs:
+
+- **Sandbox VM** — full GNOME desktop inside the VM. GNOME terminal
+  runs `mpd`, GNOME Firefox visits `mpd.test`, you live in the VM
+  window. Lowest friction; safest for AI-driven workloads.
+  Recommended starting point.
+- **`mpd-machine`** — automated headless VM. You stay on your host
+  (macOS / Ubuntu / Windows): your host browser visits `*.mpd.test`
+  directly (via the route + DNS the bootstrap configured), and your
+  host terminal SSH'es into the headless VM to use the `mpd` CLI
+  (PHPStorm Gateway / VSCode Remote-SSH for IDE work).
+- **`mpd-desktop`** — `mpd` is a native macOS binary you run in your
+  local Terminal — no SSH hop. macOS browser sees `*.mpd.test` via
+  a local WireGuard tunnel; Podman Desktop manages the Linux
+  container machine in the background.
+
+Same CLI surface, same `*.mpd.test` URLs, same per-project
+configuration model. Switch between modes without relearning.
 
 ## What you get
 
@@ -35,22 +48,26 @@ no WSL, no manual networking). Same workflow either way; same
 - **Sandbox VM** (`mpd-machine`) — disposable; rebuild from scratch when
   needed.
 
-## Two modes
+## Three modes
 
-| | `mpd-desktop` | `mpd-machine` |
-|---|---|---|
-| **Host OS** | macOS only | macOS, Linux, Windows, or cloud |
-| **Backend** | Podman Desktop + WireGuard tunnel | Rootful Podman in a sandbox VM |
-| **Best for** | Native macOS workflows; simplest setup on a Mac | Non-macOS hosts; sandbox you can wipe and rebuild; untrusted or AI-driven workloads |
-| **Network model** | gvproxy + WireGuard | Plain L3 routing from laptop to VM |
+| | **Sandbox VM** | **`mpd-machine`** | **`mpd-desktop`** |
+|---|---|---|---|
+| **Where `mpd` runs** | Inside the VM | Inside a headless VM | Natively on macOS |
+| **Where you sit** | Inside the VM (full GNOME) | On your host (browser + SSH-into-VM) | On your host (Terminal + browser) |
+| **Host OS** | Any (UTM, Hyper-V, VirtualBox, virt-manager, VMware…) | macOS, Ubuntu, Windows | macOS only |
+| **Bootstrap** | Install Ubuntu 26.04, snapshot, run one script in the VM | `setup.command` / `setup.sh` / `setup.cmd` | Install Podman Desktop + WireGuard, `mpd --setup` |
+| **Network** | Internal to the VM (host untouched) | Plain L3 route + DNS resolver on host | gvproxy + WireGuard tunnel |
+| **Best for** | Newcomers; AI-safety; host stays untouched | Native host integration — laptop browser sees `*.mpd.test` directly | Already on Podman Desktop; minimal explicit VM management |
 
 Same CLI surface, same `*.mpd.test` URLs, same per-project configuration
 model.
 
 ## Get started
 
-**New here?** Try the sandbox first — works in any hypervisor (UTM,
-Hyper-V, VirtualBox, virt-manager, VMware…):
+### 1. Sandbox VM (recommended for newcomers)
+
+Works in any hypervisor (UTM, Hyper-V, VirtualBox, virt-manager,
+VMware…):
 
 1. Install Ubuntu 26.04 LTS desktop in your hypervisor of choice.
    During the installer, set the hostname to **`mpd-machine-sandbox`**.
@@ -61,37 +78,45 @@ Hyper-V, VirtualBox, virt-manager, VMware…):
 
 Open Firefox inside the VM and browse to https://mpd.test/.
 
-**Want host integration?** (route + DNS + CA trust on your host so you
-can browse `*.mpd.test` from your laptop's own browser, not just from
-inside a VM window.) Pick the matched-host bootstrap for your OS:
+### 2. `mpd-machine` (host reaches into a Linux VM)
 
-| Path | Doc |
+Pick this when you want your laptop's own browser/IDE to resolve
+`*.mpd.test` directly — host gets a static route + DNS resolver +
+CA trust automatically. Matched-host bootstrap per OS:
+
+| Host | Bootstrap |
 |---|---|
-| `mpd-desktop` (macOS native, no VM at all) | [docs/desktop/USAGE.md](docs/desktop/USAGE.md) |
-| `mpd-machine` on macOS (UTM) | [setup/macos-utm/README.md](setup/macos-utm/README.md) |
-| `mpd-machine` on Ubuntu (libvirt/KVM) | [setup/ubuntu-kvm/README.md](setup/ubuntu-kvm/README.md) |
-| `mpd-machine` on Windows (Hyper-V) | [setup/windows-hyperv/README.txt](setup/windows-hyperv/README.txt) |
+| macOS (UTM) | [setup/macos-utm/README.md](setup/macos-utm/README.md) |
+| Ubuntu (libvirt/KVM) | [setup/ubuntu-kvm/README.md](setup/ubuntu-kvm/README.md) |
+| Windows (Hyper-V) | [setup/windows-hyperv/README.txt](setup/windows-hyperv/README.txt) |
+
+### 3. `mpd-desktop` (native Podman Desktop on macOS)
+
+For macOS users already invested in Podman Desktop, or who'd rather
+not manage a hypervisor explicitly: see
+[docs/desktop/USAGE.md](docs/desktop/USAGE.md).
 
 ## Prerequisites at a glance
+
+**Sandbox VM**
+- Any hypervisor that boots Ubuntu 26.04 LTS desktop. Set the hostname
+  to `mpd-machine-sandbox` during install and take a snapshot before
+  running the take-over script.
+
+**`mpd-machine`**
+- A matched host: macOS+UTM, Ubuntu+KVM, or Windows+Hyper-V.
+- The platform's setup script (`setup.command` / `setup.sh` /
+  `setup.cmd`) does VM creation + cloud-init + repo clone + build +
+  host-side networking (route, DNS resolver, CA trust) in one shot.
+- Don't run on a Linux box you care about. mpd makes invasive changes
+  (apt installs, systemd config, passwordless sudo); use a sandbox VM
+  you're willing to wipe.
 
 **`mpd-desktop`**
 - macOS on Apple Silicon
 - [Podman Desktop](https://podman-desktop.io/) with a rootful machine
 - [WireGuard for macOS](https://apps.apple.com/app/wireguard/id1451685025)
 - Xcode command-line tools (for building `bin/mpd`)
-
-**`mpd-machine` — sandbox**
-- Any hypervisor + an Ubuntu 26.04 LTS desktop install with hostname
-  `mpd-machine-sandbox`. Snapshot before running the take-over script.
-
-**`mpd-machine` — host-integrated platforms**
-- `setup.command` (macOS+UTM), `setup.sh` (Ubuntu+KVM), `setup.cmd`
-  (Windows+Hyper-V) each do VM creation + cloud-init + repo clone +
-  build + host-side networking (route, DNS resolver, CA trust) in
-  one shot.
-- Don't run `mpd-machine` on a Linux box you care about. mpd makes
-  invasive changes (apt installs, systemd config, passwordless sudo);
-  use a sandbox VM you're willing to wipe.
 
 ## Repository layout
 

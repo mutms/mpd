@@ -9,12 +9,28 @@ the same instructions.
 
 `mpd` (Moodle Plugin Development) is a local development environment for
 Moodle plugin work, built around reproducible runtime containers, local DNS,
-and HTTPS endpoints. It has two modes:
+and HTTPS endpoints. It has three user-facing modes, distinguished by where
+the user sits and where `mpd` runs:
 
-- **mpd-desktop** — native macOS, Podman Desktop + WireGuard tunnel.
-- **mpd-machine** — Debian VM (UTM with QEMU backend is the supported
-  flavor), laptop reaches containers via plain static routing. No
-  WireGuard.
+- **Sandbox VM** — full GNOME desktop *inside* the VM, `mpd` runs in
+  the VM. User installs Ubuntu 26.04 desktop in any hypervisor,
+  snapshots, runs `setup/sandbox/take-over-sandbox-vm.sh` inside the
+  VM. Host stays untouched.
+- **mpd-machine** — automated headless Debian Trixie VM driven by a
+  matched-host bootstrap (UTM on macOS, libvirt/KVM on Ubuntu,
+  Hyper-V on Windows). User stays on their host: host browser visits
+  `*.mpd.test` directly via a static route + DNS resolver + CA trust;
+  host terminal SSHes into the VM to use the `mpd` CLI.
+- **mpd-desktop** — `mpd` is a native macOS binary in the user's
+  local Terminal (no SSH). Podman Desktop manages a Linux container
+  machine in the background; macOS reaches the containers via a
+  WireGuard tunnel.
+
+**Implementation note:** internally there are two code paths —
+`mpd/Environment/Desktop/` (mpd-desktop) and `mpd/Environment/Machine/`
+(both mpd-machine and the sandbox flavor). Sandbox is `PlatformKind.sandbox`
+under the Machine code path; from the user's perspective it's a distinct
+mode, from the codebase's perspective it shares Machine plumbing.
 
 Read `README.md` first for the user-facing overview.
 

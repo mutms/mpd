@@ -19,25 +19,6 @@ Concrete shape, a use case driving it.
   coupling makes "snapshot the project" a real, named unit; other
   project types keep state in `git`.
 
-## Parked: beginner-facing front door
-
-A separate distribution path is parked for later: a `mutms/mpd-machine`
-repository carrying the platform-specific release packages (Windows
-Hyper-V `setup.cmd`, macOS UTM `setup.command`, generic-VM artifacts),
-and a landing page at `mpd-machine.org` aimed at developers who are new
-to Moodle but comfortable running an installer. The promise on that side
-is narrower than mpd's own: download, run the installer, type
-`demo moodle v5.2.0`, get a working site.
-
-What makes this viable as a beginner story rather than just another
-local-Moodle recipe is that Claude Code (or another agent) can be
-installed inside the runtime and asked to debug whatever breaks. The
-sandbox-VM design that exists for security reasons doubles as
-agent-safety — if the agent makes a mess, `mpd-machine rebuild` and
-start again — so first-line support effectively runs on the user's
-laptop. The mpd repository itself stays targeted at intermediate
-developers regardless of how the beginner front door evolves.
-
 ## Parked: other ideas
 
 Real possibilities, not committed work.

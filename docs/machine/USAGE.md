@@ -15,24 +15,24 @@ You need a Debian Trixie VM with `mpd` built and reachable over SSH.
 Pick the path that matches your host:
 
 - **macOS + UTM (automated)** —
-  [`platforms/macos-utm/`](../../setup/macos-utm/README.md).
+  [`setup/macos-utm/`](../../setup/macos-utm/README.md).
   Double-click `setup.command` for end-to-end VM creation, cloud-init,
   repo clone, `mpd` build, and macOS networking (route, resolver, CA);
   `start.command` / `stop.command` / `uninstall.command` cover the
   lifecycle.
 - **Ubuntu 26.04 LTS + libvirt/KVM (automated)** —
-  [`platforms/ubuntu-kvm/`](../../setup/ubuntu-kvm/README.md).
+  [`setup/ubuntu-kvm/`](../../setup/ubuntu-kvm/README.md).
   `bash setup.sh` from a terminal: preflight (apt deps, libvirt group,
   KVM, default network) → libvirt-driven VM creation against `virbr0`
   → Linux host networking (route, systemd-resolved drop-in, system
   trust, Firefox policies, NSS DB) → desktop launcher in GNOME
   Activities. `start.sh` / `stop.sh` / `uninstall.sh` cover the lifecycle.
 - **Windows + Hyper-V (automated)** —
-  [`platforms/windows-hyperv/`](../../setup/windows-hyperv/README.txt).
+  [`setup/windows-hyperv/`](../../setup/windows-hyperv/README.txt).
   `setup.cmd` does the same end-to-end and also configures Windows
   networking (route, NRPT DNS, CA certificate import).
 - **Sandbox (graphical, any hypervisor)** —
-  [`platforms/sandbox/`](../../setup/sandbox/README.md).
+  [`setup/sandbox/`](../../setup/sandbox/README.md).
   You install Ubuntu 26.04 desktop in your hypervisor of choice
   (UTM / Hyper-V / VirtualBox / virt-manager / VMware), snapshot, and
   run `bash take-over-sandbox-vm.sh` from inside the VM. mpd lives entirely
@@ -291,7 +291,7 @@ mpd --uninstall && rm -rf ~/Developer/mpd/conf/
 
 # Nuke the VM itself: hypervisor's VM-delete operation (or, for sandbox,
 # revert to your pre-take-over snapshot), then re-bootstrap from any
-# platforms/<name>/.
+# setup/<name>/.
 ```
 
 `conf/` survives `--uninstall` by design — same CA tomorrow means same

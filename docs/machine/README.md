@@ -1,28 +1,39 @@
 # mpd-machine
 
-`mpd-machine` runs the full mpd container stack inside a **Linux
-sandbox VM** that you reach from your laptop over a static route. The
-VM is the wall: nothing dev-related ever touches your host. The laptop
-runs an IDE, a browser, an AI agent, a terminal — and SSH-or-https into
-the VM. That's it.
+`mpd-machine` is the **host-integrated** mode: a matched-host
+bootstrap script (UTM on macOS, libvirt/KVM on Ubuntu, Hyper-V on
+Windows) creates a Debian Trixie cloud-init VM, builds `mpd` inside
+it, and configures the host's static route + DNS resolver + CA trust
+so your laptop's own browser and IDE see `*.mpd.test` directly.
+Containers run inside the VM under rootful Podman. The laptop runs
+an IDE, a browser, an AI agent, a terminal — and SSH-or-https into
+the VM.
 
-For the full pitch (why a VM, why a sandbox, why SSH-everywhere), see
-[../VISION.md](../VISION.md). This page is the "what is it, when do I
-pick it, how do I get a VM" reference.
+For the simpler "live entirely inside the VM, host stays untouched"
+flow, see the [Sandbox VM mode](../../setup/sandbox/README.md). For
+the macOS-native flow without a hypervisor of your own, see
+[mpd-desktop](../desktop/README.md). For the full pitch (why a VM,
+why a sandbox, why SSH-everywhere), see [../VISION.md](../VISION.md).
+This page is the "what is mpd-machine, when do I pick it, how do I
+get a VM" reference.
 
 ## When to pick mpd-machine
 
 Pick this mode if any of these apply:
 
-- **You're not on macOS.** `mpd-desktop` is macOS-only;
-  `mpd-machine` works from macOS, Linux, Windows, or a cloud-hosted dev
-  laptop.
+- **You're on macOS, Ubuntu, or Windows and want native host
+  integration.** Browser/IDE on the host see `*.mpd.test` directly
+  (no need to open a VM window or SSH-tunnel browser traffic).
 - **You want the AI agent to be able to do drastic things.** `rm -rf /`
-  doesn't matter when the VM is throwaway — wreck it,
-  [rebuild it](../../setup/README.md), keep going.
+  doesn't matter when the VM is throwaway — wreck it, rebuild it
+  via the bootstrap script, keep going.
 - **You don't want any container surface area on your primary
   machine.** The hypervisor is a strong boundary; containers,
   services, ports, and DNS all live on the other side of it.
+
+If your host isn't one of the matched-host targets (you're on Fedora,
+or any other Linux flavor, or you'd rather work inside the VM
+window), pick [Sandbox VM](../../setup/sandbox/README.md) instead.
 
 ## Intended environment — Linux sandbox
 
@@ -45,39 +56,37 @@ Run mpd-machine on:
 Do **not** run mpd-machine on your primary Linux workstation alongside
 other work.
 
-## Picking a hypervisor
+## Picking a bootstrap
 
-Any hypervisor that boots a Debian Trixie netinst ISO works. Concrete
-recommendations per host OS:
+mpd-machine ships a matched-host bootstrap for each of the three
+supported hosts. End state of any path: a Debian Trixie VM with `mpd`
+built and reachable, plus host-side networking (route + DNS resolver
++ CA trust) configured automatically.
 
-| Host OS | Recommended | Notes |
+| Host OS | Hypervisor | Bootstrap |
 |---|---|---|
-| **macOS** (Apple Silicon) | UTM with QEMU backend | Use the [`platforms/macos-utm/`](../../setup/macos-utm/README.md) automated bootstrap — double-click `setup.command` to do VM creation + cloud-init + repo clone + `mpd` build + macOS networking (route, resolver, CA) in one shot, plus `start.command` / `stop.command` / `uninstall.command` for the lifecycle. QEMU+SPICE gives clipboard sync, dynamic display resize, and visible DHCP leases in UTM's GUI. |
-| **Ubuntu 26.04 LTS** | libvirt + KVM | [`platforms/ubuntu-kvm/`](../../setup/ubuntu-kvm/README.md) automated bootstrap — `bash setup.sh` for end-to-end VM creation + cloud-init + repo clone + `mpd` build + Linux host networking (route, resolved drop-in, system trust, Firefox policies, NSS DB) and a desktop launcher in GNOME Activities. `start.sh` / `stop.sh` / `uninstall.sh` cover the lifecycle. |
-| **Other Linux** | libvirt/KVM, QEMU, VirtualBox, VMware… | Install Ubuntu 26.04 desktop in your hypervisor and follow [`platforms/sandbox/`](../../setup/sandbox/README.md) — one script inside the VM, host stays untouched. |
-| **Windows** | Hyper-V (free with Windows Pro) | [`platforms/windows-hyperv/`](../../setup/windows-hyperv/README.txt) automated bootstrap — `setup.cmd` does VM creation + cloud-init + repo clone + `mpd` build + Windows networking in one shot. Or follow [`platforms/sandbox/`](../../setup/sandbox/README.md) inside any Windows hypervisor. |
-| **Cloud** | Hetzner Cloud, Hyperstack, AWS/GCP/Azure, etc. | Provision an Ubuntu 26.04 instance and follow [`platforms/sandbox/`](../../setup/sandbox/README.md). The "VM" can be a real cloud server (the hostname-rename gate still applies). |
+| **macOS** (Apple Silicon) | UTM with QEMU backend | [`setup/macos-utm/`](../../setup/macos-utm/README.md) — double-click `setup.command`. QEMU+SPICE gives clipboard sync, dynamic display resize, and visible DHCP leases in UTM's GUI. `start.command` / `stop.command` / `uninstall.command` cover the lifecycle. |
+| **Ubuntu 26.04 LTS** | libvirt + KVM | [`setup/ubuntu-kvm/`](../../setup/ubuntu-kvm/README.md) — `bash setup.sh` for end-to-end VM creation + host networking + a desktop launcher in GNOME Activities. `start.sh` / `stop.sh` / `uninstall.sh` cover the lifecycle. |
+| **Windows** | Hyper-V (free with Windows Pro) | [`setup/windows-hyperv/`](../../setup/windows-hyperv/README.txt) — `setup.cmd` does VM creation + cloud-init + repo clone + `mpd` build + Windows networking in one shot. |
 
-The mpd flow itself is identical regardless of hypervisor — pick whatever
-you're comfortable driving.
+Other hosts (Fedora, Arch, NixOS, cloud Ubuntu instances, anywhere
+the matched-host bootstrap doesn't apply) → use the
+[Sandbox VM mode](../../setup/sandbox/README.md) instead. mpd's flow
+inside the VM is identical regardless of how you got there.
 
 ## Bootstrap and setup
 
-Two phases: get a VM ready, then run `mpd --setup` inside it.
+Two phases: the matched-host bootstrap creates the VM, then
+`mpd --setup` runs inside it.
 
-1. **Pick a path** from
-   [`setup/`](../../setup/README.md) —
-   one of the host-driven cloud-init platforms (`macos-utm/`,
-   `ubuntu-kvm/`, `windows-hyperv/`) or the in-VM
-   [`sandbox/`](../../setup/sandbox/README.md).
-   End state of any path: a VM with `mpd` built and reachable.
+1. **Run the matched-host bootstrap** (`setup.command` /
+   `setup.sh` / `setup.cmd` from `setup/<platform>/`). End state: a
+   Debian Trixie VM with `mpd` on PATH, your laptop SSH key
+   authorized, host-side route + DNS + CA trust applied.
 2. **`mpd --setup`** inside the VM (interactive where system changes
    are required). Does the rest: CA + service certs, dnsmasq +
    systemd-resolved DNS for `*.mpd.test`, Podman network + data volume,
    always-on infra services (dnsmasq, portal, Adminer, fileaccess).
-   On the cloud-init platforms it also prints a per-OS laptop client
-   recipe (route + DNS + optional CA trust); on sandbox there is no
-   separate laptop side, so this is skipped.
 
 For the full operational handbook (day-to-day commands, project
 lifecycle, SSH workflow), see [USAGE.md](USAGE.md).
@@ -102,14 +111,11 @@ lifecycle, SSH workflow), see [USAGE.md](USAGE.md).
 - VM IP is recorded in `~/Developer/mpd/conf/platform.env` (set by
   the bootstrap script; the macOS+UTM bootstrap prompts for the last
   IP octet on the vmnet shared bridge with default `158`, see
-  [`platforms/macos-utm/README.md`](../../setup/macos-utm/README.md#why-the-vm-ip-is-pinned);
-  sandbox leaves it empty since the VM IP is whatever the hypervisor
-  hands out and nothing on the host queries `*.mpd.test`).
+  [`setup/macos-utm/README.md`](../../setup/macos-utm/README.md#why-the-vm-ip-is-pinned)).
 - Laptop-side route + DNS resolver + CA trust are configured
-  automatically by every cloud-init platform's setup script
+  automatically by every matched-host setup script
   (macOS+UTM `setup.command`, Ubuntu+KVM `setup.sh`, Windows+Hyper-V
-  `setup.cmd`). The sandbox platform has no laptop-side configuration
-  by design — the host runs the hypervisor; that's it.
+  `setup.cmd`). No manual host-side commands required.
 
 ## Directory model (in the VM)
 
@@ -134,11 +140,14 @@ For full directory-contract detail (including data-volume layout under
 - [NETWORKING.md](NETWORKING.md) — host ↔ VM ↔ container routing model,
   per-OS laptop recipes
 - [SECURITY.md](SECURITY.md) — trust boundaries, intentional compromises
-- [`platforms/macos-utm/README.md`](../../setup/macos-utm/README.md)
-  — automated UTM bootstrap on macOS + recovery
-- [`platforms/ubuntu-kvm/README.md`](../../setup/ubuntu-kvm/README.md)
-  — automated libvirt/KVM bootstrap on Ubuntu 26.04 LTS
-- [`platforms/windows-hyperv/README.txt`](../../setup/windows-hyperv/README.txt)
-  — automated Hyper-V bootstrap on Windows
-- [`platforms/sandbox/README.md`](../../setup/sandbox/README.md)
-  — graphical "live in the VM" Ubuntu 26.04 sandbox
+- [`setup/macos-utm/README.md`](../../setup/macos-utm/README.md)
+  — UTM bootstrap on macOS + recovery
+- [`setup/ubuntu-kvm/README.md`](../../setup/ubuntu-kvm/README.md)
+  — libvirt/KVM bootstrap on Ubuntu 26.04 LTS
+- [`setup/windows-hyperv/README.txt`](../../setup/windows-hyperv/README.txt)
+  — Hyper-V bootstrap on Windows
+
+For the related "live entirely inside a sandbox VM" mode, see
+[`setup/sandbox/README.md`](../../setup/sandbox/README.md). For the
+macOS-native (no VM you manage) mode, see
+[`../desktop/README.md`](../desktop/README.md).

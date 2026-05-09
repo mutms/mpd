@@ -259,44 +259,46 @@ Evening: `mpd --uninstall`. Mac is clean again. Nothing leftover except
 HTTPS still works without re-trusting). When you come back,
 `mpd --setup` and you're 90 seconds from the same state.
 
-## Two modes
+## Three modes
 
-**mpd-desktop** runs the containers natively on the macOS host via
-Podman Desktop, with a local WireGuard tunnel for reaching the
-container subnet. Right answer if you're on a Mac and you want native
-filesystem access from the host.
+The three modes differ in where you sit and where `mpd` runs.
 
-**mpd-machine** runs the containers inside a Linux sandbox VM,
-reached from the laptop over a plain static route. Right answer if:
+**Sandbox VM** — full GNOME desktop inside the VM, and `mpd` runs
+there too. You install Ubuntu 26.04 desktop in your hypervisor of
+choice (UTM, Hyper-V, VirtualBox, virt-manager, VMware…), set the
+hostname to `mpd-machine-sandbox`, take a snapshot, and run one bash
+script inside the VM. GNOME terminal runs `mpd`; GNOME Firefox sees
+`mpd.test`. The host is never touched. Lowest-friction entry,
+strongest isolation for AI-driven workloads (the VM is the wall,
+the snapshot is the safety net), recommended starting point if you
+don't already know which mode to pick.
 
-- you're on Linux or Windows (mpd-desktop is macOS-only),
-- you want the agent to be able to do drastic things — `rm -rf /`
-  doesn't matter when the VM is throwaway, you wreck it, you
-  rebuild it, you keep going,
-- you don't want any container surface area on your primary machine
-  — the VM is the wall.
+**mpd-machine** — automated headless Debian Trixie VM; you stay on
+your host. The matched-host bootstrap (`setup.command` on macOS+UTM,
+`setup.sh` on Ubuntu+KVM, `setup.cmd` on Windows+Hyper-V) creates
+the VM with cloud-init, builds `mpd`, and configures the host's
+route + DNS + CA trust so `https://mpd.test/` works in your laptop's
+own browser. Your host browser visits `*.mpd.test` directly; your
+host terminal SSH'es into the VM to use the `mpd` CLI (or PHPStorm
+Gateway / VSCode Remote-SSH for IDE work). The VM has no GUI of its
+own.
 
-mpd-machine has two faces. The **host-integrated** path
-(`macos-utm`, `ubuntu-kvm`, `windows-hyperv`) reaches into a Debian
-Trixie VM from a matched host: the bootstrap script creates the VM,
-configures cloud-init, builds `mpd`, and configures the host's route +
-DNS + CA trust so that `https://mpd.test/` works in your laptop's own
-browser. The **sandbox** path inverts that: you install Ubuntu 26.04
-desktop in your hypervisor of choice (UTM, Hyper-V, VirtualBox,
-virt-manager, VMware…), set the hostname to `mpd-machine-sandbox`,
-snapshot, and run one bash script inside the VM. The host is never
-touched; you live inside the VM window. This is the lowest-friction
-entry — works anywhere a hypervisor runs, and is the recommended
-starting point if you don't already know which one to pick.
+**mpd-desktop** — `mpd` is a native macOS binary you run directly in
+your local Terminal — no SSH hop. macOS browser sees `*.mpd.test`
+via a local WireGuard tunnel; Podman Desktop manages a Linux
+container machine in the background. Pick this if you're already
+invested in Podman Desktop or prefer not to drive a hypervisor
+yourself.
 
-**For Windows users specifically**, mpd-machine is the path: either
-double-click `setup.cmd` for the host-integrated Hyper-V flow, or take
-the sandbox route in any Windows hypervisor. Windows itself stays
-untouched either way.
+**For Windows users specifically**, the sandbox or `mpd-machine`
+Hyper-V path is the answer: either install Ubuntu 26.04 in any
+Windows hypervisor and run `take-over-sandbox-vm.sh`, or
+double-click `setup.cmd` for the host-integrated Hyper-V flow.
+Windows itself stays untouched either way.
 
-Both modes share the same `mpd.env` configuration model, the same
-`https://<project>.mpd.test/` URLs, the same SSH-into-runtime pattern.
-You can switch between them without re-learning.
+All three modes share the same `mpd.env` configuration model, the
+same `https://<project>.mpd.test/` URLs, the same SSH-into-runtime
+pattern. You can switch between them without re-learning.
 
 ## Where mpd is going
 
