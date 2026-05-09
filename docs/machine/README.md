@@ -35,26 +35,22 @@ If your host isn't one of the matched-host targets (you're on Fedora,
 or any other Linux flavor, or you'd rather work inside the VM
 window), pick [Sandbox VM](../../setup/sandbox/README.md) instead.
 
-## Intended environment — Linux sandbox
+## Where mpd's invasive changes live — inside the VM
 
-mpd-machine is for a **Linux box you treat as throwaway**: a VM, a
-dedicated dev box, or a cloud instance you can wipe and rebuild without
-consequence. mpd installs apt packages, drops a CA into the system trust
-store, configures `systemd-resolved` for `*.mpd.test`, creates Podman
-networks/volumes, and runs containers under rootful Podman. The system
-changes are **not** designed to coexist with other work, and removal is
-best-effort.
+The matched-host bootstrap script creates a **dedicated Debian Trixie
+VM** and that's where the invasive changes happen: passwordless sudo
+for the dev user, apt-installed runtime stack (podman, dnsmasq, etc.),
+CA in the system trust store, `systemd-resolved` drop-in for
+`*.mpd.test`, rootful Podman networks/volumes. Treat that VM as
+wipe-and-rebuild; don't repurpose it for unrelated work.
 
-Run mpd-machine on:
-
-- a UTM/QEMU/Lima/Hyper-V/KVM/etc. VM dedicated to mpd development.
-- a remote dev box (cloud VM, lab box) you use exclusively for this
-  purpose.
-- bare hardware allocated as a sandbox (a spare laptop set aside for
-  mpd).
-
-Do **not** run mpd-machine on your primary Linux workstation alongside
-other work.
+The host (your daily-driver macOS / Ubuntu / Windows) gets only
+**scoped, reversible** changes: a route to the container subnet, a
+DNS resolver drop-in for `*.mpd.test`, mpd's local CA in the trust
+store, plus on Ubuntu+KVM the libvirt-related apt packages required
+to drive the VM. All of it is reversible via the matching
+`uninstall` script. Designed to coexist with daily-driver use — the
+bootstrap is meant to run on the host you actually live on.
 
 ## Picking a bootstrap
 

@@ -42,9 +42,10 @@ automatic TLS that just works. But it's a closed-source commercial
 product, and for a trust-boundary tool the bar I want is "I can read
 the code that decides what gets trusted." mpd lives entirely in this
 repo — Swift control plane plus shell tooling on top of Podman — with
-a name-constrained local CA that can only sign for `*.mpd.test`. Plus
-an optional sandbox-VM mode (`mpd-machine`) that puts a whole hypervisor
-between your dev work and your host.
+a name-constrained local CA that can only sign for `*.mpd.test`. And
+mpd ships a **Sandbox VM mode** as the recommended default —
+a whole hypervisor between your dev work and your host, with
+snapshot/revert as the safety net.
 
 ## Three things had to be true
 

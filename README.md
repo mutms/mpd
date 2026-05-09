@@ -45,8 +45,8 @@ configuration model. Switch between modes without relearning.
   runtime** — IDE on your host, language server / Xdebug / phpunit /
   composer running inside the isolated container. AI agents land in
   the same place.
-- **Sandbox VM** (`mpd-machine`) — disposable; rebuild from scratch when
-  needed.
+- **Sandbox VM** (`mpd-machine`) — snapshottable and disposable;
+  revert to a known-good snapshot or rebuild from scratch when needed.
 
 ## Three modes
 
@@ -57,7 +57,7 @@ configuration model. Switch between modes without relearning.
 | **Host OS** | Any (UTM, Hyper-V, VirtualBox, virt-manager, VMware…) | macOS, Ubuntu, Windows | macOS only |
 | **Bootstrap** | Install Ubuntu 26.04, snapshot, run one script in the VM | `setup.command` / `setup.sh` / `setup.cmd` | Install Podman Desktop + WireGuard, `mpd --setup` |
 | **Network** | Internal to the VM (host untouched) | Plain L3 route + DNS resolver on host | gvproxy + WireGuard tunnel |
-| **Best for** | Newcomers; AI-safety; host stays untouched | Native host integration — laptop browser sees `*.mpd.test` directly | Already on Podman Desktop; minimal explicit VM management |
+| **Best for** | Newcomers; AI-safety; host stays untouched; hypervisor snapshot/revert as the safety net | Native host integration — laptop browser sees `*.mpd.test` directly | Already on Podman Desktop; minimal explicit VM management |
 
 Same CLI surface, same `*.mpd.test` URLs, same per-project configuration
 model.
@@ -108,9 +108,12 @@ not manage a hypervisor explicitly: see
 - The platform's setup script (`setup.command` / `setup.sh` /
   `setup.cmd`) does VM creation + cloud-init + repo clone + build +
   host-side networking (route, DNS resolver, CA trust) in one shot.
-- Don't run on a Linux box you care about. mpd makes invasive changes
-  (apt installs, systemd config, passwordless sudo); use a sandbox VM
-  you're willing to wipe.
+- Host changes are scoped (a route to the container subnet, a DNS
+  resolver drop-in for `*.mpd.test`, mpd's local CA in the trust
+  store) and reversible via the matching `uninstall` script —
+  designed to coexist with normal daily-driver use. The Debian
+  Trixie VM is the part dedicated to mpd; wipe-and-rebuild lives
+  there.
 
 **`mpd-desktop`**
 - macOS on Apple Silicon
@@ -158,9 +161,10 @@ willing to let an AI coding agent loose on it either. mpd's predecessor
 around OrbStack; mpd moves the work behind firmer walls: containers
 always (dev tools and AI agents alike), a name-constrained local CA
 that can only sign for `*.mpd.test` (so a compromise can't impersonate
-anything else), and an optional sandbox-VM mode that adds a second
-wall around everything for the times I want to let an agent rip
-without thinking. Full rationale in [docs/VISION.md](docs/VISION.md).
+anything else), and the Sandbox VM mode as the recommended starting
+point — a whole hypervisor between your dev work and your host, with
+snapshot/revert as the safety net for letting an agent rip without
+thinking. Full rationale in [docs/VISION.md](docs/VISION.md).
 
 ## License
 

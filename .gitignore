@@ -17,4 +17,5 @@
 # SETUP.txt via `ssh user@vm "mpd --setup-info" > SETUP.txt`).
 /setup/**/SETUP.txt
 /setup/**/rootCA.pem
-/release/
+/release/*
+!/release/.gitkeep
