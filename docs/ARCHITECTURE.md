@@ -158,7 +158,10 @@ bootstrap runs as the dev user on the host: **macos-utm** and
 - **windows-hyperv** runs each entry script wholesale via UAC
   elevation (the `.cmd` shim's `Start-Process -Verb RunAs` is the
   privilege gate); the whole script body is the "fenced section" by
-  design, and there is no per-operation `sudo`.
+  design, and there is no per-operation `sudo`. CA generation and
+  cloud-init seed ISO creation are delegated to WSL Debian bash
+  (`lib/common.sh`) via `wsl -d Debian -u root`; no `openssl` or
+  `genisoimage` runs in PowerShell.
 - **generic-vm** is a manual bootstrap — the user types each command
   themselves, and there are no scripts to fence.
 - **Inside the VM and runtime containers**, the previous sister rule

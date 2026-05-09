@@ -38,10 +38,9 @@ recipes.
    - Canonical: `~/Developer/mpd/conf/caroot/{rootCA.pem,rootCA-key.pem}`
      — shared with mpd-desktop on macOS; only populated when
      `~/Developer/mpd/conf/` exists.
-   - Platform: `~/.mpd-machine/ca/{rootCA.pem,rootCA-key.pem}` —
-     always populated after first managed-platform setup. (On Linux we
-     keep the dotfile name for cross-platform symmetry; on Windows the
-     files live inside the WSL distro's home, see Phase 2.)
+   - Platform: `~/.mpd-machine/ca/{rootCA.pem,rootCA-key.pem}` on
+     Linux/macOS; `%USERPROFILE%\mpd-machine\ca\` on Windows —
+     always populated after first managed-platform setup.
    - Installers mirror on every run; wiping either side auto-restores
      from the other.
 2. **Host-only trust rule.** CAs flow host → VM only. Managed installers
@@ -71,53 +70,16 @@ macos-utm. Documented in
 Sister-rule generalization, ROADMAP cleanup, and machine docs all
 landed.
 
-## Phase 2 — `windows-hyperv` WSL refactor (Windows host)
+## Phase 2 — `windows-hyperv` WSL refactor — DONE
 
-Move cert generation + cloud-init seed prep from PowerShell into WSL
-bash. Hyper-V cmdlets, Windows trust store import, NRPT DNS, persistent
-route stay in PS — they have no WSL substitute. PowerShell encoding
-pain on `openssl` and YAML goes away.
-
-**Prereq:** `wsl --install -d Debian` (confirmed to land Trixie). The
-script asserts WSL2 + a Debian distro before doing CA work.
-
-**Files to touch** (under `mpd-machine/platforms/windows-hyperv/`):
-- `setup.cmd` / `start.cmd` / `stop.cmd` / `uninstall.cmd` — entry
-  shims; same UAC gate.
-- `lib/common.ps1` — slim to Hyper-V + trust + DNS NRPT + route + WSL
-  invocation helpers (`Invoke-WSL`, path translation `Convert-WSLPath`).
-- `lib/common.sh` — **new**. Port `generate_mpd_ca`, `copy_ca_files`,
-  `prepare_host_ca` (Linux-ized: no `/Library/Keychains` references).
-  Self-contained — duplicate from macos-utm per the platforms
-  self-containment rule, don't symlink.
-- `lib/setup.ps1` — call WSL bash for cert prep + cloud-init seed,
-  then PS for VM creation + trust import.
-- `lib/create-vm.ps1` — VHDX creation stays PS; cloud-init seed file
-  content comes from WSL bash.
-- `lib/configure-client.ps1` — DNS NRPT + route stays PS; trust import
-  reads `\\wsl$\Debian\home\<user>\.mpd-machine\ca\rootCA.pem` and
-  imports via `Import-Certificate -CertStoreLocation Cert:\LocalMachine\Root`.
-- `lib/uninstall.ps1` — adopt the per-VM `[y/N]` pattern. UAC is a
-  single elevation gate per script (whole body is the "fenced section"
-  by design — no per-op recipe affordance applies).
-
-**Path conventions:**
-- Bash sees `~/.mpd-machine/ca/rootCA.pem` inside the WSL distro home.
-- PS sees the same file at `\\wsl$\Debian\home\<user>\.mpd-machine\ca\rootCA.pem`.
-- No Windows-side mirror beyond WSL. mpd-desktop is macOS-only, so
-  there's no second consumer that needs a Windows-native path.
-
-**Definition of done:**
-- Fresh Win+Hyper-V bootstrap end-to-end on a clean Win 11 Pro install
-  (with WSL2 prereq).
-- Invariants 1 (mirror — single-location since no caroot/ on Windows),
-  2 (host-only — cert generated in WSL on the host, not in the VM),
-  4 (per-VM uninstall) all exercised. Invariant 3 (recipe affordance)
-  is replaced by the UAC gate.
-- No `openssl` or cloud-init YAML in PS.
-- README.txt updated with WSL prereq + path map.
-- `docs/ARCHITECTURE.md` §"Sister rule" mentions windows-hyperv-via-WSL
-  as a sibling pattern.
+WSL2 Debian as a Linux binary executor: CA generation (`openssl`),
+cloud-init seed ISO (`genisoimage`), and disk conversion (`qemu-img`)
+delegated to `lib/common.sh` via `Invoke-WSLScript` in `lib/common.ps1`
+(`wsl -d Debian -u root`). CA written to `%USERPROFILE%\mpd-machine\ca\`
+via `/mnt/c/...` path translation; `configure-client.ps1` reads from
+that Windows path for trust store import — no SCP from VM. Per-VM
+`[y/N]` uninstall adopted. `README.txt` updated with WSL prereq.
+`ARCHITECTURE.md` and `machine/SECURITY.md` updated.
 
 ## Phase 3 — `sandbox` platform + drop `generic-vm`
 
@@ -271,8 +233,8 @@ Sandbox already gates it off (Phase 3); now delete it entirely.
 ## Sequence (where each phase happens)
 
 1. ~~Phase 1 — Ubuntu PC.~~ ✅ Done.
-2. Reboot to Windows.
-3. **Phase 2 — Windows host (windows-hyperv WSL refactor).**
+2. ~~Reboot to Windows.~~
+3. ~~**Phase 2 — Windows host (windows-hyperv WSL refactor).**~~ ✅ Done.
 4. Switch to Mac.
 5. **Phase 3 — Mac, inside an Ubuntu 26.04 VM in UTM (sandbox + drop generic-vm).** Snapshot before each provisioning test; revert between cycles for a clean starting state.
 6. **Phase 4 — Mac (Swift cleanup of `MachineClientRecipe`).**

@@ -9,7 +9,6 @@ $PrefixLen      = 24
 $ContainerSubnet = "10.163.0.0/24"
 $DnsmasqIp      = "10.163.0.3"
 $VmNamePrefix   = "mpd-machine-"
-$CaCertRemote   = "~/Developer/mpd/conf/caroot/rootCA.pem"
 $CloudBase      = "https://cloud.debian.org/images/cloud/trixie/20260501-2465"
 $CloudFile      = "debian-13-genericcloud-amd64-20260501-2465.tar.xz"
 $CacheDir       = Join-Path $env:LOCALAPPDATA "mpd\cache"
@@ -95,18 +94,31 @@ function Ensure-MpdSwitch {
     Write-Ok "Network profile: Private"
 }
 
-# ── qemu-img ──────────────────────────────────────────────────────────────────
+# ── WSL helpers ───────────────────────────────────────────────────────────────
 
-function Initialize-QemuImg {
-    if (-not (Get-Command qemu-img -ErrorAction SilentlyContinue)) {
-        throw "qemu-img not found. Run setup.cmd to install prerequisites."
+# Convert a Windows absolute path to a WSL /mnt/... path.
+function Convert-ToWSLPath {
+    param([string]$Path)
+    if ($Path -match '^([A-Za-z]):\\(.*)') {
+        return "/mnt/$($Matches[1].ToLower())/$($Matches[2] -replace '\\', '/')"
     }
-    Write-Ok "qemu-img: $(qemu-img --version | Select-Object -First 1)"
+    throw "Cannot convert to WSL path: $Path"
 }
 
-function Invoke-QemuImg {
-    & qemu-img @args
-    if ($LASTEXITCODE -ne 0) { throw "qemu-img failed." }
+# Run a bash script in WSL Debian via a temp file. Throws on non-zero exit.
+# Use PS @"..."@ heredocs to build multi-line scripts; PS variables expand normally.
+function Invoke-WSLScript {
+    param([string]$Script)
+    $tmp = [System.IO.Path]::GetTempFileName() + ".sh"
+    $lf  = $Script -replace "`r`n", "`n" -replace "`r", "`n"
+    try {
+        [System.IO.File]::WriteAllText($tmp, $lf, [System.Text.UTF8Encoding]::new($false))
+        $wslPath = Convert-ToWSLPath $tmp
+        wsl -d Debian -u root -- bash -e "$wslPath"
+        if ($LASTEXITCODE -ne 0) { throw "WSL script failed." }
+    } finally {
+        Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # ── known_hosts cleanup ───────────────────────────────────────────────────────

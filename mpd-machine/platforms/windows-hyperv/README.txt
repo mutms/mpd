@@ -27,15 +27,20 @@ Prerequisites
       Settings > Apps > Optional Features > More Windows features
       Check "Hyper-V" (all sub-items), click OK, then reboot.
 
+  * WSL2 with the Debian distro. Run once in an admin terminal, then reboot:
+      wsl --install -d Debian
+    setup.cmd uses WSL to run openssl (CA generation), genisoimage
+    (cloud-init seed ISO), and qemu-img (disk conversion). No separate
+    Windows installs of those tools are needed.
+
   * An SSH key. The script will detect whether you have one and offer
     to generate one if not.
 
   * winget (App Installer). Pre-installed on Windows 11. On Windows 10,
     install from the Microsoft Store if missing.
 
-setup.cmd installs the remaining required tools automatically via winget
-(qemu-img for disk conversion, Windows Terminal for a proper console)
-and will prompt before installing each one.
+setup.cmd installs Windows Terminal via winget if not already present
+and will prompt before installing it.
 
 
 setup.cmd -- create a VM or switch the active VM
@@ -116,18 +121,21 @@ Both require Administrator access (UAC prompt).
 uninstall.cmd
 -------------
 
-Asks for confirmation, then:
+Lists what will be removed, asks you to press Enter to proceed, then:
 
-  1. Stops and deletes all mpd-machine-NN VMs (including their VHDX files).
-  2. Removes the NRPT DNS rule for *.mpd.test.
-  3. Removes the persistent route to the container subnet.
-  4. Removes the mpd CA certificate from the trusted root store.
-  5. Removes the Hyper-V switch, NAT rule, and host IP.
-  6. Deletes %USERPROFILE%\mpd-machine\ (helper scripts, current.env, mpd-machine.cmd).
+  1. Removes the NRPT DNS rule for *.mpd.test.
+  2. Removes the persistent route to the container subnet.
+  3. Removes the mpd CA certificate from the trusted root store.
+  4. Removes the Hyper-V switch, NAT rule, and host IP.
+  5. Deletes %USERPROFILE%\mpd-machine\ (helper scripts, CA, current.env).
+  6. Removes the 'Host mpd-machine' entry from ~/.ssh/config.
   7. Removes the "mpd-machine" desktop shortcut.
-  8. Removes the 'Host mpd-machine' entry from ~/.ssh/config.
+  8. For each mpd-machine-NN VM, asks [y/N] whether to delete it.
+     Pressing Enter (or N) keeps the VM. The default is to keep.
+     Ctrl-C during the VM loop leaves host configuration already cleaned
+     and the remaining VMs untouched.
 
-This is irreversible -- run setup.cmd again to start fresh.
+Run setup.cmd again to start fresh.
 
 
 Why the VM IP is pinned

@@ -6,8 +6,8 @@
 #   1. Adds a persistent route so Windows reaches the container subnet (10.163.0.0/24)
 #      through the VM.
 #   2. Adds an NRPT rule so Windows resolves *.mpd.test via dnsmasq inside the VM.
-#   3. Fetches the mpd CA certificate from the VM over SCP and imports it into the
-#      Windows trusted root store so browsers accept *.mpd.test HTTPS without warnings.
+#   3. Imports the mpd CA certificate from %USERPROFILE%\mpd-machine\ca\ (generated
+#      by setup.cmd via WSL openssl) into the Windows trusted root store.
 #
 # Called automatically by setup.cmd after VM creation or when switching VMs.
 
@@ -23,7 +23,8 @@ $ContainerPrefix  = "10.163.0.0/24"
 $ContainerMask    = "255.255.255.0"
 $DnsmasqIp        = "10.163.0.3"
 $NrptNamespace    = ".mpd.test"
-$CaCertRemote     = "~/Developer/mpd/conf/caroot/rootCA.pem"
+$MpdUserDir       = Join-Path $env:USERPROFILE "mpd-machine"
+$CaPemPath        = Join-Path $MpdUserDir "ca\rootCA.pem"
 
 function Write-Step { param([string]$Text) Write-Host "`n==> $Text" }
 function Write-Ok   { param([string]$Text) Write-Host "    ok: $Text" }
@@ -71,10 +72,12 @@ if ($isCorrect) {
 
 Write-Step "mpd CA certificate"
 
+if (-not (Test-Path $CaPemPath)) {
+    throw "Host CA not found at $CaPemPath -- run setup.cmd to generate it."
+}
+
 $TempCert = Join-Path $env:TEMP "mpd-rootCA.pem"
-Write-Host "    fetching from ${SshUser}@${VmIp} ..."
-& scp -o StrictHostKeyChecking=no -o BatchMode=yes "${SshUser}@${VmIp}:${CaCertRemote}" $TempCert
-if ($LASTEXITCODE -ne 0) { throw "scp failed -- is the VM running and reachable at $VmIp?" }
+Copy-Item $CaPemPath $TempCert
 
 try {
     $newCert    = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $TempCert

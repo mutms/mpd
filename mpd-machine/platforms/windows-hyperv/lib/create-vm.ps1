@@ -16,53 +16,9 @@ param(
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\common.ps1"
 
-$VmName = "$VmNamePrefix$VmOctet"
-$VmIp   = "$SwitchSubnet.$VmOctet"
-
-# ISO creation uses IMAPI2 COM -- type defined locally to avoid double-Add-Type
-# when common.ps1 is also dot-sourced by the calling setup.ps1.
-if (-not ([System.Management.Automation.PSTypeName]'IsoStreamHelper').Type) {
-    Add-Type -TypeDefinition @"
-using System;
-using System.IO;
-using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.ComTypes;
-public class IsoStreamHelper {
-    public static void WriteToFile(object comStream, string path) {
-        IStream stream = (IStream)comStream;
-        using (var fs = File.Create(path)) {
-            var buf = new byte[65536];
-            var pRead = Marshal.AllocHGlobal(4);
-            try {
-                int n;
-                do {
-                    stream.Read(buf, buf.Length, pRead);
-                    n = Marshal.ReadInt32(pRead);
-                    if (n > 0) fs.Write(buf, 0, n);
-                } while (n > 0);
-            } finally { Marshal.FreeHGlobal(pRead); }
-        }
-    }
-}
-"@
-}
-
-function New-SeedIso {
-    param([string]$SourceDir, [string]$Destination)
-    $fsi = New-Object -ComObject IMAPI2FS.MsftFileSystemImage
-    $fsi.FileSystemsToCreate = 3  # ISO9660 + Joliet
-    $fsi.VolumeName = "CIDATA"
-    Get-ChildItem $SourceDir -File | ForEach-Object { $fsi.Root.AddTree($_.FullName, $false) }
-    $imageResult = $fsi.CreateResultImage()
-    [IsoStreamHelper]::WriteToFile($imageResult.ImageStream, $Destination)
-    [System.Runtime.InteropServices.Marshal]::ReleaseComObject($imageResult) | Out-Null
-    [System.Runtime.InteropServices.Marshal]::ReleaseComObject($fsi)         | Out-Null
-}
-
-# ── 1. qemu-img ───────────────────────────────────────────────────────────────
-
-Write-Step "Checking qemu-img"
-Initialize-QemuImg
+$VmName      = "$VmNamePrefix$VmOctet"
+$VmIp        = "$SwitchSubnet.$VmOctet"
+$wslCommonSh = Convert-ToWSLPath "$PSScriptRoot\common.sh"
 
 # ── 2. Download cloud image ───────────────────────────────────────────────────
 
@@ -102,8 +58,10 @@ $VmStorePath = Join-Path (Get-VMHost).VirtualHardDiskPath $VmName
 New-Item -ItemType Directory -Force -Path $VmStorePath | Out-Null
 $VhdxPath = Join-Path $VmStorePath "$VmName.vhdx"
 
-Write-Info "Converting raw -> VHDX (takes a minute)..."
-Invoke-QemuImg convert -f raw -O vhdx -o subformat=dynamic $RawFile.FullName $VhdxPath
+Write-Info "Converting raw -> VHDX via WSL qemu-img (takes a minute)..."
+$wslRaw  = Convert-ToWSLPath $RawFile.FullName
+$wslVhdx = Convert-ToWSLPath $VhdxPath
+Invoke-WSLScript "qemu-img convert -f raw -O vhdx -o subformat=dynamic '$wslRaw' '$wslVhdx'"
 
 Write-Info "Resizing to ${DiskSizeGb} GB..."
 Resize-VHD -Path $VhdxPath -SizeBytes ($DiskSizeGb * 1GB)
@@ -113,49 +71,16 @@ Remove-Item $RawFile.FullName -Force
 
 # ── 5. Cloud-init seed ISO ────────────────────────────────────────────────────
 
-Write-Step "Creating cloud-init configuration"
+Write-Step "Creating cloud-init seed ISO (via WSL genisoimage)"
 
-$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-$CidataDir = Join-Path $TempDir "cidata"
-New-Item -ItemType Directory -Force -Path $CidataDir | Out-Null
-
-[System.IO.File]::WriteAllText((Join-Path $CidataDir "meta-data"), @"
-instance-id: $VmName
-local-hostname: $VmName
-"@, $utf8NoBom)
-
-[System.IO.File]::WriteAllText((Join-Path $CidataDir "user-data"), @"
-#cloud-config
-users:
-  - name: $VmUser
-    sudo: ALL=(ALL) NOPASSWD:ALL
-    shell: /bin/bash
-    lock_passwd: true
-    ssh_authorized_keys:
-      - $SshPubKey
-
-ssh_pwauth: false
-"@, $utf8NoBom)
-
-[System.IO.File]::WriteAllText((Join-Path $CidataDir "network-config"), @"
-version: 2
-ethernets:
-  ethernet0:
-    match:
-      name: "eth*"
-    set-name: eth0
-    addresses:
-      - ${VmIp}/${PrefixLen}
-    routes:
-      - to: default
-        via: $GwIp
-    nameservers:
-      addresses: [8.8.8.8, 1.1.1.1]
-"@, $utf8NoBom)
-
-$SeedIso = Join-Path $TempDir "seed.iso"
-New-SeedIso -SourceDir $CidataDir -Destination $SeedIso
-Remove-Item $CidataDir -Recurse -Force
+$SeedIso    = Join-Path $TempDir "seed.iso"
+$wslSeedIso = Convert-ToWSLPath $SeedIso
+$escapedKey = $SshPubKey -replace "'", "'\''"
+Invoke-WSLScript @"
+set -euo pipefail
+. '$wslCommonSh'
+generate_seed_iso '$wslSeedIso' $VmOctet '$VmUser' '$escapedKey'
+"@
 Write-Ok "Cloud-init seed ISO created"
 
 # ── 6. Create Hyper-V VM ──────────────────────────────────────────────────────
@@ -254,7 +179,20 @@ chmod 0644 "`$HOME/Developer/mpd/conf/platform.env"
 "@
 Write-Ok "Platform identity recorded"
 
-# ── 10. Detach cloud-init ISO ─────────────────────────────────────────────────
+# ── 10. Upload host CA to VM ─────────────────────────────────────────────────
+
+Write-Step "Uploading host CA to VM"
+
+$CaPem = Join-Path $MpdUserDir "ca\rootCA.pem"
+$CaKey = Join-Path $MpdUserDir "ca\rootCA-key.pem"
+Invoke-Ssh -User $VmUser -RemoteHost $VmIp -Command "mkdir -p ~/Developer/mpd/conf/caroot"
+& scp -o StrictHostKeyChecking=no -o BatchMode=yes $CaPem "${VmUser}@${VmIp}:~/Developer/mpd/conf/caroot/rootCA.pem"
+if ($LASTEXITCODE -ne 0) { throw "scp of CA cert failed." }
+& scp -o StrictHostKeyChecking=no -o BatchMode=yes $CaKey "${VmUser}@${VmIp}:~/Developer/mpd/conf/caroot/rootCA-key.pem"
+if ($LASTEXITCODE -ne 0) { throw "scp of CA key failed." }
+Write-Ok "Host CA uploaded (mpd --setup will reuse it)"
+
+# ── 11. Detach cloud-init ISO ─────────────────────────────────────────────────
 
 Write-Step "Detaching cloud-init CD (stops VM, removes DVD, restarts)"
 
@@ -275,7 +213,7 @@ Write-Info "Waiting for VM to restart..."
 Wait-ForSsh -User $VmUser -RemoteHost $VmIp -TimeoutSec 120
 Write-Ok "VM back online"
 
-# ── 11. Install packages and build mpd ───────────────────────────────────────
+# ── 12. Install packages and build mpd ───────────────────────────────────────
 
 Write-Step "Creating swap file (4 GB)"
 
@@ -319,14 +257,14 @@ sudo ln -sf "`$HOME/Developer/mpd/bin/mpd" /usr/local/bin/mpd
 "@
 Write-Ok "mpd built and installed"
 
-# ── 12. Run mpd --setup ───────────────────────────────────────────────────────
+# ── 13. Run mpd --setup ───────────────────────────────────────────────────────
 
 Write-Step "Running 'mpd --setup'"
 
 Invoke-Ssh -User $VmUser -RemoteHost $VmIp -Command "mpd --setup"
 Write-Ok "mpd --setup complete"
 
-# ── 13. Auto-start on VM boot ─────────────────────────────────────────────────
+# ── 14. Auto-start on VM boot ─────────────────────────────────────────────────
 
 Write-Step "Enabling mpd auto-start on VM boot"
 
@@ -353,7 +291,7 @@ systemctl --user enable mpd-autostart.service
 "@
 Write-Ok "mpd will start automatically on VM boot"
 
-# ── 14. Login banner ──────────────────────────────────────────────────────────
+# ── 15. Login banner ──────────────────────────────────────────────────────────
 
 Write-Step "Setting login banner"
 
@@ -364,7 +302,7 @@ sudo cp "`$HOME/Developer/mpd/assets/machine/motd" /etc/motd
 "@
 Write-Ok "Login banner set"
 
-# ── 15. Helper scripts in %USERPROFILE%\mpd-machine\ ─────────────────────────
+# ── 16. Helper scripts in %USERPROFILE%\mpd-machine\ ─────────────────────────
 
 Write-Step "Creating helper scripts in $MpdUserDir"
 
@@ -389,6 +327,8 @@ Write-Host "VM '$VmName' suspended."
 Write-Ok "Helper scripts created"
 
 # ── 16. Desktop shortcut ──────────────────────────────────────────────────────
+
+# ── 17. Desktop shortcut ──────────────────────────────────────────────────────
 
 Write-Step "Creating desktop shortcut"
 

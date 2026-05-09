@@ -1,5 +1,5 @@
 #Requires -RunAsAdministrator
-# uninstall.ps1 -- delete all mpd VMs and remove the mpd switch, NAT, and networking rules.
+# uninstall.ps1 -- remove host-level mpd configuration and optionally delete VMs.
 # Called by uninstall.cmd.
 
 $ErrorActionPreference = "Stop"
@@ -8,37 +8,21 @@ $ErrorActionPreference = "Stop"
 $vms = @(Get-MpdVMs)
 
 Write-Host ""
-Write-Host "This will permanently DELETE the following VMs and remove the mpd switch:"
-Write-Host ""
-if ($vms.Count -eq 0) {
-    Write-Host "  (no mpd-machine-NN VMs found)"
-} else {
-    foreach ($vm in $vms) { Write-Host "  $($vm.Name)  ($($vm.State))" }
-}
-Write-Host ""
-Write-Host "It will also remove:"
+Write-Host "This will remove host-level mpd configuration:"
 Write-Host "  - Hyper-V switch '$SwitchName' and its NAT rule"
 Write-Host "  - Persistent route to the container subnet"
 Write-Host "  - NRPT rule for *.mpd.test"
 Write-Host "  - mpd CA certificate from the trusted root store"
-Write-Host "  - $MpdUserDir (helper scripts, current.env, mpd-machine.cmd)
-  - 'Host mpd-machine' block from ~/.ssh/config"
-Write-Host ""
-$confirm = Read-Host "Type YES to confirm"
-if ($confirm -ne "YES") { Write-Host "Aborted."; exit 0 }
-
-# ── Stop and delete VMs ───────────────────────────────────────────────────────
-
-foreach ($vm in $vms) {
-    if ($vm.State -ne 'Off') {
-        Write-Host "Stopping $($vm.Name) ..."
-        Stop-VM -Name $vm.Name -TurnOff -Force
-    }
-    Write-Host "Deleting $($vm.Name) ..."
-    $storePath = Join-Path (Get-VMHost).VirtualHardDiskPath $vm.Name
-    Remove-VM -Name $vm.Name -Force
-    if (Test-Path $storePath) { Remove-Item $storePath -Recurse -Force }
+Write-Host "  - $MpdUserDir (helper scripts, CA, current.env)"
+Write-Host "  - 'Host mpd-machine' block from ~/.ssh/config"
+Write-Host "  - mpd-machine desktop shortcut"
+if ($vms.Count -gt 0) {
+    Write-Host ""
+    Write-Host "Existing VMs (you will be asked about each one after host cleanup):"
+    foreach ($vm in $vms) { Write-Host "  $($vm.Name)  ($($vm.State))" }
 }
+Write-Host ""
+Read-Host "Press Enter to proceed, or Ctrl-C to abort"
 
 # ── Remove NRPT rule ──────────────────────────────────────────────────────────
 
@@ -58,10 +42,7 @@ if ($route) {
 
 # ── Remove CA certificate ─────────────────────────────────────────────────────
 
-# Prefer the exact thumbprint recorded on install (~/mpd/ca.sha1). Fall back
-# to a subject-pattern sweep so we still clean up VMs created before that
-# tracking existed, or any stale leftovers from prior installs.
-$caSha1Path = Join-Path $env:USERPROFILE "mpd-machine\ca.sha1"
+$caSha1Path = Join-Path $MpdUserDir "ca.sha1"
 $tracked    = $false
 if (Test-Path $caSha1Path) {
     $thumbprint = (Get-Content $caSha1Path -Raw).Trim()
@@ -125,6 +106,30 @@ $shortcut = Join-Path ([Environment]::GetFolderPath("Desktop")) "mpd-machine.lnk
 if (Test-Path $shortcut) {
     Remove-Item $shortcut -Force
     Write-Host "Desktop shortcut removed."
+}
+
+# ── Per-VM deletion ───────────────────────────────────────────────────────────
+
+if ($vms.Count -gt 0) {
+    Write-Host ""
+    Write-Host "VM deletion (default: keep):"
+    Write-Host ""
+    foreach ($vm in $vms) {
+        $inp = Read-Host "  Delete $($vm.Name)  ($($vm.State))? [y/N]"
+        if ($inp -match '^[Yy]$') {
+            if ($vm.State -ne 'Off') {
+                Write-Host "    Stopping $($vm.Name) ..."
+                Stop-VM -Name $vm.Name -TurnOff -Force
+            }
+            Write-Host "    Deleting $($vm.Name) ..."
+            $storePath = Join-Path (Get-VMHost).VirtualHardDiskPath $vm.Name
+            Remove-VM -Name $vm.Name -Force
+            if (Test-Path $storePath) { Remove-Item $storePath -Recurse -Force }
+            Write-Host "    Deleted."
+        } else {
+            Write-Host "    Kept $($vm.Name)."
+        }
+    }
 }
 
 Write-Host ""

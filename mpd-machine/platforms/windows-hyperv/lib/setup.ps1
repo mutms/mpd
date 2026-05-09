@@ -29,16 +29,30 @@ foreach ($tool in @("ssh", "ssh-keygen", "scp")) {
 }
 Write-Ok "SSH tools available"
 
+# ── WSL ───────────────────────────────────────────────────────────────────────
+
+Write-Step "WSL"
+
+cmd /c "wsl -d Debian -- true >nul 2>&1"
+if ($LASTEXITCODE -ne 0) {
+    throw "WSL2 with a Debian distro is required. Run: wsl --install -d Debian  (then reboot and re-run setup.cmd)"
+}
+Write-Ok "WSL + Debian available"
+
+Write-Info "Checking WSL tools (openssl, genisoimage, qemu-utils)..."
+$wslCommonSh = Convert-ToWSLPath "$PSScriptRoot\common.sh"
+Invoke-WSLScript @"
+set -euo pipefail
+. '$wslCommonSh'
+ensure_wsl_deps
+"@
+Write-Ok "WSL tools ready"
+
 # ── Required tools (winget) ───────────────────────────────────────────────────
 
 Write-Step "Required tools"
 
 $reqTools = @(
-    [PSCustomObject]@{
-        Id    = 'cloudbase.qemu-img'
-        Name  = 'qemu-img'
-        Check = { [bool](Get-Command qemu-img -ErrorAction SilentlyContinue) }
-    }
     [PSCustomObject]@{
         Id    = 'Microsoft.WindowsTerminal'
         Name  = 'Windows Terminal'
@@ -70,19 +84,30 @@ foreach ($tool in $reqTools) {
     Write-Ok "$($tool.Name) installed"
 }
 
-# ── Switch confirmation ────────────────────────────────────────────────────────
+# ── Host CA ───────────────────────────────────────────────────────────────────
 
-Write-Host ""
-Write-Host "This setup uses a dedicated Hyper-V Internal switch named 'mpd'."
-Write-Host "  Subnet : $SwitchSubnet.0/$PrefixLen"
-Write-Host "  Host IP: $GwIp  (this Windows machine)"
-Write-Host "  VM IPs : $SwitchSubnet.2 - $SwitchSubnet.254"
-Write-Host ""
-Write-Host "Any VM connected to this switch -- including custom ones you created --"
-Write-Host "will use NAT through this host for internet access."
-Write-Host ""
-$inp = Read-Host "Create or reuse the 'mpd' switch? [Y/n]"
-if ($inp -and $inp -notmatch '^[Yy]') { Write-Host "Aborted."; exit 0 }
+Write-Step "Host CA"
+
+$CaDir = Join-Path $MpdUserDir "ca"
+$CaPem = Join-Path $CaDir "rootCA.pem"
+$CaKey = Join-Path $CaDir "rootCA-key.pem"
+
+if ((Test-Path $CaPem) -and (Test-Path $CaKey)) {
+    Write-Ok "Reusing existing host CA ($CaDir)"
+} else {
+    New-Item -ItemType Directory -Force -Path $CaDir | Out-Null
+    Write-Info "Generating host CA via WSL openssl (takes ~30 s)..."
+    $wslCaKey = Convert-ToWSLPath $CaKey
+    $wslCaPem = Convert-ToWSLPath $CaPem
+    Invoke-WSLScript @"
+set -euo pipefail
+. '$wslCommonSh'
+generate_mpd_ca '$wslCaKey' '$wslCaPem'
+"@
+    Write-Ok "Host CA generated ($CaDir)"
+}
+
+# ── Switch ────────────────────────────────────────────────────────────────────
 
 Write-Step "Hyper-V switch"
 Ensure-MpdSwitch

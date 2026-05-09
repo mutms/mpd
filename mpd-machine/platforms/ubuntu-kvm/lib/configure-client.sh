@@ -54,9 +54,6 @@ trap cleanup EXIT
 
 # --- Phase 1a: locate host CA (host-only — never from a VM) ---
 
-CAROOT_DIR="${HOME}/Developer/mpd/conf/caroot"
-CAROOT_PEM="${CAROOT_DIR}/rootCA.pem"
-CAROOT_KEY="${CAROOT_DIR}/rootCA-key.pem"
 PLATFORM_CAROOT="${STATE_DIR}/ca"
 PLATFORM_PEM="${PLATFORM_CAROOT}/rootCA.pem"
 PLATFORM_KEY="${PLATFORM_CAROOT}/rootCA-key.pem"
@@ -66,20 +63,11 @@ new_fp=""
 
 if [ "$SKIP_CA" = 1 ]; then
     :
-elif [ -f "$CAROOT_PEM" ] && [ -f "$CAROOT_KEY" ]; then
-    cert_source="$CAROOT_PEM"
-    if [ ! -f "$PLATFORM_PEM" ] || [ ! -f "$PLATFORM_KEY" ]; then
-        copy_ca_files "$CAROOT_PEM" "$CAROOT_KEY" "$PLATFORM_CAROOT"
-    fi
 elif [ -f "$PLATFORM_PEM" ] && [ -f "$PLATFORM_KEY" ]; then
     cert_source="$PLATFORM_PEM"
-    if [ -d "${HOME}/Developer/mpd/conf" ] \
-       && { [ ! -f "$CAROOT_PEM" ] || [ ! -f "$CAROOT_KEY" ]; }; then
-        copy_ca_files "$PLATFORM_PEM" "$PLATFORM_KEY" "$CAROOT_DIR"
-    fi
 else
-    warn "no host CA found at ${CAROOT_DIR}/ or ${PLATFORM_CAROOT}/ — skipping CA-related steps."
-    warn "(host CAs are never pulled from a VM; copy rootCA.pem+rootCA-key.pem into either location and re-run.)"
+    warn "no host CA found at ${PLATFORM_CAROOT}/ — skipping CA-related steps."
+    warn "(run setup.sh to generate the host CA before configuring the client.)"
 fi
 
 if [ -n "$cert_source" ]; then
