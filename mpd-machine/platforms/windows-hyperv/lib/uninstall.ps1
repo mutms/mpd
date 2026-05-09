@@ -67,6 +67,15 @@ if ($stale) {
     }
 }
 
+# ── Stop all VMs (required before switch can be removed) ─────────────────────
+
+foreach ($vm in @(Get-MpdVMs)) {
+    if ($vm.State -notin @('Off', 'Saved')) {
+        Write-Host "Stopping $($vm.Name) ..."
+        Stop-VM -Name $vm.Name -TurnOff -Force
+    }
+}
+
 # ── Remove switch, NAT, IP ────────────────────────────────────────────────────
 
 $nat = Get-NetNat -Name $SwitchName -ErrorAction SilentlyContinue
