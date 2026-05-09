@@ -36,6 +36,16 @@ extension Mpd.Environment {
         "\(confDir)/caroot"
     }
 
+    /// Platform-owned CA directory written by the mpd-machine macos-utm
+    /// bootstrap scripts (see mpd-machine/platforms/macos-utm/lib/common.sh).
+    /// Holds real files mirrored with `confCARootDir` on macOS hosts that
+    /// have created an mpd-machine VM. `DesktopActionSetup` reads it when
+    /// `confCARootDir` is missing so a Mac that runs both modes converges on
+    /// a single CA. Bash scripts manage writes; Swift only ever reads.
+    static var mpdMachineCARootDir: String {
+        "\(homeDir)/.mpd-machine/ca"
+    }
+
     /// WireGuard keys and client config directory (persisted, not removed by --uninstall).
     /// Used by mpd-desktop only — mpd-machine reaches containers via plain routing.
     static var confWireGuardDir: String {

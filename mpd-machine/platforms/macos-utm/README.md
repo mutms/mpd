@@ -65,9 +65,12 @@ then **does all host-side privileged work up front** so you can walk
 away through the long unattended phase:
 
 1. Prepares the mpd CA on the host: reuses
-   `~/Developer/mpd/conf/caroot/{rootCA.pem,rootCA-key.pem}` if
-   present, otherwise generates a fresh CA (in `caroot/` if `conf/`
-   exists, else in a per-platform scratch dir).
+   `~/Developer/mpd/conf/caroot/{rootCA.pem,rootCA-key.pem}` or
+   `~/.mpd-machine/ca/{rootCA.pem,rootCA-key.pem}` if either is
+   populated, otherwise generates a fresh CA. Whichever exists, the
+   two locations end the run mirrored — see the
+   "Shared CA across mpd-desktop and mpd-machine VMs" section below
+   for the full mirror behavior.
 2. Prints the exact `route` / `tee` / `security` commands it would run
    as root and lets you choose: copy/paste them into another terminal
    (and press Enter to continue), or press Enter to provide a

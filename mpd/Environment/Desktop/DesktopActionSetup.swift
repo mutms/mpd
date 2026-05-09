@@ -138,11 +138,24 @@ extension Mpd.Environment.Action.Setup {
             try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir)
         }
 
-        if !fm.fileExists(atPath: caRootPem) {
-            try Mpd.Environment.Certificate.generateCA(caKeyPath: caKeyPem, caCertPath: caRootPem, certsDir: certOpsDir)
-            ok("CA certificate generated in \(caRootPem)")
-        } else {
+        if fm.fileExists(atPath: caRootPem) {
             ok("CA already exists in \(caRootPem)")
+        } else {
+            // Adopt the mpd-machine platform CA when present so a Mac running
+            // both modes shares one CA (the macos-utm bash scripts do the
+            // symmetric thing — they reuse caroot/ when it exists).
+            let machineCAPem = "\(Mpd.Environment.mpdMachineCARootDir)/rootCA.pem"
+            let machineCAKey = "\(Mpd.Environment.mpdMachineCARootDir)/rootCA-key.pem"
+            if fm.fileExists(atPath: machineCAPem) && fm.fileExists(atPath: machineCAKey) {
+                try fm.copyItem(atPath: machineCAPem, toPath: caRootPem)
+                try fm.copyItem(atPath: machineCAKey, toPath: caKeyPem)
+                try fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: caRootPem)
+                try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: caKeyPem)
+                ok("CA adopted from \(Mpd.Environment.mpdMachineCARootDir) into \(caRootPem)")
+            } else {
+                try Mpd.Environment.Certificate.generateCA(caKeyPath: caKeyPem, caCertPath: caRootPem, certsDir: certOpsDir)
+                ok("CA certificate generated in \(caRootPem)")
+            }
         }
 
         var caCertIsDir: ObjCBool = false

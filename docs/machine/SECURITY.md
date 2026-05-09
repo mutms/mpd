@@ -115,14 +115,20 @@ mpd generates a private CA at `mpd --setup` time. The CA signs all TLS certifica
 
 | Property | Value |
 |---|---|
-| Location | `~/Developer/mpd/conf/caroot/rootCA.pem` + `rootCA-key.pem` |
+| Location (canonical) | `~/Developer/mpd/conf/caroot/rootCA.pem` + `rootCA-key.pem` |
+| Location (platform mirror, macos-utm) | `~/.mpd-machine/ca/rootCA.pem` + `rootCA-key.pem` |
 | CA validity | 10 years |
 | Leaf cert validity | 397 days (macOS requires < 398 for trust) |
 | Name constraints | `mpd.test` + `.mpd.test` only |
 | Key permissions | `rootCA-key.pem` mode `0600` |
-| macOS trust | Added to login Keychain via `security add-trusted-cert` |
+| macOS trust (mpd-desktop) | login Keychain via `security add-trusted-cert` |
+| macOS trust (mpd-machine) | System Keychain via `security add-trusted-cert -d -r trustRoot` |
 
 **Name constraints** limit the CA to signing certificates for `*.mpd.test` domains only. Even if the CA key is compromised, it cannot sign certificates for real domains (e.g. `google.com`). Browsers enforce name constraints.
+
+**Two real-file locations on macos-utm hosts.** The macos-utm bootstrap scripts keep `caroot/` and `~/.mpd-machine/ca/` mirrored on every run. The redundant copy is the safety net: wipe one (or delete the cert from Keychain Access) and the next `setup.command` restores from the other side and re-imports the keychain trust. mpd-desktop's `mpd --setup` does the symmetric thing — it adopts from `~/.mpd-machine/ca/` when `caroot/` is absent, so a Mac running both modes converges on a single CA. Bash scripts manage all writes to `~/.mpd-machine/ca/`; Swift only ever reads from it.
+
+**Host-only trust rule.** CAs flow host → VM only. The macOS keychain only ever trusts certificates the host generated itself. `configure-client.sh` will not pull a CA off a VM and import it into the keychain — that would invert the trust direction. On a Mac with neither caroot/ nor `~/.mpd-machine/ca/` populated (e.g. an imported VM created elsewhere), CA import is skipped; route + DNS still get configured, and HTTPS will warn until the user copies a host CA into one of the two locations.
 
 ### Certificate types
 

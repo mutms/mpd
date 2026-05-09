@@ -104,19 +104,38 @@ scripts follow:
 5. **Skip the fence entirely** when nothing needs to change. On a
    re-run where route, resolver, and CA are already correct, the user
    sees no password prompt at all.
-6. **Generate the CA on the host before VM creation** when possible.
-   `prepare_host_ca` in `lib/common.sh` either reuses an existing CA
-   at `~/Developer/mpd/conf/caroot/` or generates a fresh one (in
-   `caroot/` or in a per-platform scratch dir) using the bash twin of
-   `Mpd.Environment.Certificate.generateCA`
-   (`mpd/Environment/Certificate.swift`). The CA is then uploaded
-   into the VM, where mpd's reuse check
-   (`MachineActionSetup.swift:331`) picks it up. With this pattern
-   route, resolver, **and** CA-trust all collapse into a single
-   upfront fenced block, after which the long unattended VM-creation
-   phase runs holding no sudo creds. The two CA generators —
-   `generate_mpd_ca` (bash) and `generateCA` (Swift) — must stay
-   in sync; the file-level comments in both call this out.
+6. **Generate the CA on the host before VM creation, and only on
+   the host.** `prepare_host_ca` in `lib/common.sh` keeps a single
+   host CA alive across two real-file locations and mirrors between
+   them every time it runs:
+   - `~/Developer/mpd/conf/caroot/` — canonical mpd location, shared
+     with mpd-desktop. Populated only when `~/Developer/mpd/conf/`
+     already exists.
+   - `~/.mpd-machine/ca/` — platform-owned. Always present after the
+     first `setup.command` run.
+
+   On a wipe of either side, the next `setup.command` restores it
+   from the surviving copy and re-imports into the System keychain.
+   Generation uses the bash twin of `Mpd.Environment.Certificate.generateCA`
+   (`mpd/Environment/Certificate.swift`); the two generators must
+   stay in sync. The CA is then uploaded into the VM, where mpd's
+   reuse check (`MachineActionSetup.swift:331`) picks it up. Route,
+   resolver, **and** CA-trust collapse into a single upfront fenced
+   block, after which the long unattended VM-creation phase runs
+   holding no sudo creds.
+
+   **Boundary rule:** CAs flow host → VM only. The macOS keychain
+   only ever trusts certificates the host generated itself.
+   `configure-client.sh` will not pull a CA off a VM and import it
+   into the keychain — that would invert the trust direction by
+   accepting a cert of unknown provenance from inside an SSH session.
+   On a Mac with neither caroot/ nor `~/.mpd-machine/ca/` populated
+   (e.g. an imported VM created elsewhere), `configure-client.sh`
+   configures route + DNS but skips CA import; the user has to bring
+   a host CA across themselves. mpd-desktop's `DesktopActionSetup`
+   does the symmetric thing — it adopts from `~/.mpd-machine/ca/`
+   when caroot/ is missing, so a Mac running both modes converges on
+   one CA after a wipe of either side.
 7. **Optional dev override.** Before the fenced block opens,
    `print_sudo_recipe` in `lib/common.sh` lists the exact runnable
    commands and lets the dev choose to run them in another terminal
