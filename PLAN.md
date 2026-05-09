@@ -2,10 +2,13 @@
 
 Working doc. Delete when done.
 
-Goal: get all four `mpd-machine` platforms (macos-utm, windows-hyperv,
-ubuntu-kvm, generic-vm) onto the same shape — single host CA mirrored
-across two real-file locations, sudo-recipe affordance, per-VM `[y/N]`
-uninstall, host-only trust rule. Then prune dead Swift surface.
+Goal: settle the `mpd-machine` platform set on four — three "host
+reaches into a VM" automated bootstraps (macos-utm, ubuntu-kvm,
+windows-hyperv) plus a "graphical sandbox" path (sandbox) where the
+user lives inside the VM and the host stays untouched. Drop generic-vm
+along the way. Prune the now-dead Swift surface that only existed to
+serve generic-vm's "host has a different OS than the VM" laptop
+recipes.
 
 ## Status
 
@@ -42,9 +45,9 @@ uninstall, host-only trust rule. Then prune dead Swift surface.
    - Installers mirror on every run; wiping either side auto-restores
      from the other.
 2. **Host-only trust rule.** CAs flow host → VM only. Managed installers
-   never pull a CA off a VM into the host trust store. `generic-vm` is
-   the explicit exception: the user manually copies if they want host
-   trust (and accepts that they're trusting a VM-generated cert).
+   never pull a CA off a VM into the host trust store. `sandbox` doesn't
+   touch the host trust store at all — both the CA and its trust live
+   strictly inside the VM, so the rule is satisfied trivially.
 3. **Sudo recipe affordance.** Before any privileged operation: print
    the exact runnable commands; let the dev choose `(a)` run yourself
    in another terminal then press Enter, or `(b)` press Enter and let
@@ -53,7 +56,10 @@ uninstall, host-only trust rule. Then prune dead Swift surface.
    `macos-utm/lib/common.sh::print_sudo_recipe`.
 4. **Per-VM `[y/N]` deletion in uninstall, as the last step.** Default
    keep. Ctrl-C during the loop leaves the host fully cleaned up and
-   the remaining VMs intact.
+   the remaining VMs intact. *(Applies to the three host-managed
+   platforms — macos-utm, ubuntu-kvm, windows-hyperv. `sandbox` has
+   no platform installer to uninstall: VM lifecycle is the
+   hypervisor's job, project lifecycle is `mpd --uninstall`.)*
 
 ## Phase 1 — `ubuntu-kvm` — DONE
 
@@ -113,42 +119,133 @@ script asserts WSL2 + a Debian distro before doing CA work.
 - `docs/ARCHITECTURE.md` §"Sister rule" mentions windows-hyperv-via-WSL
   as a sibling pattern.
 
-## Phase 3 — `generic-vm` doc lift (any host)
+## Phase 3 — `sandbox` platform + drop `generic-vm`
 
-Smallest change. Promote GNOME-in-VM to the primary path. Lift the
-laptop-side trust recipes from `MachineClientRecipe.swift` into
-`generic-vm/README.md` so Phase 4 doesn't orphan generic-vm users.
+New **graphical sandbox mpd-machine** platform: user installs Ubuntu
+26.04 desktop in their hypervisor of choice (UTM / Hyper-V /
+VirtualBox / virt-manager / VMware), takes a snapshot, runs one
+script inside the VM. mpd lives entirely in the VM; the host gets
+zero DNS/route/trust changes. UX is "open the VM window, you're at
+a GNOME desktop with Firefox open on `https://mpd.test`."
 
-**Files to touch:**
-- `mpd-machine/platforms/generic-vm/README.md` — add a "Laptop-side
-  trust setup (optional, skip if you use GNOME-in-VM)" section with
-  per-OS-family `scp` + trust commands (macOS / Debian-Ubuntu /
-  Fedora-RHEL). Lead the bootstrap section with GNOME-in-VM as the
-  recommended path; the laptop-trust path becomes the secondary
-  branch.
-- `docs/machine/USAGE.md:81` (the existing manual scp recipe) — link
-  to `generic-vm/README.md` for the full per-OS guide instead of
-  inlining.
+The hypervisor owns VM lifecycle (start/stop/snapshot from its GUI);
+mpd inside owns project lifecycle. So no `setup.sh`/`start.sh`/
+`stop.sh`/`uninstall.sh` shim quartet — just one `provision.sh`.
+
+**Files to create** (under `mpd-machine/platforms/sandbox/`):
+```
+README.md            # "install Ubuntu 26.04 desktop, snapshot, run provision.sh"
+provision.sh         # ~150 lines: preflight + apt deps + mpd build + mpd --setup
+```
+
+**Conventions:**
+- **Target: Ubuntu 26.04 LTS** with the standard GNOME desktop install.
+  Other distros work mechanically (apt-family-only); refuse on
+  non-26.04 in preflight.
+- **Swift toolchain confirmed**: `swiftlang` from Ubuntu 26.04's apt
+  repos compiles mpd clean (Swift 6.1, zero warnings). No need for
+  swift.org tarballs or alternative toolchain wrangling.
+- **Passwordless sudo for the dev user is a hard preflight gate.** mpd
+  needs it for resolved drop-in, ca-certificates, podman, etc.
+  Preflight surfaces the bootstrap one-liner (`su -c "apt-get install
+  -y sudo && install -m 440 /dev/stdin /etc/sudoers.d/$USER <<<
+  '$USER ALL=(ALL) NOPASSWD:ALL'"`) as a user-only item if not
+  already enabled.
+- **No host-side anything.** No host CA mirror, no host route, no host
+  resolver drop-in, no host trust import. The host runs the
+  hypervisor; that's it.
+- **Inside-VM trust** uses the snap-Firefox-aware path
+  (`/etc/firefox/policies/{policies.json,mpd-rootCA.crt}`) — same fix
+  we landed for ubuntu-kvm. mpd's `MachineActionSetup.installFirefoxPolicy`
+  needs to switch to that path on Ubuntu (currently writes to the
+  Debian Trixie firefox-esr distribution dir).
+- **Static IP / cloud-init seed**: not needed. The user installs Ubuntu
+  interactively; the VM's external IP is whatever the hypervisor
+  hands out. Nobody on the host queries `https://*.mpd.test` from
+  outside the VM, so no need to pin.
+
+**provision.sh flow:**
+1. Preflight: Ubuntu 26.04, passwordless sudo, required apt packages.
+   Categorised report + `(a)` paste-recipe / `(b)` press-Enter
+   affordance — same shape as ubuntu-kvm, smaller scope.
+2. Apt install: `build-essential pkg-config make swiftlang git
+   curl libnss3-tools qemu-guest-agent`.
+3. `git clone` mpd into `~/Developer/mpd` if not present.
+4. `make install` + `sudo ln -sf … /usr/local/bin/mpd`.
+5. Write `~/Developer/mpd/conf/platform.env` with
+   `MPD_PLATFORM=sandbox` (and no `MPD_CLIENT_OS` — the field is
+   irrelevant when there's no separate client).
+6. `mpd --setup`.
+
+**Swift changes:**
+- `mpd/Core/Platform.swift`: add `case sandbox = "sandbox"` to
+  `PlatformKind`. Update validator error message + load-failure help
+  text. Make `MPD_CLIENT_OS` optional / accept missing for sandbox
+  (or default to the in-VM OS family).
+- `mpd/Environment/Machine/MachineClientRecipe.swift`: skip the
+  printed laptop recipes entirely when `platform == .sandbox`. (This
+  block goes away in Phase 4 anyway; sandbox just gets there first.)
+- `mpd/Environment/Certificate.swift` (or wherever `installFirefoxPolicy`
+  lives): on Ubuntu, write to `/etc/firefox/policies/{policies.json,
+  mpd-rootCA.crt}` rather than the firefox-esr distribution dir.
+
+**Drop generic-vm** (after sandbox smoke-tests on a UTM-on-macOS
+Ubuntu VM with snapshot):
+- `rm -rf mpd-machine/platforms/generic-vm/`.
+- Remove `case genericVM = "generic-vm"` from `PlatformKind`.
+- `mpd-machine/platforms/README.md`: remove the generic-vm row, add
+  the sandbox row.
+- `docs/machine/{README,USAGE}.md`: replace generic-vm references
+  with sandbox where appropriate; the "any other Linux / cloud /
+  hand-rolled VM" row in `machine/README.md` either points at
+  sandbox (if the user runs Ubuntu 26.04 in their VM) or notes that
+  the prior generic-vm path is no longer maintained.
+- `docs/ARCHITECTURE.md` §"Sister rule": drop the generic-vm bullet
+  from the "doesn't apply" list (sandbox follows the inside-VM
+  privilege rule from §"Mandatory privilege rule" — passwordless
+  sudo per-command, run as the dev user).
+
+**Test methodology:**
+Build/test from inside an Ubuntu 26.04 VM in UTM on the Mac. Take a
+hypervisor snapshot before each `provision.sh` run; revert after
+each test cycle so we always start from a known-clean state.
 
 **Definition of done:**
-- generic-vm README has the per-OS laptop-trust section, self-contained.
-- Phase 4 has a clean "delete from Swift" target.
+- `provision.sh` end-to-end on a clean Ubuntu 26.04 desktop install:
+  preflight → apt → build → `mpd --setup` → snap-Firefox opens
+  `https://mpd.test/` from inside the VM with no warning.
+- Pre-warm of `php` runtime + `postgres:latest` runs successfully
+  (sandbox flow doesn't strictly require it, but if we do it for
+  ubuntu-kvm the symmetry is nice — this is a TODO to confirm during
+  implementation).
+- generic-vm directory + Swift case + doc references all gone.
+- `mpd-machine/platforms/README.md` table reflects four platforms:
+  macos-utm, ubuntu-kvm, windows-hyperv, sandbox.
 
 ## Phase 4 — Swift cleanup (Mac, after Phase 3 lands)
 
-Remove now-redundant trust-import recipe blocks from
-`mpd/Environment/Machine/MachineClientRecipe.swift`. Keep route + DNS
-recipes (still useful for generic-vm users who don't read READMEs).
+With generic-vm gone and the three automated platforms each handling
+host-side configuration themselves, `MachineClientRecipe.swift`'s
+"print laptop-side trust commands" surface area is dead weight.
+Sandbox already gates it off (Phase 3); now delete it entirely.
 
 **Files to touch:**
 - `mpd/Environment/Machine/MachineClientRecipe.swift` — delete the
-  macOS / Linux / Fedora trust-import blocks. Update the printed
-  footer to point at "see your platform's README for laptop-side
-  trust setup."
+  macOS / Linux / Fedora trust-import + scp recipe blocks. Most of
+  the file probably collapses to a one-line "see your platform's
+  README" footer printed at the end of `mpd --setup`, or goes away
+  entirely if nothing meaningful remains.
+- `mpd/Environment/Machine/MachineActionSetup.swift` — remove the
+  `Mpd.Environment.Integration.printClientArtifacts(...)` call near
+  the end of setup if it becomes a no-op.
+- `mpd/Core/Platform.swift` — once `MachineClientRecipe` no longer
+  uses `MPD_CLIENT_OS`, evaluate whether the `ClientOS` enum still
+  has any consumers worth keeping. If not, retire it.
 
 **Definition of done:**
-- `mpd --setup` no longer prints scp+trust recipes.
-- `make install` succeeds on macOS.
+- `mpd --setup` prints no scp+trust recipes on any platform.
+- `make install` succeeds on Mac and on Ubuntu 26.04 with no
+  warnings (Swift 6.1 confirmed clean today).
 
 ## Phase 5 — Testing matrix (each platform host)
 
@@ -166,15 +263,17 @@ recipes (still useful for generic-vm users who don't read READMEs).
 | ubuntu-kvm | `stop.sh` → `start.sh` cycle | managedsave → resume; route re-asserted after host reboot |
 | ubuntu-kvm | `uninstall.sh` keep one VM | host cleanup applied; kept VM intact; pool defined and dir preserved |
 | ubuntu-kvm | `uninstall.sh` delete all VMs | host cleanup + pool destroy/undefine; pool dir left in place per design |
-| generic-vm | manual Debian Trixie netinst → `provision-vm.sh` → GNOME-in-VM browsing | no host trust needed |
-| generic-vm | same VM, but with manual laptop-side scp+trust per README | host trust works on macOS / Linux laptop |
+| sandbox | clean Ubuntu 26.04 LTS desktop install in UTM (snapshot taken) → `bash provision.sh` from inside the VM | preflight green, apt+build+`mpd --setup` complete, snap Firefox opens `https://mpd.test/` without warning, host stays untouched |
+| sandbox | revert to snapshot, simulate "passwordless sudo not enabled" (skip the bootstrap one-liner) → re-run `provision.sh` | preflight refuses with the explicit `su -c …` recipe; second run after applying it passes through |
+| sandbox | snap Firefox + Chromium both browse `https://mpd.test/` from inside the VM | both trust without warning |
+| sandbox | `mpd create` / `mpd start` / `mpd stop` / `mpd --uninstall` from a GNOME terminal in the VM | full project lifecycle works without leaving the VM |
 
 ## Sequence (where each phase happens)
 
 1. ~~Phase 1 — Ubuntu PC.~~ ✅ Done.
 2. Reboot to Windows.
-3. **Phase 2 — Windows host.**
+3. **Phase 2 — Windows host (windows-hyperv WSL refactor).**
 4. Switch to Mac.
-5. **Phase 3 — Mac (or any host — pure docs).**
-6. **Phase 4 — Mac (Swift build).**
-7. **Phase 5 — every host in turn.**
+5. **Phase 3 — Mac, inside an Ubuntu 26.04 VM in UTM (sandbox + drop generic-vm).** Snapshot before each provisioning test; revert between cycles for a clean starting state.
+6. **Phase 4 — Mac (Swift cleanup of `MachineClientRecipe`).**
+7. **Phase 5 — every host in turn (full testing matrix).**
