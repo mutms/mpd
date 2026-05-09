@@ -49,7 +49,7 @@ get_mpd_vms() {
             NF >= 3 {
                 name = ""
                 for (i = 3; i <= NF; i++) { name = (i == 3 ? $i : name " " $i) }
-                if (name ~ "^"prefix) { printf "%s\t%s\n", name, $2 }
+                if (name ~ ("^" prefix "[0-9]+$")) { printf "%s\t%s\n", name, $2 }
             }
           ' \
         | sort

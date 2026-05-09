@@ -24,7 +24,12 @@ function Write-Info { param([string]$Text) Write-Host "    $Text" }
 # ── VM helpers ────────────────────────────────────────────────────────────────
 
 function Get-MpdVMs {
-    Get-VM -Name "$VmNamePrefix*" -ErrorAction SilentlyContinue | Sort-Object Name
+    # Only match the numeric-suffix flavor (mpd-machine-158 etc.).
+    # mpd-machine-sandbox and other non-numeric suffixes belong to other
+    # platforms (sandbox) and must not be enumerated here.
+    Get-VM -Name "$VmNamePrefix*" -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match "^$VmNamePrefix\d+$" } |
+        Sort-Object Name
 }
 
 function Get-CurrentVmOctet {

@@ -88,7 +88,7 @@ get_mpd_vms() {
                 name = $2
                 state = ""
                 for (i = 3; i <= NF; i++) state = (state == "" ? $i : state " " $i)
-                if (name ~ "^"prefix) printf "%s\t%s\n", name, state
+                if (name ~ ("^" prefix "[0-9]+$")) printf "%s\t%s\n", name, state
             }
           ' \
         | sort
