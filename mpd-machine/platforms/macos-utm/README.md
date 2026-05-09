@@ -125,18 +125,30 @@ disk." Useful before shutting down the Mac or switching VMs via
 
 ## `uninstall.command`
 
-Asks for confirmation (`Type YES`), then:
+Asks for confirmation (`Type YES`), then runs in order:
 
-1. Stops and deletes all `mpd-machine-NN` VMs (UTM moves bundles to
-   Trash; empty it manually if you want the disk space back immediately).
-2. Removes the persistent route to `10.163.0.0/24`.
-3. Removes `/etc/resolver/mpd.test`.
-4. Removes the mpd CA certificate from the System keychain.
-5. Deletes `~/.mpd-machine/` (helper state).
-6. Removes the `Host mpd-machine` block from `~/.ssh/config`.
-7. Removes `~/Desktop/mpd-machine.command`.
+1. Removes host networking and trust — route to `10.163.0.0/24`,
+   `/etc/resolver/mpd.test`, and any mpd CA certificate(s) in the System
+   keychain. Same sudo affordance as `setup.command`: prints the exact
+   `route` / `rm` / `security delete-certificate` commands and lets you
+   choose between running them yourself in another Terminal or pressing
+   Enter and letting the script sudo for you. If everything is already
+   clean, no password prompt happens.
+2. Deletes `~/.mpd-machine/` (helper state).
+3. Removes the `Host mpd-machine` block from `~/.ssh/config`.
+4. Removes `~/Desktop/mpd-machine.command`.
+5. Asks `Delete <name>? [y/N]` for each `mpd-machine-NN` VM — default is
+   keep. Only y'd VMs are stopped and deleted (UTM moves bundles to Trash;
+   empty it manually if you want the disk space back). VM deletion is the
+   last step on purpose: Ctrl-C during these prompts leaves the host fully
+   cleaned up with the remaining VMs intact.
 
-This is irreversible — run `setup.command` again to start fresh.
+If you keep one or more VMs, host networking is still gone — re-run
+`setup.command` and pick a kept VM's number to restore the route, resolver,
+and CA trust for it.
+
+The host-side parts of step 1–4 are irreversible without re-running
+`setup.command`. Kept VMs are unaffected.
 
 ## Shared CA across mpd-desktop and mpd-machine VMs
 

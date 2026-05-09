@@ -533,7 +533,7 @@ print_sudo_recipe() {
     echo
     echo "    You can either:"
     echo "      (a) Open another Terminal, run the recipe yourself, and press Enter here."
-    echo "      (b) Press Enter and let setup.command sudo for you (you'll be asked for your password)."
+    echo "      (b) Press Enter and let this script sudo for you (you'll be asked for your password)."
     echo
     read -r -p "    Press Enter to continue: " _
 }
