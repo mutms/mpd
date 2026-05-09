@@ -134,8 +134,20 @@ growpart:
 
 resize_rootfs: true
 
+write_files:
+  - path: /etc/sysctl.d/99-mpd-disable-ipv6.conf
+    permissions: '0644'
+    content: |
+      # mpd: keep all traffic on IPv4. The host route to the container
+      # subnet and the host's DNS resolver drop-in for *.mpd.test are
+      # IPv4-only, so IPv6 paths would bypass mpd's traffic shaping.
+      net.ipv6.conf.all.disable_ipv6 = 1
+      net.ipv6.conf.default.disable_ipv6 = 1
+      net.ipv6.conf.lo.disable_ipv6 = 1
+
 runcmd:
   - systemctl enable --now ssh
+  - sysctl --load=/etc/sysctl.d/99-mpd-disable-ipv6.conf
 EOF
 
 cat > "${CIDATA_DIR}/network-config" <<EOF
