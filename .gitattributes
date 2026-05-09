@@ -1,0 +1,23 @@
+# Line-ending policy.
+#
+# Without this, Windows git's default `core.autocrlf=true` rewrites LF →
+# CRLF on checkout for any text file, which breaks shell scripts the
+# moment WSL bash (or any POSIX shell) tries to execute them — every
+# line ends with a stray \r and the parser chokes on it.
+#
+# Pin each kind of script to its required line-ending convention so a
+# fresh checkout on any platform Just Works.
+
+# POSIX shell + macOS double-clickables — must be LF.
+*.sh        text eol=lf
+*.bash      text eol=lf
+*.command   text eol=lf
+
+# Windows batch files — cmd.exe requires CRLF.
+*.cmd       text eol=crlf
+*.bat       text eol=crlf
+
+# PowerShell — CRLF is the Windows convention; pin so Windows checkouts
+# don't get LF when something else's `text=auto` rule gets cleverer.
+*.ps1       text eol=crlf
+*.psm1      text eol=crlf
