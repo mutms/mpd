@@ -53,17 +53,44 @@ extension Mpd.Environment.Action.Setup {
         return (id, codename)
     }
 
-    /// Hard gate: mpd-machine targets Debian Trixie only. Different install
-    /// methods (cloud-init, netinst, manual) all converge on the same OS;
-    /// other distros / Debian releases are unsupported (package names, Swift
-    /// availability, systemd unit layout, NetworkManager defaults all vary).
-    private static func requireDebianTrixie() throws {
+    /// Hard gate: mpd-machine targets Debian Trixie for the cloud-init
+    /// platforms (macos-utm, ubuntu-kvm, windows-hyperv, generic-vm), and
+    /// Ubuntu 26.04 LTS (Resolute) for the sandbox platform. Other distros /
+    /// releases are unsupported (package names, Swift availability, systemd
+    /// unit layout, NetworkManager defaults all vary). The platform identity
+    /// is read from `~/Developer/mpd/conf/platform.env`, which the matching
+    /// bootstrap script writes before invoking `mpd --setup`.
+    private static func requireSupportedHost() throws {
         guard let os = readOSRelease() else {
             throw RuntimeError("""
-            Cannot read /etc/os-release. mpd-machine targets Debian Trixie.
-            Use a Debian Trixie VM and re-run mpd --setup.
+            Cannot read /etc/os-release. mpd-machine targets Debian Trixie
+            (or Ubuntu 26.04 LTS for the sandbox platform).
             """)
         }
+
+        // platform.env is written by the matching bootstrap script before
+        // `mpd --setup` runs. Sandbox writes platform=sandbox; others write
+        // their own value. If the file is missing, we fall through to the
+        // strict Debian gate (the original behavior — preserves the helpful
+        // "use a Debian Trixie VM" error for users who skipped bootstrap).
+        let isSandbox = (try? Mpd.Core.Platform.load())?.platform == .sandbox
+
+        if isSandbox {
+            guard os.id == "ubuntu" else {
+                throw RuntimeError("""
+                mpd-machine sandbox platform targets Ubuntu (got ID=\(os.id)).
+                Use an Ubuntu 26.04 LTS VM and re-run via take-over-vm.sh.
+                """)
+            }
+            guard os.codename == "resolute" else {
+                throw RuntimeError("""
+                mpd-machine sandbox platform targets Ubuntu 26.04 LTS Resolute
+                (got VERSION_CODENAME=\(os.codename)).
+                """)
+            }
+            return
+        }
+
         guard os.id == "debian" else {
             throw RuntimeError("""
             mpd-machine targets Debian (got ID=\(os.id)).
@@ -251,8 +278,9 @@ extension Mpd.Environment.Action.Setup {
     }
 
     static func preflight() throws {
-        // Distro gate — fail fast on non-Trixie before any apt work.
-        try requireDebianTrixie()
+        // Distro gate — fail fast on unsupported hosts before any apt work.
+        // Debian Trixie for cloud-init platforms; Ubuntu 26.04 for sandbox.
+        try requireSupportedHost()
 
         // Verify the host's network stack is in the standardized state
         // (systemd-resolved active, fed by either NetworkManager or

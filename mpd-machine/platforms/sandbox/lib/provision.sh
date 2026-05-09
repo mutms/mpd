@@ -132,7 +132,18 @@ Open Firefox in this VM and browse to:
 
     https://mpd.test/
 
+To use mpd's tools (demo, etc.) in THIS shell right now, pick up the
+PATH drop-in that 'mpd --setup' just installed:
+
+    source /etc/profile.d/mpd-machine.sh
+
+Any new SSH session will pick it up automatically.
+
 Create a Moodle project:
+
+    demo moodle v5.2.0
+
+Or by hand:
 
     mpd create moodle52 --git-repo=https://github.com/moodle/moodle.git --git-branch=MOODLE_502_STABLE
     mpd configure moodle52 MPD_DB=postgres:18
