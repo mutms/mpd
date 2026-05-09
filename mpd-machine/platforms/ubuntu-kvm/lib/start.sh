@@ -1,7 +1,12 @@
 #!/bin/bash
-# start.sh — start the current mpd VM (detected from the persistent route
-# or ~/.mpd-machine/current.env). Called by the desktop launcher's
-# connect.sh and by the entry shim ../start.sh.
+# start.sh — start the current mpd VM. Detects current VM from the
+# persistent route or ~/.mpd-machine/current.env.
+#
+# Order is intentional: if the route is missing (host reboot, link flap),
+# ask for sudo BEFORE waiting on the VM to come up — the user enters
+# their password once and can walk away. If the route is already in
+# place, give the VM a quick 10s grace window in case it's mid-resume,
+# then fall through to a full vm_start + wait_for_ssh if still down.
 
 set -euo pipefail
 
@@ -26,42 +31,67 @@ if ! vm_exists "$vm_name"; then
     exit 1
 fi
 
-# SSH liveness is the source of truth. virsh `running` can lag actual VM
-# state (in-guest shutdown, kernel panic, etc.) so we never trust it alone.
-if ssh -o ConnectTimeout=3 -o BatchMode=yes -o StrictHostKeyChecking=no \
-       "${vm_user}@${vm_ip}" true 2>/dev/null; then
+ssh_probe() {
+    ssh -o ConnectTimeout=3 -o BatchMode=yes -o StrictHostKeyChecking=no \
+        "${vm_user}@${vm_ip}" true 2>/dev/null
+}
+
+# --- Step 1: quick SSH probe ---
+
+if ssh_probe; then
     echo "${vm_name} is already reachable (${vm_ip})."
-else
-    state=$(get_vm_state "$vm_name")
-    if [ "$state" = "running" ]; then
-        echo "${vm_name} reports as running but is unreachable — recycling..."
-        vm_force_stop "$vm_name" >/dev/null 2>&1 || true
-        elapsed=0
-        while [ "$elapsed" -lt 20 ]; do
-            [ "$(get_vm_state "$vm_name")" = "shut off" ] && break
-            sleep 1
-            elapsed=$((elapsed + 1))
-        done
-    fi
-    echo "Starting ${vm_name}..."
-    vm_start "$vm_name" >/dev/null 2>&1 || true
-    wait_for_ssh "$vm_ip" "$vm_user" 120 \
-        || die "SSH not available after 120s. Open virt-manager to inspect or 'virsh console ${vm_name}'."
-    echo "${vm_name} started (${vm_ip})."
+    exit 0
 fi
 
-# Re-assert host route to the container subnet — `ip route` entries don't
-# survive host reboots. The other host config (resolver drop-in, system
-# trust, Firefox policies, NSS DB) is persistent and doesn't need re-applying
-# here. Needs sudo only when the route's actually missing — silent on a
-# warm restart of the VM in the same host session.
+# --- Step 2: announce the action, then handle route + VM start ---
+
+echo "Starting ${vm_name}..."
+
 if route_needs_update "$vm_ip"; then
+    # Route missing — get sudo upfront so the user doesn't have to come
+    # back to enter a password after the VM is already up.
     echo
-    echo "Re-asserting host route to ${CONTAINER_SUBNET_PREFIX} via ${vm_ip}"
-    echo "(needs sudo — host reboots clear the kernel routing table):"
-    echo
-    if ! sudo ip route replace "$CONTAINER_SUBNET_PREFIX" via "$vm_ip"; then
-        warn "could not add route — *.mpd.test from this host won't work until you run:"
-        warn "  sudo ip route replace ${CONTAINER_SUBNET_PREFIX} via ${vm_ip}"
+    echo "(Host route to ${CONTAINER_SUBNET_PREFIX} is missing — getting sudo"
+    echo " upfront so you can walk away while the VM boots.)"
+    cmds=("sudo ip route replace ${CONTAINER_SUBNET_PREFIX} via ${vm_ip}")
+    print_sudo_recipe "${cmds[@]}"
+
+    if route_needs_update "$vm_ip"; then
+        sudo -v || die "sudo authentication failed."
+        apply_route "$vm_ip"
+        sudo -k 2>/dev/null || true
+        ok "route added: ${CONTAINER_SUBNET_PREFIX} -> ${vm_ip}"
+    else
+        ok "route added (you ran the recipe manually)"
+    fi
+else
+    # Route already in place. The VM is probably mid-resume from a
+    # managedsave; 10s grace before we do anything heavy.
+    echo "(Route to ${CONTAINER_SUBNET_PREFIX} already in place — giving the VM 10s to come up.)"
+    sleep 10
+    if ssh_probe; then
+        echo "${vm_name} is now reachable (${vm_ip})."
+        exit 0
     fi
 fi
+
+# --- Step 3: actually start the VM (or recycle if stuck) ---
+
+state=$(get_vm_state "$vm_name")
+if [ "$state" = "running" ]; then
+    # libvirt thinks it's running but SSH isn't responding. Force a clean
+    # restart so we don't sit waiting on a dead in-guest process.
+    echo "${vm_name} reports as running but is unreachable — recycling..."
+    vm_force_stop "$vm_name" >/dev/null 2>&1 || true
+    elapsed=0
+    while [ "$elapsed" -lt 20 ]; do
+        [ "$(get_vm_state "$vm_name")" = "shut off" ] && break
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+fi
+echo "Starting ${vm_name}..."
+vm_start "$vm_name" >/dev/null 2>&1 || true
+wait_for_ssh "$vm_ip" "$vm_user" 120 \
+    || die "SSH not available after 120s. Open virt-manager to inspect or 'virsh console ${vm_name}'."
+echo "${vm_name} started (${vm_ip})."
