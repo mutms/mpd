@@ -144,6 +144,12 @@ not manage a hypervisor explicitly: see
 
 ## Roadmap (short form)
 
+- **Hooks (top priority)** — `<event>.d/` directories for runtime,
+  database, and service containers, fired by Swift verbs at
+  well-defined lifecycle points. Replaces today's hardcoded
+  per-runtime / per-DB-type stop / configure logic with
+  asset-additive `bash` scripts. Concept sketch in
+  [docs/HOOKS.md](docs/HOOKS.md).
 - Public preview URLs via **Cloudflare Tunnel + Cloudflare Access** —
   share a project URL with a teammate, client, or external collaborator.
   Exposed as a `publish` tool inside the runtime, invoked over SSH.
