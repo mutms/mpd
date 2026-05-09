@@ -416,8 +416,8 @@ extension Mpd.Environment.Action.Setup {
         step("Trust mpd CA in user's NSS DB (Chromium)")
         try ensureCAInUserNSSDB(caPath: caRootPem)
 
-        step("Trust mpd CA in Firefox-ESR (enterprise policy)")
-        Mpd.Environment.Certificate.installFirefoxPolicy()
+        step("Trust mpd CA in Firefox (enterprise policy)")
+        Mpd.Environment.Certificate.installFirefoxPolicy(caPath: caRootPem)
 
         step("DNS resolver for mpd.test")
         try Mpd.Environment.Integration.configureDNSResolver()

@@ -92,13 +92,22 @@ a GNOME desktop with Firefox open on `https://mpd.test`."
 
 The hypervisor owns VM lifecycle (start/stop/snapshot from its GUI);
 mpd inside owns project lifecycle. So no `setup.sh`/`start.sh`/
-`stop.sh`/`uninstall.sh` shim quartet — just one `provision.sh`.
+`stop.sh`/`uninstall.sh` shim quartet — a tiny entry script
+(`take-over-vm.sh`) that hands off to `lib/provision.sh`.
 
 **Files to create** (under `mpd-machine/platforms/sandbox/`):
 ```
-README.md            # "install Ubuntu 26.04 desktop, snapshot, run provision.sh"
-provision.sh         # ~150 lines: preflight + apt deps + mpd build + mpd --setup
+README.md            # "install Ubuntu 26.04 desktop, snapshot, run take-over-vm.sh"
+take-over-vm.sh      # ~150 lines: hostname gate + disclaimer + sudo bootstrap + clone + exec
+lib/provision.sh     # ~120 lines: preflight + apt deps + mpd build + mpd --setup
 ```
+
+`take-over-vm.sh` is the entry point. Self-bootstraps when run standalone
+(curl-installer-friendly): apt-installs git, clones the repo to
+`~/Developer/mpd/`, then `exec`s `lib/provision.sh` from the cloned tree.
+When invoked from inside an already-cloned repo, skips the clone. The
+hostname is the safety gate — script refuses any host not named
+`mpd-machine-sandbox`.
 
 **Conventions:**
 - **Target: Ubuntu 26.04 LTS** with the standard GNOME desktop install.
@@ -107,12 +116,17 @@ provision.sh         # ~150 lines: preflight + apt deps + mpd build + mpd --setu
 - **Swift toolchain confirmed**: `swiftlang` from Ubuntu 26.04's apt
   repos compiles mpd clean (Swift 6.1, zero warnings). No need for
   swift.org tarballs or alternative toolchain wrangling.
-- **Passwordless sudo for the dev user is a hard preflight gate.** mpd
-  needs it for resolved drop-in, ca-certificates, podman, etc.
-  Preflight surfaces the bootstrap one-liner (`su -c "apt-get install
-  -y sudo && install -m 440 /dev/stdin /etc/sudoers.d/$USER <<<
-  '$USER ALL=(ALL) NOPASSWD:ALL'"`) as a user-only item if not
-  already enabled.
+- **Hostname is the safety gate.** `take-over-vm.sh` refuses any host
+  not named `mpd-machine-sandbox` and prints the rename recipe. Renaming
+  a VM is a deliberate consent step (much harder to do by accident than
+  typing a confirmation word), and the hostname doubles as a permanent
+  SSH-prompt anchor: every shell prompt reads `user@mpd-machine-sandbox`,
+  a constant reminder of what host you're on.
+- **Passwordless sudo is enabled by `take-over-vm.sh` itself**, not
+  surfaced as a preflight to the user. The script `sudo`s once (with a
+  password prompt) to write `/etc/sudoers.d/mpd-$USER`, then everything
+  downstream uses passwordless sudo. mpd needs it for resolved drop-in,
+  ca-certificates, podman, etc.
 - **No host-side anything.** No host CA mirror, no host route, no host
   resolver drop-in, no host trust import. The host runs the
   hypervisor; that's it.
@@ -126,18 +140,34 @@ provision.sh         # ~150 lines: preflight + apt deps + mpd build + mpd --setu
   hands out. Nobody on the host queries `https://*.mpd.test` from
   outside the VM, so no need to pin.
 
-**provision.sh flow:**
-1. Preflight: Ubuntu 26.04, passwordless sudo, required apt packages.
-   Categorised report + `(a)` paste-recipe / `(b)` press-Enter
-   affordance — same shape as ubuntu-kvm, smaller scope.
-2. Apt install: `build-essential pkg-config make swiftlang git
-   curl libnss3-tools qemu-guest-agent`.
-3. `git clone` mpd into `~/Developer/mpd` if not present.
-4. `make install` + `sudo ln -sf … /usr/local/bin/mpd`.
-5. Write `~/Developer/mpd/conf/platform.env` with
-   `MPD_PLATFORM=sandbox` (and no `MPD_CLIENT_OS` — the field is
-   irrelevant when there's no separate client).
-6. `mpd --setup`.
+**Flow:**
+
+`take-over-vm.sh`:
+1. Hostname gate (must be `mpd-machine-sandbox`); if not, print the
+   `hostnamectl` rename recipe and exit.
+2. OS gate (Ubuntu 26.04 ID/VERSION_ID).
+3. Disclaimer + Enter-to-proceed.
+4. Enable passwordless sudo by writing `/etc/sudoers.d/mpd-$USER`
+   (one-time password prompt).
+5. apt-install `git` if missing.
+6. If invoked outside `~/Developer/mpd/`, `git clone` the repo.
+7. `exec` sibling `lib/provision.sh`.
+
+`lib/provision.sh`:
+1. Light preflight (re-check Ubuntu 26.04, passwordless sudo,
+   repo present — idempotency-friendly).
+2. Apt install: `build-essential pkg-config make swiftlang
+   libnss3-tools qemu-guest-agent`. (`git`/`curl`/`ca-certificates`/
+   `systemd-resolved`/`spice-vdagent` already ship with Ubuntu
+   desktop default; `podman` is installed by `mpd --setup`.)
+3. `make install` + `sudo ln -sf … /usr/local/bin/mpd`.
+4. Write `~/Developer/mpd/conf/platform.env` with
+   `MPD_PLATFORM=sandbox` and `MPD_CLIENT_OS=debian` (placeholder —
+   the laptop-client recipe is skipped on `.sandbox` and the field
+   disappears in Phase 4).
+5. `mpd --setup`.
+6. Best-effort pre-warm: `mpd --runtime-create=php` and
+   `mpd --db-create=postgres:latest`.
 
 **Swift changes:**
 - `mpd/Core/Platform.swift`: add `case sandbox = "sandbox"` to
@@ -169,13 +199,14 @@ Ubuntu VM with snapshot):
 
 **Test methodology:**
 Build/test from inside an Ubuntu 26.04 VM in UTM on the Mac. Take a
-hypervisor snapshot before each `provision.sh` run; revert after
+hypervisor snapshot before each `take-over-vm.sh` run; revert after
 each test cycle so we always start from a known-clean state.
 
 **Definition of done:**
-- `provision.sh` end-to-end on a clean Ubuntu 26.04 desktop install:
-  preflight → apt → build → `mpd --setup` → snap-Firefox opens
-  `https://mpd.test/` from inside the VM with no warning.
+- `take-over-vm.sh` end-to-end on a clean Ubuntu 26.04 desktop install:
+  hostname gate green → disclaimer → sudo enabled → apt → build →
+  `mpd --setup` → snap-Firefox opens `https://mpd.test/` from inside
+  the VM with no warning.
 - Pre-warm of `php` runtime + `postgres:latest` runs successfully
   (sandbox flow doesn't strictly require it, but if we do it for
   ubuntu-kvm the symmetry is nice — this is a TODO to confirm during
@@ -225,8 +256,9 @@ Sandbox already gates it off (Phase 3); now delete it entirely.
 | ubuntu-kvm | `stop.sh` → `start.sh` cycle | managedsave → resume; route re-asserted after host reboot |
 | ubuntu-kvm | `uninstall.sh` keep one VM | host cleanup applied; kept VM intact; pool defined and dir preserved |
 | ubuntu-kvm | `uninstall.sh` delete all VMs | host cleanup + pool destroy/undefine; pool dir left in place per design |
-| sandbox | clean Ubuntu 26.04 LTS desktop install in UTM (snapshot taken) → `bash provision.sh` from inside the VM | preflight green, apt+build+`mpd --setup` complete, snap Firefox opens `https://mpd.test/` without warning, host stays untouched |
-| sandbox | revert to snapshot, simulate "passwordless sudo not enabled" (skip the bootstrap one-liner) → re-run `provision.sh` | preflight refuses with the explicit `su -c …` recipe; second run after applying it passes through |
+| sandbox | clean Ubuntu 26.04 LTS desktop install in UTM (hostname `mpd-machine-sandbox`, snapshot taken) → `bash take-over-vm.sh` from inside the VM | hostname gate green, disclaimer prompt, apt+build+`mpd --setup` complete, snap Firefox opens `https://mpd.test/` without warning, host stays untouched |
+| sandbox | revert to snapshot, simulate "wrong hostname" (don't rename) → run `take-over-vm.sh` | hard-stops with explicit `hostnamectl set-hostname` recipe; rename + re-run passes through |
+| sandbox | standalone-mode test: download `take-over-vm.sh` only (no repo present) → `bash take-over-vm.sh` | self-bootstraps: apt-installs git, clones the repo, hands off to `lib/provision.sh` |
 | sandbox | snap Firefox + Chromium both browse `https://mpd.test/` from inside the VM | both trust without warning |
 | sandbox | `mpd create` / `mpd start` / `mpd stop` / `mpd --uninstall` from a GNOME terminal in the VM | full project lifecycle works without leaving the VM |
 

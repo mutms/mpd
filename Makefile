@@ -68,6 +68,8 @@ check-mpdenv-source-boundary:
 check-privilege-boundary:
 	@violations=$$(grep -RInE '(\bsudo[[:space:]]+(bash|sh)[[:space:]]+[^-[:space:]]|\bsudo[[:space:]]+[^-[:space:]][^[:space:]]*\.(sh|bash)\b|\bsudo[[:space:]]+-u\b|\brunuser\b|\bsu[[:space:]]+\S)' \
 		assets/ mpd-machine/platforms/*/provision-vm.sh \
+		mpd-machine/platforms/sandbox/take-over-vm.sh \
+		mpd-machine/platforms/sandbox/lib/provision.sh \
 		--include='*.sh' --include='*.bash' 2>/dev/null || true); \
 	if [ -n "$$violations" ]; then \
 		echo "Privilege boundary violation: forbidden shape detected."; \

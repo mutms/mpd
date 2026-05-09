@@ -37,33 +37,69 @@ extension Mpd.Environment.Certificate {
         ok("CA installed in system trust store.")
     }
 
-    /// Install a Firefox-ESR enterprise policy that imports the mpd CA into
+    /// Install a Firefox enterprise policy that imports the mpd CA into
     /// every Firefox profile on the VM. Firefox uses NSS, not the OS trust
     /// store; on Linux `Certificates.ImportEnterpriseRoots` is a no-op
     /// (Mozilla's Linux build has no p11-kit code path), so we use the
     /// `Certificates.Install` policy which loads PEM files directly into NSS.
-    /// The referenced CA file is the same one `trustCA` already manages.
-    /// Idempotent. Harmless when firefox-esr is not installed.
+    /// Idempotent. Harmless when no Firefox is installed.
     ///
-    /// Path note: Firefox resolves the policy file via `XREAppDist`, which
-    /// on Linux is `<install-dir>/distribution/`. For Debian's firefox-esr
-    /// package that's `/usr/lib/firefox-esr/distribution/policies.json`.
-    /// The Debian-side `/etc/firefox-esr/policies/` directory looks
-    /// official but is *not* read by Firefox itself — wrong path, no
-    /// effect.
-    static func installFirefoxPolicy() {
-        let policyPath = "/usr/lib/firefox-esr/distribution/policies.json"
-        let caInPolicy = "/usr/local/share/ca-certificates/mpd-local.crt"
-        let policyJSON = #"{"policies":{"Certificates":{"Install":["\#(caInPolicy)"]}}}"# + "\n"
-
+    /// Path strategy: detect the installed Firefox flavor at runtime.
+    ///   - If `/usr/lib/firefox-esr/distribution/` exists (Debian Trixie's
+    ///     firefox-esr package), write the policy file there. Firefox
+    ///     resolves policies via `XREAppDist`, which on Linux is
+    ///     `<install-dir>/distribution/`. The CA reference points at the
+    ///     copy `trustCA` already installed in the system trust store.
+    ///   - Otherwise (Ubuntu snap-Firefox, Mozilla deb, etc.), use the
+    ///     Mozilla-documented system-wide path
+    ///     `/etc/firefox/policies/policies.json`, and copy the CA cert
+    ///     into the same directory. Snap-Firefox's confinement bind-mount
+    ///     permits `/etc/firefox/policies/` but generally not
+    ///     `/usr/local/share/ca-certificates/`, so the cert must travel
+    ///     with the policy file.
+    static func installFirefoxPolicy(caPath: String) {
+        let firefoxEsrDistDir = "/usr/lib/firefox-esr/distribution"
         let fm = FileManager.default
-        if let existing = fm.contents(atPath: policyPath),
-           String(data: existing, encoding: .utf8) == policyJSON {
-            ok("Firefox-ESR enterprise policy already in place.")
+        let useFirefoxEsrPath = fm.fileExists(atPath: firefoxEsrDistDir)
+
+        let policyDir: String
+        let policyPath: String
+        let certPathInPolicy: String
+        let needsCertCopy: Bool
+        let label: String
+        if useFirefoxEsrPath {
+            policyDir = firefoxEsrDistDir
+            policyPath = "\(firefoxEsrDistDir)/policies.json"
+            certPathInPolicy = "/usr/local/share/ca-certificates/mpd-local.crt"
+            needsCertCopy = false
+            label = "Firefox-ESR"
+        } else {
+            policyDir = "/etc/firefox/policies"
+            policyPath = "\(policyDir)/policies.json"
+            certPathInPolicy = "\(policyDir)/mpd-rootCA.crt"
+            needsCertCopy = true
+            label = "Firefox (Mozilla / snap)"
+        }
+
+        let policyJSON = #"{"policies":{"Certificates":{"Install":["\#(certPathInPolicy)"]}}}"# + "\n"
+
+        // Idempotency: if the policy JSON is already correct AND, when
+        // needed, the staged cert matches the source, nothing to do.
+        let policyCurrent: Bool = {
+            guard let existing = fm.contents(atPath: policyPath) else { return false }
+            return String(data: existing, encoding: .utf8) == policyJSON
+        }()
+        let certCurrent: Bool = {
+            if !needsCertCopy { return true }
+            guard let staged = fm.contents(atPath: certPathInPolicy),
+                  let source = fm.contents(atPath: caPath) else { return false }
+            return staged == source
+        }()
+        if policyCurrent && certCurrent {
+            ok("\(label) enterprise policy already in place at \(policyDir).")
             return
         }
 
-        // Stage in $TMPDIR (user-writable), then drop into /etc via install(1).
         let tmpPath = NSTemporaryDirectory() + "mpd-firefox-policies.json"
         do {
             try policyJSON.write(toFile: tmpPath, atomically: true, encoding: .utf8)
@@ -73,15 +109,29 @@ extension Mpd.Environment.Certificate {
         }
         defer { try? fm.removeItem(atPath: tmpPath) }
 
-        let installArgs = ["install", "-D", "-m", "644", tmpPath, policyPath]
-        let exitCode: Int32
-        if geteuid() == 0 {
-            exitCode = Mpd.Environment.HostExec.run(installArgs)
-        } else {
-            exitCode = Mpd.Environment.HostExec.run(["sudo"] + installArgs)
+        let sudoPrefix: [String] = (geteuid() == 0) ? [] : ["sudo"]
+
+        // Mozilla path branch: dir doesn't exist by default, install -d.
+        // firefox-esr branch: the package owns the directory; skip mkdir.
+        if needsCertCopy && !fm.fileExists(atPath: policyDir) {
+            let mkdirArgs = sudoPrefix + ["install", "-d", "-m", "755", policyDir]
+            if Mpd.Environment.HostExec.run(mkdirArgs) != 0 {
+                print("  Warning: failed to create \(policyDir).")
+                return
+            }
         }
-        if exitCode == 0 {
-            ok("Firefox-ESR enterprise policy installed at \(policyPath).")
+
+        if needsCertCopy {
+            let copyArgs = sudoPrefix + ["install", "-m", "644", caPath, certPathInPolicy]
+            if Mpd.Environment.HostExec.run(copyArgs) != 0 {
+                print("  Warning: failed to install \(certPathInPolicy).")
+                return
+            }
+        }
+
+        let installArgs = sudoPrefix + ["install", "-D", "-m", "644", tmpPath, policyPath]
+        if Mpd.Environment.HostExec.run(installArgs) == 0 {
+            ok("\(label) enterprise policy installed at \(policyPath).")
         } else {
             print("  Warning: failed to install \(policyPath).")
         }

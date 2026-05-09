@@ -145,6 +145,15 @@ extension Mpd.Environment.Integration {
             return
         }
 
+        // Sandbox lives entirely inside the VM; there is no separate
+        // laptop client to set up trust on. The whole MachineClientRecipe
+        // surface is going away in PLAN.md Phase 4 — sandbox just gets
+        // there first.
+        if identity.platform == .sandbox {
+            print("\n  Sandbox platform — no laptop-side setup needed (mpd lives inside this VM).")
+            return
+        }
+
         // VM IP from platform.env wins; primaryHostIP is a fallback for any
         // setup where the file was provisioned with an empty MPD_VM_IP (rare).
         let vmIP = identity.vmIP.isEmpty ? primaryHostIP : identity.vmIP

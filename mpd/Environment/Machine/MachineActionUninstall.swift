@@ -124,9 +124,15 @@ extension Mpd.Environment.Action.Uninstall {
     /// recorded client OS — much shorter, only the commands the dev actually
     /// needs to run. Otherwise (file deleted, manual setup, etc.) print all
     /// four blocks so the user can find theirs.
+    ///
+    /// Sandbox is special: there is no laptop client (mpd lives entirely
+    /// inside the VM), so emit a single line instead of a recipe.
     private static func clientUninstallBlocksForIdentityOrAll() -> String {
         guard let identity = try? Mpd.Core.Platform.load() else {
             return Mpd.Environment.Integration.allClientUninstallBlocks()
+        }
+        if identity.platform == .sandbox {
+            return "  (sandbox platform — no laptop-side cleanup; mpd lived entirely inside this VM)"
         }
         let recipeOS: MachineClientOS
         switch identity.clientOS {
@@ -151,8 +157,10 @@ extension Mpd.Environment.Action.Uninstall {
           sudo rm -f /usr/local/share/ca-certificates/mpd-local.crt
           sudo update-ca-certificates --fresh
 
-          # Remove the Firefox-ESR enterprise policy
-          sudo rm -f /usr/lib/firefox-esr/distribution/policies.json
+          # Remove the Firefox enterprise policy (paths vary by Firefox flavor)
+          sudo rm -f /usr/lib/firefox-esr/distribution/policies.json   # Debian firefox-esr
+          sudo rm -f /etc/firefox/policies/policies.json               # Ubuntu / snap-Firefox / Mozilla deb
+          sudo rm -f /etc/firefox/policies/mpd-rootCA.crt              # (CA copy alongside the policy)
 
           # Optional: remove persisted CA / service cert material for a clean next setup
           rm -rf ~/Developer/mpd/conf
@@ -173,14 +181,25 @@ extension Mpd.Environment.Action.Uninstall {
     }
 
     static func manualCleanupStatusText() -> String {
+        let fm = FileManager.default
         let trustPath = "/usr/local/share/ca-certificates/mpd-local.crt"
-        let trustRemoved = !FileManager.default.fileExists(atPath: trustPath)
+        let trustRemoved = !fm.fileExists(atPath: trustPath)
 
-        let firefoxPolicyPath = "/usr/lib/firefox-esr/distribution/policies.json"
-        let firefoxPolicyRemoved = !FileManager.default.fileExists(atPath: firefoxPolicyPath)
+        // Firefox policy lives in one of two places depending on the
+        // installed flavor (firefox-esr vs Mozilla/snap). Report whichever
+        // is currently present, or "removed" if neither exists.
+        let firefoxEsrPolicy = "/usr/lib/firefox-esr/distribution/policies.json"
+        let mozillaPolicy = "/etc/firefox/policies/policies.json"
+        let mozillaCert = "/etc/firefox/policies/mpd-rootCA.crt"
+        let presentFirefoxPaths = [firefoxEsrPolicy, mozillaPolicy, mozillaCert]
+            .filter { fm.fileExists(atPath: $0) }
+        let firefoxPolicyRemoved = presentFirefoxPaths.isEmpty
+        let firefoxStatusDetail = firefoxPolicyRemoved
+            ? "Firefox enterprise policy removed"
+            : "Firefox enterprise policy still present at: \(presentFirefoxPaths.joined(separator: ", "))"
 
         let persistedCAPath = "\(Mpd.Environment.confCARootDir)/rootCA.pem"
-        let persistedCAExists = FileManager.default.fileExists(atPath: persistedCAPath)
+        let persistedCAExists = fm.fileExists(atPath: persistedCAPath)
 
         let volumeExists = Mpd.Podman.volumeExists(Mpd.dataVolume)
 
@@ -189,7 +208,7 @@ extension Mpd.Environment.Action.Uninstall {
         Manual cleanup status:
 
           \(trustRemoved ? "✓" : "•") Root CA \(trustPath) \(trustRemoved ? "removed" : "still present in system trust store")
-          \(firefoxPolicyRemoved ? "✓" : "•") Firefox-ESR policy \(firefoxPolicyPath) \(firefoxPolicyRemoved ? "removed" : "still present")
+          \(firefoxPolicyRemoved ? "✓" : "•") \(firefoxStatusDetail)
           \(persistedCAExists ? "•" : "✓") Persisted CA / service material in ~/Developer/mpd/conf \(persistedCAExists ? "present (next setup reuses existing material)" : "absent (next setup generates fresh material)")
           \(volumeExists ? "•" : "✓") Data volume '\(Mpd.dataVolume)' \(volumeExists ? "present (projects, dbs, personal area kept)" : "absent (next setup creates a fresh volume)")
         """

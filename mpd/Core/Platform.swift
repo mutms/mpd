@@ -1,9 +1,9 @@
 // mpd — Mpd.Core.Platform namespace
 // Reads/writes ~/Developer/mpd/conf/platform.env — the host-side identity file
 // that records *which* kind of mpd setup this is and where it lives:
-//   MPD_PLATFORM=desktop | macos-utm | generic-vm | windows-hyperv
+//   MPD_PLATFORM=desktop | macos-utm | ubuntu-kvm | generic-vm | windows-hyperv | sandbox
 //   MPD_CLIENT_OS=macos | linux | windows
-//   MPD_VM_IP=<ip>           (empty for desktop)
+//   MPD_VM_IP=<ip>           (empty for desktop and sandbox)
 //   MPD_INSTANCE_SUFFIX=<-suffix>   (e.g. "-161"; empty for the unsuffixed
 //                                    instance — used for hostname disambiguation
 //                                    when running concurrent VMs / machines)
@@ -16,6 +16,9 @@
 //     `mpd --setup` runs in the VM.
 //   - mpd-machine via generic-vm/provision-vm.sh: prompts the user at the
 //     start of the user phase and writes the file before `mpd --setup`.
+//   - mpd-machine via sandbox/lib/provision.sh: writes the file with
+//     platform=sandbox, client_os=debian (placeholder; the laptop-client
+//     recipe is skipped on .sandbox) before `mpd --setup` runs in the VM.
 //
 // Reader: mpd's setup actions and helpers that need client OS or VM IP at
 // run-time. Lives under conf/ so it survives `mpd --uninstall` (which wipes
@@ -31,6 +34,7 @@ extension Mpd.Core.Platform {
         case ubuntuKVM      = "ubuntu-kvm"
         case genericVM      = "generic-vm"
         case windowsHyperV  = "windows-hyperv"
+        case sandbox        = "sandbox"
     }
 
     enum ClientOS: String {
@@ -63,6 +67,7 @@ extension Mpd.Core.Platform {
                 "  • Ubuntu+KVM:      mpd-machine/platforms/ubuntu-kvm/setup.sh\n" +
                 "  • Windows Hyper-V: mpd-machine/platforms/windows-hyperv/setup.cmd\n" +
                 "  • generic VM:      mpd-machine/platforms/generic-vm/provision-vm.sh\n" +
+                "  • sandbox VM:      mpd-machine/platforms/sandbox/take-over-vm.sh\n" +
                 "  • desktop:         re-run `mpd --setup` (will write the file).")
         }
 
@@ -70,7 +75,7 @@ extension Mpd.Core.Platform {
         let kv = parseKV(raw)
 
         guard let platformRaw = kv["MPD_PLATFORM"], let platform = PlatformKind(rawValue: platformRaw) else {
-            throw RuntimeError("\(path): MPD_PLATFORM missing or invalid (expected: desktop, macos-utm, ubuntu-kvm, generic-vm, windows-hyperv).")
+            throw RuntimeError("\(path): MPD_PLATFORM missing or invalid (expected: desktop, macos-utm, ubuntu-kvm, generic-vm, windows-hyperv, sandbox).")
         }
         guard let clientRaw = kv["MPD_CLIENT_OS"], let clientOS = ClientOS(rawValue: clientRaw) else {
             throw RuntimeError("\(path): MPD_CLIENT_OS missing or invalid (expected: macos, debian, fedora, windows).")
