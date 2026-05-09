@@ -67,11 +67,16 @@ vm_exists() {
 }
 
 # Octet portion of "<prefix><N>" — e.g. "mpd-machine-158" → "158". Empty on no match.
+# Always returns exit 0 so callers under `set -e` (e.g. octet=$(extract_octet …))
+# don't crash when the VM name has a non-numeric suffix (mpd-machine-sandbox).
 extract_octet() {
     local name="$1"
     local prefix_len=${#VM_NAME_PREFIX}
     local rest="${name:prefix_len}"
-    [[ "$rest" =~ ^[0-9]+$ ]] && echo "$rest"
+    if [[ "$rest" =~ ^[0-9]+$ ]]; then
+        echo "$rest"
+    fi
+    return 0
 }
 
 # --- Active VM detection ---
