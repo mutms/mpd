@@ -114,11 +114,19 @@ trap 'sudo -k 2>/dev/null || true' EXIT
 # --- Host cleanup (sudo recipe affordance) ---
 
 if [ "$remove_route" = 1 ] || [ "$remove_resolver" = 1 ] || [ ${#ca_targets[@]} -gt 0 ]; then
+    # Cert deletion uses `-c` (common name) + `-t` rather than `-Z` (SHA1).
+    # `-Z` is unreliable for certs that carry admin trust settings (added via
+    # `add-trusted-cert -d`), failing with "Unable to delete certificate
+    # matching <hash>" even with sudo. `-c` is the form mkcert and similar
+    # local-CA tools use, and it works regardless of trust-setting state.
+    # Each call deletes one cert; running it N times deletes N certs with
+    # the same CN — handy for users who accumulated multiple mpd CAs across
+    # repeat setups that didn't share `caroot/`.
     cmds=()
     [ "$remove_route" = 1 ]    && cmds+=("sudo route -n delete -net ${CONTAINER_SUBNET_PREFIX}")
     [ "$remove_resolver" = 1 ] && cmds+=("sudo rm -f /etc/resolver/${DNS_DOMAIN}")
-    for fp in "${ca_targets[@]}"; do
-        cmds+=("sudo security delete-certificate -Z ${fp} ${SYSTEM_KEYCHAIN}")
+    for _ in "${ca_targets[@]}"; do
+        cmds+=("sudo security delete-certificate -t -c \"${CA_SUBJECT_MATCH}\" ${SYSTEM_KEYCHAIN}")
     done
 
     print_sudo_recipe "${cmds[@]}"
@@ -138,10 +146,17 @@ if [ "$remove_route" = 1 ] || [ "$remove_resolver" = 1 ] || [ ${#ca_targets[@]} 
             sudo rm -f "/etc/resolver/${DNS_DOMAIN}"
             echo "/etc/resolver/${DNS_DOMAIN} removed."
         fi
-        for fp in "${ca_targets[@]}"; do
-            sudo security delete-certificate -Z "$fp" "$SYSTEM_KEYCHAIN" >/dev/null 2>&1 || true
-            echo "mpd CA certificate removed (sha1 $(echo "$fp" | tr 'A-F' 'a-f'))."
-        done
+        if [ ${#ca_targets[@]} -gt 0 ]; then
+            deleted=0
+            while sudo security delete-certificate -t -c "$CA_SUBJECT_MATCH" "$SYSTEM_KEYCHAIN" >/dev/null 2>&1; do
+                deleted=$((deleted + 1))
+            done
+            if [ "$deleted" -gt 0 ]; then
+                echo "mpd CA certificate(s) removed (${deleted})."
+            else
+                warn "could not remove mpd CA certificate(s) — try Keychain Access manually."
+            fi
+        fi
         sudo -k 2>/dev/null || true
     fi
 else

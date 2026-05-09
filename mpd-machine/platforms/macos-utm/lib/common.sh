@@ -16,7 +16,6 @@ CONTAINER_PROBE_IP="10.163.0.3"           # any IP in the subnet — used for `r
 DNSMASQ_IP="10.163.0.3"
 DNS_DOMAIN="mpd.test"
 
-CA_CERT_REMOTE_PATH='~/Developer/mpd/conf/caroot/rootCA.pem'
 CA_SUBJECT_MATCH="mpd.test local development CA"
 SYSTEM_KEYCHAIN="/Library/Keychains/System.keychain"
 
@@ -368,57 +367,118 @@ EOF
 }
 
 # --- Host CA preparation ---
-# Implements the three-case table:
-#   1. caroot/{rootCA.pem,rootCA-key.pem} both present       → reuse.
-#   2. ~/Developer/mpd/conf/ exists, caroot/ doesn't         → generate to caroot/.
-#   3. ~/Developer/mpd/conf/ doesn't exist                   → generate to <temp>/ca/, mark for cleanup.
+# Keeps a single host CA alive in two real-file locations and mirrors
+# between them on every run. The redundant copy is the safety net: wiping
+# one (or the keychain entry) still lets the next setup restore from the
+# other side automatically.
 #
-# Sets globals: HOST_CA_PEM, HOST_CA_KEY (always); HOST_CA_TEMP_DIR (case 3 only).
-# Caller is responsible for invoking cleanup_temp_ca on EXIT (case 3 cleanup).
+#   - ~/Developer/mpd/conf/caroot/{rootCA.pem,rootCA-key.pem}
+#     Canonical mpd location. Shared with mpd-desktop. Only populated when
+#     ~/Developer/mpd/conf/ already exists (we never pre-create the repo
+#     path on a Mac that hasn't cloned mpd).
+#   - ~/.mpd-machine/ca/{rootCA.pem,rootCA-key.pem}
+#     Platform-owned location. Always populated on any Mac that has run
+#     setup.command at least once.
+#
+# Behavior matrix:
+#   both present, identical content  → reuse caroot/, no-op.
+#   both present, divergent content  → caroot/ wins (canonical), platform
+#                                       copy overwritten, with a warn.
+#   only caroot/                     → mirror to platform.
+#   only platform                    → mirror to caroot/ (if conf/ exists),
+#                                       else stay platform-only.
+#   neither                          → generate fresh; populate caroot/ if
+#                                       conf/ exists, else platform-only.
+#
+# Sets globals HOST_CA_PEM and HOST_CA_KEY; the path points at caroot/
+# whenever caroot/ holds the cert, otherwise at the platform copy. Either
+# way, both files at the chosen path are real files (not symlinks) ready
+# for `scp` upload to a new VM.
 
 HOST_CA_PEM=""
 HOST_CA_KEY=""
-HOST_CA_TEMP_DIR=""
+
+# copy_ca_files SRC_PEM SRC_KEY DEST_DIR
+# Copies a CA cert+key into DEST_DIR with the right modes. Creates DEST_DIR
+# if missing. Used to mirror between caroot/ and the platform's state dir.
+copy_ca_files() {
+    local src_pem="$1" src_key="$2" dest_dir="$3"
+    mkdir -p "$dest_dir"
+    chmod 700 "$dest_dir"
+    cp "$src_pem" "${dest_dir}/rootCA.pem"
+    cp "$src_key" "${dest_dir}/rootCA-key.pem"
+    chmod 644 "${dest_dir}/rootCA.pem"
+    chmod 600 "${dest_dir}/rootCA-key.pem"
+}
 
 prepare_host_ca() {
     local mpd_conf="${HOME}/Developer/mpd/conf"
     local caroot="${mpd_conf}/caroot"
-    local pem="${caroot}/rootCA.pem"
-    local key="${caroot}/rootCA-key.pem"
+    local caroot_pem="${caroot}/rootCA.pem"
+    local caroot_key="${caroot}/rootCA-key.pem"
 
-    if [ -f "$pem" ] && [ -f "$key" ]; then
-        HOST_CA_PEM="$pem"
-        HOST_CA_KEY="$key"
-        ok "reusing host CA at ${caroot}"
+    local platform_caroot="${STATE_DIR}/ca"
+    local platform_pem="${platform_caroot}/rootCA.pem"
+    local platform_key="${platform_caroot}/rootCA-key.pem"
+
+    local caroot_present=0 platform_present=0
+    [ -f "$caroot_pem" ] && [ -f "$caroot_key" ]   && caroot_present=1
+    [ -f "$platform_pem" ] && [ -f "$platform_key" ] && platform_present=1
+
+    if [ "$caroot_present" = 1 ] && [ "$platform_present" = 1 ]; then
+        if cmp -s "$caroot_pem" "$platform_pem"; then
+            HOST_CA_PEM="$caroot_pem"
+            HOST_CA_KEY="$caroot_key"
+            ok "reusing host CA at ${caroot} (also mirrored at ${platform_caroot})"
+            return 0
+        fi
+        warn "CA differs between ${caroot} and ${platform_caroot} — using caroot/, replacing platform copy"
+        copy_ca_files "$caroot_pem" "$caroot_key" "$platform_caroot"
+        HOST_CA_PEM="$caroot_pem"
+        HOST_CA_KEY="$caroot_key"
         return 0
     fi
 
+    if [ "$caroot_present" = 1 ]; then
+        copy_ca_files "$caroot_pem" "$caroot_key" "$platform_caroot"
+        HOST_CA_PEM="$caroot_pem"
+        HOST_CA_KEY="$caroot_key"
+        ok "reusing host CA at ${caroot} (mirrored to ${platform_caroot})"
+        return 0
+    fi
+
+    if [ "$platform_present" = 1 ]; then
+        if [ -d "$mpd_conf" ]; then
+            copy_ca_files "$platform_pem" "$platform_key" "$caroot"
+            HOST_CA_PEM="$caroot_pem"
+            HOST_CA_KEY="$caroot_key"
+            ok "reusing host CA at ${platform_caroot} (mirrored to ${caroot})"
+        else
+            HOST_CA_PEM="$platform_pem"
+            HOST_CA_KEY="$platform_key"
+            ok "reusing host CA at ${platform_caroot}"
+        fi
+        return 0
+    fi
+
+    # Neither location has the CA — generate fresh.
     if [ -d "$mpd_conf" ]; then
         mkdir -p "$caroot"
         chmod 700 "$caroot"
-        generate_mpd_ca "$key" "$pem"
-        HOST_CA_PEM="$pem"
-        HOST_CA_KEY="$key"
-        ok "generated host CA at ${caroot} (shared with mpd-desktop / future VMs)"
+        generate_mpd_ca "$caroot_key" "$caroot_pem"
+        copy_ca_files "$caroot_pem" "$caroot_key" "$platform_caroot"
+        HOST_CA_PEM="$caroot_pem"
+        HOST_CA_KEY="$caroot_key"
+        ok "generated host CA at ${caroot} (mirrored to ${platform_caroot})"
         return 0
     fi
 
-    # Case 3: ephemeral CA under platform's scratch tree. We use SCRIPT_DIR
-    # (set by every lib/*.sh that sources us) as the anchor — same root the
-    # cloud-image cache lives under in create-vm.sh.
-    local temp_root="${SCRIPT_DIR}/temp"
-    HOST_CA_TEMP_DIR="${temp_root}/ca"
-    mkdir -p "$HOST_CA_TEMP_DIR"
-    chmod 700 "$HOST_CA_TEMP_DIR"
-    HOST_CA_PEM="${HOST_CA_TEMP_DIR}/rootCA.pem"
-    HOST_CA_KEY="${HOST_CA_TEMP_DIR}/rootCA-key.pem"
-    generate_mpd_ca "$HOST_CA_KEY" "$HOST_CA_PEM"
-    ok "generated ephemeral host CA at ${HOST_CA_TEMP_DIR} (no host-side persistence)"
-}
-
-cleanup_temp_ca() {
-    [ -n "$HOST_CA_TEMP_DIR" ] && [ -d "$HOST_CA_TEMP_DIR" ] && rm -rf "$HOST_CA_TEMP_DIR"
-    HOST_CA_TEMP_DIR=""
+    mkdir -p "$platform_caroot"
+    chmod 700 "$platform_caroot"
+    generate_mpd_ca "$platform_key" "$platform_pem"
+    HOST_CA_PEM="$platform_pem"
+    HOST_CA_KEY="$platform_key"
+    ok "generated host CA at ${platform_caroot}"
 }
 
 # --- Idempotent host-side privileged ops ---

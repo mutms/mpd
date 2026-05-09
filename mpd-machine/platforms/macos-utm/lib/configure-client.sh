@@ -13,10 +13,11 @@
 #      (shared with mpd-desktop), otherwise scp from the VM.
 #
 # Privilege model: the script first inspects current state without sudo.
-# If anything needs to change (route missing, resolver missing, CA not
-# trusted yet), it asks for sudo with a one-time explanation of which
-# operations need it. If the host is already in the desired state, no
-# sudo prompt happens at all.
+# If anything needs to change, it prints the exact runnable `sudo` commands
+# (same recipe affordance setup.sh's new-VM path uses) and lets the dev
+# choose: run them in another Terminal, or press Enter and let the script
+# sudo. After the pause it re-detects and applies only what's still needed.
+# If the host is already in the desired state, no sudo prompt happens at all.
 #
 # Called by lib/setup.sh after VM creation or when switching VMs, and by
 # lib/start.sh (route is not persistent across reboot — re-asserted on
@@ -50,64 +51,90 @@ done
 # or early termination) so a later bug can't accidentally piggy-back on the
 # elevated session — the next sudo, if any, would re-prompt.
 cleanup() {
-    [ -n "${tmp_cert:-}" ] && rm -f "$tmp_cert"
     sudo -k 2>/dev/null || true
 }
 trap cleanup EXIT
 
-# --- Phase 1: detect what's needed (read-only, no sudo) ---
+# --- Phase 1a: locate the host CA (host-only — never pulled from a VM) ---
+# Look in caroot/ first, then ~/.mpd-machine/ca/, and mirror between them so
+# the redundant copy stays in sync. We do NOT pull a CA from the VM: the
+# keychain only ever trusts certificates generated on the host, full stop.
+# If neither location has the CA (e.g. an imported VM created on another
+# Mac), CA import is skipped; route + resolver still get configured, and
+# HTTPS will warn until you bring a host CA over yourself.
 
-needed=()
-need_route=0
-need_resolver=0
-need_ca=0
-cert_source=""
-new_fp=""
-tmp_cert=""
-
-# Route
-route_out=$(route -n get -inet "$CONTAINER_PROBE_IP" 2>/dev/null || true)
-route_dest=$(awk '/destination:/ { print $2; exit }' <<<"$route_out")
-route_gw=$(awk '/gateway:/    { print $2; exit }' <<<"$route_out")
-if [[ "$route_dest" == 10.163.0* ]] && [ "$route_gw" = "$VM_IP" ]; then
-    :
-else
-    need_route=1
-    needed+=("install route ${CONTAINER_SUBNET_PREFIX} -> ${VM_IP}")
-fi
-
-# Resolver
 resolver_path="/etc/resolver/${DNS_DOMAIN}"
 desired_resolver="nameserver ${DNSMASQ_IP}"
-if [ -f "$resolver_path" ] && [ "$(cat "$resolver_path" 2>/dev/null)" = "$desired_resolver" ]; then
-    :
-else
-    need_resolver=1
-    needed+=("write /etc/resolver/${DNS_DOMAIN}")
-fi
 
-# CA — pick a source we can read without elevation
-HOST_CA_PEM="${HOME}/Developer/mpd/conf/caroot/rootCA.pem"
+CAROOT_DIR="${HOME}/Developer/mpd/conf/caroot"
+CAROOT_PEM="${CAROOT_DIR}/rootCA.pem"
+CAROOT_KEY="${CAROOT_DIR}/rootCA-key.pem"
+PLATFORM_CAROOT="${STATE_DIR}/ca"
+PLATFORM_PEM="${PLATFORM_CAROOT}/rootCA.pem"
+PLATFORM_KEY="${PLATFORM_CAROOT}/rootCA-key.pem"
+
+cert_source=""
+new_fp=""
+
 if [ "$SKIP_CA" = 1 ]; then
     :
-elif [ -f "$HOST_CA_PEM" ]; then
-    cert_source="$HOST_CA_PEM"
-else
-    # No local copy — fetch from VM into a tmp file. scp doesn't need sudo.
-    tmp_cert=$(mktemp)
-    if scp -q -o StrictHostKeyChecking=no -o BatchMode=yes \
-            "${VM_USER}@${VM_IP}:${CA_CERT_REMOTE_PATH}" "$tmp_cert" 2>/dev/null; then
-        cert_source="$tmp_cert"
-    else
-        rm -f "$tmp_cert"
-        tmp_cert=""
-        warn "Could not fetch CA cert from ${VM_USER}@${VM_IP} — skipping CA check."
+elif [ -f "$CAROOT_PEM" ] && [ -f "$CAROOT_KEY" ]; then
+    cert_source="$CAROOT_PEM"
+    if [ ! -f "$PLATFORM_PEM" ] || [ ! -f "$PLATFORM_KEY" ]; then
+        copy_ca_files "$CAROOT_PEM" "$CAROOT_KEY" "$PLATFORM_CAROOT"
     fi
+elif [ -f "$PLATFORM_PEM" ] && [ -f "$PLATFORM_KEY" ]; then
+    cert_source="$PLATFORM_PEM"
+    if [ -d "${HOME}/Developer/mpd/conf" ] \
+       && { [ ! -f "$CAROOT_PEM" ] || [ ! -f "$CAROOT_KEY" ]; }; then
+        copy_ca_files "$PLATFORM_PEM" "$PLATFORM_KEY" "$CAROOT_DIR"
+    fi
+else
+    warn "no host CA found at ${CAROOT_DIR}/ or ${PLATFORM_CAROOT}/ — skipping CA import."
+    warn "(host CAs are never pulled from a VM; copy rootCA.pem+rootCA-key.pem into either location and re-run.)"
 fi
 
 if [ -n "$cert_source" ]; then
     new_fp=$(openssl x509 -fingerprint -sha1 -noout -in "$cert_source" 2>/dev/null \
                 | awk -F= '{ print $2 }' | tr -d ':' | tr 'a-f' 'A-F')
+fi
+
+# --- Phase 1b: detect what host config is needed ---
+# Factored into a function so Phase 2 can re-detect after the recipe pause
+# (the dev may have run the printed commands in another terminal). Sets
+# globals: needed[], need_route, need_resolver, need_ca, route_dest, route_gw.
+
+needed=()
+need_route=0
+need_resolver=0
+need_ca=0
+route_dest=""
+route_gw=""
+
+detect_host_needs() {
+    needed=()
+    need_route=0
+    need_resolver=0
+    need_ca=0
+
+    local route_out
+    route_out=$(route -n get -inet "$CONTAINER_PROBE_IP" 2>/dev/null || true)
+    route_dest=$(awk '/destination:/ { print $2; exit }' <<<"$route_out")
+    route_gw=$(awk   '/gateway:/    { print $2; exit }' <<<"$route_out")
+    if [[ "$route_dest" == 10.163.0* ]] && [ "$route_gw" = "$VM_IP" ]; then
+        :
+    else
+        need_route=1
+        needed+=("install route ${CONTAINER_SUBNET_PREFIX} -> ${VM_IP}")
+    fi
+
+    if [ -f "$resolver_path" ] && [ "$(cat "$resolver_path" 2>/dev/null)" = "$desired_resolver" ]; then
+        :
+    else
+        need_resolver=1
+        needed+=("write ${resolver_path}")
+    fi
+
     if [ -n "$new_fp" ]; then
         if security find-certificate -a -Z "$SYSTEM_KEYCHAIN" 2>/dev/null \
                 | grep -q "^SHA-1 hash: ${new_fp}$"; then
@@ -117,46 +144,79 @@ if [ -n "$cert_source" ]; then
             needed+=("import mpd CA into System keychain")
         fi
     fi
-fi
+}
 
-# --- Phase 2: privileged operations (single fenced block) ---
-# All `sudo` calls live here and only here. Cached creds are dropped at the
-# end of the block so the non-privileged work that follows can't accidentally
-# piggy-back on the elevated session. The EXIT trap is a belt-and-suspenders
-# backstop; this explicit drop is the primary fence.
+detect_host_needs
+
+# Snapshot Phase-1 state — drives Phase-3 report wording regardless of
+# whether the recipe was run manually or by the script.
+initial_need_route="$need_route"
+initial_need_resolver="$need_resolver"
+initial_need_ca="$need_ca"
+initial_route_dest="$route_dest"
+initial_route_gw="$route_gw"
+
+# --- Phase 2: privileged operations (sudo recipe affordance) ---
+# Mirror setup.sh's new-VM path: print the runnable commands, let the dev
+# choose between running them in another terminal vs. letting the script
+# sudo. After the choice, re-detect and apply only what's still needed.
 
 if [ ${#needed[@]} -gt 0 ]; then
-    echo
-    echo "macOS will ask for your password to:"
-    for action in "${needed[@]}"; do
-        echo "    - $action"
-    done
-    sudo -v || die "sudo authentication failed."
-
+    cmds=()
     if [ "$need_route" = 1 ]; then
         if [[ "$route_dest" == 10.163.0* ]] && [ -n "$route_gw" ]; then
-            sudo route -n delete -net "$CONTAINER_SUBNET_PREFIX" >/dev/null 2>&1 || true
+            cmds+=("sudo route -n delete -net ${CONTAINER_SUBNET_PREFIX}")
         fi
-        sudo route -n add -net "$CONTAINER_SUBNET_PREFIX" "$VM_IP" >/dev/null
+        cmds+=("sudo route -n add -net ${CONTAINER_SUBNET_PREFIX} ${VM_IP}")
     fi
     if [ "$need_resolver" = 1 ]; then
-        sudo mkdir -p /etc/resolver
-        printf '%s\n' "$desired_resolver" | sudo tee "$resolver_path" >/dev/null
-        sudo chmod 0644 "$resolver_path"
+        cmds+=("sudo mkdir -p /etc/resolver")
+        cmds+=("printf 'nameserver ${DNSMASQ_IP}\\n' | sudo tee ${resolver_path} >/dev/null")
+        cmds+=("sudo chmod 0644 ${resolver_path}")
     fi
     if [ "$need_ca" = 1 ]; then
-        sudo security add-trusted-cert -d -r trustRoot -k "$SYSTEM_KEYCHAIN" "$cert_source"
+        cmds+=("sudo security add-trusted-cert -d -r trustRoot -k ${SYSTEM_KEYCHAIN} \"${cert_source}\"")
     fi
 
-    sudo -k 2>/dev/null || true
+    print_sudo_recipe "${cmds[@]}"
+
+    # Re-detect: did the dev already run the recipe in another terminal?
+    detect_host_needs
+
+    if [ ${#needed[@]} -eq 0 ]; then
+        ok "host configuration already complete (you ran the recipe manually)"
+    else
+        sudo -v || die "sudo authentication failed."
+
+        if [ "$need_route" = 1 ]; then
+            if [[ "$route_dest" == 10.163.0* ]] && [ -n "$route_gw" ]; then
+                sudo route -n delete -net "$CONTAINER_SUBNET_PREFIX" >/dev/null 2>&1 || true
+            fi
+            sudo route -n add -net "$CONTAINER_SUBNET_PREFIX" "$VM_IP" >/dev/null
+        fi
+        if [ "$need_resolver" = 1 ]; then
+            sudo mkdir -p /etc/resolver
+            printf '%s\n' "$desired_resolver" | sudo tee "$resolver_path" >/dev/null
+            sudo chmod 0644 "$resolver_path"
+        fi
+        if [ "$need_ca" = 1 ]; then
+            sudo security add-trusted-cert -d -r trustRoot -k "$SYSTEM_KEYCHAIN" "$cert_source"
+        fi
+
+        sudo -k 2>/dev/null || true
+    fi
 fi
 
 # --- Phase 3: report + non-privileged state writes (no sudo from here on) ---
+# Reports are framed by *initial* state so a manual-recipe run still surfaces
+# the right wording ("added"/"replaced stale route" vs "already correct").
 
 step "Route ${CONTAINER_SUBNET_PREFIX} via ${VM_IP}"
-if [ "$need_route" = 1 ]; then
-    if [[ "$route_dest" == 10.163.0* ]] && [ -n "$route_gw" ]; then
-        echo "    replaced stale route (was via ${route_gw})"
+if [ "$initial_need_route" = 1 ]; then
+    if [[ "$initial_route_dest" == 10.163.0* ]] \
+       && [ -n "$initial_route_gw" ] \
+       && [ "$initial_route_gw" != "$VM_IP" ]; then
+        echo "    replaced stale route (was via ${initial_route_gw})"
     fi
     ok "route added: ${CONTAINER_SUBNET_PREFIX} -> ${VM_IP}"
 else
@@ -164,7 +224,7 @@ else
 fi
 
 step "DNS resolver /etc/resolver/${DNS_DOMAIN} -> ${DNSMASQ_IP}"
-if [ "$need_resolver" = 1 ]; then
+if [ "$initial_need_resolver" = 1 ]; then
     ok "resolver written"
 else
     ok "resolver already correct"
@@ -175,7 +235,7 @@ if [ "$SKIP_CA" = 1 ]; then
 elif [ -n "$cert_source" ]; then
     step "mpd CA certificate"
     fp_lc=$(echo "$new_fp" | tr 'A-F' 'a-f')
-    if [ "$need_ca" = 1 ]; then
+    if [ "$initial_need_ca" = 1 ]; then
         ok "CA cert imported (sha1 ${fp_lc})"
     else
         ok "CA cert already trusted (sha1 ${fp_lc})"
@@ -188,4 +248,3 @@ fi
 
 echo
 echo "    macOS client configured. Open https://mpd.test to reach the portal."
-# tmp_cert removal handled by EXIT trap above.

@@ -152,29 +152,41 @@ The host-side parts of step 1–4 are irreversible without re-running
 
 ## Shared CA across mpd-desktop and mpd-machine VMs
 
-If `~/Developer/mpd/conf/caroot/{rootCA.pem,rootCA-key.pem}` exists on the
-Mac when `setup.command` runs, those files are uploaded to the new VM
-*before* `mpd --setup` runs inside it. mpd detects the existing CA and
-reuses it instead of generating a fresh one. Result: every mpd-machine VM
-on this Mac shares one CA, and the System keychain only needs to trust it
-once. The same files are what `mpd-desktop` uses on macOS, so if you have
-mpd-desktop installed here, mpd-machine adopts its CA automatically.
+`setup.command` keeps a single host CA alive in two real-file locations
+and mirrors between them on every run:
 
-If the host doesn't have the CA but `~/Developer/mpd/conf/` does exist
-(e.g. you've initialized mpd state on this Mac for some other reason),
-`setup.command` pulls the CA back from the VM after `mpd --setup` so the
-*next* mpd-machine VM creation can reuse it.
+- `~/Developer/mpd/conf/caroot/{rootCA.pem,rootCA-key.pem}` — the canonical
+  mpd location, shared with mpd-desktop. Populated only when
+  `~/Developer/mpd/conf/` already exists (we never pre-create the repo
+  path on a Mac that hasn't cloned mpd).
+- `~/.mpd-machine/ca/{rootCA.pem,rootCA-key.pem}` — the platform-owned
+  copy. Always populated on any Mac that has run `setup.command` at least
+  once.
 
-If `~/Developer/mpd/conf/` doesn't exist on the host, no caching happens
-and each VM gets its own CA — fine for occasional throwaway VMs, just
-means each one's CA gets its own keychain entry. You can purge any of
-them at any time via Keychain Access.app or `security delete-certificate`.
+Net effect: one CA per Mac, trusted once in the System keychain, shared
+across mpd-desktop and every mpd-machine VM you create here. The
+redundant copy is the safety net — wipe either caroot directory (or
+delete the cert from Keychain Access) and the next `setup.command`
+restores from the other side and re-trusts the keychain entry. No
+manual recovery, no broken trust.
 
-`uninstall.command` removes the keychain trust but leaves
-`~/Developer/mpd/conf/caroot/` alone (mirrors mpd's own
-"persisted, not removed by --uninstall" convention — deleting it would
-break mpd-desktop if also installed). Wipe that directory manually if
-you want a true reset.
+If both copies somehow diverge (e.g. mpd-desktop regenerated its CA after
+you'd already used a different one with mpd-machine), `~/Developer/mpd/conf/caroot/`
+wins as the canonical source and the platform copy is overwritten, with
+a warning printed.
+
+CAs only flow host → VM, never the reverse. The System keychain only
+ever trusts certificates generated on this Mac. If you import a VM
+created on another Mac onto a host that has no CA in either location
+yet, `setup.command` will configure the route and DNS resolver but skip
+CA import — HTTPS will warn until you copy a host CA into `~/.mpd-machine/ca/`
+or `~/Developer/mpd/conf/caroot/` yourself.
+
+`uninstall.command` removes the keychain trust and `~/.mpd-machine/`
+(including the platform copy of the CA), but leaves
+`~/Developer/mpd/conf/caroot/` alone — same "persisted, not removed by
+--uninstall" convention mpd itself uses, so mpd-desktop keeps working.
+Wipe `caroot/` manually if you want a true reset.
 
 ## Why the VM IP is pinned
 

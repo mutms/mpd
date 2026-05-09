@@ -208,7 +208,7 @@ else
 
     step "Preparing CA on host"
     prepare_host_ca
-    trap 'sudo -k 2>/dev/null || true; cleanup_temp_ca' EXIT
+    trap 'sudo -k 2>/dev/null || true' EXIT
 
     # Detect — short slugs name the operations so we can switch on them
     # below. (Pretty descriptions are derived per-slug for printing.)
