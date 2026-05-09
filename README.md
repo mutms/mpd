@@ -70,7 +70,7 @@ Works in any hypervisor (UTM, Hyper-V, VirtualBox, virt-manager,
 VMware…):
 
 1. Install Ubuntu 26.04 LTS desktop in your hypervisor of choice.
-   During the installer, set the hostname to **`mpd-machine-sandbox`**.
+   When the installer asks for a hostname, type **`mpd-machine-sandbox`**.
 2. Take a hypervisor snapshot.
 3. Inside the VM, run:
 
