@@ -130,7 +130,7 @@ if [ "$remove_route" = 1 ] || [ "$remove_resolver" = 1 ] \
     fi
     if [ "$remove_resolver" = 1 ]; then
         cmds+=("sudo rm -f ${RESOLVED_DROPIN_FILE}")
-        cmds+=("sudo systemctl reload systemd-resolved")
+        cmds+=("sudo systemctl restart systemd-resolved")
     fi
     if [ "$remove_systrust" = 1 ]; then
         cmds+=("sudo rm -f ${SYSTEM_TRUST_CERT}")
@@ -157,8 +157,7 @@ if [ "$remove_route" = 1 ] || [ "$remove_resolver" = 1 ] \
         fi
         if [ "$remove_resolver" = 1 ]; then
             sudo rm -f "$RESOLVED_DROPIN_FILE"
-            sudo systemctl reload systemd-resolved 2>/dev/null \
-                || sudo systemctl restart systemd-resolved 2>/dev/null || true
+            sudo systemctl restart systemd-resolved 2>/dev/null || true
             echo "${RESOLVED_DROPIN_FILE} removed."
         fi
         if [ "$remove_systrust" = 1 ]; then

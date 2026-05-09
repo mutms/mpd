@@ -444,7 +444,7 @@ if [ ${#needs[@]} -gt 0 ]; then
         cmds+=("sudo install -d -m 0755 ${RESOLVED_DROPIN_DIR}")
         cmds+=("printf '[Resolve]\\nDNS=${DNSMASQ_IP}\\nDomains=~mpd.test\\n' | sudo tee ${RESOLVED_DROPIN_FILE} >/dev/null")
         cmds+=("sudo chmod 0644 ${RESOLVED_DROPIN_FILE}")
-        cmds+=("sudo systemctl reload systemd-resolved")
+        cmds+=("sudo systemctl restart systemd-resolved")
     ;; esac
     case " ${needs[*]} " in *" systrust "*)
         cmds+=("sudo install -m 0644 ${HOST_CA_PEM} ${SYSTEM_TRUST_CERT}")

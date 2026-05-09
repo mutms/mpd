@@ -519,8 +519,12 @@ apply_resolver() {
     sudo install -d -m 0755 "$RESOLVED_DROPIN_DIR"
     resolver_dropin_desired | sudo tee "$RESOLVED_DROPIN_FILE" >/dev/null
     sudo chmod 0644 "$RESOLVED_DROPIN_FILE"
-    sudo systemctl reload systemd-resolved 2>/dev/null \
-        || sudo systemctl restart systemd-resolved
+    # Always `restart`, not `reload`. `reload` re-parses config drop-ins
+    # but doesn't reset systemd-resolved's internal "is this server
+    # reachable" state, which causes 20-30s query timeouts when an
+    # upstream DNS server is being added or moved. `restart` is ~50ms
+    # of DNS unavailability for a guaranteed-clean state.
+    sudo systemctl restart systemd-resolved
 }
 
 # Cert SHA-1 fingerprint (uppercase hex, no separators).

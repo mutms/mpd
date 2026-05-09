@@ -157,7 +157,7 @@ build_sudo_cmds() {
         cmds+=("sudo install -d -m 0755 ${RESOLVED_DROPIN_DIR}")
         cmds+=("printf '[Resolve]\\nDNS=${DNSMASQ_IP}\\nDomains=~mpd.test\\n' | sudo tee ${RESOLVED_DROPIN_FILE} >/dev/null")
         cmds+=("sudo chmod 0644 ${RESOLVED_DROPIN_FILE}")
-        cmds+=("sudo systemctl reload systemd-resolved")
+        cmds+=("sudo systemctl restart systemd-resolved")
     fi
     if [ "$need_systrust" = 1 ]; then
         cmds+=("sudo install -m 0644 ${cert_source} ${SYSTEM_TRUST_CERT}")
