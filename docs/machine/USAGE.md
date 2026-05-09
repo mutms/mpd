@@ -20,6 +20,13 @@ Pick the path that matches your host:
   repo clone, `mpd` build, and macOS networking (route, resolver, CA);
   `start.command` / `stop.command` / `uninstall.command` cover the
   lifecycle.
+- **Ubuntu 26.04 LTS + libvirt/KVM (automated)** —
+  [`platforms/ubuntu-kvm/`](../../mpd-machine/platforms/ubuntu-kvm/README.md).
+  `bash setup.sh` from a terminal: preflight (apt deps, libvirt group,
+  KVM, default network) → libvirt-driven VM creation against `virbr0`
+  → Linux host networking (route, systemd-resolved drop-in, system
+  trust, Firefox policies, NSS DB) → desktop launcher in GNOME
+  Activities. `start.sh` / `stop.sh` / `uninstall.sh` cover the lifecycle.
 - **Windows + Hyper-V (automated)** —
   [`platforms/windows-hyperv/`](../../mpd-machine/platforms/windows-hyperv/README.txt).
   `setup.cmd` does the same end-to-end and also configures Windows

@@ -53,7 +53,8 @@ recommendations per host OS:
 | Host OS | Recommended | Notes |
 |---|---|---|
 | **macOS** (Apple Silicon) | UTM with QEMU backend | Use the [`platforms/macos-utm/`](../../mpd-machine/platforms/macos-utm/README.md) automated bootstrap — double-click `setup.command` to do VM creation + cloud-init + repo clone + `mpd` build + macOS networking (route, resolver, CA) in one shot, plus `start.command` / `stop.command` / `uninstall.command` for the lifecycle. QEMU+SPICE gives clipboard sync, dynamic display resize, and visible DHCP leases in UTM's GUI. |
-| **Linux** | libvirt/KVM, QEMU, or anything you already drive | Follow [`platforms/generic-vm/`](../../mpd-machine/platforms/generic-vm/README.md). Five-step manual install from the netinst ISO. |
+| **Ubuntu 26.04 LTS** | libvirt + KVM | [`platforms/ubuntu-kvm/`](../../mpd-machine/platforms/ubuntu-kvm/README.md) automated bootstrap — `bash setup.sh` for end-to-end VM creation + cloud-init + repo clone + `mpd` build + Linux host networking (route, resolved drop-in, system trust, Firefox policies, NSS DB) and a desktop launcher in GNOME Activities. `start.sh` / `stop.sh` / `uninstall.sh` cover the lifecycle. |
+| **Other Linux** | libvirt/KVM, QEMU, or anything you already drive | Follow [`platforms/generic-vm/`](../../mpd-machine/platforms/generic-vm/README.md). Five-step manual install from the netinst ISO. |
 | **Windows** | Hyper-V (free with Windows Pro) | [`platforms/windows-hyperv/`](../../mpd-machine/platforms/windows-hyperv/README.txt) automated bootstrap — `setup.cmd` does VM creation + cloud-init + repo clone + `mpd` build + Windows networking in one shot. |
 | **Cloud** | Hetzner Cloud, Hyperstack, AWS/GCP/Azure, etc. | Provision a Debian Trixie instance, follow [`platforms/generic-vm/`](../../mpd-machine/platforms/generic-vm/README.md). The "VM" can be a real cloud server. |
 
@@ -66,7 +67,8 @@ Two phases: get a VM ready, then run `mpd --setup` inside it.
 
 1. **Pick a path** from
    [`mpd-machine/platforms/`](../../mpd-machine/platforms/README.md) —
-   automated (`macos-utm/` or `windows-hyperv/`) or manual (`generic-vm/`).
+   automated (`macos-utm/`, `ubuntu-kvm/`, or `windows-hyperv/`) or
+   manual (`generic-vm/`).
    End state of any path: a Debian Trixie VM with `mpd` built and
    reachable over SSH.
 2. **`mpd --setup`** inside the VM (interactive where system changes
@@ -132,6 +134,8 @@ For full directory-contract detail (including data-volume layout under
 - [SECURITY.md](SECURITY.md) — trust boundaries, intentional compromises
 - [`platforms/macos-utm/README.md`](../../mpd-machine/platforms/macos-utm/README.md)
   — automated UTM bootstrap on macOS + recovery
+- [`platforms/ubuntu-kvm/README.md`](../../mpd-machine/platforms/ubuntu-kvm/README.md)
+  — automated libvirt/KVM bootstrap on Ubuntu 26.04 LTS
 - [`platforms/windows-hyperv/README.txt`](../../mpd-machine/platforms/windows-hyperv/README.txt)
   — automated Hyper-V bootstrap on Windows
 - [`platforms/generic-vm/README.md`](../../mpd-machine/platforms/generic-vm/README.md)

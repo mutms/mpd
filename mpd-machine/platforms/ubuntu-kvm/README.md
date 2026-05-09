@@ -1,242 +1,338 @@
 # Ubuntu + KVM bootstrap
 
-> **Status: parked.** This is the planned third "ships polished" platform
-> for `mpd-machine`. Until it lands, Ubuntu users should follow the
-> [`generic-vm/`](../generic-vm/README.md) manual bootstrap — it works
-> on any Linux host that can boot a Debian Trixie netinst ISO.
+Automation for `mpd-machine` on **Ubuntu 26.04 LTS** using
+**libvirt + KVM**. For the platform-agnostic manual bootstrap (any
+Debian Trixie VM you've already created yourself), see the
+[generic-vm](../generic-vm/README.md) platform.
 
-This document is a brief for whoever picks the work up next (likely
-a future Claude session running on an Ubuntu host). It captures
-intent, target shape, and the open technical questions, so the
-implementer doesn't have to re-derive any of it.
+This directory ships polished, single-developer-laptop scripts that
+mirror the macos-utm flow — sudo recipe affordance, host-only CA
+trust, per-VM `[y/N]` uninstall, no surprises during the long
+unattended VM-creation phase.
 
-## Goal
+## Files in this directory
 
-Bring Ubuntu + KVM to feature parity with `macos-utm/` and
-`windows-hyperv/`:
+| File | What it does |
+|---|---|
+| `setup.sh` | Create a new mpd VM or switch the active VM. |
+| `start.sh` | Start the current VM. |
+| `stop.sh` | Suspend all running mpd VMs (state saved to disk; resumes instantly via libvirt's managedsave). |
+| `uninstall.sh` | Remove host networking + trust, then ask per-VM `[y/N]` whether to delete each VM. |
 
-- **One-click bootstrap.** Run `setup.sh` (or double-click a
-  `.desktop` launcher), answer four prompts (octet, user, memory,
-  disk), provide sudo password once, walk away. Come back to a
-  primed VM.
-- **Pre-warm.** Tail of bootstrap calls `mpd --runtime-create=php`
-  and `mpd --db-create=postgres:latest` over SSH so the user's
-  first `demo moodle v5.2.0` finishes in 2–3 minutes.
-- **Lifecycle scripts.** `start.sh` / `stop.sh` / `uninstall.sh`
-  symmetric with the other two platforms.
-- **Desktop launcher.** `~/.local/share/applications/mpd-machine.desktop`
-  that opens a terminal SSH'd into the active VM.
+Implementation lives under [`lib/`](lib/) (`*.sh` scripts — no need to
+open them).
 
-## Scope: Ubuntu only
-
-Naming reflects that — `ubuntu-kvm`, not `linux-kvm`. Platform
-self-containment (see [`../README.md`](../README.md)) means the
-bundle hard-codes apt package names, systemd-resolved paths, and
-`update-ca-certificates` semantics. Debian users in the same family
-will mostly find it works, but we ship and test against Ubuntu LTS
-specifically.
-
-Other distros (Fedora, Arch, openSUSE) keep using `generic-vm/`. If
-demand later justifies it, a `fedora-kvm` sibling is the natural
-shape — same architecture, different package names + CA tooling
-(`update-ca-trust` instead of `update-ca-certificates`,
-`/etc/pki/ca-trust/source/anchors/` instead of
-`/usr/local/share/ca-certificates/`).
-
-## Reference: existing platforms
-
-The implementer should read these in order:
-
-1. [`../macos-utm/README.md`](../macos-utm/README.md) — closest UX
-   parallel (host-first CA, fenced sudo, `.command` shims, lib/
-   layout, recipe-or-sudo affordance). Most of the `setup.sh` shape
-   transplants almost verbatim; the libvirt/QEMU substitutions are
-   the only meaningful differences.
-2. [`../windows-hyperv/README.txt`](../windows-hyperv/README.txt) —
-   how the elevated-context platform handles the same operations
-   (route + resolver-equivalent + CA trust); the `.cmd` /
-   `lib/*.ps1` split.
-3. [`../macos-utm/lib/common.sh`](../macos-utm/lib/common.sh) —
-   helper layout (`step` / `ok` / `warn` / `die`, `prepare_host_ca`,
-   `print_sudo_recipe`, fenced-sudo predicates `route_needs_update`
-   / `apply_route` etc.). Most of these port directly to Linux —
-   only the `apply_*` bodies differ.
-4. [`../macos-utm/lib/create-vm.sh`](../macos-utm/lib/create-vm.sh) —
-   the inside-VM provisioning sequence (cloud-init seed, repo
-   clone, Swift install, `mpd --setup`, autostart unit, motd) is
-   identical regardless of hypervisor.
-
-## Proposed file layout
-
-```
-mpd-machine/platforms/ubuntu-kvm/
-├── README.md                          # rewritten: real user docs
-├── setup.sh                           # primary entry (run from terminal or via .desktop)
-├── start.sh                           # start current VM
-├── stop.sh                            # suspend running mpd VMs
-├── uninstall.sh                       # delete VMs + clean state
-├── mpd-machine.desktop                # GNOME/KDE app launcher template (installed by setup.sh)
-└── lib/
-    ├── common.sh                      # constants + helpers (port from macos-utm)
-    ├── setup.sh                       # main flow
-    ├── create-vm.sh                   # parameterized single-VM creation
-    ├── configure-client.sh            # host networking (route, resolver, CA)
-    ├── start.sh / stop.sh / uninstall.sh
-```
-
-State directory (matching the other platforms' naming): `~/mpd-machine/`
-(undotted on Linux per general Linux convention, same as Windows).
-
-## Architecture sketch
-
-### Hypervisor + VM management
-
-QEMU + KVM, driven directly. Two viable approaches:
-
-- **Direct QEMU** (recommended for v1): shell out to
-  `qemu-system-aarch64 -enable-kvm` (or x86_64 host). Manage the VM
-  as a systemd `--user` service so it survives terminal exit and
-  starts on login. No libvirt dependency, no virt-manager, no
-  groups to join. Closest to how `macos-utm` drives UTM via
-  AppleScript. Lifecycle ops shell out to the same systemd unit.
-- **libvirt + virt-manager** (later iteration if we want a GUI VM
-  list): `virt-install` for create, `virsh` for lifecycle. virt-
-  manager shows the VM in its UI. Heavier deps (libvirt-daemon-system,
-  virt-manager, qemu-system); user must be in the libvirt group.
-
-Pick direct QEMU for the parked plan. Keep libvirt as a future
-option if there's demand.
-
-### Networking
-
-This is the trickiest deviation from macos-utm. macOS has a
-built-in vmnet shared bridge (`192.168.64.0/24`); Linux has nothing
-equivalent out of the box. Three viable options:
-
-1. **QEMU user-mode networking (slirp).** Default. Easy. Doesn't
-   work for us — host can't reach VM by IP, only port forwards.
-   Rules out our model where the host adds a route to
-   `10.163.0.0/24` via the VM's bridge IP.
-2. **TAP + bridge with manual scripting.** Create a tap device,
-   attach to a bridge (`br0` or new `mpdbr0`), assign host an IP
-   on that bridge, run dnsmasq for DHCP/DNS — or pin static IPs.
-   Total control. Lots of code.
-3. **libvirt's default network.** libvirt creates `virbr0`
-   (192.168.122.0/24, NAT'd). VMs get reachable IPs. Simpler than
-   building our own bridge, but requires libvirt installed even if
-   we drive QEMU directly. The `default` network is well-trodden;
-   ubuntu-server/desktop has it ready out of the box once
-   `libvirt-daemon-system` is installed.
-
-Recommendation: use libvirt's `default` network even if QEMU is
-driven directly. Install `libvirt-daemon-system` purely for
-`virbr0`. The mpd VM gets a DHCP IP on 192.168.122.0/24; we pin it
-via libvirt's `<dhcp><host name=... ip=...>` static reservation, or
-inject a static IP via cloud-init like the other platforms do.
-
-### Privileged host ops
-
-Same trio as macos-utm:
-
-- **Route** to container subnet `10.163.0.0/24` via VM IP. Use
-  `sudo ip route add 10.163.0.0/24 via <vm_ip>`. Not persistent
-  across reboot — `start.sh` re-adds. (Matches macos-utm's
-  trade-off; LaunchDaemon-equivalent on Linux would be a systemd
-  service or `/etc/network/if-up.d/` script. Park as v2.)
-- **DNS resolver** for `*.mpd.test`. Ubuntu uses systemd-resolved.
-  Drop a file at `/etc/systemd/resolved.conf.d/mpd-test.conf`:
-  ```ini
-  [Resolve]
-  DNS=10.163.0.3
-  Domains=~mpd.test
-  ```
-  Then `sudo systemctl restart systemd-resolved`. Verify with
-  `resolvectl query foo.mpd.test`. (`/etc/resolver/` doesn't exist
-  on Linux; systemd-resolved's `Domains=~mpd.test` is the
-  equivalent of macOS's per-domain resolver.)
-- **CA trust.** Copy to `/usr/local/share/ca-certificates/mpd-test.crt`
-  (must be `.crt` extension, not `.pem`), then
-  `sudo update-ca-certificates`. This adds it to the system trust
-  bundle. Browsers using NSS (Firefox, Chromium) **don't read this
-  bundle by default**; they have their own NSS DB at `~/.mozilla/`
-  and `~/.pki/nssdb/`. Need separate `certutil -A` calls. mpd's
-  `MachineActionSetup.swift` already does the in-VM NSS DB import —
-  for the *host*, this is host-Claude's problem to handle.
-- **Host-first CA.** Same scheme as macos-utm: bash twin of
-  `Mpd.Environment.Certificate.generateCA` (already in
-  `macos-utm/lib/common.sh::generate_mpd_ca`) — port verbatim;
-  openssl behaves the same on Linux. The reuse-or-generate decision
-  + `~/Developer/mpd/conf/caroot/` placement is identical to
-  macos-utm.
-
-### Sudo strategy
-
-Same fenced-sudo + print-recipe pattern as macos-utm. `setup.sh`
-prepares the CA on host, prints the runnable commands (route +
-resolved drop-in + ca-certificates + browser NSS imports), gives
-the dev the choice (run yourself / let the script sudo), re-checks
-afterward, applies what's missing, drops cached creds. EXIT trap as
-backstop. See `docs/ARCHITECTURE.md` §"Sister rule: host-side fenced
-sudo (macos-utm bootstrap)" — the rule already covers this and
-should be retitled / generalized when ubuntu-kvm lands.
-
-### Pre-warm
-
-Identical to macos-utm/windows-hyperv:
+Run from a terminal:
 
 ```bash
-ssh "${VM_USER}@${VM_IP}" 'mpd --runtime-create=php' || warn "PHP runtime pre-warm failed"
-ssh "${VM_USER}@${VM_IP}" 'mpd --db-create=postgres:latest' || warn "postgres pre-warm failed"
+bash mpd-machine/platforms/ubuntu-kvm/setup.sh
 ```
 
-### Desktop launcher
+GNOME's Files (Nautilus 43+) doesn't double-click-launch executable
+shell scripts by default, so we don't ship a Files-launchable shim
+for setup. Once setup completes, a desktop launcher appears in
+GNOME Activities (and on `~/Desktop/` when desktop icons are
+enabled) for daily SSH access — that part *is* one-click.
 
-Mac uses `~/Desktop/mpd-machine.command`. Linux equivalent:
+## Prerequisites
 
-- Write `~/.local/share/applications/mpd-machine.desktop` with:
-  ```ini
-  [Desktop Entry]
-  Type=Application
-  Name=mpd-machine
-  Comment=SSH into the active mpd-machine VM
-  Exec=gnome-terminal -- ssh mpd-machine    # or x-terminal-emulator -e
-  Terminal=false
-  Icon=utilities-terminal
-  Categories=Development;
-  ```
-- `update-desktop-database ~/.local/share/applications/` to register.
-- Optional: `~/Desktop/mpd-machine.desktop` for users who have
-  desktop-icon support enabled (newer GNOME hides them by default).
+- **Ubuntu 26.04 LTS** (Resolute Raccoon). The script refuses to run
+  on other versions; older Ubuntu LTS releases work in concept but
+  aren't tested. Use `generic-vm` if you're on a different distro.
+- **Hardware virtualization enabled in BIOS/UEFI** (Intel VT-x /
+  AMD-V). Preflight checks `/dev/kvm` and the CPU flag.
+- **An SSH key**. `setup.sh` offers to generate `~/.ssh/id_ed25519`
+  if missing.
+- **One-time sudo** to install apt packages and set up the libvirt
+  pool directory; preflight prints the exact commands and lets you
+  paste-run them or press Enter to authorize.
 
-## Open questions for the implementer
+## `setup.sh` — create a VM or switch the active VM
 
-1. **Single-host vs multi-distro.** Stay strictly Ubuntu, or
-   accept Debian-family as a tested bonus? Affects test matrix.
-2. **Target Ubuntu version.** 24.04 LTS minimum? 22.04 still
-   common. If 22.04, watch for older systemd-resolved syntax.
-3. **virtbr0 vs custom bridge.** libvirt's `default` network is
-   easy. Custom bridge gives more control but doubles the script.
-4. **Fix host-side route across reboots.** systemd-networkd unit?
-   `/etc/network/interfaces` snippet? `ip route add` in `start.sh`?
-   Pick the one that's least surprising.
-5. **Browser NSS DBs.** Auto-import for Firefox + Chromium, or
-   leave for the user to handle? mpd inside the VM does it for the
-   in-VM browsers; host is a different question.
-6. **Wayland vs X11 terminal launch.** `Exec=gnome-terminal --
-   ssh` works on GNOME; `Exec=x-terminal-emulator -e ssh` is
-   distro-neutral but has quoting quirks. Pick a fallback chain.
+`setup.sh` runs in stages and is re-entrant — re-run after any
+preflight failure and it picks up where it left off. Stages:
 
-## When this lands
+### 0. Pre-flight
 
-Update three places:
+Read-only checks:
 
-- `mpd-machine/platforms/README.md` — flip the table row from
-  `Parked` to `Ships`, expand the "What it gives you" column.
-- `docs/ROADMAP.md` — remove the `Parked` bullet pointing here.
-- `docs/machine/README.md` and `docs/machine/USAGE.md` — add
-  Ubuntu+KVM to the "Bootstrap" enumeration alongside the other
-  two automated platforms.
-- `docs/ARCHITECTURE.md` — generalize the
-  "Sister rule: host-side fenced sudo (macos-utm bootstrap)"
-  subsection to cover both macos-utm and ubuntu-kvm (Windows
-  remains the exception under UAC).
+- Ubuntu 26.04 (refuses other versions).
+- `/dev/kvm` present + CPU `vmx`/`svm` flag.
+- Required apt packages: `libvirt-daemon-system`, `libvirt-clients`,
+  `qemu-system-x86`, `qemu-utils`, `cloud-image-utils`,
+  `genisoimage`, `libnss3-tools`.
+- Recommended (not auto-installed): `virt-manager` for a GUI VM list.
+- User in the `libvirt` group, *active in the current shell* (not
+  just listed in `/etc/group` — the script can't proceed if the
+  group isn't effective yet).
+- libvirt's `default` network running + autostart.
+- VM-disk pool dir at `/var/lib/mpd-machine/$USER/` (root-owned
+  parent, user-owned child).
+
+Anything missing is reported in two buckets — "things only YOU can
+do" (BIOS, log out / log in after a fresh group add) and "things
+this script can do (with sudo)." The script then prints a paste-able
+recipe and gives you a choice: `(a)` open another terminal and run
+the recipe yourself, or `(b)` press Enter and let `setup.sh` sudo
+for you. The recipe text includes the optional `virt-manager`
+install line; option `(b)` only auto-installs the *required* parts.
+
+If the script just added you to the `libvirt` group, it always exits
+with "log out and log back in, then re-run setup.sh" — group
+membership doesn't activate in the current shell, no matter what
+route you took to get there.
+
+### 1. SSH key
+
+If neither `~/.ssh/id_ed25519` nor `~/.ssh/id_rsa` is present,
+the script offers to generate `id_ed25519` (interactive, hit Enter
+twice for empty passphrase).
+
+### 2. VM selection
+
+Lists every existing `mpd-machine-NN` libvirt domain (with state)
+and marks the currently-active one (detected from the persistent
+host route to the container subnet). Prompts for a VM number:
+
+- Enter an existing number to switch to that VM or re-verify it.
+- Enter a new number to create a new VM end-to-end.
+
+Default for a fresh host: `158`.
+
+### 3. New VM creation (when the entered number doesn't exist yet)
+
+Asks for username, memory (default 12 GB), disk (default 200 GB),
+**does the host-side privileged work upfront** (host CA prep, route,
+DNS resolver, system trust, Firefox policies, NSS DB), then runs
+the long unattended phase:
+
+1. Defines a libvirt storage pool at
+   `/var/lib/mpd-machine/$USER/disks/` (user-owned, libvirtd-readable).
+2. Downloads the Debian Trixie generic-cloud image (~250 MB,
+   cached for reuse).
+3. Converts the raw image to qcow2 in the pool, resizes to your
+   chosen size (sparse).
+4. Builds a cloud-init seed ISO (user, SSH key, static IP, hostname
+   `mpd-machine-NN`).
+5. Defines the VM via `virsh define` (KVM-accelerated, virtio
+   disk/net, virtio-balloon for memory reclaim, virtio-rng).
+6. Boots, waits for SSH, waits for cloud-init to finish.
+7. Verifies the root filesystem grew to your requested size.
+8. `git clone`s the mpd repo, writes platform identity to
+   `~/Developer/mpd/conf/platform.env`.
+9. Detaches the cloud-init CD via `virsh change-media --eject` and
+   restarts the VM.
+10. In-VM provisioning over SSH: 4 GB swap, build dependencies
+    (`build-essential`, `swiftlang`), `make install` of mpd, host CA
+    upload, `mpd --setup` (which installs podman, services, the
+    login banner, and trust within the VM).
+11. Enables `mpd --start` on VM boot via a `systemctl --user` unit
+    (with `loginctl enable-linger`).
+
+### 4. Pre-warm
+
+After VM creation, runs `mpd --runtime-create=php` and `mpd
+--db-create=postgres:latest` over SSH so the user's first
+`demo moodle v5.2.0` finishes in 2-3 minutes instead of 10+.
+Best-effort — failures here just mean lazy provisioning at first
+demo invocation.
+
+### 5. State refresh
+
+Writes the SSH config block (`Host mpd-machine mpd-machine-NN`),
+records the active VM in `~/.mpd-machine/current.env`, and creates
+the desktop launcher (`~/.local/share/applications/mpd-machine.desktop`
+plus `~/Desktop/mpd-machine.desktop` if a Desktop dir exists, with
+`gio set ... metadata::trusted true` so GNOME doesn't ask before
+launching).
+
+### Existing-VM paths (re-verify / switch)
+
+When you enter a number that matches an existing VM, the script
+takes one of two short paths:
+
+- **Re-verify current**: ensures the VM is running, then re-runs
+  the host configure-client step (route, resolver, trust). Silent
+  if everything's already in place.
+- **Switch**: confirms, suspends the current VM via `virsh
+  managedsave`, starts the chosen one, waits for SSH, runs the
+  configure-client step against the new IP. State refresh follows.
+
+## `start.sh` / `stop.sh`
+
+`start.sh` — starts the VM that's currently configured (detected
+from the persistent route or `~/.mpd-machine/current.env`). If the
+VM was suspended via `stop.sh`, libvirt's managedsave resumes it
+in seconds rather than booting fresh. Re-asserts the host route to
+the container subnet (the route doesn't survive a host reboot —
+this is the only place it costs sudo on a warm system).
+
+`stop.sh` — `virsh managedsave`s every running mpd VM. State is
+serialized to disk; next `start.sh` resumes. Useful before
+shutting down the host or switching VMs via `setup.sh`.
+
+## `uninstall.sh`
+
+Asks for confirmation (`Type YES`), then runs in order:
+
+1. **Removes user-level CA trust** — `certutil -D -n mpd-rootCA -d
+   sql:~/.pki/nssdb` (Chromium / Chrome / Edge).
+2. **Removes host networking + trust via the sudo recipe affordance**
+   — same `(a)` / `(b)` pattern as setup.sh. Drops:
+   - persistent route to `10.163.0.0/24`
+   - `/etc/systemd/resolved.conf.d/mpd-test.conf`
+   - `/usr/local/share/ca-certificates/mpd-test.crt` (and reloads
+     the system trust bundle)
+   - `/etc/firefox/policies/policies.json` + `mpd-rootCA.crt`
+3. Removes `~/.mpd-machine/` (state).
+4. Removes the `Host mpd-machine` block from `~/.ssh/config`.
+5. Removes the desktop launcher from
+   `~/.local/share/applications/` and `~/Desktop/`.
+6. **Asks `Delete <name>? [y/N]` for each `mpd-machine-NN` VM** —
+   default keeps. Only y'd VMs are stopped (`virsh destroy`) and
+   deleted (`virsh undefine --remove-all-storage`). VM deletion is
+   the last step on purpose: Ctrl-C during these prompts leaves the
+   host fully cleaned up with the remaining VMs intact.
+
+If you delete every VM, the libvirt storage pool is also
+undefined. The user-owned directory `/var/lib/mpd-machine/$USER/`
+is left in place — `rm -rf` it yourself if you want a true reset.
+
+If you keep one or more VMs, host networking is gone — re-run
+`setup.sh` and pick a kept VM's number to restore the route,
+resolver, and CA trust for it.
+
+## Why the VM IP is pinned
+
+`setup.sh` assigns a static IP to each VM (`192.168.122.NN`) via
+cloud-init's `network-config` (matched by `driver: virtio_net` so
+it works regardless of the kernel-assigned interface name). A
+static IP is required because the bootstrap automation needs to
+SSH into the VM before it's fully up — DHCP would give an unknown
+address that the script can't predict.
+
+The IP is recorded in `conf/platform.env` inside the VM
+(`MPD_VM_IP=...`) and in `~/.mpd-machine/<vmname>.env` on the host.
+
+The active VM is tracked via the persistent route: the kernel route
+to `10.163.0.0/24` (the container subnet) points at the VM's IP, so
+`start.sh` can detect the current VM after a host reboot.
+
+## Multiple VMs side-by-side
+
+Run `setup.sh` and enter a different octet to create a second VM:
+
+```
+e.g. enter 159 alongside an existing 158 VM
+```
+
+Each VM gets its own static IP and libvirt domain name. Only one
+VM is "current" at a time (the one the container route points at).
+To switch, run `setup.sh` and enter the other VM's number — the
+current VM is `managedsave`d and the chosen one resumes.
+
+mpd's internal "active machine" label always remains `mpd-machine`
+regardless of the chosen octet, so per-machine state lives at
+`~/.mpd/machines/mpd-machine/` inside each VM independently.
+
+## A GUI list of VMs (`virt-manager`)
+
+Optional. The preflight recipe includes `virt-manager` in its
+printed text but doesn't install it via the auto-sudo path —
+install it yourself if you want a GUI:
+
+```bash
+sudo apt-get install -y virt-manager
+```
+
+`virt-manager` connects to `qemu:///system` and shows every libvirt
+VM (including the mpd ones), with consoles, performance graphs,
+and snapshot management. Console access via `virsh console
+mpd-machine-NN` works without virt-manager too.
+
+## File transfer (host ↔ VM)
+
+Two options:
+
+- **scp via the dev user** — `scp some.tar.gz mpd-machine-158:~/` for
+  ad-hoc transfers.
+- **scp/ssh via fileaccess** — preferred for project backups. The
+  `mpd-service-fileaccess` container exposes `/srv/backups/` as an
+  SSH/scp endpoint at `fileaccess.service.mpd.test`.
+
+Never print private keys to terminal output. Canonical secrets
+stay in the VM's `~/Developer/mpd/conf/`.
+
+## Recovery: lost SSH key
+
+If you lose the laptop's private SSH key and can no longer log
+into the VM:
+
+1. **Easiest**: rebuild the VM. `uninstall.sh` keeps your kept VMs
+   safe; just `virsh undefine --remove-all-storage mpd-machine-158`
+   then re-run `setup.sh`. Local-only state in the VM is lost
+   (project sources, DBs, generated CA, fileaccess host keys); git
+   remotes and laptop-side notes survive.
+
+2. **Single-user-mode recovery via `virsh console`**:
+   ```bash
+   virsh -c qemu:///system console mpd-machine-158
+   ```
+   Reboot the VM (`virsh reboot mpd-machine-158` from another
+   terminal). When the GRUB menu appears, press a key during the
+   countdown to interrupt auto-boot. Highlight the default entry,
+   press `e` to edit, append `init=/bin/bash` to the `linux ...`
+   line, then Ctrl-X (or F10) to boot.
+
+   You land in a root shell with no auth. The root filesystem is
+   read-only:
+   ```
+   mount -o remount,rw /
+   ```
+   Replace the public key:
+   ```
+   vi /home/<your-user>/.ssh/authorized_keys
+   ```
+   `sync` and reboot (`exec /sbin/init` or `virsh reset
+   mpd-machine-158`).
+
+## Switching between VMs sharing an IP
+
+If you recreate a VM with the same octet (e.g. you delete `.158`
+and create another `.158`), `setup.sh` clears stale `known_hosts`
+lines automatically. If you SSH from another tool that caches keys
+independently:
+
+```bash
+ssh-keygen -R 192.168.122.158
+ssh-keygen -R mpd-machine-158
+```
+
+## Shared CA story
+
+`setup.sh` keeps a single host CA alive in two real-file locations
+and mirrors between them on every run:
+
+- `~/Developer/mpd/conf/caroot/{rootCA.pem,rootCA-key.pem}` — the
+  canonical mpd location. Populated only when `~/Developer/mpd/conf/`
+  already exists.
+- `~/.mpd-machine/ca/{rootCA.pem,rootCA-key.pem}` — the platform
+  copy. Always populated after the first `setup.sh` run.
+
+Wipe either side and the next `setup.sh` restores from the other.
+Delete the cert from the system trust store (or `~/.pki/nssdb` for
+Chromium, or `/etc/firefox/policies/mpd-rootCA.crt` for Firefox)
+and the next `setup.sh` re-imports — no manual recovery dance.
+
+CAs flow host → VM only. Neither caroot nor `~/.mpd-machine/ca/` is
+ever populated from a VM source. If somehow neither location is
+populated when you run the existing-VM `setup.sh` path (e.g. you
+imported a libvirt domain definition created on another host),
+host networking is configured but CA import is skipped — copy a
+`rootCA.pem`+`rootCA-key.pem` pair into either location yourself
+and re-run.
+
+`uninstall.sh` removes the System trust cert, the Firefox policy +
+cert, the NSS DB entry, and `~/.mpd-machine/` — but leaves
+`~/Developer/mpd/conf/caroot/` alone (mirrors mpd's own
+"persisted, not removed by --uninstall" convention).

@@ -76,14 +76,16 @@ text in [`AGENTS.md` §"Mandatory privilege rule"](../AGENTS.md), with
 the in-depth tool-level explanation in §7 below. Enforced by `make
 check-privilege-boundary`.
 
-### Sister rule: host-side fenced `sudo` (macos-utm bootstrap)
+### Sister rule: host-side fenced `sudo` (macos-utm + ubuntu-kvm bootstrap)
 
 Bootstrap-stage shell scripts under
-`mpd-machine/platforms/macos-utm/lib/` run on the macOS host (not in a
-container or VM) and need `sudo` for three operations: adding a route
-to the container subnet, writing `/etc/resolver/mpd.test`, and
-importing the mpd CA into the System keychain. The pattern these
-scripts follow:
+`mpd-machine/platforms/{macos-utm,ubuntu-kvm}/lib/` run on the dev host
+(not in a container or VM) and need `sudo` for a fixed set of operations
+— route to the container subnet, DNS resolver pointing `*.mpd.test` at
+the in-VM dnsmasq, system-trust import of the mpd CA, plus
+platform-specific extras (Firefox enterprise policy + cert under
+`/etc/firefox/policies/` on Ubuntu, mpd CA into the System keychain on
+macOS). The pattern these scripts follow:
 
 1. **Detect first, no `sudo`.** Read current state with unprivileged
    tools (`route get`, `cat /etc/resolver/...`,
@@ -149,7 +151,9 @@ Reference implementations: `lib/setup.sh` (new-VM path: upfront fence,
 host-first CA), `lib/configure-client.sh` (existing-VM and `start.sh`
 warm path), and `lib/uninstall.sh` (teardown path).
 
-This rule applies only to **macos-utm bootstrap scripts**:
+This rule applies to the two automated `mpd-machine` platforms whose
+bootstrap runs as the dev user on the host: **macos-utm** and
+**ubuntu-kvm**. The other platforms differ:
 
 - **windows-hyperv** runs each entry script wholesale via UAC
   elevation (the `.cmd` shim's `Start-Process -Verb RunAs` is the

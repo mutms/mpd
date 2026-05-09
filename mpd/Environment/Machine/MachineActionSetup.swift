@@ -153,6 +153,29 @@ extension Mpd.Environment.Action.Setup {
         ok("/etc/profile.d/mpd-machine.sh — adds bin/machine/ to PATH.")
     }
 
+    /// Install assets/machine/motd as /etc/motd and disable Ubuntu/Debian's
+    /// dynamic update-motd scripts so the static banner survives every login.
+    /// Idempotent. Single source for the banner across all platforms — the
+    /// per-platform `create-vm.sh` scripts no longer touch /etc/motd.
+    private static func installLoginBanner() throws {
+        let source = "\(Mpd.Environment.assetsDir)/machine/motd"
+        guard FileManager.default.fileExists(atPath: source) else {
+            throw RuntimeError("motd asset missing: \(source)")
+        }
+        // Disable dynamic motd generation. Ubuntu cloud images ship a few
+        // /etc/update-motd.d/* scripts that would otherwise compete with our
+        // static /etc/motd. Best-effort — directory may not exist on Debian.
+        _ = Mpd.Environment.HostExec.run(
+            ["sudo", "bash", "-c", "chmod -x /etc/update-motd.d/* 2>/dev/null || true"]
+        )
+        guard Mpd.Environment.HostExec.run(
+            ["sudo", "install", "-m", "644", source, "/etc/motd"]
+        ) == 0 else {
+            throw RuntimeError("Failed to install /etc/motd from \(source).")
+        }
+        ok("/etc/motd installed from assets/machine/motd")
+    }
+
     /// Ask dpkg whether a package is in 'install ok installed' state. Cheap
     /// (local DB lookup, no network) and accurate enough to gate apt-get
     /// invocation.
@@ -471,6 +494,9 @@ extension Mpd.Environment.Action.Setup {
 
         step("Adding bin/machine/ to login PATH")
         try installMachineBinPath()
+
+        step("Installing login banner (motd)")
+        try installLoginBanner()
 
         step("Rescanning data volume")
         try? Mpd.Core.DataVolume.rescan()

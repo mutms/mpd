@@ -10,23 +10,24 @@ uninstall, host-only trust rule. Then prune dead Swift surface.
 ## Status
 
 **Done (in `main`):**
-- `macos-utm/lib/uninstall.sh` rewritten — sudo recipe for host cleanup,
-  per-VM `[y/N]` deletion as the last step (Ctrl-C-safe), `-c "$CN" -t`
-  cert deletion that handles admin-trust-settings'd certs and drains
-  duplicates.
-- `macos-utm/lib/configure-client.sh` rewritten — recipe affordance for
-  route + resolver + CA; Phase-1 state snapshotted so Phase-3 reports
-  stay accurate when the dev runs the recipe manually.
-- `macos-utm/lib/common.sh` `prepare_host_ca` mirrors a single CA across
-  `~/Developer/mpd/conf/caroot/` and `~/.mpd-machine/ca/`. New helper
-  `copy_ca_files`. `HOST_CA_TEMP_DIR` / `cleanup_temp_ca` / dead
-  `CA_CERT_REMOTE_PATH` removed. No more ephemeral / scratch-dir CAs.
-- Swift: `DesktopActionSetup` adopts from `~/.mpd-machine/ca/` when
-  caroot/ is missing. `Mpd.Environment.mpdMachineCARootDir` exposes the
-  path (read-only from Swift).
-- Docs updated: `ARCHITECTURE.md` §"Sister rule" item 6, the boundary
-  rule (host-only trust), `machine/SECURITY.md`, `desktop/SECURITY.md`,
-  `macos-utm/README.md`.
+- **macos-utm overhaul** — `uninstall.sh` rewritten (sudo recipe + per-VM
+  `[y/N]` last + `-c "$CN" -t` cert deletion that drains duplicates
+  with admin trust settings); `configure-client.sh` rewritten with the
+  same recipe affordance for route + resolver + CA; `prepare_host_ca`
+  mirrors one CA across `~/Developer/mpd/conf/caroot/` and
+  `~/.mpd-machine/ca/`, no more ephemeral/scratch-dir CAs.
+- **Swift CA mirror** — `DesktopActionSetup` adopts from
+  `~/.mpd-machine/ca/` when caroot/ is missing; `Mpd.Environment.mpdMachineCARootDir`
+  exposes the path (read-only from Swift). `MachineActionSetup.installLoginBanner`
+  centralizes the `/etc/motd` install (was duplicated in each
+  `create-vm.sh`). New `PlatformKind.ubuntuKVM` raw value.
+- **ubuntu-kvm platform shipped** — Phase 1 complete. See condensed
+  note below.
+- **Doc consolidation** — `ARCHITECTURE.md` §"Sister rule" generalized
+  to macos-utm + ubuntu-kvm; the host-only-trust boundary rule
+  documented in `machine/SECURITY.md` and `desktop/SECURITY.md`;
+  `ROADMAP.md` parked-bullet removed; `machine/{README,USAGE}.md`
+  enumerate ubuntu-kvm alongside the other automated platforms.
 
 ## Invariants (apply to all managed platforms)
 
@@ -54,54 +55,15 @@ uninstall, host-only trust rule. Then prune dead Swift surface.
    keep. Ctrl-C during the loop leaves the host fully cleaned up and
    the remaining VMs intact.
 
-## Phase 1 — `ubuntu-kvm` (Ubuntu PC, current session)
+## Phase 1 — `ubuntu-kvm` — DONE
 
-Promote from "parked brief" to ships-grade. The existing
-`mpd-machine/platforms/ubuntu-kvm/README.md` has the architecture
-sketch — implement against it, but **layer in invariants 1 + 4** which
-were written after the brief.
-
-**Files to create** (under `mpd-machine/platforms/ubuntu-kvm/`):
-```
-setup.sh / start.sh / stop.sh / uninstall.sh   # entry shims
-mpd-machine.desktop                            # GNOME launcher
-lib/common.sh                                  # port + Linux-ize macos-utm
-lib/setup.sh / start.sh / stop.sh / uninstall.sh
-lib/create-vm.sh                               # direct qemu via systemd --user
-lib/configure-client.sh
-```
-
-**Linux-isms:**
-- VM driver: direct `qemu-system-{aarch64,x86_64}` as a systemd `--user`
-  unit. Use libvirt's `virbr0` (default network) for the bridge — install
-  `libvirt-daemon-system` purely for the bridge, don't drive VMs through
-  libvirt. Pin the VM IP via cloud-init.
-- Privileged ops:
-  - `sudo ip route add 10.163.0.0/24 via <vm_ip>` (route)
-  - `/etc/systemd/resolved.conf.d/mpd-test.conf` drop-in + `systemctl
-    restart systemd-resolved` (resolver — `/etc/resolver/` doesn't
-    exist on Linux)
-  - `/usr/local/share/ca-certificates/mpd-test.crt` + `update-ca-certificates`
-    (system trust)
-  - Optional Firefox / Chromium NSS-DB import (`certutil -A`) — separate
-    optional step, document but don't auto-do.
-- State dir: `~/.mpd-machine/` (keep dotfile across all OSes for
-  invariant 1 to read uniformly).
-- CA: port `prepare_host_ca` + `copy_ca_files` verbatim from
-  `macos-utm/lib/common.sh` — openssl is identical.
-
-**Definition of done:**
-- Fresh Ubuntu VM bootstrap end-to-end (incl. pre-warm of `php` runtime
-  + `postgres:latest`).
-- All four invariants exercised.
-- README rewritten as user-facing docs (replace the parked brief).
-- `mpd-machine/platforms/README.md` table: row flipped `Parked` →
-  `Ships`.
-- `docs/ROADMAP.md`: parked-bullet removed.
-- `docs/machine/README.md` + `docs/machine/USAGE.md`: enumerate
-  ubuntu-kvm alongside the other automated platforms.
-- `docs/ARCHITECTURE.md` §"Sister rule": title generalized from
-  "macos-utm bootstrap" to "macos-utm + ubuntu-kvm bootstrap".
+Shipped on Ubuntu 26.04 LTS. Full lifecycle (`setup` / `start` /
+`stop` / `uninstall`) wired against libvirt + KVM with the same
+sudo recipe affordance and per-VM `[y/N]` uninstall pattern as
+macos-utm. Documented in
+[`mpd-machine/platforms/ubuntu-kvm/README.md`](mpd-machine/platforms/ubuntu-kvm/README.md).
+Sister-rule generalization, ROADMAP cleanup, and machine docs all
+landed.
 
 ## Phase 2 — `windows-hyperv` WSL refactor (Windows host)
 
@@ -198,13 +160,18 @@ recipes (still useful for generic-vm users who don't read READMEs).
 | macos-utm | wipe caroot/ and run `setup.command` | restored from `~/.mpd-machine/ca/` |
 | macos-utm | manually delete cert in Keychain Access; run `setup.command` | re-imported, no other state changes |
 | windows-hyperv | full bootstrap on fresh Win 11 Pro VM (post-WSL refactor) | clean run; no PS encoding errors; trust via `\\wsl$\` |
-| ubuntu-kvm | full bootstrap on fresh Ubuntu 24.04 LTS | clean run; optional NSS-DB import for Firefox/Chromium |
+| ubuntu-kvm | fresh Ubuntu 26.04 LTS host: preflight on a state-empty box → recipe (a) and (b) paths | both routes converge; libvirt group relogin gate triggers as documented |
+| ubuntu-kvm | full bootstrap end-to-end → `https://mpd.test` from snap Firefox + Chromium | both browsers trust without warning |
+| ubuntu-kvm | `setup.sh` second run on same host (existing VM) | re-verify path; silent if everything's in place |
+| ubuntu-kvm | `stop.sh` → `start.sh` cycle | managedsave → resume; route re-asserted after host reboot |
+| ubuntu-kvm | `uninstall.sh` keep one VM | host cleanup applied; kept VM intact; pool defined and dir preserved |
+| ubuntu-kvm | `uninstall.sh` delete all VMs | host cleanup + pool destroy/undefine; pool dir left in place per design |
 | generic-vm | manual Debian Trixie netinst → `provision-vm.sh` → GNOME-in-VM browsing | no host trust needed |
 | generic-vm | same VM, but with manual laptop-side scp+trust per README | host trust works on macOS / Linux laptop |
 
 ## Sequence (where each phase happens)
 
-1. **Phase 1 — Ubuntu PC (current SSH session, PHPStorm).**
+1. ~~Phase 1 — Ubuntu PC.~~ ✅ Done.
 2. Reboot to Windows.
 3. **Phase 2 — Windows host.**
 4. Switch to Mac.
