@@ -266,9 +266,8 @@ Podman Desktop, with a local WireGuard tunnel for reaching the
 container subnet. Right answer if you're on a Mac and you want native
 filesystem access from the host.
 
-**mpd-machine** runs the containers inside a Linux sandbox VM (Debian
-Trixie, arm64 or amd64), reached from the laptop over a plain static
-route. Right answer if:
+**mpd-machine** runs the containers inside a Linux sandbox VM,
+reached from the laptop over a plain static route. Right answer if:
 
 - you're on Linux or Windows (mpd-desktop is macOS-only),
 - you want the agent to be able to do drastic things — `rm -rf /`
@@ -277,13 +276,23 @@ route. Right answer if:
 - you don't want any container surface area on your primary machine
   — the VM is the wall.
 
-**For Windows users specifically**, mpd-machine is the path: double-click
-`setup.cmd`, answer a few prompts, and you have a complete Linux dev
-workstation — terminal, IDE, Claude Code — running inside a Hyper-V VM.
-Windows itself stays untouched. The automated Hyper-V bootstrap handles
-everything: VM creation, cloud-init, repo clone, `mpd` build, route, DNS,
-and CA certificate — all the way to `https://mpd.test` working in your
-Windows browser.
+mpd-machine has two faces. The **host-integrated** path
+(`macos-utm`, `ubuntu-kvm`, `windows-hyperv`) reaches into a Debian
+Trixie VM from a matched host: the bootstrap script creates the VM,
+configures cloud-init, builds `mpd`, and configures the host's route +
+DNS + CA trust so that `https://mpd.test/` works in your laptop's own
+browser. The **sandbox** path inverts that: you install Ubuntu 26.04
+desktop in your hypervisor of choice (UTM, Hyper-V, VirtualBox,
+virt-manager, VMware…), set the hostname to `mpd-machine-sandbox`,
+snapshot, and run one bash script inside the VM. The host is never
+touched; you live inside the VM window. This is the lowest-friction
+entry — works anywhere a hypervisor runs, and is the recommended
+starting point if you don't already know which one to pick.
+
+**For Windows users specifically**, mpd-machine is the path: either
+double-click `setup.cmd` for the host-integrated Hyper-V flow, or take
+the sandbox route in any Windows hypervisor. Windows itself stays
+untouched either way.
 
 Both modes share the same `mpd.env` configuration model, the same
 `https://<project>.mpd.test/` URLs, the same SSH-into-runtime pattern.

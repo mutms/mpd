@@ -17,9 +17,10 @@ extension Mpd.Environment.Integration {
 
     /// Verify the host is in the standardized network state mpd-machine
     /// expects: systemd-resolved active, fed by some link manager (NM or
-    /// systemd-networkd). `provision-vm.sh` (netinst) and cloud-init
-    /// (macos-utm) are both responsible for putting the host here. mpd
-    /// just checks and bails with a hint if not.
+    /// systemd-networkd). The platform bootstrap scripts (cloud-init for
+    /// macos-utm/ubuntu-kvm/windows-hyperv; Ubuntu desktop default for
+    /// sandbox) are responsible for putting the host here. mpd just
+    /// checks and bails with a hint if not.
     static func requireSystemdResolvedActive() throws {
         guard systemctlIsActive("systemd-resolved.service") else {
             throw RuntimeError("""
@@ -27,15 +28,15 @@ extension Mpd.Environment.Integration {
             systemd-resolved as the host DNS sink on every supported
             install profile.
 
-            If you came in via provision-vm.sh and haven't rebooted yet:
+            If your VM was just rebooted-in-place mid-provision, finish the
+            reboot first:
 
                 sudo reboot
 
             Then SSH back in and re-run mpd --setup.
 
-            If you didn't run provision-vm.sh: run it now
-            (~/Developer/mpd/mpd-machine/platforms/generic-vm/provision-vm.sh)
-            and follow its instructions.
+            Otherwise, see the README of your platform under
+            ~/Developer/mpd/setup/ for the expected network stack.
             """)
         }
         ok("systemd-resolved is active.")
@@ -121,91 +122,53 @@ extension Mpd.Environment.Integration {
         }
     }
 
-    /// Print per-OS laptop-client setup instructions (route + DNS + optional CA
-    /// trust + verify) to the terminal at the end of `mpd --setup`. Bold ANSI
-    /// header, setup commands, verify steps. The "uninstall" and "delete the
-    /// VM" sections are intentionally omitted at setup time — the user is
-    /// setting up, not tearing down. They can pull the full body any time via
-    /// `mpd --setup-info`.
-    ///
-    /// Driven by `~/Developer/mpd/conf/platform.env` (Mpd.Core.Platform), which
-    /// records the client OS and VM IP at provision time. No prompt here — if
-    /// the user wants to change the recorded answer, they edit platform.env
-    /// directly.
-    static func printClientArtifacts(caPath: String, sshUser: String) {
-        let dnsmasqIP = Mpd.Service.Dnsmasq.ip
-        let subnet = Mpd.internalSubnet                       // e.g. "10.163.0.0/24"
-
+    /// One-line "setup is done" footer printed at the end of `mpd --setup`.
+    /// The host-side trust + route + resolver setup is owned entirely by
+    /// the platform bootstrap script (cloud-init platforms apply it on the
+    /// host before `mpd --setup` runs in the VM; sandbox has no separate
+    /// host side at all). All this layer prints is a pointer back to the
+    /// platform README for any host-side detail the user may want to look
+    /// up after the fact.
+    static func printClientArtifacts(caPath _: String, sshUser _: String) {
         let identity: Mpd.Core.Platform.Identity
         do {
             identity = try Mpd.Core.Platform.load()
         } catch {
-            print("\n  Warning: \(error.localizedDescription)")
-            print("  Skipping laptop client recipe — re-run setup after platform.env is in place.")
+            // Setup hasn't reached the platform.env write step yet — bail
+            // silently. (`mpd --setup` would never reach this footer in
+            // that state, but stay resilient if a caller ever reorders.)
             return
         }
-
-        // Sandbox lives entirely inside the VM; there is no separate
-        // laptop client to set up trust on. The whole MachineClientRecipe
-        // surface is going away in PLAN.md Phase 4 — sandbox just gets
-        // there first.
-        if identity.platform == .sandbox {
-            print("\n  Sandbox platform — no laptop-side setup needed (mpd lives inside this VM).")
+        switch identity.platform {
+        case .sandbox:
+            print("\n  Sandbox: mpd lives inside this VM. Open Firefox to https://mpd.test/")
+        case .desktop:
+            // Desktop's footer is owned by DesktopIntegration.
             return
+        case .macosUTM, .ubuntuKVM, .windowsHyperV:
+            let readme = "setup/\(identity.platform.rawValue)/README.md"
+            print("\n  Host-side setup is owned by your platform's bootstrap script — see")
+            print("  \(readme) for details and post-setup operations.")
         }
-
-        // VM IP from platform.env wins; primaryHostIP is a fallback for any
-        // setup where the file was provisioned with an empty MPD_VM_IP (rare).
-        let vmIP = identity.vmIP.isEmpty ? primaryHostIP : identity.vmIP
-        let os = clientOSToRecipe(identity.clientOS)
-
-        let setup = clientSetupBlock(for: os, vmIP: vmIP, dnsmasqIP: dnsmasqIP,
-                                     subnet: subnet, caPath: caPath, sshUser: sshUser)
-        let uninstall = clientUninstallBlock(for: os, subnet: subnet)
-        print("\n\u{001B}[1m── Laptop client setup — \(os.label) ──\u{001B}[0m\n")
-        print(setup)
-        print("""
-
-        ==> VERIFY
-
-        ping mpd.test
-        curl -sS https://mpd.test/        # add -k if you skipped the CA trust
-
-        ==> UNINSTALL (run on your laptop — reverses SETUP)
-
-        \(uninstall)
-        """)
-        print("\n  (full reference: mpd --setup-info)")
-        print("  (recipe driven by \(Mpd.Core.Platform.path))")
     }
 
-    /// Print the full plain-text setup info — same body as `setupTxtBody`,
-    /// regenerated on demand from `conf/platform.env`. Used by
-    /// `mpd --setup-info` and consumable directly via
-    /// `ssh user@vm "mpd --setup-info" > SETUP.txt`. No ANSI, no interactive
-    /// prompts; safe to redirect.
+    /// `mpd --setup-info` body for mpd-machine. After Phase 4 there is no
+    /// laptop-side recipe to regenerate (cloud-init platforms apply trust
+    /// host-side via their own bootstrap scripts; sandbox has no host
+    /// side). Prints platform identity + a pointer to the platform README.
     static func printSetupInfo() throws {
         let identity = try Mpd.Core.Platform.load()
-        let vmIP = identity.vmIP.isEmpty ? primaryHostIP : identity.vmIP
-        let os = clientOSToRecipe(identity.clientOS)
-        let caPath = "\(Mpd.Environment.confCARootDir)/rootCA.pem"
-        let sshUser = Mpd.Environment.detectUserAndUID().user
-        let body = setupTxtBody(
-            for: os, vmIP: vmIP, dnsmasqIP: Mpd.Service.Dnsmasq.ip,
-            subnet: Mpd.internalSubnet, caPath: caPath, sshUser: sshUser)
-        print(body)
-    }
+        let readme = "setup/\(identity.platform.rawValue)/README.md"
+        print("""
+        mpd-machine — \(identity.platform.rawValue)
 
-    /// 1:1 mapping between the platform-identity ClientOS and the recipe enum.
-    /// Both have the same four cases; the rawValues match by design so
-    /// platform.env values can be diffed against the recipe set.
-    private static func clientOSToRecipe(_ os: Mpd.Core.Platform.ClientOS) -> MachineClientOS {
-        switch os {
-        case .macos:   return .macOS
-        case .debian:  return .debianUbuntu
-        case .fedora:  return .fedoraRHEL
-        case .windows: return .windows
-        }
+        Host-side trust / route / resolver configuration is owned by the
+        platform bootstrap script, not by `mpd --setup`. See
+
+            \(readme)
+
+        for the full setup story and any post-setup operations.
+        """)
     }
 
     static func warnIfRemoteLoginEnabled() {

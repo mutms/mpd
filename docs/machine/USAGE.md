@@ -15,27 +15,28 @@ You need a Debian Trixie VM with `mpd` built and reachable over SSH.
 Pick the path that matches your host:
 
 - **macOS + UTM (automated)** —
-  [`platforms/macos-utm/`](../../mpd-machine/platforms/macos-utm/README.md).
+  [`platforms/macos-utm/`](../../setup/macos-utm/README.md).
   Double-click `setup.command` for end-to-end VM creation, cloud-init,
   repo clone, `mpd` build, and macOS networking (route, resolver, CA);
   `start.command` / `stop.command` / `uninstall.command` cover the
   lifecycle.
 - **Ubuntu 26.04 LTS + libvirt/KVM (automated)** —
-  [`platforms/ubuntu-kvm/`](../../mpd-machine/platforms/ubuntu-kvm/README.md).
+  [`platforms/ubuntu-kvm/`](../../setup/ubuntu-kvm/README.md).
   `bash setup.sh` from a terminal: preflight (apt deps, libvirt group,
   KVM, default network) → libvirt-driven VM creation against `virbr0`
   → Linux host networking (route, systemd-resolved drop-in, system
   trust, Firefox policies, NSS DB) → desktop launcher in GNOME
   Activities. `start.sh` / `stop.sh` / `uninstall.sh` cover the lifecycle.
 - **Windows + Hyper-V (automated)** —
-  [`platforms/windows-hyperv/`](../../mpd-machine/platforms/windows-hyperv/README.txt).
+  [`platforms/windows-hyperv/`](../../setup/windows-hyperv/README.txt).
   `setup.cmd` does the same end-to-end and also configures Windows
   networking (route, NRPT DNS, CA certificate import).
-- **Any Debian Trixie VM (manual)** —
-  [`platforms/generic-vm/`](../../mpd-machine/platforms/generic-vm/README.md).
-  Five-step install from the official netinst ISO. Works on
-  libvirt/KVM, QEMU, VirtualBox, cloud, bare-metal sandbox — anywhere
-  Debian boots.
+- **Sandbox (graphical, any hypervisor)** —
+  [`platforms/sandbox/`](../../setup/sandbox/README.md).
+  You install Ubuntu 26.04 desktop in your hypervisor of choice
+  (UTM / Hyper-V / VirtualBox / virt-manager / VMware), snapshot, and
+  run `bash take-over-sandbox-vm.sh` from inside the VM. mpd lives entirely
+  inside the VM; the host gets zero DNS/route/trust changes.
 
 End state of either path: a VM where `mpd` is on `PATH`, your laptop
 SSH key is in `~/.ssh/authorized_keys`, and `~/Developer/mpd/conf/platform.env`
@@ -52,7 +53,7 @@ mpd --setup
 Idempotent — safe to re-run any time. Walks you through:
 
 - generating the local CA at `~/Developer/mpd/conf/caroot/`
-- installing the CA into the VM's system trust store
+- installing the CA into the VM's system trust store + Firefox + NSS DB
 - configuring `systemd-resolved` to resolve `*.mpd.test` via dnsmasq
 - creating the Podman network and data volume
 - bringing up the always-on infra services (dnsmasq, portal, Adminer,
@@ -61,36 +62,26 @@ Idempotent — safe to re-run any time. Walks you through:
   `/etc/profile.d/mpd-machine.sh`) so VM-side helpers like
   `claude-install` are reachable from a fresh shell
 - a final DNS sanity check
-- printing the laptop-side recipe at the end (route + DNS resolver +
-  optional CA trust, OS-tailored from `conf/platform.env`)
 
-Run `mpd --setup-info` any time to reprint the full plain-text
-recipe. Pipeable from your laptop:
+Run `mpd --setup-info` any time to print the platform identity plus a
+pointer to the platform's bootstrap README (where the host-side trust
++ route + resolver setup actually lives, when there is one).
 
-```bash
-ssh user@vm "mpd --setup-info" > SETUP.txt
-```
+## Hooking up your laptop (cloud-init platforms only)
 
-## Hooking up your laptop
+The cloud-init platforms (macos-utm, ubuntu-kvm, windows-hyperv) reach
+the container subnet (`10.163.0.0/24`) over a static route to the VM,
+with split DNS pointing `*.mpd.test` at dnsmasq. **Each platform's
+bootstrap script applies all of this on the host automatically** —
+`setup.command`, `setup.sh`, or `setup.cmd` does the route + resolver
++ CA trust in one shot. You normally don't have to do anything by
+hand. Concrete network recipes (for the curious or for recovery) live
+in [NETWORKING.md](NETWORKING.md).
 
-The laptop reaches the container subnet (`10.163.0.0/24`) over a
-static route to the VM, with split DNS pointing `*.mpd.test` at
-dnsmasq. `mpd --setup` and `mpd --setup-info` both print the exact
-commands for your laptop's OS. Concrete recipes live in
-[NETWORKING.md](NETWORKING.md).
-
-A typical macOS laptop session looks like:
-
-```bash
-sudo route -n add -net 10.163.0.0/24 <vm-ip>
-echo "nameserver 10.163.0.3" | sudo tee /etc/resolver/mpd.test >/dev/null
-# Optional: trust the CA system-wide for clean HTTPS
-scp <vm-ip>:~/Developer/mpd/conf/caroot/rootCA.pem mpd-rootCA.pem
-sudo security add-trusted-cert -d -r trustRoot \
-  -k /Library/Keychains/System.keychain mpd-rootCA.pem
-```
-
-Verify with `ping mpd.test` and `curl -sS https://mpd.test/`.
+The **sandbox platform has no laptop side** — mpd lives entirely
+inside the VM, so there's no host route, no host resolver drop-in, and
+no host CA trust to set up. Open Firefox inside the VM and browse to
+`https://mpd.test/`.
 
 ## First project — Moodle
 
@@ -179,8 +170,9 @@ ssh user@php.runtime.mpd.test       # uses ~/.ssh/id_ed25519, no -A needed
 `mpd --setup` populates each runtime's `authorized_keys` with two key
 sources: the laptop key (from the VM's `~/.ssh/authorized_keys`) and
 the VM-local key (from `~/.ssh/id_*.pub`, generated by setup if
-absent). Full detail and the re-key caveat:
-[`platforms/generic-vm/README.md` § "SSH identities"](../../mpd-machine/platforms/generic-vm/README.md#ssh-identities--laptop-key-vm-key-runtime-access).
+absent). On the sandbox platform the "laptop key" is just whatever
+keys you have authorized for SSHing into the VM (or none, if you only
+ever access the sandbox via the hypervisor's console).
 
 ### Tools available inside the runtime
 
@@ -297,8 +289,9 @@ mpd --uninstall                  # stops mpd, removes ~/.mpd state
 # Full reset, in the VM:
 mpd --uninstall && rm -rf ~/Developer/mpd/conf/
 
-# Nuke the VM itself: hypervisor's VM-delete operation, then re-bootstrap
-# from platforms/macos-utm/ or platforms/generic-vm/.
+# Nuke the VM itself: hypervisor's VM-delete operation (or, for sandbox,
+# revert to your pre-take-over snapshot), then re-bootstrap from any
+# platforms/<name>/.
 ```
 
 `conf/` survives `--uninstall` by design — same CA tomorrow means same

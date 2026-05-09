@@ -12,9 +12,9 @@
 # configuration is not included in git, the directory permissions should prevent access of other users
 /conf/*
 !/conf/.gitkeep
-/mpd-machine/**/temp/
+/setup/**/temp/
 # Public artifacts a dev may write here by hand (rootCA.pem via scp,
 # SETUP.txt via `ssh user@vm "mpd --setup-info" > SETUP.txt`).
-/mpd-machine/**/SETUP.txt
-/mpd-machine/**/rootCA.pem
-/mpd-machine/release/
+/setup/**/SETUP.txt
+/setup/**/rootCA.pem
+/release/

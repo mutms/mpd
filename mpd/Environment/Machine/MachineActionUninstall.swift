@@ -120,32 +120,24 @@ extension Mpd.Environment.Action.Uninstall {
         print("\n\u{001B}[1;32m✓ mpd uninstall completed.\u{001B}[0m")
     }
 
-    /// If platform.env is present, narrow the laptop-side uninstall to the
-    /// recorded client OS — much shorter, only the commands the dev actually
-    /// needs to run. Otherwise (file deleted, manual setup, etc.) print all
-    /// four blocks so the user can find theirs.
-    ///
-    /// Sandbox is special: there is no laptop client (mpd lives entirely
-    /// inside the VM), so emit a single line instead of a recipe.
-    private static func clientUninstallBlocksForIdentityOrAll() -> String {
+    /// One-line "where to look for laptop-side cleanup" pointer. After the
+    /// PLAN.md Phase 4 cleanup, mpd no longer carries per-OS uninstall
+    /// recipes — host-side cleanup is documented in each platform's
+    /// `uninstall.*` script (or, for sandbox, is just "revert the
+    /// snapshot").
+    private static func clientUninstallPointer() -> String {
         guard let identity = try? Mpd.Core.Platform.load() else {
-            return Mpd.Environment.Integration.allClientUninstallBlocks()
+            return "  See your platform's README under setup/."
         }
-        if identity.platform == .sandbox {
+        switch identity.platform {
+        case .sandbox:
             return "  (sandbox platform — no laptop-side cleanup; mpd lived entirely inside this VM)"
+        case .desktop:
+            return "  (desktop — see docs/desktop/USAGE.md for laptop-side teardown)"
+        case .macosUTM, .ubuntuKVM, .windowsHyperV:
+            let dir = "setup/\(identity.platform.rawValue)"
+            return "  See \(dir)/uninstall.* (or its README) for the host-side teardown."
         }
-        let recipeOS: MachineClientOS
-        switch identity.clientOS {
-        case .macos:   recipeOS = .macOS
-        case .debian:  recipeOS = .debianUbuntu
-        case .fedora:  recipeOS = .fedoraRHEL
-        case .windows: recipeOS = .windows
-        }
-        let body = Mpd.Environment.Integration.clientUninstallBlock(for: recipeOS)
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map { "    \($0)" }
-            .joined(separator: "\n")
-        return "  \(recipeOS.label):\n\(body)"
     }
 
     static func manualCleanupText() -> String {
@@ -171,9 +163,9 @@ extension Mpd.Environment.Action.Uninstall {
           # Remove mpd source (optional)
           rm -rf ~/Developer/mpd
 
-        Manual cleanup on your laptop (the client side):
+        Host-side / laptop-side cleanup:
 
-        \(clientUninstallBlocksForIdentityOrAll())
+        \(clientUninstallPointer())
 
           Optional: clear SSH known_hosts entries for mpd domains
             ssh-keygen -R mpd.test

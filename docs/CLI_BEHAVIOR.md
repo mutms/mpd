@@ -75,10 +75,13 @@ host environment rather than provisioning one:
   more than one is running, or the running one isn't an mpd-desktop
   machine, `--setup` errors with a hint.
 - **mpd-machine** (Linux VM): the VM itself is the host. `mpd --setup`
-  validates Debian Trixie, verifies `systemd-resolved` is active (a
-  `provision-vm.sh` precondition), and proceeds. The active-machine
-  label is always pinned to `mpd-machine` regardless of the OS hostname
-  (which may be `mpd-machine-<digits>` for concurrent VMs).
+  validates the supported distro for the platform (Debian Trixie for
+  the cloud-init platforms; Ubuntu 26.04 for sandbox), verifies
+  `systemd-resolved` is active (a precondition the platform bootstrap
+  is responsible for), and proceeds. The active-machine label is always
+  pinned to `mpd-machine` regardless of the OS hostname (which may be
+  `mpd-machine-<digits>` for concurrent cloud-init VMs or
+  `mpd-machine-sandbox` for the sandbox platform).
 
 Adoption tiers (mpd-desktop): if the running machine is the persisted
 active one, `--setup` re-runs silently. If it's a different machine

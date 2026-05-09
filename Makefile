@@ -4,17 +4,18 @@ build:
 	swift build
 
 release: install
-	@mkdir -p mpd-machine/release
-	@for platform in macos-utm windows-hyperv generic-vm; do \
-		out="mpd-machine/release/$$platform.zip"; \
+	@mkdir -p release
+	@for platform in macos-utm ubuntu-kvm windows-hyperv; do \
+		out="release/$$platform.zip"; \
 		rm -f "$$out"; \
-		(cd mpd-machine/platforms && zip -qr "../../$$out" "$$platform" \
+		(cd setup && zip -qr "../$$out" "$$platform" \
 			--exclude "*/.DS_Store" \
 			--exclude "*/temp/*" \
 			--exclude "*/__MACOSX/*"); \
 		echo "  $$out"; \
 	done
-	@echo "Platform zips in mpd-machine/release/"
+	@echo "Platform zips in release/ (sandbox is distributed as the raw"
+	@echo "URL of setup/sandbox/take-over-sandbox-vm.sh; no zip needed)."
 
 install:
 	@os=$$(uname -s); \
@@ -57,9 +58,9 @@ check-mpdenv-source-boundary:
 
 # Privilege rule (AGENTS.md §"Mandatory privilege rule"). Scope:
 # in-runtime/in-VM/in-service shell code — assets/ in full, plus the
-# VM-side `provision-vm.sh` in each mpd-machine/platforms/<name>/
-# (siblings like macos-utm/create-vm.sh run on the user's host, not
-# inside mpd's controlled environment, and are out of scope). Bans:
+# in-VM scripts of the sandbox platform (siblings like
+# setup/macos-utm/create-vm.sh that run on the user's host are out of
+# scope). Bans:
 #   - `sudo` wrapping a script file (`sudo bash foo.sh`, `sudo foo.sh`).
 #     `sudo bash -c '…'` / `sudo sh -c '…'` one-liners are allowed —
 #     they're a single privileged command, not a whole script.
@@ -67,9 +68,9 @@ check-mpdenv-source-boundary:
 #     `runuser`, `su -`, `su <user>`, `su <user> -c …`.
 check-privilege-boundary:
 	@violations=$$(grep -RInE '(\bsudo[[:space:]]+(bash|sh)[[:space:]]+[^-[:space:]]|\bsudo[[:space:]]+[^-[:space:]][^[:space:]]*\.(sh|bash)\b|\bsudo[[:space:]]+-u\b|\brunuser\b|\bsu[[:space:]]+\S)' \
-		assets/ mpd-machine/platforms/*/provision-vm.sh \
-		mpd-machine/platforms/sandbox/take-over-vm.sh \
-		mpd-machine/platforms/sandbox/lib/provision.sh \
+		assets/ \
+		setup/sandbox/take-over-sandbox-vm.sh \
+		setup/sandbox/lib/provision.sh \
 		--include='*.sh' --include='*.bash' 2>/dev/null || true); \
 	if [ -n "$$violations" ]; then \
 		echo "Privilege boundary violation: forbidden shape detected."; \

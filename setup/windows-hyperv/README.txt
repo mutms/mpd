@@ -2,9 +2,9 @@ Windows + Hyper-V bootstrap
 ==========================
 
 Automation for mpd-machine on Windows using Hyper-V (free with
-Windows 10/11 Pro and Enterprise). For the platform-agnostic manual
-bootstrap (any Debian Trixie VM you've already created yourself), see
-the generic-vm platform at https://github.com/mutms/mpd
+Windows 10/11 Pro and Enterprise). For a "live in the VM" graphical
+alternative on any hypervisor (including Hyper-V), see the sandbox
+platform at https://github.com/mutms/mpd/tree/main/setup/sandbox/README.md
 
 Files in this directory:
 

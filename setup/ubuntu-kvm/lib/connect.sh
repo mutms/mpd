@@ -18,7 +18,7 @@ if ! ssh -o ConnectTimeout=3 -o BatchMode=yes -o StrictHostKeyChecking=no \
         echo "  Could not reach mpd-machine, and start.sh was not found at:"
         echo "    $START_SH"
         echo
-        echo "  Run setup.sh in mpd-machine/platforms/ubuntu-kvm/ to repair."
+        echo "  Run setup.sh in setup/ubuntu-kvm/ to repair."
         read -r -p "  Press Enter to close..." _ || true
         exit 1
     fi
@@ -30,7 +30,7 @@ if [ "$status" -eq 255 ]; then
     echo
     echo "  Could not connect to mpd-machine."
     echo "  Open virt-manager and check the VM's state, or run start.sh from"
-    echo "  mpd-machine/platforms/ubuntu-kvm/ directly."
+    echo "  setup/ubuntu-kvm/ directly."
     read -r -p "  Press Enter to close..." _ || true
     exit 1
 fi

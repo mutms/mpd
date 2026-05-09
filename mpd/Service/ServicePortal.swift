@@ -88,8 +88,7 @@ extension Mpd.Service.Portal {
         // the container without a new bind mount. PHP reads it on every
         // request — refreshes pick up changes immediately.
         //   • mpd-machine: VM hostname (cloud-init set this to mpd-machine-NN
-        //     on the polished platforms; generic-vm reflects whatever the
-        //     user installed).
+        //     on the cloud-init platforms; sandbox uses mpd-machine-sandbox).
         //   • mpd-desktop: machineName (mpd-desktop[-suffix] from State).
         let displayName: String
         if let identity = try? Mpd.Core.Platform.load(), identity.platform == .desktop {

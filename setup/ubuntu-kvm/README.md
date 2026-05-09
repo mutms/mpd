@@ -1,9 +1,8 @@
 # Ubuntu + KVM bootstrap
 
 Automation for `mpd-machine` on **Ubuntu 26.04 LTS** using
-**libvirt + KVM**. For the platform-agnostic manual bootstrap (any
-Debian Trixie VM you've already created yourself), see the
-[generic-vm](../generic-vm/README.md) platform.
+**libvirt + KVM**. For a "live in the VM" graphical alternative on
+any hypervisor, see the [sandbox platform](../sandbox/README.md).
 
 This directory ships polished, single-developer-laptop scripts that
 mirror the macos-utm flow — sudo recipe affordance, host-only CA
@@ -25,7 +24,7 @@ open them).
 Run from a terminal:
 
 ```bash
-bash mpd-machine/platforms/ubuntu-kvm/setup.sh
+bash setup/ubuntu-kvm/setup.sh
 ```
 
 GNOME's Files (Nautilus 43+) doesn't double-click-launch executable
@@ -38,7 +37,8 @@ enabled) for daily SSH access — that part *is* one-click.
 
 - **Ubuntu 26.04 LTS** (Resolute Raccoon). The script refuses to run
   on other versions; older Ubuntu LTS releases work in concept but
-  aren't tested. Use `generic-vm` if you're on a different distro.
+  aren't tested. Try the [sandbox platform](../sandbox/README.md)
+  if you'd rather work inside the VM directly.
 - **Hardware virtualization enabled in BIOS/UEFI** (Intel VT-x /
   AMD-V). Preflight checks `/dev/kvm` and the CPU flag.
 - **An SSH key**. `setup.sh` offers to generate `~/.ssh/id_ed25519`

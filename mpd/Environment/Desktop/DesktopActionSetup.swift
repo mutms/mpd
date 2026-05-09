@@ -81,7 +81,7 @@ extension Mpd.Environment.Action.Setup {
         // Desktop knows everything statically; no prompt. Survives --uninstall.
         step("Platform identity")
         try Mpd.Core.Platform.ensureWritten(
-            platform: .desktop, clientOS: .macos, vmIP: "", instanceSuffix: "")
+            platform: .desktop, vmIP: "", instanceSuffix: "")
         ok("Platform identity at \(Mpd.Core.Platform.path)")
 
         // Step — Adopt the running mpd-desktop Podman machine. mpd doesn't

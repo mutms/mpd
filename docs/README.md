@@ -33,14 +33,16 @@ If you're installing mpd for the first time:
 - [`machine/SECURITY.md`](machine/SECURITY.md) — trust boundaries
 
 Plus the bootstrap docs under
-[`../mpd-machine/platforms/`](../mpd-machine/platforms/README.md):
+[`../setup/`](../setup/README.md):
 
-- [`platforms/macos-utm/`](../mpd-machine/platforms/macos-utm/README.md)
+- [`platforms/macos-utm/`](../setup/macos-utm/README.md)
   — automated UTM bootstrap (macOS)
-- [`platforms/windows-hyperv/`](../mpd-machine/platforms/windows-hyperv/README.txt)
+- [`platforms/ubuntu-kvm/`](../setup/ubuntu-kvm/README.md)
+  — automated libvirt/KVM bootstrap (Ubuntu)
+- [`platforms/windows-hyperv/`](../setup/windows-hyperv/README.txt)
   — automated Hyper-V bootstrap (Windows)
-- [`platforms/generic-vm/`](../mpd-machine/platforms/generic-vm/README.md)
-  — manual bootstrap on any Debian Trixie VM (libvirt/KVM, QEMU, cloud, etc.)
+- [`platforms/sandbox/`](../setup/sandbox/README.md)
+  — graphical "live in the VM" Ubuntu 26.04 sandbox (any hypervisor)
 
 ## Vision and direction
 

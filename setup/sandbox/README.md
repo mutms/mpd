@@ -13,39 +13,47 @@ stop / configure`).
 
 | File | What it does |
 |---|---|
-| `take-over-vm.sh` | Entry point. Hostname gate + disclaimer + sudo bootstrap + repo clone (if needed) + hand off to `lib/provision.sh`. |
+| `take-over-sandbox-vm.sh` | Entry point. Hostname gate + disclaimer + sudo bootstrap + repo clone (if needed) + hand off to `lib/provision.sh`. |
 | `lib/provision.sh` | The work: apt deps, `make install`, `mpd --setup`, optional pre-warm. |
 
 ## Prerequisites
 
 - A clean **Ubuntu 26.04 LTS desktop** install in your hypervisor of
   choice. GNOME minimal is sufficient.
-- Hostname renamed to **`mpd-machine-sandbox`**:
+- Hostname **`mpd-machine-sandbox`**. Easiest is to type that name into
+  the hostname field during the Ubuntu installer. If you already
+  installed with a different hostname, rename now:
   ```bash
   sudo hostnamectl set-hostname mpd-machine-sandbox
   sudo sed -i 's/^127\.0\.1\.1.*/127.0.1.1\tmpd-machine-sandbox/' /etc/hosts
   # log out / log back in so your shell prompt picks up the new name
   ```
-  This is the safety gate — `take-over-vm.sh` refuses any other
-  hostname. Renaming the VM is a deliberate consent step, much harder
-  to do by accident than typing a confirmation word.
-- **A hypervisor snapshot taken before running `take-over-vm.sh`.** The
-  script is destructive on purpose (passwordless sudo, system-wide CA
-  trust, generated secrets). If anything goes wrong, your only rollback
-  is the snapshot.
+  The hostname is the safety gate — `take-over-sandbox-vm.sh` refuses
+  any other hostname. Renaming the VM is a deliberate consent step,
+  much harder to do by accident than typing a confirmation word.
+- **A hypervisor snapshot taken before running the take-over script.**
+  The script is destructive on purpose (passwordless sudo, system-wide
+  CA trust, generated secrets). If anything goes wrong, your only
+  rollback is the snapshot.
 
 ## Run it
 
+Inside the VM, either curl-bash directly:
+
 ```bash
-bash mpd-machine/platforms/sandbox/take-over-vm.sh
+bash <(curl -sSL https://raw.githubusercontent.com/mutms/mpd/main/setup/sandbox/take-over-sandbox-vm.sh)
 ```
 
-If the mpd repo is not yet cloned at `~/Developer/mpd/`, the script
-self-bootstraps: `apt install git`, clones
-`https://github.com/mutms/mpd.git`, then hands off to `lib/provision.sh`
-from the freshly cloned tree. This same script is therefore usable as a
-future `curl | bash` installer with no separate packaging or release
-artifacts.
+…or, if the repo is already cloned:
+
+```bash
+bash ~/Developer/mpd/setup/sandbox/take-over-sandbox-vm.sh
+```
+
+In standalone mode (no repo present), the script self-bootstraps:
+`apt install git`, clones `https://github.com/mutms/mpd.git` to
+`~/Developer/mpd/`, then hands off to `lib/provision.sh` from the
+freshly cloned tree.
 
 ## What it does
 
@@ -62,11 +70,14 @@ artifacts.
    + adminer + fileaccess.
 10. Best-effort pre-warm: `mpd --runtime-create=php` and
     `mpd --db-create=postgres:latest`.
+11. Drops a GNOME launcher (`~/.local/share/applications/mpd.desktop`,
+    plus `~/Desktop/mpd.desktop` when desktop icons are on) that opens
+    `mpd --tui` in the user's default terminal.
 
 ## Reverting
 
-`take-over-vm.sh` is destructive on purpose. The only supported rollback
-is reverting your hypervisor snapshot.
+`take-over-sandbox-vm.sh` is destructive on purpose. The only supported
+rollback is reverting your hypervisor snapshot.
 
 There is **no** `uninstall.sh` shim in this directory: VM lifecycle
 (start / stop / snapshot / revert / delete) is the hypervisor's job.
@@ -79,4 +90,4 @@ and the system CA trust intact.
 
 Once setup completes, mpd commands work identically to other
 mpd-machine platforms — see
-[`docs/machine/USAGE.md`](../../../docs/machine/USAGE.md).
+[`docs/machine/USAGE.md`](../../docs/machine/USAGE.md).

@@ -40,8 +40,8 @@ extension Mpd.Service.Dnsmasq {
     ///   no systemd-resolved. `/etc/resolv.conf` is the real file written
     ///   by NM, pointing at gvproxy (`192.168.127.1`), which forwards to
     ///   the macOS host's upstream resolvers.
-    /// - **mpd-machine**: provision-vm.sh installs systemd-resolved as a
-    ///   hard prerequisite. `/etc/resolv.conf` is a stub symlink to
+    /// - **mpd-machine**: every supported platform delivers a host with
+    ///   systemd-resolved active. `/etc/resolv.conf` is a stub symlink to
     ///   `127.0.0.53`; the real per-link upstreams live at
     ///   `/run/systemd/resolve/resolv.conf`.
     #if os(macOS)

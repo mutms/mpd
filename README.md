@@ -49,12 +49,28 @@ model.
 
 ## Get started
 
+**New here?** Try the sandbox first — works in any hypervisor (UTM,
+Hyper-V, VirtualBox, virt-manager, VMware…):
+
+1. Install Ubuntu 26.04 LTS desktop in your hypervisor of choice.
+   During the installer, set the hostname to **`mpd-machine-sandbox`**.
+2. Take a hypervisor snapshot.
+3. Inside the VM, run:
+
+       bash <(curl -sSL https://raw.githubusercontent.com/mutms/mpd/main/setup/sandbox/take-over-sandbox-vm.sh)
+
+Open Firefox inside the VM and browse to https://mpd.test/.
+
+**Want host integration?** (route + DNS + CA trust on your host so you
+can browse `*.mpd.test` from your laptop's own browser, not just from
+inside a VM window.) Pick the matched-host bootstrap for your OS:
+
 | Path | Doc |
 |---|---|
-| `mpd-desktop` (macOS native) | [docs/desktop/USAGE.md](docs/desktop/USAGE.md) |
-| `mpd-machine` — automated UTM bootstrap on macOS | [mpd-machine/platforms/macos-utm/README.md](mpd-machine/platforms/macos-utm/README.md) |
-| `mpd-machine` — manual bootstrap on any Debian Trixie VM | [mpd-machine/platforms/generic-vm/README.md](mpd-machine/platforms/generic-vm/README.md) |
-| `mpd-machine` — Windows + Hyper-V (automated) | [mpd-machine/platforms/windows-hyperv/README.txt](mpd-machine/platforms/windows-hyperv/README.txt) |
+| `mpd-desktop` (macOS native, no VM at all) | [docs/desktop/USAGE.md](docs/desktop/USAGE.md) |
+| `mpd-machine` on macOS (UTM) | [setup/macos-utm/README.md](setup/macos-utm/README.md) |
+| `mpd-machine` on Ubuntu (libvirt/KVM) | [setup/ubuntu-kvm/README.md](setup/ubuntu-kvm/README.md) |
+| `mpd-machine` on Windows (Hyper-V) | [setup/windows-hyperv/README.txt](setup/windows-hyperv/README.txt) |
 
 ## Prerequisites at a glance
 
@@ -64,17 +80,15 @@ model.
 - [WireGuard for macOS](https://apps.apple.com/app/wireguard/id1451685025)
 - Xcode command-line tools (for building `bin/mpd`)
 
-**`mpd-machine` on Windows**
-- Windows 10/11 Pro or Enterprise (Hyper-V required; not available on Home).
-- Double-click `setup.cmd` — it creates the VM, configures networking,
-  imports the CA certificate, and puts an `mpd-machine` shortcut on
-  your desktop. No WSL, no manual steps.
+**`mpd-machine` — sandbox**
+- Any hypervisor + an Ubuntu 26.04 LTS desktop install with hostname
+  `mpd-machine-sandbox`. Snapshot before running the take-over script.
 
-**`mpd-machine` on macOS**
-- A Debian Trixie VM via UTM — `setup.command` does the full setup,
-  including macOS networking and a desktop SSH shortcut.
-- Or any Debian Trixie VM you created yourself (netinst ISO, cloud
-  image, KVM, etc.) — follow the generic-vm guide.
+**`mpd-machine` — host-integrated platforms**
+- `setup.command` (macOS+UTM), `setup.sh` (Ubuntu+KVM), `setup.cmd`
+  (Windows+Hyper-V) each do VM creation + cloud-init + repo clone +
+  build + host-side networking (route, DNS resolver, CA trust) in
+  one shot.
 - Don't run `mpd-machine` on a Linux box you care about. mpd makes
   invasive changes (apt installs, systemd config, passwordless sudo);
   use a sandbox VM you're willing to wipe.
@@ -86,7 +100,7 @@ model.
   WireGuard keys on mpd-desktop, `platform.env`)
 - `mpd/` — Swift control-plane sources
 - `assets/` — runtime/service/sidecar definitions and shell scripts
-- `mpd-machine/` — VM bootstrap scripts and platform-specific assets
+- `setup/` — bootstrap scripts (sandbox + matched-host platforms)
 - `docs/` — full documentation tree
 - `~/.mpd/` — runtime state and cache (recreated by `mpd --setup`,
   removed by `mpd --uninstall`)

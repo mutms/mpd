@@ -7,7 +7,7 @@ extension Mpd.Environment.Certificate {
 
     /// CA generation — KEEP IN SYNC with the bash twin
     /// `generate_mpd_ca` in
-    /// `mpd-machine/platforms/macos-utm/lib/common.sh`. The macOS
+    /// `setup/macos-utm/lib/common.sh`. The macOS
     /// host-side bootstrap generates (or reuses) a CA *before* VM
     /// creation and uploads it; mpd inside the VM detects the existing
     /// CA via the `fileExists` check in

@@ -1,9 +1,9 @@
 # macOS + UTM bootstrap
 
 Automation for `mpd-machine` on macOS using **UTM with its QEMU backend**
-(arm64). For the platform-agnostic manual bootstrap (any Debian Trixie VM
-you've already created yourself), see the generic-vm platform at
-https://github.com/mutms/mpd
+(arm64). For a "live in the VM" graphical alternative on any
+hypervisor (including UTM), see the
+[sandbox platform](https://github.com/mutms/mpd/tree/main/setup/sandbox/README.md).
 
 This directory is the supported flavor for laptop-driven Moodle plugin
 development on Apple Silicon. QEMU + SPICE gives clipboard sync, dynamic
@@ -25,7 +25,7 @@ no need to open them).
 You can also invoke the underlying scripts directly from a Terminal:
 
 ```bash
-bash mpd-machine/platforms/macos-utm/lib/setup.sh
+bash setup/macos-utm/lib/setup.sh
 ```
 
 ## Prerequisites

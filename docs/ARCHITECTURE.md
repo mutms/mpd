@@ -14,7 +14,7 @@ Current scope:
 - Both `mpd-desktop` and `mpd-machine` ship as supported execution modes.
 - The Swift control plane is at parity across modes — setup, lifecycle (`--setup/--start/--stop/--uninstall`, `--status`, `mpd list`), runtime/project orchestration, and per-runtime sidecar reconciliation work the same way on both.
 - Mode-specific surfaces are limited to host integration: `mpd-desktop` runs on top of Podman Desktop with a WireGuard bootstrap; `mpd-machine` runs under rootful Podman in a dedicated Debian Trixie VM with plain L3 routing from the laptop.
-- The `mpd-machine/` directory additionally holds bootstrap scripts and platform-specific setup logic (currently `platforms/macos-utm/` and `platforms/generic-vm/`) that will grow into setup packages/installers.
+- The `mpd-machine/` directory additionally holds bootstrap scripts and platform-specific setup logic (`platforms/macos-utm/`, `platforms/ubuntu-kvm/`, `platforms/windows-hyperv/`, `platforms/sandbox/`) that grow into setup packages/installers.
 - Outstanding work is project-type coverage under `assets/runtimes/<runtime>/project_types/` — shared by both modes — not control-plane functionality.
 
 ## 2) Core Execution Model
@@ -79,7 +79,7 @@ check-privilege-boundary`.
 ### Sister rule: host-side fenced `sudo` (macos-utm + ubuntu-kvm bootstrap)
 
 Bootstrap-stage shell scripts under
-`mpd-machine/platforms/{macos-utm,ubuntu-kvm}/lib/` run on the dev host
+`setup/{macos-utm,ubuntu-kvm}/lib/` run on the dev host
 (not in a container or VM) and need `sudo` for a fixed set of operations
 — route to the container subnet, DNS resolver pointing `*.mpd.test` at
 the in-VM dnsmasq, system-trust import of the mpd CA, plus
@@ -162,8 +162,11 @@ bootstrap runs as the dev user on the host: **macos-utm** and
   cloud-init seed ISO creation are delegated to WSL Debian bash
   (`lib/common.sh`) via `wsl -d Debian -u root`; no `openssl` or
   `genisoimage` runs in PowerShell.
-- **generic-vm** is a manual bootstrap — the user types each command
-  themselves, and there are no scripts to fence.
+- **sandbox** runs entirely inside the VM, so there is no "host-side
+  bootstrap" to fence. `take-over-sandbox-vm.sh` enables passwordless sudo
+  on the VM as part of taking it over (the hostname-rename gate is
+  the user's deliberate consent), then hands off to `lib/provision.sh`
+  which sudo's individual privileged commands per the in-VM rule.
 - **Inside the VM and runtime containers**, the previous sister rule
   applies (per-command `sudo`, no whole-script elevation).
 
@@ -533,9 +536,8 @@ Sibling to `caroot/`, `service/`, `wireguard/`. Lives under `conf/` so it
 **survives `mpd --uninstall`** (which wipes `~/.mpd/`).
 
 ```
-MPD_PLATFORM=desktop | macos-utm | windows-hyperv | generic-vm
-MPD_CLIENT_OS=macos | debian | fedora | windows
-MPD_VM_IP=<ip>                  # empty for desktop
+MPD_PLATFORM=desktop | macos-utm | ubuntu-kvm | windows-hyperv | sandbox
+MPD_VM_IP=<ip>                  # empty for desktop and sandbox
 MPD_INSTANCE_SUFFIX=<-suffix>   # e.g. "-161"; empty for the unsuffixed instance
 ```
 
@@ -549,24 +551,23 @@ unaffected — they still resolve by IP via dnsmasq. Hand-edit to override;
 the next `mpd --setup` will overwrite back to the auto-derived value.
 
 `Platform.write` preserves any other `MPD_*` keys it doesn't manage
-(`MPD_NETWORK_*` written by `provision-vm.sh`, etc.) so bootstrap scripts
+(e.g. `MPD_NETWORK_*` written by a bootstrap script) so bootstrap scripts
 and Platform can share the same file without clobbering each other.
 
 **Writers:**
 
 | Path | Writer | Values | Behavior |
 |---|---|---|---|
-| `mpd-desktop` | `Mpd.Core.Platform.ensureWritten(...)` from `DesktopActionSetup` | `desktop`, `macos`, `""` | bootstrap on first `mpd --setup`; no prompt |
-| `mpd-machine` via UTM | `mpd-machine/platforms/macos-utm/lib/create-vm.sh` (over SSH) | `macos-utm`, `macos`, `${VM_IP}` | written before `mpd --setup` runs in the VM |
-| `mpd-machine` via Windows/Hyper-V | `mpd-machine/platforms/windows-hyperv/lib/create-vm.ps1` (over SSH) | `windows-hyperv`, `windows`, `${VmIp}` | written before `mpd --setup` runs in the VM |
-| `mpd-machine` via generic VM | `mpd-machine/platforms/generic-vm/provision-vm.sh` | `generic-vm` + interactive prompt for `MPD_CLIENT_OS` and `MPD_VM_IP` | prompts at the very start of the user phase; idempotent (skips if all keys present) |
+| `mpd-desktop` | `Mpd.Core.Platform.ensureWritten(...)` from `DesktopActionSetup` | `desktop`, `""` | bootstrap on first `mpd --setup`; no prompt |
+| `mpd-machine` via UTM | `setup/macos-utm/lib/create-vm.sh` (over SSH) | `macos-utm`, `${VM_IP}` | written before `mpd --setup` runs in the VM |
+| `mpd-machine` via Ubuntu+KVM | `setup/ubuntu-kvm/lib/create-vm.sh` (over SSH) | `ubuntu-kvm`, `${VM_IP}` | written before `mpd --setup` runs in the VM |
+| `mpd-machine` via Windows/Hyper-V | `setup/windows-hyperv/lib/create-vm.ps1` (over SSH) | `windows-hyperv`, `${VmIp}` | written before `mpd --setup` runs in the VM |
+| `mpd-machine` via sandbox | `setup/sandbox/lib/provision.sh` | `sandbox`, `""` | written before `mpd --setup` runs inside the Ubuntu VM |
 
 **Reader:** `Mpd.Core.Platform.load()` (Swift). Throws with a fix-it message
-when missing, pointing at the matching bootstrap script. `MachineActionSetup`
-reads it early so `MachineClientRecipe` can drive correct laptop-side recipes
-(route, DNS resolver, optional CA trust) without `hostname -I` heuristics.
-`mpd --setup-info` consumes the same values to regenerate the recipe on
-demand.
+when missing, pointing at the matching bootstrap script. The cloud-init
+platforms record the laptop's VM IP so client recipes can be regenerated
+on demand; sandbox has no laptop side, so its `MPD_VM_IP` stays empty.
 
 **Why under `conf/` and not `~/.mpd/`:** the platform identity is part of
 the persistent host setup — the same answers should apply across multiple

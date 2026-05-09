@@ -1,8 +1,7 @@
 // mpd — Mpd.Core.Platform namespace
 // Reads/writes ~/Developer/mpd/conf/platform.env — the host-side identity file
 // that records *which* kind of mpd setup this is and where it lives:
-//   MPD_PLATFORM=desktop | macos-utm | ubuntu-kvm | generic-vm | windows-hyperv | sandbox
-//   MPD_CLIENT_OS=macos | linux | windows
+//   MPD_PLATFORM=desktop | macos-utm | ubuntu-kvm | windows-hyperv | sandbox
 //   MPD_VM_IP=<ip>           (empty for desktop and sandbox)
 //   MPD_INSTANCE_SUFFIX=<-suffix>   (e.g. "-161"; empty for the unsuffixed
 //                                    instance — used for hostname disambiguation
@@ -10,19 +9,18 @@
 //
 // Writers:
 //   - mpd-desktop: Mpd.Core.Platform.ensureWritten(...) at the start of setup,
-//     bootstraps the file on first run with platform=desktop, client_os=macos,
-//     vm_ip="" (no prompt).
+//     bootstraps the file on first run with platform=desktop, vm_ip="".
 //   - mpd-machine via macos-utm/create-vm.sh: writes the file via SSH before
 //     `mpd --setup` runs in the VM.
-//   - mpd-machine via generic-vm/provision-vm.sh: prompts the user at the
-//     start of the user phase and writes the file before `mpd --setup`.
+//   - mpd-machine via ubuntu-kvm/lib/create-vm.sh: same, via SSH.
+//   - mpd-machine via windows-hyperv: same, via WinRM.
 //   - mpd-machine via sandbox/lib/provision.sh: writes the file with
-//     platform=sandbox, client_os=debian (placeholder; the laptop-client
-//     recipe is skipped on .sandbox) before `mpd --setup` runs in the VM.
+//     platform=sandbox before `mpd --setup` runs inside the Ubuntu VM.
 //
-// Reader: mpd's setup actions and helpers that need client OS or VM IP at
-// run-time. Lives under conf/ so it survives `mpd --uninstall` (which wipes
-// ~/.mpd/ but leaves ~/Developer/mpd/conf/ alone).
+// Reader: mpd's setup actions and helpers that need to know the platform
+// or the VM IP at run-time. Lives under conf/ so it survives
+// `mpd --uninstall` (which wipes ~/.mpd/ but leaves ~/Developer/mpd/conf/
+// alone).
 
 import Foundation
 
@@ -32,22 +30,13 @@ extension Mpd.Core.Platform {
         case desktop        = "desktop"
         case macosUTM       = "macos-utm"
         case ubuntuKVM      = "ubuntu-kvm"
-        case genericVM      = "generic-vm"
         case windowsHyperV  = "windows-hyperv"
         case sandbox        = "sandbox"
     }
 
-    enum ClientOS: String {
-        case macos   = "macos"
-        case debian  = "debian"     // Debian / Ubuntu / Mint
-        case fedora  = "fedora"     // Fedora / RHEL / Rocky / Alma
-        case windows = "windows"
-    }
-
     struct Identity {
         let platform: PlatformKind
-        let clientOS: ClientOS
-        let vmIP: String          // empty for desktop
+        let vmIP: String          // empty for desktop and sandbox
         let instanceSuffix: String  // e.g. "-161", or "" — leading dash included
     }
 
@@ -63,11 +52,10 @@ extension Mpd.Core.Platform {
             throw RuntimeError(
                 "Missing \(path).\n" +
                 "Run the matching bootstrap script first:\n" +
-                "  • macOS+UTM:       mpd-machine/platforms/macos-utm/setup.command\n" +
-                "  • Ubuntu+KVM:      mpd-machine/platforms/ubuntu-kvm/setup.sh\n" +
-                "  • Windows Hyper-V: mpd-machine/platforms/windows-hyperv/setup.cmd\n" +
-                "  • generic VM:      mpd-machine/platforms/generic-vm/provision-vm.sh\n" +
-                "  • sandbox VM:      mpd-machine/platforms/sandbox/take-over-vm.sh\n" +
+                "  • sandbox VM:      setup/sandbox/take-over-sandbox-vm.sh\n" +
+                "  • macOS+UTM:       setup/macos-utm/setup.command\n" +
+                "  • Ubuntu+KVM:      setup/ubuntu-kvm/setup.sh\n" +
+                "  • Windows Hyper-V: setup/windows-hyperv/setup.cmd\n" +
                 "  • desktop:         re-run `mpd --setup` (will write the file).")
         }
 
@@ -75,22 +63,18 @@ extension Mpd.Core.Platform {
         let kv = parseKV(raw)
 
         guard let platformRaw = kv["MPD_PLATFORM"], let platform = PlatformKind(rawValue: platformRaw) else {
-            throw RuntimeError("\(path): MPD_PLATFORM missing or invalid (expected: desktop, macos-utm, ubuntu-kvm, generic-vm, windows-hyperv, sandbox).")
-        }
-        guard let clientRaw = kv["MPD_CLIENT_OS"], let clientOS = ClientOS(rawValue: clientRaw) else {
-            throw RuntimeError("\(path): MPD_CLIENT_OS missing or invalid (expected: macos, debian, fedora, windows).")
+            throw RuntimeError("\(path): MPD_PLATFORM missing or invalid (expected: desktop, macos-utm, ubuntu-kvm, windows-hyperv, sandbox).")
         }
         let vmIP = kv["MPD_VM_IP"] ?? ""
         let instanceSuffix = kv["MPD_INSTANCE_SUFFIX"] ?? ""
 
-        return Identity(platform: platform, clientOS: clientOS, vmIP: vmIP,
-                        instanceSuffix: instanceSuffix)
+        return Identity(platform: platform, vmIP: vmIP, instanceSuffix: instanceSuffix)
     }
 
     /// Keys this writer manages. Other `MPD_*` keys (e.g. `MPD_NETWORK_*` set
-    /// by `provision-vm.sh`) are preserved verbatim by `write` so the bootstrap
-    /// scripts and Platform can share the same file without clobbering each
-    /// other.
+    /// by a bootstrap script) are preserved verbatim by `write` so the
+    /// bootstrap scripts and Platform can share the same file without
+    /// clobbering each other.
     private static let managedKeys: Set<String> = [
         "MPD_PLATFORM", "MPD_CLIENT_OS", "MPD_VM_IP", "MPD_INSTANCE_SUFFIX",
     ]
@@ -98,9 +82,10 @@ extension Mpd.Core.Platform {
     /// Write the identity file. Used by mpd-desktop's setup bootstrap and by
     /// `updateInstanceSuffix`. Idempotent — overwrites the managed keys with
     /// the supplied values; preserves any other keys (e.g. `MPD_NETWORK_*`)
-    /// that bootstrap scripts may have written.
-    static func write(platform: PlatformKind, clientOS: ClientOS, vmIP: String,
-                      instanceSuffix: String) throws {
+    /// that bootstrap scripts may have written. `MPD_CLIENT_OS` is in
+    /// `managedKeys` (and not written) so any legacy value carried by an
+    /// upgrade-in-place gets dropped on the next write.
+    static func write(platform: PlatformKind, vmIP: String, instanceSuffix: String) throws {
         let fm = FileManager.default
         try fm.createDirectory(atPath: Mpd.Environment.confDir, withIntermediateDirectories: true)
 
@@ -123,7 +108,6 @@ extension Mpd.Core.Platform {
             # mpd platform identity — written by setup, read at runtime.
             # Lives under conf/ so it survives `mpd --uninstall`.
             MPD_PLATFORM=\(platform.rawValue)
-            MPD_CLIENT_OS=\(clientOS.rawValue)
             MPD_VM_IP=\(vmIP)
             # Disambiguates concurrent VMs/machines. Auto-derived from the
             # host name (mpd-machine-<X> or mpd-desktop-<X>) at --setup; edit
@@ -143,11 +127,10 @@ extension Mpd.Core.Platform {
 
     /// Bootstrap helper for mpd-desktop's setup: write the file with the known
     /// desktop values if absent, leave any existing file untouched.
-    static func ensureWritten(platform: PlatformKind, clientOS: ClientOS, vmIP: String,
+    static func ensureWritten(platform: PlatformKind, vmIP: String,
                               instanceSuffix: String) throws {
         if FileManager.default.fileExists(atPath: path) { return }
-        try write(platform: platform, clientOS: clientOS, vmIP: vmIP,
-                  instanceSuffix: instanceSuffix)
+        try write(platform: platform, vmIP: vmIP, instanceSuffix: instanceSuffix)
     }
 
     /// Update only the instance suffix in an existing platform.env. Used by
@@ -155,10 +138,7 @@ extension Mpd.Core.Platform {
     /// the host name at setup time, but the user can override by hand-editing).
     static func updateInstanceSuffix(_ suffix: String) throws {
         let identity = try load()
-        try write(platform: identity.platform,
-                  clientOS: identity.clientOS,
-                  vmIP: identity.vmIP,
-                  instanceSuffix: suffix)
+        try write(platform: identity.platform, vmIP: identity.vmIP, instanceSuffix: suffix)
     }
 
     private static func parseKV(_ text: String) -> [String: String] {

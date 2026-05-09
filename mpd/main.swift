@@ -135,7 +135,7 @@ struct GlobalCommand: ParsableCommand {
           help: "Partial teardown: stop mpd, remove ~/.mpd/ state, keep ~/Developer/mpd/conf (CA + service certs; plus WireGuard on mpd-desktop), then print manual cleanup steps.")
     var uninstall: Bool = false
     @Flag(name: .customLong("setup-info"),
-          help: "Print the full laptop-side setup recipe (plain text). Pipeable: `mpd --setup-info > SETUP.txt`. Tells you to run `--setup` first if platform.env is missing.")
+          help: "Print platform setup info (plain text). On mpd-desktop this is the laptop-side WireGuard / DNS / CA recipe; on mpd-machine it's a pointer to the platform's bootstrap README. Pipeable: `mpd --setup-info > SETUP.txt`.")
     var setupInfo: Bool = false
 
     // (Listing is now a verb: `mpd list [projects|runtimes|services|dbs]`. See ListSubcommand below.)

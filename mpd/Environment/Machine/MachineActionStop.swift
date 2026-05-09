@@ -31,8 +31,8 @@ extension Mpd.Environment.Action.Stop {
         """)
 
         // systemd will SIGTERM podman services (rootful containers get graceful
-        // shutdown via the podman.service unit). Passwordless sudo is set up by
-        // provision-vm.sh so this doesn't prompt.
+        // shutdown via the podman.service unit). Passwordless sudo is set up
+        // by the platform bootstrap script so this doesn't prompt.
         let rc = Mpd.Environment.HostExec.run(["sudo", "systemctl", "poweroff"])
         if rc != 0 {
             throw RuntimeError("Failed to power off VM (sudo systemctl poweroff returned \(rc)).")

@@ -13,10 +13,11 @@ extension Mpd.Environment.Action.Setup {
     ///
     /// Notably absent: `systemd-resolved` and `network-manager`. The host's
     /// network stack (link manager + DNS sink) is standardized to
-    /// systemd-networkd or NetworkManager + systemd-resolved by
-    /// `provision-vm.sh` (or by cloud-init on the macos-utm path). By the
-    /// time `mpd --setup` runs, systemd-resolved is already active. mpd
-    /// touches it through a single drop-in for `*.mpd.test`; nothing else.
+    /// systemd-networkd or NetworkManager + systemd-resolved by the
+    /// platform bootstrap (cloud-init for macos-utm/ubuntu-kvm/windows-hyperv;
+    /// Ubuntu desktop default for sandbox). By the time `mpd --setup` runs,
+    /// systemd-resolved is already active. mpd touches it through a single
+    /// drop-in for `*.mpd.test`; nothing else.
     private static let aptPackages: [String] = [
         // runtime
         // `catatonit` is a Recommends of podman (init binary used as the pause
@@ -54,8 +55,8 @@ extension Mpd.Environment.Action.Setup {
     }
 
     /// Hard gate: mpd-machine targets Debian Trixie for the cloud-init
-    /// platforms (macos-utm, ubuntu-kvm, windows-hyperv, generic-vm), and
-    /// Ubuntu 26.04 LTS (Resolute) for the sandbox platform. Other distros /
+    /// platforms (macos-utm, ubuntu-kvm, windows-hyperv), and Ubuntu 26.04
+    /// LTS (Resolute) for the sandbox platform. Other distros /
     /// releases are unsupported (package names, Swift availability, systemd
     /// unit layout, NetworkManager defaults all vary). The platform identity
     /// is read from `~/Developer/mpd/conf/platform.env`, which the matching
@@ -79,7 +80,7 @@ extension Mpd.Environment.Action.Setup {
             guard os.id == "ubuntu" else {
                 throw RuntimeError("""
                 mpd-machine sandbox platform targets Ubuntu (got ID=\(os.id)).
-                Use an Ubuntu 26.04 LTS VM and re-run via take-over-vm.sh.
+                Use an Ubuntu 26.04 LTS VM and re-run via take-over-sandbox-vm.sh.
                 """)
             }
             guard os.codename == "resolute" else {
@@ -146,9 +147,11 @@ extension Mpd.Environment.Action.Setup {
     }
 
     /// Derive the instance suffix from the VM's OS hostname. The mpd-machine
-    /// bootstrap (provision-vm.sh / create-vm.sh) sets the hostname to either
-    /// `mpd-machine` (singleton) or `mpd-machine-<X>` (concurrent variant);
-    /// the suffix here is `-<X>` (with the leading dash) or `""`. Used to
+    /// bootstrap (create-vm.sh on the cloud-init platforms; the user's own
+    /// rename on sandbox) sets the hostname to either `mpd-machine`
+    /// (singleton), `mpd-machine-<X>` (concurrent variant on cloud-init
+    /// platforms), or `mpd-machine-sandbox` (sandbox); the suffix here is
+    /// `-<X>` / `-sandbox` (with the leading dash) or `""`. Used to
     /// disambiguate runtime container hostnames so a developer SSH'd into
     /// `php.runtime.mpd.test` sees `mpd-runtime-php-<X>` in their prompt.
     private static func deriveInstanceSuffix() -> String {
@@ -284,9 +287,10 @@ extension Mpd.Environment.Action.Setup {
 
         // Verify the host's network stack is in the standardized state
         // (systemd-resolved active, fed by either NetworkManager or
-        // systemd-networkd). `provision-vm.sh` and cloud-init are both
-        // responsible for putting the system here; mpd --setup just
-        // verifies and bails with a hint if not.
+        // systemd-networkd). cloud-init (macos-utm/ubuntu-kvm/windows-hyperv)
+        // and the Ubuntu desktop default (sandbox) are both responsible for
+        // putting the system here; mpd --setup just verifies and bails with
+        // a hint if not.
         try Mpd.Environment.Integration.requireSystemdResolvedActive()
 
         // Single apt phase: runtime essentials + diagnostics + aardvark-dns.
@@ -330,7 +334,7 @@ extension Mpd.Environment.Action.Setup {
         if derivedSuffix != identity.instanceSuffix {
             try Mpd.Core.Platform.updateInstanceSuffix(derivedSuffix)
         }
-        ok("Platform: \(identity.platform.rawValue), client: \(identity.clientOS.rawValue), VM IP: \(identity.vmIP.isEmpty ? "—" : identity.vmIP), suffix: \(derivedSuffix.isEmpty ? "—" : derivedSuffix)")
+        ok("Platform: \(identity.platform.rawValue), VM IP: \(identity.vmIP.isEmpty ? "—" : identity.vmIP), suffix: \(derivedSuffix.isEmpty ? "—" : derivedSuffix)")
 
         // Step — VM-local SSH keypair. Without this, the VM has no private key
         // to offer when SSHing into runtimes from a local terminal (e.g. inside

@@ -1,12 +1,12 @@
 #!/bin/bash
-# provision.sh — sandbox mpd-machine setup, run after take-over-vm.sh.
+# provision.sh — sandbox mpd-machine setup, run after take-over-sandbox-vm.sh.
 #
 # Assumes:
 #   - hostname is mpd-machine-sandbox
 #   - passwordless sudo is configured for the current user
 #   - the mpd repo is cloned at ~/Developer/mpd/
 #
-# All three are set up by the entry script (../take-over-vm.sh). Direct
+# All three are set up by the entry script (../take-over-sandbox-vm.sh). Direct
 # re-invocation is supported (idempotent) for iterating after a failure.
 
 set -euo pipefail
@@ -34,12 +34,12 @@ fi
 ok "Ubuntu 26.04 LTS"
 
 if ! sudo -n true 2>/dev/null; then
-    die "Passwordless sudo not configured. Run take-over-vm.sh first."
+    die "Passwordless sudo not configured. Run take-over-sandbox-vm.sh first."
 fi
 ok "Passwordless sudo"
 
 if [ ! -d "${REPO_DIR}/.git" ]; then
-    die "Repo not cloned at ${REPO_DIR}. Run take-over-vm.sh first."
+    die "Repo not cloned at ${REPO_DIR}. Run take-over-sandbox-vm.sh first."
 fi
 ok "Repo at ${REPO_DIR}"
 
@@ -82,9 +82,6 @@ sudo ln -sf "${REPO_DIR}/bin/mpd" /usr/local/bin/mpd
 ok "/usr/local/bin/mpd → ${REPO_DIR}/bin/mpd"
 
 # --- Write platform.env -------------------------------------------------
-# MPD_CLIENT_OS=debian is a placeholder — the laptop-client recipe is
-# skipped on .sandbox in Swift, and the field disappears entirely in the
-# Phase 4 cleanup of MachineClientRecipe.
 step "Platform identity"
 conf_dir="${REPO_DIR}/conf"
 platform_env="${conf_dir}/platform.env"
@@ -96,7 +93,6 @@ else
 # mpd platform identity — written by sandbox/lib/provision.sh.
 # Lives under conf/ so it survives 'mpd --uninstall'.
 MPD_PLATFORM=sandbox
-MPD_CLIENT_OS=debian
 MPD_VM_IP=
 MPD_INSTANCE_SUFFIX=
 EOF
@@ -121,6 +117,40 @@ else
     warn "postgres:latest pre-warm failed; will provision lazily on first use"
 fi
 
+# --- GNOME desktop launcher --------------------------------------------
+# Drops a .desktop file so the user can find mpd in GNOME Activities and
+# (if Desktop icons are enabled) on the desktop itself. Launches the
+# interactive TUI in the user's default terminal — Terminal=true keeps
+# this portable across GNOME (ptyxis), KDE (konsole), XFCE (xfce4-terminal).
+step "GNOME desktop launcher"
+apps_dir="$HOME/.local/share/applications"
+apps_shortcut="${apps_dir}/mpd.desktop"
+mkdir -p "$apps_dir"
+cat > "$apps_shortcut" <<EOF
+[Desktop Entry]
+Type=Application
+Name=mpd
+Comment=Moodle Plugin Development — interactive TUI
+Exec=mpd --tui
+Icon=utilities-terminal
+Categories=Development;
+Terminal=true
+StartupNotify=false
+EOF
+chmod 0755 "$apps_shortcut"
+update-desktop-database "$apps_dir" >/dev/null 2>&1 || true
+ok "Launcher: ${apps_shortcut}"
+
+if [ -d "$HOME/Desktop" ]; then
+    desktop_shortcut="$HOME/Desktop/mpd.desktop"
+    cp -f "$apps_shortcut" "$desktop_shortcut"
+    chmod 0755 "$desktop_shortcut"
+    # GNOME 'Desktop Icons NG' refuses to launch unless the file is marked
+    # trusted. No-op on KDE/XFCE; harmless if `gio` is missing.
+    gio set "$desktop_shortcut" metadata::trusted true 2>/dev/null || true
+    ok "Launcher: ${desktop_shortcut}"
+fi
+
 # --- Done ---------------------------------------------------------------
 cat <<EOF
 
@@ -131,6 +161,10 @@ cat <<EOF
 Open Firefox in this VM and browse to:
 
     https://mpd.test/
+
+You'll also find an "mpd" launcher in GNOME Activities (and on your
+Desktop, if desktop icons are on). Click it any time to drop into
+the interactive TUI.
 
 To use mpd's tools (demo, etc.) in THIS shell right now, pick up the
 PATH drop-in that 'mpd --setup' just installed:

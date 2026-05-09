@@ -165,7 +165,7 @@ Reachable only via the static route to the VM's container subnet — no public e
 
 SSH agent forwarding (`ssh -A`) is optional for runtimes that need host-agent-backed git/auth inside the container. It passes the developer's key into the container for the session — the private key never touches the container filesystem. fileaccess does not need agent forwarding (it's not a shell environment).
 
-**Lost the laptop's private key?** Recovery via UTM single-user mode is documented in [`mpd-machine/platforms/macos-utm/README.md`](../../mpd-machine/platforms/macos-utm/README.md#recovery-lost-ssh-key) — the gotcha is that the VM has no graphical display, so you first need to point UTM's serial console at its built-in terminal before GRUB output is visible.
+**Lost the laptop's private key?** Recovery via UTM single-user mode is documented in [`setup/macos-utm/README.md`](../../setup/macos-utm/README.md#recovery-lost-ssh-key) — the gotcha is that the VM has no graphical display, so you first need to point UTM's serial console at its built-in terminal before GRUB output is visible.
 
 ### WireGuard (mpd-desktop only)
 

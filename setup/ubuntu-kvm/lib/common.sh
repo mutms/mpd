@@ -3,7 +3,7 @@
 # Source from every lib/*.sh script:
 #   . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 #
-# Sister to mpd-machine/platforms/macos-utm/lib/common.sh — same shape,
+# Sister to setup/macos-utm/lib/common.sh — same shape,
 # Linux-ized: virsh + libvirt instead of utmctl + AppleScript;
 # `ip route` instead of macOS's `route`; systemd-resolved drop-in
 # instead of /etc/resolver/; ca-certificates + NSS DB instead of

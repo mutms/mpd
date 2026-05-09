@@ -16,8 +16,8 @@ let package = Package(
             ],
             path: ".",
             exclude: [
-                "bin", "conf",
-                "assets", ".swiftpm", "mpd-machine",
+                "bin", "conf", "release",
+                "assets", ".swiftpm", "setup",
                 "docs", "README.md", "LICENSE", "Makefile", "CLAUDE.md", "AGENTS.md"
             ],
             sources: ["mpd"],

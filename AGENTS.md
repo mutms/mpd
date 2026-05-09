@@ -71,8 +71,10 @@ across docs.
 - `docs/machine/USAGE.md` — machine workflow
 - `docs/machine/NETWORKING.md` — machine networking (static route, no WG)
 - `docs/machine/SECURITY.md` — machine security model
-- `mpd-machine/platforms/generic-vm/README.md` — bootstrap on any Debian Trixie VM
-- `mpd-machine/platforms/macos-utm/README.md` — UTM-on-macOS automation + recovery
+- `setup/macos-utm/README.md` — UTM-on-macOS automation + recovery
+- `setup/ubuntu-kvm/README.md` — Ubuntu host + libvirt/KVM automation
+- `setup/windows-hyperv/README.txt` — Windows host + Hyper-V automation
+- `setup/sandbox/README.md` — graphical "live in the VM" Ubuntu sandbox
 
 There is no `docs/machine/platform/*` tree — earlier drafts imagined per-OS
 platform docs, but per-OS detail lives inline in NETWORKING.md instead.
@@ -136,7 +138,7 @@ forbidden shapes in (3) and (4) — keep it green.
 - Avoid cross-file doc duplication; link to canonical owners.
 - For shell completion, edit `mpd/CLI/Complete.swift` — the shims under
   `assets/completions/` are stable forwarders and rarely need to change.
-- **Each `mpd-machine/platforms/<name>/` directory must stay
+- **Each `setup/<name>/` directory must stay
   self-contained** — it's released as a small standalone bundle (a
   handful of `.sh` / `.ps1` / `.cmd` plus a README) and dropped onto a
   fresh host before the mpd repo is cloned. Scripts in there may only
@@ -144,7 +146,7 @@ forbidden shapes in (3) and (4) — keep it green.
   and what they pull at runtime (`git clone`). Do **not** reach into a
   sibling platform directory or anywhere else in the repo from
   bootstrap-stage code; duplicate small helpers instead. See
-  [`mpd-machine/platforms/README.md`](mpd-machine/platforms/README.md)
+  [`setup/README.md`](setup/README.md)
   for the full rule.
 
 ## Authoring verbs and tools
@@ -359,7 +361,7 @@ not found." Internal sudo on specific operations is the right shape.
 - `mpd --setup`, `mpd --start`, `mpd --stop`, `mpd --uninstall`
 
 **Machine throw-away-VM smoke checks:**
-- fresh VM via `mpd-machine/platforms/macos-utm/create-vm.sh [<suffix>]`
+- fresh VM via `setup/macos-utm/create-vm.sh [<suffix>]`
 - `mpd --setup`, `mpd --start`, `mpd --status`
 - optional: `mpd create/start/stop <project>` end-to-end including HTTPS hit
 - `mpd --stop`, `mpd --uninstall --yes`

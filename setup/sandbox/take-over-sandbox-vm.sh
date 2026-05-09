@@ -1,5 +1,5 @@
 #!/bin/bash
-# take-over-vm.sh — turn a fresh Ubuntu 26.04 VM into an mpd sandbox.
+# take-over-sandbox-vm.sh — turn a fresh Ubuntu 26.04 VM into an mpd sandbox.
 #
 # This script intentionally weakens VM security (passwordless sudo, mpd's
 # self-signed CA in the system trust store, persistent SSH host keys).
@@ -7,13 +7,12 @@
 # or any host with data you would be sad to lose.
 #
 # Two valid invocation modes:
-#   1. Standalone (future curl|bash flow, no separate clone step):
-#        curl -O https://raw.githubusercontent.com/mutms/mpd/main/mpd-machine/platforms/sandbox/take-over-vm.sh
-#        bash take-over-vm.sh
+#   1. Standalone (curl|bash flow, no separate clone step):
+#        bash <(curl -sSL https://raw.githubusercontent.com/mutms/mpd/main/setup/sandbox/take-over-sandbox-vm.sh)
 #      Self-bootstraps: apt-installs git, clones mpd to ~/Developer/mpd/,
 #      then exec's lib/provision.sh from the cloned tree.
 #   2. In-repo (when the mpd repo is already cloned):
-#        bash ~/Developer/mpd/mpd-machine/platforms/sandbox/take-over-vm.sh
+#        bash ~/Developer/mpd/setup/sandbox/take-over-sandbox-vm.sh
 #      Skips the clone, exec's the sibling lib/provision.sh.
 #
 # Idempotent — safe to re-run after a partial failure.
@@ -24,8 +23,8 @@ REQUIRED_HOSTNAME="mpd-machine-sandbox"
 REPO_URL="https://github.com/mutms/mpd.git"
 REPO_DIR="$HOME/Developer/mpd"
 SUDOERS_FILE="/etc/sudoers.d/mpd-${USER}"
-EXPECTED_SCRIPT="${REPO_DIR}/mpd-machine/platforms/sandbox/take-over-vm.sh"
-PROVISION_SCRIPT="${REPO_DIR}/mpd-machine/platforms/sandbox/lib/provision.sh"
+EXPECTED_SCRIPT="${REPO_DIR}/setup/sandbox/take-over-sandbox-vm.sh"
+PROVISION_SCRIPT="${REPO_DIR}/setup/sandbox/lib/provision.sh"
 
 # --- Hostname gate ------------------------------------------------------
 # Primary safety mechanism: the act of renaming a VM to

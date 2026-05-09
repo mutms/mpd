@@ -37,7 +37,7 @@ extension Mpd.Environment {
     }
 
     /// Platform-owned CA directory written by the mpd-machine macos-utm
-    /// bootstrap scripts (see mpd-machine/platforms/macos-utm/lib/common.sh).
+    /// bootstrap scripts (see setup/macos-utm/lib/common.sh).
     /// Holds real files mirrored with `confCARootDir` on macOS hosts that
     /// have created an mpd-machine VM. `DesktopActionSetup` reads it when
     /// `confCARootDir` is missing so a Mac that runs both modes converges on
