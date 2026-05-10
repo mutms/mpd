@@ -47,12 +47,12 @@ recognised. `mpd --stop` will fire it.
 The hook engine assumes a specific persistence model — important for
 understanding *when* events fire:
 
-| Resource | Persisted intent (`requested`) | Live state (`current`) |
-|---|---|---|
-| Runtime  | Yes — written only by `mpd --runtime-create/start/stop/delete` | Computed from podman every query |
-| Project  | Yes — written only by `mpd <p> create/start/stop/delete` | Derived from runtime + project record |
-| Database | **No** — emergent from runtime + project records | Computed from podman |
-| Service  | Always-on | Computed from podman |
+| Resource | Persisted intent (`requested`)                                 | Live state (`current`)                |
+|----------|----------------------------------------------------------------|---------------------------------------|
+| Runtime  | Yes — written only by `mpd --runtime-create/start/stop/delete` | Computed from podman every query      |
+| Project  | Yes — written only by `mpd <p> create/start/stop/delete`       | Derived from runtime + project record |
+| Database | **No** — emergent from runtime + project records               | Computed from podman                  |
+| Service  | Always-on                                                      | Computed from podman                  |
 
 Reconciliation: `mpd --start` walks `requested` and brings `current`
 into agreement. Stopping mpd or rebooting the VM preserves `requested`;
@@ -65,12 +65,12 @@ project on it might need) and `mpd --gc` (planned reclamation).
 
 ## Event catalogue
 
-| Event | Audience | Failure | Timeout | Fires |
-|---|---|---|---|---|
-| `EventMpdPreStop`       | `[.database]` | `.continue` | 120 s | once during `mpd --stop`, before container teardown |
-| `EventProjectPreStart`  | `[.database]` | `.abort`    | 30 s  | per `mpd <p> start`, after runtime + DB are up, before project-setup |
-| `EventProjectPreStop`   | `[.runtime]`  | `.continue` | 30 s  | per `mpd <p> stop`, while project is still running |
-| `EventProjectPostStart` | `[.runtime]`  | `.continue` | 30 s  | per `mpd <p> start`, after project is recorded as running |
+| Event                   | Audience      | Failure     | Timeout | Fires                                                                |
+|-------------------------|---------------|-------------|---------|----------------------------------------------------------------------|
+| `EventMpdPreStop`       | `[.database]` | `.continue` | 120 s   | once during `mpd --stop`, before container teardown                  |
+| `EventProjectPreStart`  | `[.database]` | `.abort`    | 30 s    | per `mpd <p> start`, after runtime + DB are up, before project-setup |
+| `EventProjectPreStop`   | `[.runtime]`  | `.continue` | 30 s    | per `mpd <p> stop`, while project is still running                   |
+| `EventProjectPostStart` | `[.runtime]`  | `.continue` | 30 s    | per `mpd <p> start`, after project is recorded as running            |
 
 ### `EventMpdPreStop`
 
@@ -171,11 +171,11 @@ the audience container as that container's default user.
 
 **Standard env vars** provided to every hook:
 
-| Variable | Description |
-|---|---|
-| `MPD_HOOK_EVENT` | Event name, e.g. `mpd-pre-stop` |
-| `MPD_HOOK_REVISION` | Event revision number (default `1`) |
-| `MPD_HOOK_VERB` | mpd verb that fired the event, e.g. `start`, `stop` |
+| Variable            | Description                                         |
+|---------------------|-----------------------------------------------------|
+| `MPD_HOOK_EVENT`    | Event name, e.g. `mpd-pre-stop`                     |
+| `MPD_HOOK_REVISION` | Event revision number (default `1`)                 |
+| `MPD_HOOK_VERB`     | mpd verb that fired the event, e.g. `start`, `stop` |
 
 Plus event-specific `MPD_HOOK_*` variables — see the catalogue.
 

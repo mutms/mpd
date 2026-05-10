@@ -25,9 +25,9 @@ The host WireGuard peer connects to that local endpoint. After handshake, all tr
 
 ## Subnet layout
 
-| Subnet | Purpose |
-|---|---|
-| `10.163.0.0/24` | `mpd-internal` container network |
+| Subnet          | Purpose                                   |
+|-----------------|-------------------------------------------|
+| `10.163.0.0/24` | `mpd-internal` container network          |
 | `10.164.0.0/30` | WireGuard point-to-point tunnel endpoints |
 
 - macOS tunnel address: `10.164.0.1/32`
@@ -97,11 +97,11 @@ ssh php.runtime.mpd.test
 
 `mpd --setup` performs:
 
-0. Adopt the running Podman machine (must be named `mpd-desktop` or `mpd-desktop-<suffix>`). `mpd` does not create Podman machines.
-1. WireGuard key generation (`~/Developer/mpd/conf/wireguard/`)
-2. WireGuard container creation with `-p 127.0.0.1:51820:51820/udp`
-3. WireGuard tunnel config write/import for macOS app (`mpd-desktop.conf`)
-4. resolver file setup for `mpd.test`
+1. Adopt the running Podman machine (must be named `mpd-desktop` or `mpd-desktop-<suffix>`). `mpd` does not create Podman machines.
+2. WireGuard key generation (`~/Developer/mpd/conf/wireguard/`)
+3. WireGuard container creation with `-p 127.0.0.1:51820:51820/udp`
+4. WireGuard tunnel config write/import for macOS app (`mpd-desktop.conf`)
+5. resolver file setup for `mpd.test`
 
 Once "On Demand" is enabled in WireGuard app, the tunnel reconnects automatically after reboot/sleep.
 

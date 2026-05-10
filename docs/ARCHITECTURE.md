@@ -497,13 +497,13 @@ Five named files with distinct lifecycles. Four are *sourced* at every
 `configure`/`start` invocation (the layered hierarchy); the fifth is a
 *seed* used once at project create time.
 
-| File | Path | Owner | Purpose |
-|---|---|---|---|
-| Runtime defaults | `assets/runtimes/<rt>/mpd-defaults.env` | runtime, in repo (read-only) | "the default value" for `MPD_<RT>_*` keys; sourced 1st |
-| Type defaults | `assets/runtimes/<rt>/project_types/<type>/mpd-defaults.env` | project type, in repo (read-only) | type-specific overrides of the runtime default; sourced 2nd |
-| Per-developer | `~/.mpd/mpd-user.env` (host) → `/srv/personal/mpd-user.env` (synced into the data volume) | developer (manual edit) | cross-project preferences and secrets; sourced 3rd |
-| Per-project | `/srv/projects/<n>/mpd.env` | seeded by `project-create.sh`, mutated by `mpd configure <project> KEY=VALUE` and manual edit | project-scoped truth; sourced 4th, wins |
-| Per-type seed | `assets/runtimes/<rt>/project_types/<type>/mpd-template.env` | project type, in repo (read-only) | NOT sourced — copied to `/srv/projects/<n>/mpd.env` at `create` time |
+| File             | Path                                                                                      | Owner                                                                                         | Purpose                                                              |
+|------------------|-------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|----------------------------------------------------------------------|
+| Runtime defaults | `assets/runtimes/<rt>/mpd-defaults.env`                                                   | runtime, in repo (read-only)                                                                  | "the default value" for `MPD_<RT>_*` keys; sourced 1st               |
+| Type defaults    | `assets/runtimes/<rt>/project_types/<type>/mpd-defaults.env`                              | project type, in repo (read-only)                                                             | type-specific overrides of the runtime default; sourced 2nd          |
+| Per-developer    | `~/.mpd/mpd-user.env` (host) → `/srv/personal/mpd-user.env` (synced into the data volume) | developer (manual edit)                                                                       | cross-project preferences and secrets; sourced 3rd                   |
+| Per-project      | `/srv/projects/<n>/mpd.env`                                                               | seeded by `project-create.sh`, mutated by `mpd configure <project> KEY=VALUE` and manual edit | project-scoped truth; sourced 4th, wins                              |
+| Per-type seed    | `assets/runtimes/<rt>/project_types/<type>/mpd-template.env`                              | project type, in repo (read-only)                                                             | NOT sourced — copied to `/srv/projects/<n>/mpd.env` at `create` time |
 
 **Seeding** (one-shot, at create time): at `mpd create <project>`, the
 project type's `project-create.sh` copies `mpd-template.env` to the project
@@ -525,12 +525,12 @@ Swift's `writeProjectMeta`) using `jq`. Bash "last assignment wins" gives
 the right semantics — each layer overrides earlier ones, and explicit
 `KEY=""` blocks fall-through:
 
-| layer-1 (runtime) | layer-2 (type) | layer-3 (user) | layer-4 (project) | result |
-|---|---|---|---|---|
-| `MPD_PHP_VERSION=8.3` | (absent) | (absent) | (absent) | `8.3` |
-| `MPD_PHP_VERSION=8.3` | `MPD_PHP_VERSION=8.2` | (absent) | (absent) | `8.2` (type override) |
-| `MPD_PHP_VERSION=8.3` | `MPD_PHP_VERSION=8.2` | `MPD_PHP_VERSION=8.4` | (absent) | `8.4` (user override) |
-| `MPD_PHP_VERSION=8.3` | (absent) | (absent) | `MPD_PHP_VERSION=8.5` | `8.5` (project override) |
+| layer-1 (runtime)     | layer-2 (type)        | layer-3 (user)        | layer-4 (project)     | result                   |
+|-----------------------|-----------------------|-----------------------|-----------------------|--------------------------|
+| `MPD_PHP_VERSION=8.3` | (absent)              | (absent)              | (absent)              | `8.3`                    |
+| `MPD_PHP_VERSION=8.3` | `MPD_PHP_VERSION=8.2` | (absent)              | (absent)              | `8.2` (type override)    |
+| `MPD_PHP_VERSION=8.3` | `MPD_PHP_VERSION=8.2` | `MPD_PHP_VERSION=8.4` | (absent)              | `8.4` (user override)    |
+| `MPD_PHP_VERSION=8.3` | (absent)              | (absent)              | `MPD_PHP_VERSION=8.5` | `8.5` (project override) |
 
 `MPD_DB` is the same: a project type that doesn't use a DB ships `MPD_DB=""`
 in its `mpd-template.env` (astro, bare) so the seeded project file blocks
@@ -598,13 +598,13 @@ and Platform can share the same file without clobbering each other.
 
 **Writers:**
 
-| Path | Writer | Values | Behavior |
-|---|---|---|---|
-| `mpd-desktop` | `Mpd.Core.Platform.ensureWritten(...)` from `DesktopActionSetup` | `desktop`, `""` | bootstrap on first `mpd --setup`; no prompt |
-| `mpd-machine` via UTM | `setup/macos-utm/lib/create-vm.sh` (over SSH) | `macos-utm`, `${VM_IP}` | written before `mpd --setup` runs in the VM |
-| `mpd-machine` via Ubuntu+KVM | `setup/ubuntu-kvm/lib/create-vm.sh` (over SSH) | `ubuntu-kvm`, `${VM_IP}` | written before `mpd --setup` runs in the VM |
-| `mpd-machine` via Windows/Hyper-V | `setup/windows-hyperv/lib/create-vm.ps1` (over SSH) | `windows-hyperv`, `${VmIp}` | written before `mpd --setup` runs in the VM |
-| `mpd-machine` via sandbox | `setup/sandbox/lib/provision.sh` | `sandbox`, `""` | written before `mpd --setup` runs inside the Ubuntu VM |
+| Path                              | Writer                                                           | Values                      | Behavior                                               |
+|-----------------------------------|------------------------------------------------------------------|-----------------------------|--------------------------------------------------------|
+| `mpd-desktop`                     | `Mpd.Core.Platform.ensureWritten(...)` from `DesktopActionSetup` | `desktop`, `""`             | bootstrap on first `mpd --setup`; no prompt            |
+| `mpd-machine` via UTM             | `setup/macos-utm/lib/create-vm.sh` (over SSH)                    | `macos-utm`, `${VM_IP}`     | written before `mpd --setup` runs in the VM            |
+| `mpd-machine` via Ubuntu+KVM      | `setup/ubuntu-kvm/lib/create-vm.sh` (over SSH)                   | `ubuntu-kvm`, `${VM_IP}`    | written before `mpd --setup` runs in the VM            |
+| `mpd-machine` via Windows/Hyper-V | `setup/windows-hyperv/lib/create-vm.ps1` (over SSH)              | `windows-hyperv`, `${VmIp}` | written before `mpd --setup` runs in the VM            |
+| `mpd-machine` via sandbox         | `setup/sandbox/lib/provision.sh`                                 | `sandbox`, `""`             | written before `mpd --setup` runs inside the Ubuntu VM |
 
 **Reader:** `Mpd.Core.Platform.load()` (Swift). Throws with a fix-it message
 when missing, pointing at the matching bootstrap script. The cloud-init

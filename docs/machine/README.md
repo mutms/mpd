@@ -59,11 +59,11 @@ supported hosts. End state of any path: a Debian Trixie VM with `mpd`
 built and reachable, plus host-side networking (route + DNS resolver
 + CA trust) configured automatically.
 
-| Host OS | Hypervisor | Bootstrap |
-|---|---|---|
-| **macOS** (Apple Silicon) | UTM with QEMU backend | [`setup/macos-utm/`](../../setup/macos-utm/README.md) — double-click `setup.command`. QEMU+SPICE gives clipboard sync, dynamic display resize, and visible DHCP leases in UTM's GUI. `start.command` / `stop.command` / `uninstall.command` cover the lifecycle. |
-| **Ubuntu 26.04 LTS** | libvirt + KVM | [`setup/ubuntu-kvm/`](../../setup/ubuntu-kvm/README.md) — `bash setup.sh` for end-to-end VM creation + host networking + a desktop launcher in GNOME Activities. `start.sh` / `stop.sh` / `uninstall.sh` cover the lifecycle. |
-| **Windows** | Hyper-V (free with Windows Pro) | [`setup/windows-hyperv/`](../../setup/windows-hyperv/README.txt) — `setup.cmd` does VM creation + cloud-init + repo clone + `mpd` build + Windows networking in one shot. |
+| Host OS                   | Hypervisor                      | Bootstrap                                                                                                                                                                                                                                                        |
+|---------------------------|---------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **macOS** (Apple Silicon) | UTM with QEMU backend           | [`setup/macos-utm/`](../../setup/macos-utm/README.md) — double-click `setup.command`. QEMU+SPICE gives clipboard sync, dynamic display resize, and visible DHCP leases in UTM's GUI. `start.command` / `stop.command` / `uninstall.command` cover the lifecycle. |
+| **Ubuntu 26.04 LTS**      | libvirt + KVM                   | [`setup/ubuntu-kvm/`](../../setup/ubuntu-kvm/README.md) — `bash setup.sh` for end-to-end VM creation + host networking + a desktop launcher in GNOME Activities. `start.sh` / `stop.sh` / `uninstall.sh` cover the lifecycle.                                    |
+| **Windows**               | Hyper-V (free with Windows Pro) | [`setup/windows-hyperv/`](../../setup/windows-hyperv/README.txt) — `setup.cmd` does VM creation + cloud-init + repo clone + `mpd` build + Windows networking in one shot.                                                                                        |
 
 Other hosts (Fedora, Arch, NixOS, cloud Ubuntu instances, anywhere
 the matched-host bootstrap doesn't apply) → use the

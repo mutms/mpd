@@ -147,33 +147,33 @@ either a human or an AI agent to invoke directly. Full taxonomy in
 
 **Base tools (available in every runtime):**
 
-| Tool | What it does |
-|---|---|
-| `claude-install` | Idempotent install of Claude Code (Anthropic's CLI) to `~/.local/bin/claude` via the upstream `curl \| bash` installer. Re-runs no-op. |
-| `node-install` | Idempotent install of nvm + Node.js (LTS by default) into `$HOME/.nvm/` (upstream-standard). After install, `nvm`/`node`/`npm` are on PATH for new login shells; `nvm install <ver>` then works without sudo. Re-runs no-op. |
+| Tool             | What it does                                                                                                                                                                                                                 |
+|------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `claude-install` | Idempotent install of Claude Code (Anthropic's CLI) to `~/.local/bin/claude` via the upstream `curl \| bash` installer. Re-runs no-op.                                                                                       |
+| `node-install`   | Idempotent install of nvm + Node.js (LTS by default) into `$HOME/.nvm/` (upstream-standard). After install, `nvm`/`node`/`npm` are on PATH for new login shells; `nvm install <ver>` then works without sudo. Re-runs no-op. |
 
 **Runtime-level (PHP runtime):**
 
-| Tool | What it does |
-|---|---|
-| `php` | Project-aware PHP wrapper — picks the version pinned in `/srv/meta/<project>/project.json`, falls back to system default. |
-| `composer` | The Composer phar; installed at `/usr/local/bin/composer` by `composer-install` at provision time. |
-| `composer-install` | Idempotent install of Composer to `/usr/local/bin/`. Re-runs no-op. |
+| Tool               | What it does                                                                                                                                      |
+|--------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
+| `php`              | Project-aware PHP wrapper — picks the version pinned in `/srv/meta/<project>/project.json`, falls back to system default.                         |
+| `composer`         | The Composer phar; installed at `/usr/local/bin/composer` by `composer-install` at provision time.                                                |
+| `composer-install` | Idempotent install of Composer to `/usr/local/bin/`. Re-runs no-op.                                                                               |
 | `composer-upgrade` | Force-reinstalls Composer (bypass idempotency). Use instead of `composer self-update` — the phar is root-owned and self-update can't write to it. |
 
 **Project-type-level (Moodle — available when a Moodle project is in the runtime):**
 
-| Tool | What it does |
-|---|---|
-| `mdl-install` | Run `admin/cli/install_database.php` for the current project, with composer install + sensible defaults from `mpd.env`. |
-| `mdl-cache-purge` | Run `admin/cli/purge_caches.php` for the current project. |
-| `mdl-cron` | Run `admin/cli/cron.php` (one cycle) for the current project. |
-| `mdl-upgrade` | Run `admin/cli/upgrade.php --non-interactive` for the current project. Use after a git pull that updates code. |
-| `mdl-data-purge` | Revert the current project to pre-configured state — drops the DB, wipes dataroots (incl. phpunit + behat), removes generated config files. Preserves `mpd.env` (edit before re-configure to switch DB engine etc.) and the source tree. Prompts for the project name to confirm; pass `--yes` to skip. |
-| `phpunit` / `phpunit-init` / `phpunit-util` | Run, initialize, and inspect Moodle's PHPUnit suite. |
-| `behat` / `behat-init` / `behat-util` | Run, initialize, and inspect Moodle's Behat suite. |
-| `grunt` | Wraps `npm install` + `grunt` for the current project's Moodle JS build. |
-| `mpci` / `mpci-install` | Moodle Plugin CI runner and installer. Lives at `/opt/mpd/mpci/` (dev-owned, in the container overlay — re-provision on runtime recreate, like `~/.nvm`). |
+| Tool                                        | What it does                                                                                                                                                                                                                                                                                            |
+|---------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `mdl-install`                               | Run `admin/cli/install_database.php` for the current project, with composer install + sensible defaults from `mpd.env`.                                                                                                                                                                                 |
+| `mdl-cache-purge`                           | Run `admin/cli/purge_caches.php` for the current project.                                                                                                                                                                                                                                               |
+| `mdl-cron`                                  | Run `admin/cli/cron.php` (one cycle) for the current project.                                                                                                                                                                                                                                           |
+| `mdl-upgrade`                               | Run `admin/cli/upgrade.php --non-interactive` for the current project. Use after a git pull that updates code.                                                                                                                                                                                          |
+| `mdl-data-purge`                            | Revert the current project to pre-configured state — drops the DB, wipes dataroots (incl. phpunit + behat), removes generated config files. Preserves `mpd.env` (edit before re-configure to switch DB engine etc.) and the source tree. Prompts for the project name to confirm; pass `--yes` to skip. |
+| `phpunit` / `phpunit-init` / `phpunit-util` | Run, initialize, and inspect Moodle's PHPUnit suite.                                                                                                                                                                                                                                                    |
+| `behat` / `behat-init` / `behat-util`       | Run, initialize, and inspect Moodle's Behat suite.                                                                                                                                                                                                                                                      |
+| `grunt`                                     | Wraps `npm install` + `grunt` for the current project's Moodle JS build.                                                                                                                                                                                                                                |
+| `mpci` / `mpci-install`                     | Moodle Plugin CI runner and installer. Lives at `/opt/mpd/mpci/` (dev-owned, in the container overlay — re-provision on runtime recreate, like `~/.nvm`).                                                                                                                                               |
 
 The `mdl-` prefix marks Moodle-specific operations whose bare name
 would otherwise collide with system commands or be too generic
@@ -182,10 +182,10 @@ would otherwise collide with system commands or be too generic
 
 **Project-type-level (Astro — when an Astro project is in the runtime):**
 
-| Tool | What it does |
-|---|---|
+| Tool            | What it does                                                                  |
+|-----------------|-------------------------------------------------------------------------------|
 | `astro-rebuild` | Stop service, clear `node_modules`, `npm install` + `npm run build`, restart. |
-| `astro-upgrade` | Run `npx @astrojs/upgrade`, rebuild, restart the project's systemd unit. |
+| `astro-upgrade` | Run `npx @astrojs/upgrade`, rebuild, restart the project's systemd unit.      |
 
 The `astro-` prefix follows the same rule as `mdl-` — disambiguation
 for project-type-specific operations whose bare name (`rebuild`,
