@@ -138,21 +138,23 @@ passwordless sudo, agent-forwarded git auth, and the project tree at
 The host stays the thin coordination layer; the runtime is the
 workspace.
 
-### One-click IDE launch from the portal
+### IDE connection details from the portal
 
-You don't have to remember any of the connection details. Open
-`https://mpd.test/`, click **details** on a running project, and the
-popover shows two buttons:
+Open `https://mpd.test/`, click **details** on a running project, and
+the popover shows an *Open in IDE* section:
 
-- **VS Code** → `vscode://` Remote-SSH link with host + path
-  pre-filled. First click prompts to install the "Remote - SSH"
+- **VS Code** → one-click `vscode://` Remote-SSH link with host +
+  path pre-filled. First click prompts to install the "Remote - SSH"
   extension; subsequent clicks open the project directly.
-- **PHPStorm** → `jetbrains-gateway://` link with the same
-  pre-filled connection details. Requires JetBrains Gateway
-  installed; opens the connect dialog with everything ready.
+- **PHPStorm** → connection details (Username / Host / Port / Project
+  directory) printed as plain text. JetBrains Gateway's URL-launch
+  scheme is restrictive and varies between versions, so we don't ship
+  a clickable link — open Gateway, *New Connection → SSH*, and paste
+  the four values. Gateway remembers the connection on subsequent
+  launches.
 
-Buttons appear only when the project is running. Project types that
-don't hold editable code (e.g. `cftunnel`) opt out via
+The section appears only when the project is running. Project types
+that don't hold editable code (e.g. `cftunnel`) opt out via
 `"ideLinks": false` in their `configuration.json` and don't render
 the section.
 

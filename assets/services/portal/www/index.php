@@ -614,9 +614,6 @@ foreach ($services as $svc) {
             $devUser = devUser();
             $projectPath = "/srv/projects/{$pName}";
             $vscodeUrl = "vscode://vscode-remote/ssh-remote+{$devUser}@{$sshHost}{$projectPath}";
-            $phpstormUrl = "jetbrains-gateway://connect#host={$sshHost}&user=" . rawurlencode($devUser)
-                . "&port=22&type=ssh&deploy=false&projectPath=" . rawurlencode($projectPath)
-                . "&idePath=";
         ?>
             <h4>Open in IDE</h4>
             <ul class="urls">
@@ -624,9 +621,14 @@ foreach ($services as $svc) {
                     <span class="kind-badge kind-ide">VS Code</span>
                     <a href="<?= h($vscodeUrl) ?>">Remote-SSH connect</a>
                 </li>
-                <li>
+                <li style="align-items:flex-start">
                     <span class="kind-badge kind-ide">PHPStorm</span>
-                    <a href="<?= h($phpstormUrl) ?>">Gateway connect</a>
+                    <span class="meta">
+                        Username: <?= h($devUser) ?><br>
+                        Host: <?= h($sshHost) ?><br>
+                        Port: 22<br>
+                        Project directory: <?= h($projectPath) ?>
+                    </span>
                 </li>
             </ul>
         <?php endif; ?>
