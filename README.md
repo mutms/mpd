@@ -12,8 +12,9 @@ Three modes, distinguished by where you sit and where `mpd` runs:
 
 - **Sandbox VM** — full GNOME desktop inside the VM. GNOME terminal
   runs `mpd`, GNOME Firefox visits `mpd.test`, you live in the VM
-  window. Lowest friction; safest for AI-driven workloads.
-  Recommended starting point.
+  window. Lowest friction; safest for AI-driven workloads. One
+  command (`demo moodle v5.2.0`) gets you a fully-installed Moodle
+  site for kicking the tires. Recommended starting point.
 - **`mpd-machine`** — automated headless VM. You stay on your host
   (macOS / Ubuntu / Windows): your host browser visits `*.mpd.test`
   directly (via the route + DNS the bootstrap configured); your host
