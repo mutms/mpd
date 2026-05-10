@@ -301,6 +301,56 @@ All three modes share the same `mpd.env` configuration model, the
 same `https://<project>.mpd.test/` URLs, the same SSH-into-runtime
 pattern. You can switch between them without re-learning.
 
+## Why Swift
+
+mpd is a CLI tool that has to run on macOS *and* on Debian/Ubuntu
+inside a VM, drive `podman` / `systemctl` / `dnsmasq`, manage local
+JSON state, and offer a minimal TUI. The natural shortlist for that
+kind of work is Go, Rust, or Swift. I picked Swift and I'd pick it
+again — for four reasons that hit harder than I expected:
+
+- **Native compiled binary, single file.** `make install` produces
+  `bin/mpd` and that's it. No runtime to install on the VM, no
+  language version manager, no virtualenv. The systemd unit just
+  references `/usr/local/bin/mpd`.
+- **Same source on both sides.** The Swift compiler runs on macOS and
+  Linux; Foundation works on both. The platform split is a single
+  `#if os(macOS)` / `#if os(Linux)` on a handful of files under
+  `mpd/Environment/{Desktop,Machine}/`. No FFI, no conditional deps,
+  no per-platform build matrix to babysit.
+- **Strong static typing where it matters.** Renaming
+  `entry.status` → `entry.requested` across ~20 call sites: the
+  compiler enumerates every place I missed. Adding a new `Audience`
+  case in the hooks engine: the dispatcher's `switch` stops being
+  exhaustive and refuses to compile until I handle the new case.
+  This is exactly the safety property you want for a tool that
+  reconciles state across containers, runtimes, projects, and DBs.
+- **`swift-argument-parser` is genuinely good.** Adding `--restart`
+  was three lines of `@Flag` plus a handler. Long/short flags,
+  defaults, validation, generated help — all declarative.
+
+Two non-obvious wins specific to mpd's audience:
+
+- **PHPStorm has a competent Swift plugin.** Moodle developers
+  already live in PHPStorm. They don't have to install Xcode or
+  learn a second IDE — they can open `~/Developer/mpd/` next to
+  their Moodle workspace and edit Swift in the same window where
+  they edit PHP. Code completion, navigation, basic refactors all
+  work.
+- **AI coding agents handle Swift well.** Claude Code, Codex, and
+  the rest navigate a Swift codebase as confidently as TypeScript
+  or Python. Strong typing helps the model: when an agent proposes
+  a change the compiler validates it immediately, so failure modes
+  show up at compile time instead of in production.
+
+What I gave up is Swift's smaller Linux package ecosystem versus
+Go's or Rust's. For mpd that hasn't bitten yet — we have exactly one
+external dependency (`swift-argument-parser`); Foundation and shell-
+outs through `Mpd.Podman` cover the rest. The architecture rule
+"only `Mpd.Podman` shells out to the host" turns most of mpd into
+declarative orchestration of other tools rather than heavy in-Swift
+logic — and that's exactly the shape Swift handles well.
+
 ## Where mpd is going
 
 Near-term plans and parking-lot ideas live in

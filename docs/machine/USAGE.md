@@ -251,8 +251,10 @@ mpd                              # interactive TUI
 mpd --status                     # text status of services + projects
 mpd --setup-info                 # reprint laptop-side recipe
 
-mpd --start                      # start mpd services + DNS verify
-mpd --stop                       # graceful stop of mpd services
+mpd --start                      # reconcile current → requested (start runtimes/projects with state=running)
+mpd --stop                       # graceful DB shutdown via EventMpdPreStop, then sudo systemctl poweroff
+mpd --restart                    # graceful stop, then sudo systemctl reboot; mpd auto-starts on boot
+mpd --check-hooks                # cross-reference asset hook dirs against the Event catalogue
 mpd --uninstall                  # remove ~/.mpd state, keep conf/
 
 mpd list                         # list all projects (default)

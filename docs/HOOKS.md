@@ -1,16 +1,8 @@
 # Hooks
 
-> **Status:** v1 in trunk; acceptance test pending (the VM-reboot
-> scenario below). Engine, four events, DB-side hook mount, diagnostics,
-> and systemd shutdown integration are all wired. Polish items
-> (parallel-in-audience execution, per-event timeout enforcement,
-> `--verbose` streaming) are deferred and called out below.
-
-mpd's lifecycle behavior is currently hardcoded in Swift: per-runtime
-stop sequences, per-DB-type init, dnsmasq registration on project start,
-and so on. This contradicts the asset-additive model the rest of mpd
-follows. Hooks move that logic out of Swift and into bash scripts that
-asset authors can drop into well-known directories.
+API reference for mpd's hook system: typed Swift `Event` classes fire
+at well-defined lifecycle points; bash scripts under
+`hooks/<event-name>.d/` in container assets observe them.
 
 Familiar shape: Debian's `cron.daily/`, systemd's `*.d/` drop-ins, git
 hooks, NetworkManager's `dispatcher.d/`. `run-parts`-style.
@@ -29,359 +21,352 @@ Three nouns, no overlap:
 
 Events publish, hooks subscribe, audiences receive.
 
-## Why this exists
+## Quick start
 
-Two pain points motivate v1:
+Add a hook script to the right asset directory, make it executable.
+That's it — the dispatcher discovers it on the next event firing.
 
-1. **Hardcoded per-runtime / per-DB lifecycle.** Stopping a `php` runtime
-   needs a different ritual from a `node` runtime; provisioning a
-   project's DB differs across postgres / mysql / mariadb. Today this is
-   Swift code. Adding a new runtime or DB type means editing Swift,
-   recompiling, re-symlinking — at odds with mpd's "drop assets in,
-   restart" model everywhere else.
+Example: graceful postgres shutdown when `mpd --stop` runs:
 
-2. **Postgres recovery on next start after VM reboot.** When the
-   mpd-machine VM is power-cycled (or even cleanly rebooted), DB
-   containers come up doing crash recovery. Moodle's first request after
-   resume can hit `Database connection failed` while recovery is in
-   flight. Tracked as "Graceful shutdown / postgres recovery" in
-   `docs/ROADMAP.md`. The hook system + systemd shutdown integration
-   closes this directly.
+```
+assets/databases/postgres/hooks/mpd-pre-stop.d/10-graceful-stop
+```
+
+```bash
+#!/bin/bash
+set -euo pipefail
+echo "Sending SIGTERM (smart shutdown) to postgres..."
+kill -TERM 1 2>/dev/null || true
+```
+
+Run `chmod +x` on the file, then `mpd --check-hooks` to confirm it's
+recognised. `mpd --stop` will fire it.
 
 ## Resource lifecycle model
 
-The shape of the persistence model the engine is built on:
+The hook engine assumes a specific persistence model — important for
+understanding *when* events fire:
 
-| Resource | Persisted desired state? | When does it run? |
+| Resource | Persisted intent (`requested`) | Live state (`current`) |
 |---|---|---|
-| Runtime  | Yes (start/stop is explicit user intent) | When state=started AND mpd is up |
-| Project  | Yes (start/stop is explicit user intent) | When state=started AND its runtime is up |
-| Database | **No** — demand-driven by runtime | Pre-warmed at runtime start for every project on the runtime (running OR stopped) |
-| Service  | Always | Whenever mpd is up |
+| Runtime  | Yes — written only by `mpd --runtime-create/start/stop/delete` | Computed from podman every query |
+| Project  | Yes — written only by `mpd <p> create/start/stop/delete` | Derived from runtime + project record |
+| Database | **No** — emergent from runtime + project records | Computed from podman |
+| Service  | Always-on | Computed from podman |
 
-Databases are not first-class lifecycle citizens. Their lifecycle is
-derived from runtime + project state: when a runtime starts, mpd
-pre-warms every DB needed by any project on that runtime — including
-stopped projects, so subsequent `mpd start <project>` never blocks on a
-cold DB. Manual `mpd db-start` ensures-up but isn't recorded as intent.
-DBs never auto-stop — `mpd --gc` (future) reclaims unused ones
-explicitly. Devs poke at DBs after stopping projects; beginners use one
-DB and never need optimization. Release-test machines that carry many
-DB versions are kept on a separate mpd-machine by convention, so the
-daily dev machine stays small.
+Reconciliation: `mpd --start` walks `requested` and brings `current`
+into agreement. Stopping mpd or rebooting the VM preserves `requested`;
+`mpd --start` (or the systemd `mpd.service` unit at boot) restores
+running state. See `docs/ARCHITECTURE.md` §5 for the full state model.
 
-## v1 scope
+DBs and services have no `requested` because they're emergent. DB
+lifecycle is driven by runtime start (which pre-warms every DB any
+project on it might need) and `mpd --gc` (planned reclamation).
 
-The engine plus four events.
+## Event catalogue
 
-### Engine features
+| Event | Audience | Failure | Timeout | Fires |
+|---|---|---|---|---|
+| `EventMpdPreStop`       | `[.database]` | `.continue` | 120 s | once during `mpd --stop`, before container teardown |
+| `EventProjectPreStart`  | `[.database]` | `.abort`    | 30 s  | per `mpd <p> start`, after runtime + DB are up, before project-setup |
+| `EventProjectPreStop`   | `[.runtime]`  | `.continue` | 30 s  | per `mpd <p> stop`, while project is still running |
+| `EventProjectPostStart` | `[.runtime]`  | `.continue` | 30 s  | per `mpd <p> start`, after project is recorded as running |
 
-- **Dispatcher** — Swift API to fire typed events; enumerates audience
-  containers; invokes hook scripts via `podman exec`; aggregates output
-  and exit codes.
-- **Audience routing** — each event class declares which container
-  kinds receive it; dispatcher delivers in parallel across containers,
-  sequentially within a container's `<event>.d/` directory (numeric
-  prefix order, run-parts style).
-- **Typed env-var contract** — each `Event` class's instance fields
-  produce `MPD_HOOK_*` variables; contract is documented per event.
-- **Failure modes** — `.abort` (verb fails if any hook fails) and
-  `.continue` (failure logged but verb proceeds). Declared per event.
-- **Timeouts** — per event; SIGTERM, wait 5s, SIGKILL, then apply the
-  failure mode.
-- **Progress UX** — quiet default (spinner + container + elapsed); live
-  stream with `--verbose`; full output dumped on failure.
-- **Diagnostic engine** — on `mpd --setup`, walks hook directories,
-  cross-references against the Event catalogue, warns on orphans
-  (unknown events, removed audiences) and revision bumps.
-- **Systemd integration** — installs a user-level systemd unit that
-  runs `mpd --stop` on `poweroff.target` / `reboot.target` /
-  `suspend.target`, so VM shutdown triggers graceful DB shutdown
-  via hooks.
+### `EventMpdPreStop`
 
-### v1 event catalogue
+Fires once during `mpd --stop`, before any container teardown. DB
+containers do graceful shutdown so the next start does not trigger
+crash recovery.
 
-| Event | Audience | Failure | Timeout |
-|---|---|---|---|
-| `EventMpdPreStop`       | `[.database]` | `.continue` | 120s |
-| `EventProjectPreStart`  | `[.database]` | `.abort`    | 30s  |
-| `EventProjectPreStop`   | `[.runtime]`  | `.continue` | 30s  |
-| `EventProjectPostStart` | `[.runtime]`  | `.continue` | 30s  |
+- **Audience**: every running DB container on the host.
+- **Failure**: `.continue` — a stop must always complete.
+- **Timeout**: 120 s (declared; not yet enforced — see "Limitations").
+- **Env vars**: just the standard set (no event-specific extras).
 
-**`EventMpdPreStop`** — fires once during `mpd --stop`, before any
-container teardown. DB containers do graceful shutdown
-(`pg_ctl stop -m smart`, `mysqladmin shutdown`). Closes the postgres
-recovery item from `docs/ROADMAP.md`.
+Shipped scripts:
+- `assets/databases/postgres/hooks/mpd-pre-stop.d/10-graceful-stop`
+- `assets/databases/mariadb/hooks/mpd-pre-stop.d/10-graceful-stop`
+- `assets/databases/mysql/hooks/mpd-pre-stop.d/10-graceful-stop`
 
-**`EventProjectPreStart`** — fires per-project-start, after the
-runtime + DB are up but before project-setup runs. Hook authors can
-apply per-project schema migrations, seed data, ensure indexes, etc.,
-on a DB guaranteed to be reachable.
+All three send SIGTERM to PID 1 (the daemon) and exit immediately;
+the kernel keeps the daemon running until smart shutdown completes,
+then the container exits. Exit code is preserved; the dispatcher
+reports `✓` if the SIGTERM signal was sent.
 
-**`EventProjectPreStop`** — fires per-project-stop, before container
-teardown. Runtime containers do graceful shutdown (php-fpm signal,
-node SIGTERM). Migrates today's hardcoded Swift logic.
+### `EventProjectPreStart`
 
-**`EventProjectPostStart`** — fires per-project-start, after the
-runtime container is up and reachable. Runtime containers do
-post-start tasks (cache warming, log prep, etc.). Migrates any
-post-start logic currently in Swift into assets.
+Fires per project start, after the runtime + project's DB are
+ensured up but before the project's `project-setup.sh` runs.
 
-Why these four for v1: they cover **mpd-level lifecycle + parallel
-fan-out** (`EventMpdPreStop`), **per-project events with non-obvious
-audience** (`EventProjectPreStart` → DB), the **`.abort` vs `.continue`
-distinction**, the **pre vs post phase distinction**, and they ship
-two real wins on day one (graceful DB shutdown closes a known bug;
-hardcoded runtime-stop logic moves to assets).
+- **Audience**: the project's DB container only.
+- **Failure**: `.abort` — pre-conditions should stop the verb if they
+  fail so the user sees the problem immediately.
+- **Timeout**: 30 s.
+- **Env vars** (in addition to the standard set):
+  - `MPD_HOOK_PROJECT` — project name
+  - `MPD_HOOK_RUNTIME` — runtime name
+  - `MPD_HOOK_DB_ENGINE` — `postgres` / `mariadb` / `mysql`
+  - `MPD_HOOK_DB_VERSION` — e.g. `latest`, `17`, `10.6`
 
-### v1 acceptance test
+Use cases (no scripts ship in v1; this is the fire point for asset
+authors): per-project schema migrations, seed data, ensure-indexes,
+custom DB roles.
 
-The VM-reboot scenario, exercises persistence + ensure-up + graceful
-shutdown end-to-end:
+### `EventProjectPreStop`
 
-1. Create three runtimes (`php`, `node`, `trixie`); stop `trixie`,
-   leave the others running.
-2. Create several projects across the runtimes, each using a different
-   DB type (postgres, mysql, mariadb); stop a few.
-3. Manually start a couple of unused DBs (no project demands them).
-4. `mpd --stop` (triggers `EventMpdPreStop` → graceful DB shutdown).
-5. Manually reboot the VM.
-6. `mpd --start`.
+Fires per project stop, while the project's runtime is still running.
 
-Expected end state: same runtimes started (php + node, not trixie);
-same projects started (the previously-started subset); only DBs needed
-by running projects are up. The "extra" DBs from step 3 do not come
-back — nothing demanded them.
+- **Audience**: the project's runtime container only.
+- **Failure**: `.continue` — stops must always complete.
+- **Timeout**: 30 s.
+- **Env vars**: same as `EventProjectPreStart` (project, runtime,
+  DB engine + version).
 
-Postgres comes up clean (no recovery), proving the systemd shutdown
-integration worked end-to-end.
+Use cases: drain in-flight work, flush per-project caches, graceful
+shutdown of project-specific services running inside the runtime.
+Today's `sudo systemctl stop mpd-<project>` for project types with
+`stopSystemd: true` is still a Swift code path; that one-liner is a
+candidate to migrate into a project-type hook here.
+
+### `EventProjectPostStart`
+
+Fires per project start, after the project is recorded as running and
+its URL is live.
+
+- **Audience**: the project's runtime container only.
+- **Failure**: `.continue` — the project is already started; a hook
+  failure shouldn't undo that.
+- **Timeout**: 30 s.
+- **Env vars**: same as `EventProjectPreStart`.
+
+Use cases: cache warming, log rotation prep, "first request"
+synthetic warm-up.
 
 ## Asset layout
 
-Hooks live in `hooks/<event-name>.d/` under each layer that may
-contribute. Layered, alphabetical within each layer:
+Hook scripts live under `hooks/<event-name>.d/` in the layer that
+matches their audience kind:
 
 ```
-assets/runtime-base/hooks/<event>.d/                          # every runtime
-assets/runtimes/<rt>/hooks/<event>.d/                         # specific runtime
-assets/runtimes/<rt>/project_types/<type>/hooks/<event>.d/    # type-specific
-assets/databases/<dbtype>/hooks/<event>.d/                    # DB containers
-assets/services/<svc>/hooks/<event>.d/                        # service containers
+assets/runtime-base/hooks/<event>.d/                         # → .runtime audience, every runtime
+assets/runtimes/<rt>/hooks/<event>.d/                        # → .runtime audience, specific runtime
+assets/runtimes/<rt>/project_types/<type>/hooks/<event>.d/   # → .runtime audience, type-scoped
+assets/databases/<dbtype>/hooks/<event>.d/                   # → .database audience, per engine
+assets/services/<svc>/hooks/<event>.d/                       # → .service(name) audience
 ```
 
 Numeric prefixes (`10-`, `90-`) order scripts within a directory
 (run-parts style). Cross-layer order: strictly by layer
 (base → runtime → type), then alphabetical within each.
 
-Event-name → directory name: strip `Event` prefix, kebab-case.
+Event-name → directory name conversion: strip the `Event` prefix and
+kebab-case the rest. Examples:
+`EventMpdPreStop` → `mpd-pre-stop.d/`,
 `EventProjectPreStart` → `project-pre-start.d/`.
 
-## Engine
+## Hook script contract
 
-### Swift API
+A hook is an executable script in `hooks/<event-name>.d/`, run inside
+the audience container as that container's default user.
+
+**Standard env vars** provided to every hook:
+
+| Variable | Description |
+|---|---|
+| `MPD_HOOK_EVENT` | Event name, e.g. `mpd-pre-stop` |
+| `MPD_HOOK_REVISION` | Event revision number (default `1`) |
+| `MPD_HOOK_VERB` | mpd verb that fired the event, e.g. `start`, `stop` |
+
+Plus event-specific `MPD_HOOK_*` variables — see the catalogue.
+
+**Exit code**: `0` = success. Non-zero triggers the event's failure
+mode (`.abort` or `.continue`).
+
+**stdout / stderr**: captured by the dispatcher and printed to the
+user. On failure, the full output is shown in the verb output. (A
+`--verbose` streaming mode is planned but not yet shipped — see
+"Limitations".)
+
+**Idempotence**: hook scripts should be idempotent where possible.
+The dispatcher is sequential within an audience (see "Limitations"),
+so a hook can assume earlier hooks in its layer chain have already
+completed.
+
+## Swift API
+
+Add an event by defining a struct that conforms to `Mpd.Hooks.Event`:
 
 ```swift
-protocol Event {
-    static var name: String { get }              // auto-derived from type name
-    static var revision: Int { get }             // default 1
-    static var audiences: [Audience] { get }
-    static var onFailure: FailureMode { get }
-    static var timeout: TimeInterval { get }     // default 30s
-    var env: [String: String] { get }            // typed → MPD_HOOK_*
-}
+struct EventXxxYyy: Mpd.Hooks.Event {
+    // Optional context — surfaced to hook scripts as MPD_HOOK_* vars.
+    let project: String
 
-enum Audience {
-    case runtime              // project's runtime container, or all running runtimes for mpd-level events
-    case database             // project's DB container, or all running DBs for mpd-level events
-    case service(String)      // a named service container
-}
+    // Audience list. Multiple audiences = event delivered to each kind.
+    static let audiences: [Mpd.Hooks.Audience] = [.runtime]
 
-enum FailureMode {
-    case abort                // hook failure aborts the verb
-    case `continue`           // hook failure logs but verb proceeds
+    // Failure mode — abort the firing verb, or continue past failures.
+    static let onFailure: Mpd.Hooks.FailureMode = .continue
+
+    // Optional overrides; sensible defaults via the protocol.
+    // static let revision: Int = 1
+    // static let timeout: TimeInterval = 30
+
+    var env: [String: String] {
+        // Map context fields to MPD_HOOK_<key> env vars.
+        // The dispatcher prefixes with "MPD_HOOK_".
+        ["PROJECT": project]
+    }
 }
 ```
 
-Three phases possible per verb (`Pre` / `Action` / `Post`). v1 only uses
-`Pre` and `Post`; the `Action` phase exists in the design for verbs whose
-mid-execution checkpoint becomes useful (different audience, different
-context vars). Add when needed.
-
-Verbs fire via:
+Fire from a verb handler:
 
 ```swift
-try await Mpd.Events.fire(EventProjectPreStart(
-    project: name,
-    runtime: runtime,
-    db: dbType
-))
+try Mpd.Hooks.fire(
+    EventXxxYyy(project: name),
+    verb: "start"
+)
 ```
 
-### Hook script contract
+The dispatcher:
 
-A hook is an executable script in `hooks/<event-name>.d/`, run inside the
-audience container as that container's default user.
+1. Resolves the audience containers (running containers matching each
+   audience kind, scoped to the project's runtime/DB for project-level
+   events).
+2. For each container, walks the layered hook directories, sorts by
+   layer + numeric-prefix order, and execs each script via
+   `podman exec` with `MPD_HOOK_*` env vars set.
+3. Handles failures per `onFailure`: `.abort` rethrows; `.continue`
+   logs and proceeds.
 
-Standard env vars provided to every hook:
+The full type definitions live in `mpd/Hooks/Hooks.swift`. Concrete
+event classes are in `mpd/Hooks/Event{Mpd,Project,Runtime}.swift`.
 
-- `MPD_HOOK_EVENT` — event name (e.g. `project-pre-start`)
-- `MPD_HOOK_REVISION` — event revision number
-- `MPD_HOOK_VERB` — the mpd verb that fired this (e.g. `start`, `stop`)
+## Failure modes
 
-Plus event-specific `MPD_HOOK_*` variables documented per event in the
-catalogue.
-
-Exit code: 0 = success. Non-zero triggers the event's failure mode.
-
-stdout/stderr: captured. Default UX shows a spinner and elapsed time.
-`--verbose` streams output live. Failure dumps full output regardless.
-
-### Audience routing
-
-Within an event:
-
-- **Across containers in an audience**: parallel. Independent containers
-  shouldn't serialize each other (postgres + mariadb both in `.database`
-  for `EventMpdPreStop` shut down in parallel).
-- **Within a container's `<event>.d/`**: sequential, in numeric-prefix
-  order. `10-foo.sh` before `90-bar.sh`.
-
-Across layers (base / runtime / type), the dispatcher concatenates
-hook lists strictly by layer order, then alphabetical within each.
-A type-level hook can rely on base + runtime hooks having already run.
-
-### Failure modes
-
-- `.abort` — hook exit code != 0 fails the firing verb. Used for
-  pre-conditions (`EventProjectPreStart`: if DB can't ensure-up,
-  project start should fail clearly so the user sees it).
-- `.continue` — hook exit code != 0 logs a warning but verb proceeds.
-  Used for cleanup-style and post-state events (any `*PreStop`,
-  `*PostStart`, `*PostStop`). You can't "fail to stop" — the verb
-  has to finish.
-
-### Timeouts
-
-Per event class. SIGTERM at the limit; if still alive after 5s, SIGKILL.
-Whatever the failure mode is then applies. Default 30s; long ops (DB
-shutdown, big restores) override to higher (e.g. 120s for `EventMpdPreStop`).
-
-### Progress UX
-
-Default (quiet but live):
-
-```
-$ mpd --stop
-Stopping mpd...
-  pre-stop hooks                      ⠋ postgres-1 (12s)
-  pre-stop hooks                      ✓ postgres-1 (47s)
-  pre-stop hooks                      ✓ mariadb-1 (3s)
-Stopping containers...                ✓
-```
-
-Spinner + audience-target + elapsed time. Dispatcher renders this from
-state it already has (event name, container, start time) — hooks don't
-need to emit any special protocol.
-
-`mpd --verbose` streams hook stdout/stderr live, prefixed with
-`[<container> <event-name>/<script>]`. For debugging hangs and writing
-new hooks.
-
-On failure: the failing hook's full captured output dumps to the
-terminal regardless of verbosity. You always see what went wrong.
-
-### Mount story (per container kind)
-
-- **Runtime containers** — `/mnt/assets/runtimes/<rt>/...` already
-  bind-mounted for tools. Hook scripts at `/mnt/assets/runtimes/<rt>/hooks/`
-  are reachable for free; dispatcher invokes them via `podman exec`.
-  Lowest cost — start here.
-- **Database containers** — stock images today, no mpd assets mounted.
-  Plumbing: add a read-only bind mount at `/mnt/mpd-hooks/` pointing at
-  the layered hook trees the container should see.
-- **Service containers** — same plumbing as database containers.
+- **`.abort`** — hook exit code `!= 0` aborts the firing verb. Use for
+  pre-conditions where continuing would be incorrect (e.g. project
+  start when its DB pre-flight failed — better to stop visibly than
+  let the project come up half-broken).
+- **`.continue`** — hook exit code `!= 0` is logged but the verb
+  proceeds. Use for cleanup-style and post-state events: any `*PreStop`
+  (the verb has to finish stopping), any `*PostStart` (the resource is
+  already started), any `MpdPreStop` (mpd has to power off regardless).
 
 ## Diagnostics
 
 The dispatcher knows the full Swift event catalogue and can walk the
 filesystem for installed hook scripts. Cross-referencing the two on
-`mpd --setup` produces three classes of warning:
+`mpd --setup` (and on demand via `mpd --check-hooks`) produces three
+classes of warning:
 
 - **Orphan hook (event removed)** — `hooks/<event>.d/` exists for an
-  event no longer in the catalogue.
+  event that's no longer in the catalogue.
   → "Hook X for unknown event Y; remove or move."
 - **Orphan hook (audience removed)** — event still exists but the
   layer's container kind is no longer in the event's audiences.
   → "Hook X subscribed to event Y, but Y no longer fires on this audience."
-- **Revision bump** — event's `revision` number increased since the
-  last `mpd --setup` run (tracked in `~/.mpd/hooks-state.json`).
+- **Revision bump** — event's `revision` increased since the last
+  `mpd --setup` run (tracked in `~/.mpd/hooks-state.json`).
   → "Event X revised; review env-var contract for hooks under hooks/X.d/."
 
-A standalone `mpd --check-hooks` runs the same diagnostic on demand.
-
-Diagnostics are warnings, never hard failures — orphan hooks just don't
-fire. Users get a loud notice at upgrade time but mpd keeps working.
+Diagnostics are warnings, never hard failures — orphan hooks just
+don't fire. Users get a loud notice at upgrade time but mpd keeps
+working.
 
 ## Systemd integration
 
 `mpd --setup` (machine path, including sandbox) installs a user-level
-systemd unit at `~/.config/systemd/user/mpd.service`:
+`mpd.service` unit at `~/.config/systemd/user/mpd.service` that
+brackets the VM lifecycle:
 
 ```ini
 [Unit]
-Description=mpd graceful shutdown
+Description=mpd lifecycle (start on boot, graceful stop on shutdown)
 DefaultDependencies=no
 Before=shutdown.target reboot.target halt.target suspend.target
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/bin/true
+ExecStart=-/usr/local/bin/mpd --start
 ExecStop=/usr/local/bin/mpd --stop
+TimeoutStartSec=300
+TimeoutStopSec=180
 
 [Install]
 WantedBy=default.target
 ```
 
 Plus `loginctl enable-linger <devuser>` so the user systemd manager
-survives logout.
+runs at boot and survives logout.
 
-Effect: `shutdown -h now`, `poweroff`, `reboot`, GNOME shutdown menu,
-and `virsh shutdown <vm>` all trigger `mpd --stop` before the VM goes
-down, which fires `EventMpdPreStop`, which lets DBs shut down gracefully.
+**At boot**: user systemd starts → `default.target` → `mpd.service`
+ExecStart fires `mpd --start`, which reconciles every runtime + project
+in `requested=running` state back to live containers (and pre-warms
+their DBs). The dev user can SSH in seconds later and find the env
+already up.
 
-What this doesn't cover: hypervisor force-stop, hard reset, power loss.
+**At shutdown**: `shutdown -h now`, `poweroff`, `reboot`,
+`mpd --restart`, GNOME shutdown menu, and `virsh shutdown <vm>` all
+trigger `mpd --stop` via the unit's ExecStop. That fires
+`EventMpdPreStop`, which lets DBs shut down gracefully so the next
+boot doesn't trigger crash recovery.
+
+The leading `-` on `ExecStart` makes start failures non-fatal — the
+unit still goes active, so the ExecStop graceful-stop path is never
+lost even if a previous boot's `mpd --start` had a hiccup.
+
+**Not covered**: hypervisor force-stop, hard reset, power loss.
 Those bypass systemd entirely; postgres comes up doing crash recovery
-on next start. Irreducible — same as today.
+on next start. Irreducible.
 
-Has to be a user unit, not a system unit, because the privilege rule
-(see `AGENTS.md`) forbids identity switching (`sudo -u <user>`). mpd
-binary runs as the dev user; user units run as the user automatically.
+User unit, not system unit, because the privilege rule (see
+`AGENTS.md`) forbids identity switching. mpd binary runs as the dev
+user; user units run as that user automatically.
 
 `mpd --uninstall` reverses both the unit install and the linger enable.
 
-## Future trajectory
+## Limitations
 
-Discipline: add an `Event*` only when there's a concrete need. No
-speculative events.
+What's deferred from v1, called out so hook authors aren't surprised:
 
-Likely additions as use cases land:
-- `EventProject*` for create / configure / delete (project-type
-  customization at lifecycle points)
-- `EventRuntime*` for build / destroy (runtime build customization)
-- `EventMpd*` symmetry — `EventMpdPreStart`, `EventMpdPostStart`,
-  `EventMpdPostStop`
-- More phase coverage on existing verbs (e.g. `EventProjectActionStart`
-  if the mid-verb checkpoint becomes useful)
-- New audiences added to existing events (additive, non-breaking — see
-  Diagnostics)
-- Service-container events if always-on services ever need lifecycle
-  hooks
+- **Sequential execution within an audience.** The dispatcher loops
+  over containers in serial. Two DB containers responding to
+  `EventMpdPreStop` shut down one after another, not in parallel.
+  Acceptable for a few containers; will revisit if total stop time
+  becomes painful.
+- **No timeout enforcement.** Each event declares a `timeout` but the
+  dispatcher doesn't currently SIGTERM/SIGKILL on overshoot — hook
+  scripts run to completion or block. The contract is in the type
+  for forward-compat; enforcement comes later.
+- **No `--verbose` streaming.** Hook stdout/stderr is captured and
+  shown after-the-fact, not streamed. For debugging hangs, use
+  `podman logs <container>` or shell into the container directly.
 
-The orphan + revision diagnostics make the catalogue safe to iterate on:
-add events freely; deprecate by shrinking audiences (loud but graceful);
-remove events when nothing subscribes (loud but graceful).
+Adding any of these is purely an engine change — no event class or
+hook script needs to be updated to pick up the improvement.
 
-The pattern stays the same forever: add an Event class, ship hook
-scripts under the new `hooks/<event-name>.d/` directories, no engine
-changes.
+## Adding a new event
+
+1. **Decide the audience and failure mode.** Audiences are
+   `.runtime`, `.database`, `.service(name)`. Failure mode is `.abort`
+   for pre-conditions, `.continue` for cleanup-style or post-state.
+2. **Add a Swift struct** conforming to `Mpd.Hooks.Event` in the
+   appropriate file under `mpd/Hooks/`:
+   - `EventMpd.swift` for environment-wide events (`Mpd*`)
+   - `EventProject.swift` for project-scoped events (`Project*`)
+   - `EventRuntime.swift` for runtime-scoped events (`Runtime*`)
+3. **Register in the catalogue.** Add `.init(EventXxx.self)` to
+   `Mpd.Hooks.catalogue` in `mpd/Hooks/HooksDiagnostic.swift` so the
+   diagnostic engine knows about it.
+4. **Fire from the relevant verb handler.** Single line:
+   `try Mpd.Hooks.fire(EventXxx(...), verb: "<verb>")`.
+5. **Build + `make check`.** Boundary guards stay green.
+6. **Document.** Add a subsection in this file's "Event catalogue"
+   matching the existing format (one-line summary, audience, failure
+   mode, timeout, env vars, use cases).
+
+The orphan + revision diagnostics make the catalogue safe to iterate
+on: add events freely; deprecate by shrinking audiences (loud but
+graceful); remove events when nothing subscribes (loud but graceful).

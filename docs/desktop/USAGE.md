@@ -198,8 +198,10 @@ mpd                              # interactive TUI
 mpd --status                     # text status of services + projects
 mpd --setup-info                 # reprint laptop-side recipe
 
-mpd --start                      # start the active mpd-desktop machine + services + tunnel
-mpd --stop                       # graceful stop of the active mpd-desktop machine
+mpd --start                      # start the active mpd-desktop machine + services + tunnel; reconcile state
+mpd --stop                       # graceful DB shutdown via EventMpdPreStop, then stop the Podman machine
+mpd --restart                    # graceful stop + Podman machine restart (run `mpd --start` after to restore projects)
+mpd --check-hooks                # cross-reference asset hook dirs against the Event catalogue
 mpd --uninstall                  # remove ~/.mpd state, keep conf/
 
 mpd list                         # list all projects (default)

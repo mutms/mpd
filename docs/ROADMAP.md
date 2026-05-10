@@ -60,18 +60,6 @@ Real possibilities, not committed work.
   dirs, dnsmasq records for deleted projects. Open question: destructive
   default or interactive plan + `--yes`?
 
-- **Graceful shutdown / postgres recovery** — when the mpd-machine VM
-  is power-cycled (UTM force-stop, host sleep that doesn't resume
-  cleanly, hard reboot), postgres containers come up doing crash
-  recovery on the next start. Moodle's first request after resume can
-  hit `Database connection failed` while recovery is still in flight,
-  even though the container is "running". Possible shapes: a
-  user-systemd unit inside the VM that stops mpd containers cleanly on
-  `poweroff.target` / `suspend.target`; a `pg_isready` wait inside
-  `mpd --start` for every per-project DB before declaring success;
-  or a small connection-retry shim in the runtime PHP wrappers. Pick
-  whichever costs the least to implement and has the smallest blast
-  radius.
 - **Newbie-onboarding docs** — for Moodle-curious folks who don't
   already know what a plugin is. Pairs naturally with `publish` once
   it ships.

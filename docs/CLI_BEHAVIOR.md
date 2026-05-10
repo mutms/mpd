@@ -47,7 +47,20 @@ Global command dispatch is first-match, single-action per invocation.
 Operational flags include:
 - `--status` — context-aware status (text)
 - `--setup` — idempotent first-run/reset; takes no argument (see below).
-- `--start` / `--stop` — daily on/off; act on the active host adopted by `--setup`.
+- `--start` / `--stop` — daily on/off; act on the active host adopted
+  by `--setup`. `--start` reconciles `current` toward `requested` (see
+  "Resource lifecycle model" in `docs/HOOKS.md`); `--stop` fires
+  `EventMpdPreStop` hooks for graceful DB shutdown, then powers off
+  (machine) or stops the Podman machine (desktop).
+- `--restart` — graceful stop + restart. On mpd-machine, runs
+  `sudo systemctl reboot` and lets the user-systemd `mpd.service` unit
+  drive the chain (ExecStop=`mpd --stop` on shutdown, ExecStart=
+  `mpd --start` on boot). On mpd-desktop, fires hooks then bounces the
+  Podman machine; user runs `mpd --start` afterward to restore projects.
+- `--check-hooks` — cross-reference `assets/.../hooks/<event>.d/`
+  directories against the Swift `Event` catalogue and print warnings
+  for orphans, removed audiences, and revision bumps. Also runs at the
+  end of `mpd --setup`.
 - `--uninstall` — partial teardown; preserves `~/Developer/mpd/conf/`.
 - `--setup-info` — print the laptop-side setup recipe (plain text,
   pipeable from the laptop via `ssh user@vm "mpd --setup-info" > SETUP.txt`)

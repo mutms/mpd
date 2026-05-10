@@ -209,6 +209,36 @@ State mutation convention:
 
 Goal: keep state transitions auditable and prevent inconsistent partial writes.
 
+### Persisted intent vs live observation
+
+mpd splits resource state into two distinct concepts:
+
+- **`requested`** — persisted intent, written to disk. Mutated *only*
+  by explicit user verbs (`mpd <p> create/start/stop/delete`, `mpd
+  --runtime-create/start/stop/delete`). Survives reboots. Lives in
+  `RegisteredProjectRecord.requested` and `RuntimeStateEntry.requested`
+  (`mpd/Runtime/RuntimeState.swift`).
+- **`current`** — live observation, computed on each query from
+  `Mpd.Podman` (no persistence). Domain: `running`, `stopped`,
+  `missing` (no container exists). Accessors:
+  `Mpd.Runtime.current(_:)`, `Mpd.Project.current(_:)`,
+  `Mpd.Runtime.DB.current(engine:version:)` —
+  `mpd/Runtime/CurrentState.swift`.
+
+Reconciliation closes the gap: `mpd --start` walks `requested` and
+brings `current` into agreement; `mpd --gc` (planned) does the
+opposite trim. This is the same desired-vs-observed model used by
+Kubernetes, systemd, and Terraform.
+
+DBs and services have **no `requested` field** — they're emergent.
+DB lifecycle is derived from runtime + project records (see
+`docs/HOOKS.md` §"Resource lifecycle model"); services are always-on.
+
+Display layers show both columns side-by-side (`mpd list runtimes`,
+`mpd list`, `mpd <project> show`). Divergence — e.g.
+`requested=running, current=stopped` after a reboot but before
+`mpd --start` — is legible from the listing alone.
+
 ## 6) Assets and Extension Contract
 
 `assets/` is the extension surface for runtime/type behavior.
