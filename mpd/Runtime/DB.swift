@@ -186,13 +186,6 @@ extension Mpd.Runtime.DB {
         // Ensure shared DB parent directory exists in the volume.
         _ = Mpd.Podman.volumeToolRun(command: ["mkdir", "-p", "/srv/dbs"])
 
-        // Recreate older DB containers that don't have the assets bind
-        // mount the hooks engine relies on. Data lives on the shared
-        // volume so recreate is non-destructive.
-        if Mpd.Podman.exists(name) {
-            Mpd.Podman.removeIfOutdated(name, labels: ["mpd.hooks.version": "1"])
-        }
-
         if !Mpd.Podman.exists(name) {
             // Explicit pre-pull so layer-download progress is visible to the
             // user. `podman run -d` would otherwise pull silently and only
@@ -215,7 +208,6 @@ extension Mpd.Runtime.DB {
                 "--label", "mpd.type=db",
                 "--label", "mpd.db.engine=\(engine)",
                 "--label", "mpd.db.version=\(version)",
-                "--label", "mpd.hooks.version=1",
                 "--label", "com.docker.compose.project=mpd-db",
                 "--network-alias", shortName(engine: engine, version: version),
             ]

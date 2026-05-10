@@ -47,10 +47,12 @@ chown -R "${EXTUID}:${EXTUID}" "${HOME_DIR}/.ssh" 2>/dev/null || true
 
 # --- Data-volume ownership ----------------------------------------------
 # Ensure top-level directories on the data volume exist and are owned by
-# the dev user. Cheap (handful of stat/chown calls) and idempotent. Fixes
-# legacy UID skew from the pre-fileaccess era when volumeTool ran as root.
-# `/srv/backups` is the single transit point: runtime backup verbs write
-# here; the dev pulls files off via this service's SSH/scp endpoint.
+# the dev user. Cheap (handful of stat/chown calls) and idempotent.
+# Defensive normalization: anything that ever writes here as root (e.g.
+# a misrouted sudo inside a runtime) gets corrected on the next
+# fileaccess start. `/srv/backups` is the single transit point: runtime
+# backup verbs write here; the dev pulls files off via this service's
+# SSH/scp endpoint.
 for d in projects data meta dbs personal backups; do
     install -d -o "${EXTUID}" -g "${EXTUID}" -m 0775 "/srv/${d}"
 done

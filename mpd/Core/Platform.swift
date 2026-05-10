@@ -76,15 +76,13 @@ extension Mpd.Core.Platform {
     /// bootstrap scripts and Platform can share the same file without
     /// clobbering each other.
     private static let managedKeys: Set<String> = [
-        "MPD_PLATFORM", "MPD_CLIENT_OS", "MPD_VM_IP", "MPD_INSTANCE_SUFFIX",
+        "MPD_PLATFORM", "MPD_VM_IP", "MPD_INSTANCE_SUFFIX",
     ]
 
     /// Write the identity file. Used by mpd-desktop's setup bootstrap and by
     /// `updateInstanceSuffix`. Idempotent — overwrites the managed keys with
     /// the supplied values; preserves any other keys (e.g. `MPD_NETWORK_*`)
-    /// that bootstrap scripts may have written. `MPD_CLIENT_OS` is in
-    /// `managedKeys` (and not written) so any legacy value carried by an
-    /// upgrade-in-place gets dropped on the next write.
+    /// that bootstrap scripts may have written.
     static func write(platform: PlatformKind, vmIP: String, instanceSuffix: String) throws {
         let fm = FileManager.default
         try fm.createDirectory(atPath: Mpd.Environment.confDir, withIntermediateDirectories: true)
