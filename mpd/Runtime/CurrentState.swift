@@ -148,11 +148,5 @@ extension Mpd.Runtime.State {
         )
 
         JSONStateStore.writeJSON(snapshot, to: currentStatePath)
-
-        // Regenerate ~/.mpd/links/<ide>/ alongside the snapshot — same
-        // cadence as the live-state JSON, self-healing across create /
-        // delete / runtime moves. Best-effort: errors are swallowed
-        // inside refresh().
-        Mpd.Runtime.IdeLinks.refresh()
     }
 }
