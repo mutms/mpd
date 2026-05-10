@@ -20,17 +20,15 @@ import Foundation
 
 extension Mpd.Project {
 
-    /// Determine which runtime to use for git clone based on create args.
-    static func resolveRuntimeForClone(args: [String]) -> String {
-        // Check if user specified a type — use its default runtime
-        for arg in args {
-            if arg.hasPrefix("--type=") {
-                let typeName = String(arg.dropFirst(7))
-                let rt = ProjectType(typeName).defaultRuntimeName
-                if !rt.isEmpty { return rt }
-            }
-        }
-        return "php" // default
+    /// Determine which runtime to use for the create flow.
+    /// Routes to the resolved project type's default runtime — works
+    /// equally for explicit `--type=X` and for suffix-autodetected
+    /// types (e.g. `mpd create foo-cftunnel` → cftunnel → util).
+    /// Falls back to `php` only when the type has no defaultRuntime
+    /// configured (or for an unknown type).
+    static func resolveRuntimeForClone(typeHint: String) -> String {
+        let rt = ProjectType(typeHint).defaultRuntimeName
+        return rt.isEmpty ? "php" : rt
     }
 
     static func ensureRuntime(name: String) throws {

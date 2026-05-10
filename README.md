@@ -144,9 +144,6 @@ not manage a hypervisor explicitly: see
 
 ## Roadmap (short form)
 
-- Public preview URLs via **Cloudflare Tunnel + Cloudflare Access** —
-  share a project URL with a teammate, client, or external collaborator.
-  Exposed as a `publish` tool inside the runtime, invoked over SSH.
 - `mdl-backup` / `mdl-restore` — Moodle-only tools that produce /
   consume one tar bundle per project (dataroot + DB dump).
 

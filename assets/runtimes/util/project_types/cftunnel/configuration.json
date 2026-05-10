@@ -1,0 +1,13 @@
+{
+  "stop": {
+    "systemdStop": true
+  },
+  "nameSuffix": "cftunnel",
+  "nextSteps": [
+    "Create a tunnel in the Cloudflare dashboard, copy its token",
+    "mpd configure %%PROJECT%% MPD_CFTUNNEL_TOKEN=<token-from-cf>",
+    "mpd start %%PROJECT%%",
+    "In the CF dashboard: add Public Hostname routes pointing at https://<project>.mpd.test/ for each project to expose",
+    "On each exposed moodle: mpd configure <project> MPD_PHP_MOODLE_CFTUNNEL=1"
+  ]
+}

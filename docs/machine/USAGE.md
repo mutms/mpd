@@ -277,6 +277,65 @@ mpd --runtime-delete=<name>      # remove one (prompts unless --yes)
 mpd --help                       # full flag reference
 ```
 
+## Sharing a project externally (Cloudflare Tunnel)
+
+A single mpd cftunnel project runs one `cloudflared` connector
+(authenticated by a CF tunnel token). The Cloudflare dashboard
+controls *which* public hostnames map to *which* internal mpd
+projects — one tunnel can serve many moodles. Each target moodle
+opts in to external exposure via its own flag, which is the per-
+project access control.
+
+**One-time per developer** (host):
+```bash
+# Add to ~/.mpd/mpd-user.env (replace with the public domain you own):
+MPD_UTIL_CFTUNNEL_DOMAIN=.mpd-test.org
+```
+
+**Set up the connector** (once per VM, or whenever you rotate tokens):
+```bash
+# 1. CF dashboard → Networks → Tunnels → Create a Tunnel; copy the token.
+mpd create cftunnel                      # name matches the type → autodetected
+mpd configure cftunnel MPD_CFTUNNEL_TOKEN=<token-from-cf>
+mpd start cftunnel                       # cloudflared connects to CF
+```
+
+**Expose a moodle project** (repeat per project to share):
+```bash
+# 1. CF dashboard → Tunnel → Public Hostnames → Add a public hostname:
+#      Subdomain:    moodle520
+#      Domain:       mpd-test.org
+#      Service Type: HTTPS
+#      Service URL:  moodle520.mpd.test
+#    (CF auto-creates the DNS CNAME for moodle520.mpd-test.org.)
+# 2. Strongly recommended: gate each route with Cloudflare Access
+#    so the URL is not reachable by the open internet.
+# 3. Enable the moodle-side opt-in:
+mpd configure moodle520 MPD_PHP_MOODLE_CFTUNNEL=1
+mpd start moodle520
+```
+
+That last step is the real gate — Caddy frontdoor only serves the
+tunnel hostname for moodles where `MPD_PHP_MOODLE_CFTUNNEL=1` is
+set. A moodle project without the flag is unreachable via the tunnel
+even if the CF dashboard has a route pointing at it. moodle's
+generated URLs (form actions, asset paths) auto-rewrite to the
+tunnel hostname when the request arrives via the tunnel; direct
+`.mpd.test` access stays internal.
+
+**To unshare**:
+```bash
+mpd configure moodle520 MPD_PHP_MOODLE_CFTUNNEL=
+mpd start moodle520
+# (and remove the route in the CF dashboard if you want)
+```
+
+**Naming**: project name autodetects the type if it matches a known
+type exactly (`mpd create cftunnel` → cftunnel) or ends with
+`-<type>` (`mpd create share-cftunnel` → cftunnel). Otherwise pass
+`--type=cftunnel` explicitly. The name is purely cosmetic — pick
+whatever feels right.
+
 ## When you want to start over
 
 A few flavors, increasing severity:

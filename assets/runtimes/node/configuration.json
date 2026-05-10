@@ -1,3 +1,4 @@
 {
-  "ip": "10.163.0.101"
+  "ip": "10.163.0.101",
+  "defaultSidecars": ["frontdoor"]
 }

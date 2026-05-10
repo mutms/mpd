@@ -108,10 +108,12 @@ extension Mpd.Project {
     // MARK: - create
 
     static func create(project: String, args: [String]) throws {
-        guard Mpd.Core.isValidIdentifier(project) else {
+        guard Mpd.Core.isValidProjectIdentifier(project) else {
             throw RuntimeError(
                 "'\(project)' is not a valid project name. " +
-                "Use lowercase letters and digits only, starting with a letter, minimum 2 characters.")
+                "Use lowercase letters and digits, starting with a letter, " +
+                "minimum 2 characters. Internal dashes allowed " +
+                "(e.g. 'moodle520-cftunnel').")
         }
 
         if project == "project" || projectVerbs.contains(project) {
@@ -143,13 +145,17 @@ extension Mpd.Project {
             }
         }
 
-        // No type autodetection: default create type is moodle unless explicitly provided.
+        // Type resolution: explicit `--type=` always wins. Otherwise
+        // try name-based autodetection — exact match (project name
+        // equals a known type) or suffix match (project name ends
+        // with `-<type>` for opt-in types). Falls back to `moodle`
+        // as mpd's overall default.
         if typeHint.isEmpty {
-            typeHint = "moodle"
+            typeHint = ProjectType.detectFromName(project) ?? "moodle"
         }
 
         // Resolve and ensure runtime first, so failures happen before any project directory/state changes.
-        let createRuntime = resolveRuntimeForClone(args: args)
+        let createRuntime = resolveRuntimeForClone(typeHint: typeHint)
         try ensureRuntime(name: createRuntime)
         let createContainer = Mpd.Runtime.containerName(createRuntime)
         guard Mpd.Podman.running(createContainer) else {

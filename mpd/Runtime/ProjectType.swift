@@ -115,6 +115,12 @@ struct ProjectTypeConfiguration {
     let sidecars: [String]        // sidecar roles this project type requires on its runtime pod
     let stopSystemd: Bool         // whether stop needs systemctl stop
     let nextSteps: [String]       // printed after `create` completes
+    /// Optional. When set, `mpd create <name>` (no `--type`) infers
+    /// this type for projects whose name ends with `-<nameSuffix>`.
+    /// Only project types that should "claim" a name pattern declare
+    /// it (e.g. `cftunnel`); generic types like `moodle` leave it nil
+    /// so they don't accidentally absorb arbitrary suffixes.
+    let nameSuffix: String?
 }
 
 // MARK: - JSON loading helpers
@@ -170,13 +176,48 @@ extension ProjectType {
         let stopSystemd   = stopObj["systemdStop"] as? Bool ?? false
 
         let nextSteps     = json["nextSteps"] as? [String] ?? []
+        let nameSuffix    = (json["nameSuffix"] as? String).flatMap { $0.isEmpty ? nil : $0 }
 
         return ProjectTypeConfiguration(
             assetsType: assetsType, assetsRuntime: assetsRuntime,
             sidecars: sidecars,
             stopSystemd: stopSystemd,
-            nextSteps: nextSteps)
+            nextSteps: nextSteps,
+            nameSuffix: nameSuffix)
     }
 
+}
+
+// MARK: - Name-based type autodetection
+
+extension ProjectType {
+    /// Auto-detect the project type from a project name. Two rules,
+    /// in order:
+    ///
+    /// 1. **Exact match.** If `name` equals a known project type
+    ///    (e.g. `mpd create cftunnel` → cftunnel; `mpd create bare`
+    ///    → bare). Always-on; no opt-in needed.
+    /// 2. **Suffix match.** If `name` ends with `-<nameSuffix>` for a
+    ///    type that declares `nameSuffix` in its configuration.json
+    ///    (e.g. `mpd create share-cftunnel` → cftunnel). Opt-in per
+    ///    type via the `nameSuffix` field.
+    ///
+    /// Returns nil if no type matches; caller falls back to its
+    /// default (typically `moodle`).
+    static func detectFromName(_ name: String) -> String? {
+        let types = allTypes()
+
+        // 1. Exact match.
+        if types.contains(name) { return name }
+
+        // 2. Suffix match (opt-in types only).
+        for type in types {
+            guard let config = try? ProjectType(type).loadConfiguration(),
+                  let suffix = config.nameSuffix,
+                  !suffix.isEmpty else { continue }
+            if name.hasSuffix("-\(suffix)") { return type }
+        }
+        return nil
+    }
 }
 

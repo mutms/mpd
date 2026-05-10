@@ -19,6 +19,24 @@ $CFG->dboptions = array(
 );
 
 $CFG->wwwroot  = 'https://%%PROJECT%%.mpd.test';
+
+// Cloudflare Tunnel support: when MPD_PHP_MOODLE_CFTUNNEL=1 in this
+// project's mpd.env (and MPD_UTIL_CFTUNNEL_DOMAIN is set in
+// ~/.mpd/mpd-user.env), the configure step bakes the public tunnel
+// hostname here. Requests arriving with that Host get a wwwroot
+// rewrite so Moodle's generated URLs match the visitor; direct
+// .mpd.test access falls through unchanged. Empty string = feature
+// disabled.
+//
+// cloudflared passes the public hostname through unchanged in HTTP_HOST
+// (no rewrite happens — verified via portal diag). Caddy frontdoor
+// gets the tunnel hostname added to the same vhost as the .mpd.test
+// hostname (same FPM backend), so it routes correctly.
+$mpdCftunnelHost = '%%CFTUNNEL_HOST%%';
+if ($mpdCftunnelHost !== '' && ($_SERVER['HTTP_HOST'] ?? '') === $mpdCftunnelHost) {
+    $CFG->wwwroot = 'https://' . $mpdCftunnelHost;
+}
+
 $CFG->dataroot = '/srv/data/%%PROJECT%%/dataroot';
 $CFG->directorypermissions = 02777;
 

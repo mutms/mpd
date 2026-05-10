@@ -189,7 +189,10 @@ extension Mpd.Runtime {
 extension Mpd.Runtime {
 
     /// Caddy frontdoor sidecar — terminates TLS, routes by `urls.json`.
-    /// Attached to every runtime pod (always-on, the front door for project URLs).
+    /// Opt-in via `defaultSidecars: ["frontdoor"]` in a runtime's
+    /// configuration.json. PHP and node declare it (they serve project
+    /// URLs at `*.mpd.test`). util doesn't, since cftunnel and similar
+    /// utility project types don't expose `.mpd.test` URLs.
     static func frontdoorSidecarSpec() -> SidecarSpec {
         SidecarSpec(
             role: "frontdoor",
@@ -249,17 +252,17 @@ extension Mpd.Runtime {
         }
     }
 
-    /// Compute the desired sidecar set for a runtime. Combines four signals:
-    ///   1. Always-on: `frontdoor`
-    ///   2. Runtime-declared defaults: `assets/runtimes/<n>/configuration.json`
-    ///      `defaultSidecars` field (e.g. mailpit on PHP)
-    ///   3. Project-type-required: each project's
+    /// Compute the desired sidecar set for a runtime. Combines three signals:
+    ///   1. Runtime-declared defaults: `assets/runtimes/<n>/configuration.json`
+    ///      `defaultSidecars` field. PHP/node list `frontdoor` (and PHP also
+    ///      lists `mailpit`); util declares none.
+    ///   2. Project-type-required: each project's
     ///      `assets/runtimes/<rt>/project_types/<t>/configuration.json` `sidecars`
     ///      field (e.g. valkey when a project type declares it as a sidecar).
-    ///   4. URL-kind-derived: any project with a `kind: behat` URL pulls in the
+    ///   3. URL-kind-derived: any project with a `kind: behat` URL pulls in the
     ///      selenium sidecar.
     static func desiredSidecars(forRuntime name: String) -> [SidecarSpec] {
-        var roles: [String] = ["frontdoor"]
+        var roles: [String] = []
         roles.append(contentsOf: ProjectType.runtimeDefaultSidecars(for: name))
 
         let projects = Mpd.Runtime.State.loadProjects().projects.filter { $0.runtimeName == name }

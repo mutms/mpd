@@ -1,4 +1,4 @@
 {
   "ip": "10.163.0.100",
-  "defaultSidecars": ["mailpit"]
+  "defaultSidecars": ["frontdoor", "mailpit"]
 }

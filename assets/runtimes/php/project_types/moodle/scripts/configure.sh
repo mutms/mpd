@@ -85,10 +85,21 @@ chmod 0666 "${DATAROOT}/php_error.log"
 # --- Generate config files (only when Moodle source + DB are both present) ---
 if [ -n "$DATABASE_ID" ] && \
    { [ -f "${PROJECT_DIR}/version.php" ] || [ -f "${PROJECT_DIR}/public/version.php" ]; }; then
+    # Compute the public tunnel host when cftunnel is enabled for this
+    # project AND a public domain is set in ~/.mpd/mpd-user.env. Empty
+    # otherwise — the baked-in detection block then does nothing.
+    CFTUNNEL_HOST=""
+    if [ "${MPD_PHP_MOODLE_CFTUNNEL:-}" = "1" ] && [ -n "${MPD_UTIL_CFTUNNEL_DOMAIN:-}" ]; then
+        case "$MPD_UTIL_CFTUNNEL_DOMAIN" in
+            .*) CFTUNNEL_HOST="${PROJECT_NAME}${MPD_UTIL_CFTUNNEL_DOMAIN}" ;;
+            *)  CFTUNNEL_HOST="${PROJECT_NAME}.${MPD_UTIL_CFTUNNEL_DOMAIN}" ;;
+        esac
+    fi
     sed \
         -e "s|%%PROJECT%%|${PROJECT_NAME}|g" \
         -e "s|%%DBTYPE%%|${DBTYPE}|g" \
         -e "s|%%DBHOST%%|${DATABASE_ID}.db.mpd.test|g" \
+        -e "s|%%CFTUNNEL_HOST%%|${CFTUNNEL_HOST}|g" \
         /mnt/assets/runtimes/php/project_types/moodle/templates/config-mpd-generated.php \
         > "${PROJECT_DIR}/config-mpd.php"
     echo "config-mpd.php generated."
@@ -155,6 +166,32 @@ if [ "$BEHAT" = "1" ]; then
     "label": "behat",
     "kind": "behat",
     "url": "https://behat.'"${PROJECT_NAME}"'.mpd.test/",
+    "backend": {
+      "type": "php-fpm",
+      "fastcgi": "'"${FPM_SOCK}"'",
+      "root": "'"${DOCROOT}"'",
+      "tryFiles": ["{path}", "{path}/index.php", "/r.php"]
+    }
+  }'
+fi
+
+# Cloudflare Tunnel public hostname (when enabled). Same FPM backend
+# as main, so gen-caddyfile.sh's by-backend grouping merges them into
+# one Caddy vhost — the *.mpd.test cert presented at TLS handshake
+# (SNI = <project>.mpd.test from cloudflared's service URL) covers
+# the connection; Caddy routes by Host once TLS is up.
+# `kind: "tunnel"` so the portal can render a distinct badge later.
+CFTUNNEL_PUBLIC_HOST=""
+if [ "${MPD_PHP_MOODLE_CFTUNNEL:-}" = "1" ] && [ -n "${MPD_UTIL_CFTUNNEL_DOMAIN:-}" ]; then
+    case "$MPD_UTIL_CFTUNNEL_DOMAIN" in
+        .*) CFTUNNEL_PUBLIC_HOST="${PROJECT_NAME}${MPD_UTIL_CFTUNNEL_DOMAIN}" ;;
+        *)  CFTUNNEL_PUBLIC_HOST="${PROJECT_NAME}.${MPD_UTIL_CFTUNNEL_DOMAIN}" ;;
+    esac
+    URLS="${URLS}"',
+  {
+    "label": "tunnel",
+    "kind": "tunnel",
+    "url": "https://'"${CFTUNNEL_PUBLIC_HOST}"'/",
     "backend": {
       "type": "php-fpm",
       "fastcgi": "'"${FPM_SOCK}"'",

@@ -8,11 +8,6 @@ the work.
 
 Concrete shape, a use case driving it.
 
-- **`publish` / `unpublish` tools** — public preview URLs via
-  Cloudflare Tunnel + Cloudflare Access. Per-project opt-in;
-  `cloudflared` sidecar attaches to the runtime pod; auth happens at
-  Cloudflare's edge. For sharing a project with a teammate, client,
-  or vibe-coding friend on an iPad.
 - **`mdl-backup` / `mdl-restore` (Moodle)** — one tar bundle per
   project (dataroot + DB dump + config snapshot), pulled via the
   fileaccess SSH endpoint. Moodle-only because the dataroot ↔ DB
@@ -60,9 +55,22 @@ Real possibilities, not committed work.
   dirs, dnsmasq records for deleted projects. Open question: destructive
   default or interactive plan + `--yes`?
 
+- **Cloudflare Zero Trust integration for cftunnel** — the v1
+  cftunnel flow exposes projects publicly (or behind whatever the
+  user manually configures in the CF dashboard). A future iteration
+  could codify the Zero-Trust-protected workflow: a sibling project-
+  type (or a flag on `cftunnel`) that targets the per-app CF wizard,
+  pre-fills the internal hostname / port, and produces a 1:1
+  Access-protected app per target. Naming convention to consider:
+  `<target>-cftunnel` (per-target, ZT-gated) vs bare `cftunnel`
+  (shared connector, public-or-manually-protected). Also: a per-
+  moodle `MPD_PHP_MOODLE_CFTUNNEL_HOST=<custom>` override so the
+  wwwroot detection works when the public hostname diverges from
+  `<projectname><domain>`. Parked until a real use case drives the
+  shape.
+
 - **Newbie-onboarding docs** — for Moodle-curious folks who don't
-  already know what a plugin is. Pairs naturally with `publish` once
-  it ships.
+  already know what a plugin is.
 - **AI-driven demo provisioning** — agent running inside mpd-machine's
   Gnome desktop drives Firefox through Moodle's first-time install
   wizard, installs a set of plugins, populates the site with sample

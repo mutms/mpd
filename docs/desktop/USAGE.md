@@ -224,6 +224,16 @@ mpd --runtime-delete=<name>      # remove one (prompts unless --yes)
 mpd --help                       # full flag reference
 ```
 
+## Sharing a project externally (Cloudflare Tunnel)
+
+Same shape as on mpd-machine — see
+[machine/USAGE.md](../machine/USAGE.md#sharing-a-project-externally-cloudflare-tunnel)
+for the full workflow. Single cftunnel project per VM holds the CF
+token + runs the connector; CF dashboard controls which public
+hostnames map to which internal mpd projects; each moodle
+individually opts in to external exposure via
+`MPD_PHP_MOODLE_CFTUNNEL=1`.
+
 ## When you want to start over
 
 ```bash
