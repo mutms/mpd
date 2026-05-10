@@ -1,8 +1,8 @@
 # Why mpd
 
 **mpd is an AI-friendly Moodle plugin development environment.** Containers,
-local DNS, automatic HTTPS — wired so an AI agent can SSH into a real
-Moodle runtime, your git auth forwarded, and iterate against a fully
+local DNS, automatic HTTPS — wired so an AI agent can do anything in a real
+Moodle runtime, like a real developer interacting with a fully
 wired stack (Postgres/MariaDB/MySQL, Mailpit, automatic TLS for every
 project URL — plus Behat + Selenium when a project opts in) without
 you babysitting plumbing.
@@ -22,8 +22,8 @@ The public lineage:
 - **[MDC](https://github.com/skodak/mdc)** — a macOS-only fork I ran for
   a while. It evolved to use [OrbStack](https://orbstack.dev/) instead of
   Docker Desktop because OrbStack was much faster and handled DNS + SSL
-  automatically. That speed plus the `https://*.test` "it just works" UX
-  changed how the day felt.
+  automatically. That speed plus the `https://*.orb.local` "it just works"
+  UX changed how the day felt.
 - **mpd** — the next step. Keeps the speed and the
   automatic-everything-on-`*.test`, adds firmer walls between dev work
   and the host, and is shaped explicitly for the AI-coding workflow that's
@@ -37,7 +37,7 @@ MacBook (personal stance, no exceptions), and I wanted every link in
 the dev-environment trust chain to be open-source code I can read and
 replace.
 
-OrbStack is genuinely excellent — fast, the `*.test` UX is a delight,
+OrbStack is genuinely excellent — fast, the `*.local` UX is a delight,
 automatic TLS that just works. But it's a closed-source commercial
 product, and for a trust-boundary tool the bar I want is "I can read
 the code that decides what gets trusted." mpd lives entirely in this
@@ -65,12 +65,12 @@ leaving you with a Mac that needs untangling.
 **2. Speed, automatic DNS, automatic HTTPS.**
 
 OrbStack-based MDC taught me that frictionless local HTTPS is *the*
-dev-experience win for Moodle. Once `https://moodle51.mpd.test/` just
+dev-experience I want. Once `https://moodle51.mpd.test/` just
 works — real cert, no warnings, no `--insecure`, no shell aliases to
 remember — every other piece of the workflow snaps into place. You don't
 go back. mpd preserves this: `mpd create <project> + configure + start`,
-browser opens at the URL, it loads. If it doesn't, that's a bug in mpd,
-not your problem.
+open url in browser or click on a link in dashboard, it loads.
+If it doesn't, that's a bug in mpd, not your problem.
 
 The same applies per project: each project gets its own
 `https://<project>.mpd.test/`, plus a Mailpit shortcut at
@@ -147,11 +147,15 @@ git push origin main                # uses the forwarded agent;
                                     # GitHub sees your laptop's key
 ```
 
-PHPStorm Gateway and VSCode Remote-SSH default to forwarding the agent,
-so editor-side `git` operations work without extra setup. The AI agent
-inside an SSH session you opened with `-A` uses the same forwarded
-socket — Claude Code's `git push` from inside the runtime authenticates
-against your GitHub account through your laptop's key.
+VSCode Remote-SSH forwards the agent silently by default
+(`remote.ssh.enableAgentForwarding` is on). PHPStorm Gateway also
+forwards by default but prompts on each key access — you can either
+approve each access one-by-one, or approve for the whole session. The
+"each access" mode is what you want when the AI agent is driving; the
+"whole session" mode is what you want when *you're* typing. The AI
+agent inside an SSH session you opened with `-A` uses the same
+forwarded socket — Claude Code's `git push` from inside the runtime
+authenticates against your GitHub account through your laptop's key.
 
 The boundary: your private key **never leaves the laptop**. The runtime
 can use the SSH agent (request signatures) only while your SSH session
@@ -331,12 +335,15 @@ again — for four reasons that hit harder than I expected:
 
 Two non-obvious wins specific to mpd's audience:
 
-- **PHPStorm has a competent Swift plugin.** Moodle developers
-  already live in PHPStorm. They don't have to install Xcode or
-  learn a second IDE — they can open `~/Developer/mpd/` next to
-  their Moodle workspace and edit Swift in the same window where
-  they edit PHP. Code completion, navigation, basic refactors all
-  work.
+- **PHPStorm can edit Swift via [Noctule](https://plugins.jetbrains.com/plugin/22150-noctule-the-swift-ide).**
+  Moodle developers already live in PHPStorm. Noctule is a
+  third-party plugin (not a JetBrains-official Swift integration —
+  AppCode and its first-party Swift plugin were sunset in 2022.3),
+  but it's been good enough for the day-to-day: code completion,
+  go-to-definition, find-usages, rename. In my own use it has been
+  more stable than Xcode, which crashes often enough to be its own
+  productivity tax. You open `~/Developer/mpd/` next to your Moodle
+  workspace and edit Swift in the same window where you edit PHP.
 - **AI coding agents handle Swift well.** Claude Code, Codex, and
   the rest navigate a Swift codebase as confidently as TypeScript
   or Python. Strong typing helps the model: when an agent proposes
