@@ -1,4 +1,4 @@
-# `trixie` runtime
+# `util` runtime
 
 Bare Debian Trixie — nothing on top of the runtime base. No language
 stack, no FPM, no nvm by default. The developer SSHes in and installs

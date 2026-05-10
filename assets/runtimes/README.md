@@ -12,7 +12,7 @@ Current runtimes:
 - **`node/`** — Node.js (nvm) + DB clients. Project type: `astro`.
   No runtime-specific tools — everything node devs need is in
   `runtime-base/tools/` or in `project_types/astro/tools/`.
-- **`trixie/`** — bare Trixie + the shared base. No language stack,
+- **`util/`** — bare Trixie + the shared base. No language stack,
   no project types beyond `bare`. The developer SSHes in and installs
   whatever they need.
 

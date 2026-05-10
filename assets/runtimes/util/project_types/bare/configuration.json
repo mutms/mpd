@@ -3,7 +3,7 @@
     "systemdStop": false
   },
   "nextSteps": [
-    "ssh -A trixie.runtime.mpd.test",
+    "ssh -A util.runtime.mpd.test",
     "cd /srv/projects/%%PROJECT%%"
   ]
 }

@@ -43,7 +43,7 @@ enum Mpd {
     ///   .6            adminer (proxied via portal)
     ///   .30–.99       DB containers (allocated by Mpd.Runtime.DB.allocateIP,
     ///                 pinned at create time; vacated slots are reusable)
-    ///   .100+         runtimes (php=.100, node=.101, trixie=.102) — see each
+    ///   .100+         runtimes (php=.100, node=.101, util=.102) — see each
     ///                 runtime's configuration.json
     /// Post-Phase 9, only true infra services remain in the global registry:
     /// `dnsmasq`, `portal`, `adminer`, `fileaccess`, plus (mpd-desktop only)

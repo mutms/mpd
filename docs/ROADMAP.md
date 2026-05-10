@@ -36,7 +36,7 @@ Real possibilities, not committed work.
   (standalone tool, `mpd --self-update`, or something else).
 
 - **Runtime SSH banner** — install a branded `/etc/motd` inside each
-  runtime container (php, node, trixie) so users see a welcome message
+  runtime container (php, node, util) so users see a welcome message
   and tool hints when they SSH into `<rt>.runtime.mpd.test`. Common
   content in `assets/runtime-base/motd` (installed by `bootstrap.sh`),
   runtime-specific additions in `assets/runtimes/<rt>/motd` (appended
@@ -49,7 +49,7 @@ Real possibilities, not committed work.
   experiment is fully thrown away and disk space matters.
 
 - **Pre-built runtime images** — publish versioned OCI images for the
-  php, node, and trixie runtimes to a registry (GitHub Container
+  php, node, and util runtimes to a registry (GitHub Container
   Registry or similar) so `mpd --runtime-create` pulls instead of
   builds. Cuts the first-run wait from several minutes to seconds.
   `demo` becomes near-instant after the image pull. `make images`

@@ -7,7 +7,7 @@
 // network namespace.
 //
 // Runtime names must match an `assets/runtimes/<name>/` directory:
-// today `php`, `node`, `trixie`. Each directory ships a `build.sh`
+// today `php`, `node`, `util`. Each directory ships a `build.sh`
 // (phase-2 dev-user provisioning) plus optional `tools/` and
 // `project_types/`. Phase-1 root bootstrap is shared across runtimes:
 // `assets/runtime-base/bootstrap.sh` (the only root-context script —

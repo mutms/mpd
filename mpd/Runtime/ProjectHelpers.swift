@@ -236,7 +236,7 @@ extension Mpd.Project {
 
     /// Generate a per-project TLS cert covering every `*.mpd.test` host in the
     /// project's URL list. No-op when the URL list yields no hosts (project
-    /// has no HTTPS surface, e.g. a bare/trixie project).
+    /// has no HTTPS surface, e.g. a bare/util project).
     static func ensureProjectCert(project: String, urls: [ProjectURL]) throws {
         let sans = mpdHosts(from: urls)
         guard !sans.isEmpty else { return }

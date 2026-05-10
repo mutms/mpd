@@ -219,7 +219,7 @@ A tool is a single executable script under one of three locations,
 chosen by scope:
 
 - `assets/runtime-base/tools/` — works in **any** Trixie-based runtime
-  (php, node, trixie, future ones). bootstrap.sh symlinks these into
+  (php, node, util, future ones). bootstrap.sh symlinks these into
   `/srv/tools/_base/` and adds that dir to PATH for every login shell.
   Examples: `claude-install`, `node-install`.
 - `assets/runtimes/<runtime>/tools/` — runtime-wide. The runtime's

@@ -109,7 +109,7 @@ private struct ProjectRow {
 
 private struct RuntimeRow {
     let name: String
-    let runtimeType: String   // "php", "node", "trixie"
+    let runtimeType: String   // "php", "node", "util"
     let ip: String
     let running: Bool
     let projectCount: Int
