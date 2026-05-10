@@ -264,34 +264,7 @@ Write-Step "Running 'mpd --setup'"
 Invoke-Ssh -User $VmUser -RemoteHost $VmIp -Command "mpd --setup"
 Write-Ok "mpd --setup complete"
 
-# ── 14. Auto-start on VM boot ─────────────────────────────────────────────────
-
-Write-Step "Enabling mpd auto-start on VM boot"
-
-Send-SshScript -User $VmUser -RemoteHost $VmIp -Script @"
-set -e
-sudo loginctl enable-linger "`$(id -un)"
-mkdir -p "`$HOME/.config/systemd/user"
-cat > "`$HOME/.config/systemd/user/mpd-autostart.service" << 'UNIT_EOF'
-[Unit]
-Description=mpd autostart
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/mpd --start
-RemainAfterExit=yes
-
-[Install]
-WantedBy=default.target
-UNIT_EOF
-systemctl --user daemon-reload
-systemctl --user enable mpd-autostart.service
-"@
-Write-Ok "mpd will start automatically on VM boot"
-
-# ── 15. Login banner ──────────────────────────────────────────────────────────
+# ── 14. Login banner ──────────────────────────────────────────────────────────
 
 Write-Step "Setting login banner"
 
@@ -302,7 +275,7 @@ sudo cp "`$HOME/Developer/mpd/assets/machine/motd" /etc/motd
 "@
 Write-Ok "Login banner set"
 
-# ── 16. Helper scripts in %USERPROFILE%\mpd-machine\ ─────────────────────────
+# ── 15. Helper scripts in %USERPROFILE%\mpd-machine\ ─────────────────────────
 
 Write-Step "Creating helper scripts in $MpdUserDir"
 
@@ -327,8 +300,6 @@ Write-Host "VM '$VmName' suspended."
 Write-Ok "Helper scripts created"
 
 # ── 16. Desktop shortcut ──────────────────────────────────────────────────────
-
-# ── 17. Desktop shortcut ──────────────────────────────────────────────────────
 
 Write-Step "Creating desktop shortcut"
 

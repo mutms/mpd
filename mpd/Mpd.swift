@@ -57,6 +57,7 @@ enum Mpd {
             enum Setup {}
             enum Start {}
             enum Stop {}
+            enum Restart {}
             enum Uninstall {}
             enum Status {}
         }

@@ -131,6 +131,9 @@ struct GlobalCommand: ParsableCommand {
     @Flag(name: .customLong("stop"),
           help: "Graceful stop: mark running projects as stopped, then run environment-specific stop.")
     var stop: Bool = false
+    @Flag(name: .customLong("restart"),
+          help: "Restart: machine reboots the VM (graceful DB shutdown via systemd unit, mpd auto-starts on boot); desktop bounces the Podman machine.")
+    var restart: Bool = false
     @Flag(name: .customLong("uninstall"),
           help: "Partial teardown: stop mpd, remove ~/.mpd/ state, keep ~/Developer/mpd/conf (CA + service certs; plus WireGuard on mpd-desktop), then print manual cleanup steps.")
     var uninstall: Bool = false
@@ -189,6 +192,7 @@ struct GlobalCommand: ParsableCommand {
         if setup             { try handleSetup();           return }
         if start             { try handleStart();            return }
         if stop              { try handleStop();             return }
+        if restart           { try handleRestart();          return }
         if uninstall         { try handleUninstall();        return }
         if setupInfo         { try handleSetupInfo();        return }
 

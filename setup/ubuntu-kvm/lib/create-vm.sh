@@ -486,29 +486,5 @@ step "Running 'mpd --setup' (CA, podman network, services)"
 ssh_cmd "$VM_IP" "$VM_USER" 'mpd --setup'
 ok "mpd --setup complete"
 
-step "Enabling mpd auto-start on VM boot"
-ssh_cmd "$VM_IP" "$VM_USER" 'bash -se' <<'EOF'
-set -e
-sudo loginctl enable-linger "$(id -un)"
-mkdir -p "$HOME/.config/systemd/user"
-cat > "$HOME/.config/systemd/user/mpd-autostart.service" << 'UNIT_EOF'
-[Unit]
-Description=mpd autostart
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/mpd --start
-RemainAfterExit=yes
-
-[Install]
-WantedBy=default.target
-UNIT_EOF
-systemctl --user daemon-reload
-systemctl --user enable mpd-autostart.service
-EOF
-ok "mpd will start automatically on VM boot"
-
 step "VM bootstrap complete"
 echo "    ${VM_USER}@${VM_IP} (${VM_NAME})"

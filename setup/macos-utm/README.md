@@ -85,9 +85,10 @@ away through the long unattended phase:
 7. Creates a UTM QEMU VM (aarch64) with `virtio-balloon-pci,free-page-reporting=on`
    so macOS reclaims unused guest memory.
 8. Boots the VM, uploads the host CA into it, waits for cloud-init,
-   clones the mpd repository, installs Swift, builds `bin/mpd`, runs
-   `mpd --setup` (which reuses the uploaded CA), and enables
-   `mpd --start` on VM boot.
+   clones the mpd repository, installs Swift, builds `bin/mpd`, and
+   runs `mpd --setup` (which reuses the uploaded CA and installs the
+   user-level `mpd.service` systemd unit so mpd auto-starts on boot
+   and graceful-stops on shutdown).
 9. **Pre-warms the demo stack**: builds the PHP runtime image and
    creates a `postgres:latest` DB container inside the VM so your
    first `demo moodle v5.2.0` doesn't pay the build/pull cost.

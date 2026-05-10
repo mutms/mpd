@@ -124,10 +124,11 @@ the long unattended phase:
    restarts the VM.
 10. In-VM provisioning over SSH: 4 GB swap, build dependencies
     (`build-essential`, `swiftlang`), `make install` of mpd, host CA
-    upload, `mpd --setup` (which installs podman, services, the
-    login banner, and trust within the VM).
-11. Enables `mpd --start` on VM boot via a `systemctl --user` unit
-    (with `loginctl enable-linger`).
+    upload, `mpd --setup` (which installs podman, services, trust
+    within the VM, **and the user-level `mpd.service` systemd unit**
+    that auto-starts mpd on boot and graceful-stops on shutdown via
+    `EventMpdPreStop` hooks; linger is enabled so the unit fires
+    headless).
 
 ### 4. Pre-warm
 
