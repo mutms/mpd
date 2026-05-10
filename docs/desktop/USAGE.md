@@ -126,10 +126,10 @@ You land in the runtime as your local user (UID matched), with
 passwordless sudo, agent-forwarded git auth, and the project tree at
 `/srv/projects/<project>/`. From there:
 
-- **PHPStorm Gateway** → connect to `php.runtime.mpd.test` over SSH;
-  the editor opens the project at `/srv/projects/moodle51`. Language
-  server, Xdebug, phpunit all run inside the runtime.
-- **VSCode Remote-SSH** → same endpoint, same shape.
+- **VS Code Remote-SSH** → connect to `php.runtime.mpd.test`, open
+  `/srv/projects/<project>/`. Language server, debugger, terminals
+  all run inside the runtime.
+- **PHPStorm Gateway** → same endpoint, same shape.
 - **Claude Code over SSH** → `ssh -A user@php.runtime.mpd.test` and
   start a session inside the runtime. The agent can read/write files,
   run composer / phpunit / behat, push to GitHub via your forwarded
@@ -137,6 +137,24 @@ passwordless sudo, agent-forwarded git auth, and the project tree at
 
 The host stays the thin coordination layer; the runtime is the
 workspace.
+
+### One-click IDE launch from the portal
+
+You don't have to remember any of the connection details. Open
+`https://mpd.test/`, click **details** on a running project, and the
+popover shows two buttons:
+
+- **VS Code** → `vscode://` Remote-SSH link with host + path
+  pre-filled. First click prompts to install the "Remote - SSH"
+  extension; subsequent clicks open the project directly.
+- **PHPStorm** → `jetbrains-gateway://` link with the same
+  pre-filled connection details. Requires JetBrains Gateway
+  installed; opens the connect dialog with everything ready.
+
+Buttons appear only when the project is running. Project types that
+don't hold editable code (e.g. `cftunnel`) opt out via
+`"ideLinks": false` in their `configuration.json` and don't render
+the section.
 
 ### Tools available inside the runtime
 

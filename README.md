@@ -46,10 +46,13 @@ configuration model. Switch between modes without relearning.
   for browsing every project's DB.
 - **Behat + Selenium** wired automatically when a project asks for it
   (`https://behat.<project>.mpd.test/`).
-- **PHPStorm Gateway / VSCode Remote-SSH connect straight into the
+- **VS Code Remote-SSH / PHPStorm Gateway connect straight into the
   runtime** — IDE on your host, language server / Xdebug / phpunit /
-  composer running inside the isolated container. AI agents land in
-  the same place.
+  composer running inside the isolated container. One-click launch
+  from the portal at `https://mpd.test/` (per-project popover →
+  *VS Code* / *PHPStorm* button) so you don't have to type the SSH
+  target. The Sandbox VM also ships VS Code pre-installed in its
+  GNOME desktop. AI agents land in the same runtime.
 - **Sandbox VM** (`mpd-machine`) — snapshottable and disposable;
   revert to a known-good snapshot or rebuild from scratch when needed.
 
