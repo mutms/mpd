@@ -280,7 +280,7 @@ extension Mpd.Environment.PodmanMachine {
             let runtime = item.Labels?["mpd.runtime"] ?? n
             let ip      = item.Labels?["mpd.ip"]      ?? Mpd.Podman.containerIP(item.Names.first ?? "")
             let status  = item.State == "running" ? "running" : "stopped"
-            let meta    = RuntimeStateEntry(name: n, runtime: runtime, ip: ip, status: status)
+            let meta    = RuntimeStateEntry(name: n, runtime: runtime, ip: ip, requested: status)
             Mpd.Runtime.State.saveRuntimeStateEntry(meta)
         }
         guard !quiet else { return }

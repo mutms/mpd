@@ -151,7 +151,10 @@ struct RegisteredProjectRecord: Codable {
     var databaseEngine: String
     var databaseVersion: String
     var runtimeName: String
-    var status: ProjectLifecycleStatus
+    /// Persisted intent: what the user has asked the project's state to be.
+    /// Mutated only by explicit verbs (`mpd <p> create/start/stop/delete`).
+    /// `current` (live observation) lives in `Mpd.Project.current(_:)`.
+    var requested: ProjectLifecycleStatus
     var urls: [ProjectURL]
 
     init(
@@ -161,7 +164,7 @@ struct RegisteredProjectRecord: Codable {
         databaseEngine: String = "",
         databaseVersion: String = "",
         runtimeName: String = "",
-        status: ProjectLifecycleStatus = .notConfigured,
+        requested: ProjectLifecycleStatus = .notConfigured,
         urls: [ProjectURL] = []
     ) {
         self.name = name
@@ -170,7 +173,7 @@ struct RegisteredProjectRecord: Codable {
         self.databaseEngine = databaseEngine
         self.databaseVersion = databaseVersion
         self.runtimeName = runtimeName
-        self.status = status
+        self.requested = requested
         self.urls = urls
     }
 
@@ -182,7 +185,7 @@ struct RegisteredProjectRecord: Codable {
         databaseEngine  = try c.decode(String.self, forKey: .databaseEngine)
         databaseVersion = try c.decode(String.self, forKey: .databaseVersion)
         runtimeName     = try c.decode(String.self, forKey: .runtimeName)
-        status          = try c.decode(ProjectLifecycleStatus.self, forKey: .status)
+        requested       = try c.decode(ProjectLifecycleStatus.self, forKey: .requested)
         urls            = try c.decodeIfPresent([ProjectURL].self, forKey: .urls) ?? []
     }
 }
@@ -201,13 +204,16 @@ struct RuntimeStateEntry: Codable {
     var name: String
     var runtime: String
     var ip: String
-    var status: String?
+    /// Persisted intent: "running" or "stopped". Mutated only by explicit
+    /// runtime verbs (`mpd --runtime-create/start/stop/delete`). The live
+    /// observation lives in `Mpd.Runtime.current(_:)`.
+    var requested: String?
 
-    init(name: String, runtime: String, ip: String, status: String? = nil) {
+    init(name: String, runtime: String, ip: String, requested: String? = nil) {
         self.name = name
         self.runtime = runtime
         self.ip = ip
-        self.status = status
+        self.requested = requested
     }
 }
 

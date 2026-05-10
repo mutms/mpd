@@ -105,29 +105,36 @@ extension Mpd.Runtime {
         func col(_ s: String, _ w: Int) -> String {
             s.count < w ? s.padding(toLength: w, withPad: " ", startingAt: 0) : s + "  "
         }
-        print(col("NAME", 18) + col("STATUS", 10) + col("IP", 16) + col("DNS", 28) + "PROJECTS")
-        print(String(repeating: "─", count: 90))
+        print(col("NAME", 18) + col("REQUESTED", 12) + col("CURRENT", 10) +
+              col("IP", 16) + col("DNS", 28) + "PROJECTS")
+        print(String(repeating: "─", count: 100))
 
         for name in names {
             let item = createdByName[name]
             let ip: String
             let dns: String
-            let status: String
+            let requestedStr: String
+            let currentStr: String
 
             if let item {
                 ip = item.Labels?["mpd.ip"] ?? Mpd.Podman.containerIP(item.Names.first ?? "")
-                status = item.State == "running" ? "running" : "stopped"
-                // DNS hostname is the SSH target; valid as long as the runtime exists.
                 dns = "\(name).runtime.mpd.test"
+                // Persisted intent (requested) drives reconciliation; live
+                // observation (current) drives display of what is.
+                requestedStr = Mpd.Runtime.State.loadRuntimeStateEntry(name)?.requested ?? "-"
+                currentStr = item.State == "running" ? "running" : "stopped"
             } else {
                 ip = "—"
                 dns = "—"
-                status = "available"
+                requestedStr = "-"
+                currentStr = "available"
             }
 
             let count = projectEntries(name).count
             let pLabel = "\(count) project\(count == 1 ? "" : "s")"
-            print(col(name, 18) + runtimeListColorStatusLabel(status, width: 10) + col(ip, 16) + col(dns, 28) + pLabel)
+            print(col(name, 18) + runtimeListColorStatusLabel(requestedStr, width: 12) +
+                  runtimeListColorStatusLabel(currentStr, width: 10) +
+                  col(ip, 16) + col(dns, 28) + pLabel)
         }
     }
 
@@ -138,22 +145,24 @@ extension Mpd.Runtime {
         guard Mpd.Podman.exists(cName) else {
             throw RuntimeError("Runtime '\(name)' does not exist.")
         }
-        let running  = Mpd.Podman.running(cName)
         let ip       = Mpd.Podman.label(cName, "mpd.ip")
         let projects = projectEntries(name)
+        let requestedStr = Mpd.Runtime.State.loadRuntimeStateEntry(name)?.requested ?? "-"
+        let currentStr = Mpd.Runtime.current(name).rawValue
 
         print("Name:       \(name)")
         print("IP:         \(ip.isEmpty ? "(unknown)" : ip)")
         print("SSH:        ssh \(name).runtime.mpd.test")
         print("URL:        https://\(name).runtime.mpd.test")
-        print("Status:     \(running ? "running" : "stopped")")
+        print("Requested:  \(requestedStr)")
+        print("Current:    \(currentStr)")
         if projects.isEmpty {
             print("Projects:   (none)")
         } else {
             for (i, entry) in projects.enumerated() {
                 let prefix = i == 0 ? "Projects:   " : "            "
-                let url = entry.status == .running ? "  → https://\(entry.name).mpd.test/" : ""
-                var info = "\(entry.name)  \(entry.status)  \(entry.type)"
+                let url = entry.requested == .running ? "  → https://\(entry.name).mpd.test/" : ""
+                var info = "\(entry.name)  \(entry.requested)  \(entry.type)"
                 if !entry.databaseEngine.isEmpty { info += "  [\(entry.databaseEngine):\(entry.databaseVersion)]" }
                 print("\(prefix)\(info)\(url)")
             }
@@ -304,7 +313,7 @@ extension Mpd.Runtime {
 
         // Write runtime meta
         Mpd.Runtime.State.saveRuntimeStateEntry(RuntimeStateEntry(
-            name: name, runtime: name, ip: runtimeIP, status: "running"))
+            name: name, runtime: name, ip: runtimeIP, requested: "running"))
 
         // Attach sidecars: frontdoor (always-on) + runtime defaults + URL-kind
         // derived (e.g. selenium when any project has `kind: behat`). At create
@@ -373,7 +382,7 @@ extension Mpd.Runtime {
         let runtimeIP: String
         if let entry = Mpd.Runtime.State.loadRuntimeStateEntry(name) {
             var updated = entry
-            updated.status = "running"
+            updated.requested = "running"
             Mpd.Runtime.State.saveRuntimeStateEntry(updated)
             runtimeIP = entry.ip
         } else {
@@ -383,7 +392,7 @@ extension Mpd.Runtime {
                 name: name,
                 runtime: runtime.isEmpty ? name : runtime,
                 ip: ip,
-                status: "running"
+                requested: "running"
             ))
             runtimeIP = ip
         }
@@ -435,7 +444,7 @@ extension Mpd.Runtime {
         }
         if let entry = Mpd.Runtime.State.loadRuntimeStateEntry(name) {
             var updated = entry
-            updated.status = "stopped"
+            updated.requested = "stopped"
             Mpd.Runtime.State.saveRuntimeStateEntry(updated)
         } else {
             let ip = Mpd.Podman.label(cName, "mpd.ip")
@@ -444,26 +453,20 @@ extension Mpd.Runtime {
                 name: name,
                 runtime: runtime.isEmpty ? name : runtime,
                 ip: ip,
-                status: "stopped"
+                requested: "stopped"
             ))
         }
 
-        // Cascade — when the pod stops, every project on it is unreachable
-        // regardless of whether the project's own stop path was taken.
-        // Mark them stopped and drop their dnsmasq records so URLs stop
-        // resolving (defense-in-depth: callers that bypass ProjectLifecycle.stop
-        // — direct podman, future internals — still leave consistent state).
-        var projects = Mpd.Runtime.State.loadProjects()
-        var cascaded = 0
-        for i in projects.projects.indices
-            where projects.projects[i].runtimeName == name
-                && projects.projects[i].status == .running {
-            projects.projects[i].status = .stopped
-            Mpd.Project.removeDnsmasqRecord(project: projects.projects[i].name)
-            cascaded += 1
-        }
-        if cascaded > 0 {
-            Mpd.Runtime.State.saveProjects(projects)
+        // Drop dnsmasq records for projects on this runtime — URLs stop
+        // resolving immediately so users don't get confused responses.
+        // Project `requested` is preserved (the user didn't ask to stop
+        // these projects) — see docs/HOOKS.md §"Resource lifecycle model".
+        // When the runtime is started again, restoreRunningProjects
+        // re-creates the dnsmasq records.
+        let projects = Mpd.Runtime.State.loadProjects().projects
+            .filter { $0.runtimeName == name && $0.requested == .running }
+        for proj in projects {
+            Mpd.Project.removeDnsmasqRecord(project: proj.name)
         }
 
         ok("Stopped runtime '\(name)'.")
@@ -509,19 +512,14 @@ extension Mpd.Runtime {
         Mpd.Service.Dnsmasq.waitUntilReady()
         Mpd.Runtime.State.deleteRuntimeStateEntry(name)
 
-        // Cascade — mark every project on this runtime as stopped so
-        // `mpd list` doesn't show stale "running" status after delete.
-        var allProjects = Mpd.Runtime.State.loadProjects()
-        var cascaded = 0
-        for i in allProjects.projects.indices
-            where allProjects.projects[i].runtimeName == name
-                && allProjects.projects[i].status == .running {
-            allProjects.projects[i].status = .stopped
-            Mpd.Project.removeDnsmasqRecord(project: allProjects.projects[i].name)
-            cascaded += 1
-        }
-        if cascaded > 0 {
-            Mpd.Runtime.State.saveProjects(allProjects)
+        // Drop dnsmasq records for orphaned projects — their URLs would
+        // otherwise resolve to a now-deleted runtime. Project `requested`
+        // is preserved; the user can `mpd <project> delete` explicitly
+        // (or wait for `mpd --gc` to reclaim) to clean up the entries.
+        let orphaned = Mpd.Runtime.State.loadProjects().projects
+            .filter { $0.runtimeName == name && $0.requested == .running }
+        for proj in orphaned {
+            Mpd.Project.removeDnsmasqRecord(project: proj.name)
         }
 
         ok("Runtime '\(name)' removed.")
@@ -531,7 +529,7 @@ extension Mpd.Runtime {
 
     static func restoreRunningProjects(name: String, cName: String) {
         let projects = Mpd.Runtime.State.loadProjects().projects
-            .filter { $0.runtimeName == name && $0.status == .running }
+            .filter { $0.runtimeName == name && $0.requested == .running }
         guard !projects.isEmpty else { return }
 
         let runtimeIP = Mpd.Podman.label(cName, "mpd.ip")
@@ -562,7 +560,7 @@ extension Mpd.Runtime {
 
     static func garbageCollect() throws {
         let projects = Mpd.Runtime.State.loadProjects().projects
-        let runningRuntimes = Set(projects.filter { $0.status == .running }.map { $0.runtimeName })
+        let runningRuntimes = Set(projects.filter { $0.requested == .running }.map { $0.runtimeName })
         let containers = allContainers()
         var stopped = 0
         for item in containers {

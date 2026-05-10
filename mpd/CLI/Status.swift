@@ -52,31 +52,22 @@ extension Mpd {
         let projects = Mpd.Runtime.State.loadProjects().projects
         guard !projects.isEmpty else { print("No projects found."); return }
 
-        // Cross-check against live Podman state so a stopped runtime
-        // doesn't leave its projects showing as "running".
-        let runningRuntimes = Set(
-            Mpd.Podman.ps(filter: "label=mpd.runtime")
-                .filter { $0.State == "running" }
-                .compactMap { $0.Labels?["mpd.name"] }
-        )
-
         func col(_ s: String, _ w: Int) -> String {
             s.count < w ? s.padding(toLength: w, withPad: " ", startingAt: 0) : s + "  "
         }
-        print(col("PROJECT", 14) + col("STATUS", 10) + col("TYPE", 12) +
-              col("RUNTIME", 10) + col("DB", 14) + "URL")
-        print(String(repeating: "─", count: 94))
+        print(col("PROJECT", 14) + col("REQUESTED", 12) + col("CURRENT", 10) +
+              col("TYPE", 10) + col("RUNTIME", 10) + col("DB", 16) + "URL")
+        print(String(repeating: "─", count: 100))
 
         for p in projects.sorted(by: { $0.name < $1.name }) {
+            // For stopped projects, mainURL is suppressed (matches old behavior).
             let url = Mpd.Project.projectURL(entry: p)
             let dbStr = p.databaseId.isEmpty ? "-" : p.databaseId
             let rtStr = p.runtimeName.isEmpty ? "—" : p.runtimeName
-            let effectiveStatus = (p.status == .running && !p.runtimeName.isEmpty
-                && !runningRuntimes.contains(p.runtimeName))
-                ? ProjectLifecycleStatus.stopped.rawValue
-                : p.status.rawValue
-            print(col(p.name, 14) + colorStatusLabel(effectiveStatus, width: 10) + col(p.type, 12) +
-                  col(rtStr, 10) + col(dbStr, 14) + url)
+            let requested = p.requested.rawValue
+            let current = Mpd.Project.current(p.name).rawValue
+            print(col(p.name, 14) + colorStatusLabel(requested, width: 12) + colorStatusLabel(current, width: 10) +
+                  col(p.type, 10) + col(rtStr, 10) + col(dbStr, 16) + url)
         }
     }
 

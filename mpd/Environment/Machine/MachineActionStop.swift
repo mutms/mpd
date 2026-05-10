@@ -17,24 +17,25 @@ extension Mpd.Environment.Action.Stop {
         step("Firing pre-stop hooks")
         try Mpd.Hooks.fire(EventMpdPreStop(), verb: "stop")
 
-        // Persist project status before poweroff. The VM's filesystem keeps the
-        // state file across reboots; on next boot 'mpd --start' starts from a
-        // consistent baseline.
-        step("Updating project statuses")
-        var projects = Mpd.Runtime.State.loadProjects()
-        var count = 0
-        for i in projects.projects.indices where projects.projects[i].status == .running {
-            projects.projects[i].status = .stopped
-            count += 1
-        }
-        Mpd.Runtime.State.saveProjects(projects)
-        ok(count > 0 ? "Marked \(count) project(s) as stopped." : "No running projects.")
+        // Project status is *preserved* across the reboot (persisted intent
+        // model — see docs/HOOKS.md §"Resource lifecycle model"). Projects
+        // marked running stay running in state, so the next `mpd --start`
+        // restores them automatically.
 
         print("""
 
         \u{001B}[1;33mPowering off VM\u{001B}[0m
         (your SSH session will drop in a moment)
         """)
+
+        // Test/dev escape hatch: setting MPD_STOP_DOES_NOT_SHUTDOWN_VM
+        // lets agents (or anyone) exercise the post-`mpd --stop` flow
+        // without losing the SSH session to a real poweroff. Use sparingly
+        // — the whole point of `mpd --stop` is normally to power off.
+        if let v = ProcessInfo.processInfo.environment["MPD_STOP_DOES_NOT_SHUTDOWN_VM"], !v.isEmpty {
+            print("\nMPD_STOP_DOES_NOT_SHUTDOWN_VM is set — skipping VM poweroff.")
+            return
+        }
 
         // systemd will SIGTERM podman services (rootful containers get graceful
         // shutdown via the podman.service unit). Passwordless sudo is set up

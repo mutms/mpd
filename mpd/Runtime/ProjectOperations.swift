@@ -141,8 +141,8 @@ extension Mpd.Project {
 
         // Step 6: URL list, meta, status.
         entry.urls = readProjectURLs(project: project)
-        if entry.status == .notConfigured && !entry.type.isEmpty {
-            entry.status = .stopped
+        if entry.requested == .notConfigured && !entry.type.isEmpty {
+            entry.requested = .stopped
         }
         writeProjectMeta(project: project, entry: entry)
         Mpd.Runtime.State.upsertProject(entry)
@@ -155,14 +155,14 @@ extension Mpd.Project {
         // repair work, stop it again unless some project is running on it.
         if !runtimeWasRunning {
             let hasRunningProjects = Mpd.Runtime.State.loadProjects().projects.contains {
-                $0.runtimeName == entry.runtimeName && $0.status == .running
+                $0.runtimeName == entry.runtimeName && $0.requested == .running
             }
             if !hasRunningProjects {
                 try? Mpd.Runtime.stop(entry.runtimeName)
             }
         }
 
-        ok("Project '\(project)' configured. Type: \(entry.type), Status: \(entry.status)")
+        ok("Project '\(project)' configured. Type: \(entry.type), Status: \(entry.requested)")
     }
 
     // MARK: - mpd.env mutation sanitisation

@@ -36,8 +36,8 @@ extension Mpd.Environment.Action.Status {
 
             let projs = (projectsByRuntime[n] ?? []).sorted(by: { $0.name < $1.name })
             for p in projs {
-                let url = p.status == .running ? "   https://\(p.name).mpd.test/" : ""
-                print("  \(p.name)   \(p.status)\(url)")
+                let url = p.requested == .running ? "   https://\(p.name).mpd.test/" : ""
+                print("  \(p.name)   \(p.requested)\(url)")
             }
         }
 
@@ -49,7 +49,7 @@ extension Mpd.Environment.Action.Status {
             print("\nOrphaned projects without runtime:")
             for p in allOrphaned.sorted(by: { $0.name < $1.name }) {
                 print("  \(p.name.padding(toLength: 16, withPad: " ", startingAt: 0))" +
-                      "\(p.status.rawValue.padding(toLength: 16, withPad: " ", startingAt: 0))" +
+                      "\(p.requested.rawValue.padding(toLength: 16, withPad: " ", startingAt: 0))" +
                       "→ mpd \(p.name) start")
             }
         }

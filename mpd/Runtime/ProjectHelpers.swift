@@ -165,7 +165,7 @@ extension Mpd.Project {
     /// or `label == "main"`, else the first URL. Empty when the project isn't
     /// running or has no URLs.
     static func projectURL(entry: RegisteredProjectRecord) -> String {
-        guard !entry.runtimeName.isEmpty, entry.status == .running else { return "" }
+        guard !entry.runtimeName.isEmpty, entry.requested == .running else { return "" }
         if let main = entry.urls.first(where: { $0.kind == "web" || $0.label == "main" }) {
             return main.url
         }

@@ -90,7 +90,7 @@ extension Mpd.Core.DataVolume {
                     databaseEngine: e.databaseEngine ?? "",
                     databaseVersion: e.databaseVersion ?? "",
                     runtimeName: "",
-                    status: .stopped
+                    requested: .stopped
                 ))
             }
         }

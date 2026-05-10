@@ -19,20 +19,9 @@ extension Mpd.Environment.Action.Stop {
 
         try Mpd.Environment.PodmanMachine.stop(status.activeMachine)
 
-        // Mark all running projects as stopped only after machine stop succeeds.
-        step("Updating project statuses")
-        var projects = Mpd.Runtime.State.loadProjects()
-        var count = 0
-        for i in projects.projects.indices where projects.projects[i].status == .running {
-            projects.projects[i].status = .stopped
-            count += 1
-        }
-        Mpd.Runtime.State.saveProjects(projects)
-        if count > 0 {
-            ok("\(count) project(s) marked as stopped.")
-        } else {
-            ok("No running projects.")
-        }
+        // Project status is preserved across mpd --stop / --start
+        // (persisted intent model — see docs/HOOKS.md §"Resource lifecycle
+        // model"). The next `mpd --start` restores running projects.
 
         print("\n\u{001B}[1;32m✓ mpd stopped.\u{001B}[0m")
         print("  Restart with: mpd --start")

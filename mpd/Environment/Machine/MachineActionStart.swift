@@ -45,7 +45,7 @@ extension Mpd.Environment.Action.Start {
         // Restore runtimes that had running projects before the last shutdown.
         let runtimesToRestore = Set(
             Mpd.Runtime.State.loadProjects().projects
-                .filter { $0.status == .running && !$0.runtimeName.isEmpty }
+                .filter { $0.requested == .running && !$0.runtimeName.isEmpty }
                 .map { $0.runtimeName }
         )
         for runtimeName in runtimesToRestore.sorted() {

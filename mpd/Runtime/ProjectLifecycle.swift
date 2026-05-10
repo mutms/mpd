@@ -66,13 +66,14 @@ extension Mpd.Project {
         if !config.isEmpty {
             print("Configuration:  \(config)")
         }
-        print("Status:         \(entry.status)")
+        print("Requested:      \(entry.requested.rawValue)")
+        print("Current:        \(Mpd.Project.current(project).rawValue)")
         if entry.runtimeName.isEmpty {
             print("Runtime:        —\n\n  mpd \(project) create")
         } else {
             let rt = entry.runtimeName
             let rtRunning = Mpd.Podman.running(Mpd.Runtime.containerName(rt))
-            if entry.status == .running && rtRunning {
+            if entry.requested == .running && rtRunning {
                 print("Runtime:        \(rt)")
                 if !entry.urls.isEmpty {
                     let labelWidth = entry.urls.map { $0.label.count }.max() ?? 0
@@ -272,7 +273,7 @@ extension Mpd.Project {
             else { throw RuntimeError("project-setup.sh failed.") }
         }
 
-        entry.status = .running
+        entry.requested = .running
         Mpd.Runtime.State.upsertProject(entry)
 
         // Post-start hooks fire here — project is fully live. Failures
@@ -292,7 +293,7 @@ extension Mpd.Project {
     // MARK: - stop
 
     static func stop(project: String, entry: inout RegisteredProjectRecord, args: [String]) throws {
-        guard entry.status == .running else {
+        guard entry.requested == .running else {
             print("'\(project)' is already stopped.")
             return
         }
@@ -317,7 +318,7 @@ extension Mpd.Project {
             }
         }
 
-        entry.status = .stopped
+        entry.requested = .stopped
         Mpd.Runtime.State.upsertProject(entry)
 
         // Remove dnsmasq record for this project
@@ -352,7 +353,7 @@ extension Mpd.Project {
         }
 
         // Stop first
-        if entry.status == .running {
+        if entry.requested == .running {
             var mutable = entry
             try? stop(project: project, entry: &mutable, args: [])
         }

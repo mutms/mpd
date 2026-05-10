@@ -128,7 +128,7 @@ private func loadProjects() -> [ProjectRow] {
                 databaseId: p.databaseId,
                 databaseEngine: p.databaseEngine,
                 databaseVersion: p.databaseVersion,
-                status: p.status.rawValue,
+                status: p.requested.rawValue,
                 urls: p.urls,
                 mainURL: Mpd.Project.projectURL(entry: p)
             )
