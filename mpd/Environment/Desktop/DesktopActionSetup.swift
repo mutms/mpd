@@ -362,6 +362,11 @@ extension Mpd.Environment.Action.Setup {
         // Silent pre-fetch default database image (best effort).
         _ = Mpd.Podman.pull("docker.io/library/postgres:17", quiet: true)
 
+        // Hook diagnostics — orphans, audience drift, revision bumps.
+        // Silent in the happy path; prints warnings only when something
+        // is off. Stamps current event revisions for next-run comparison.
+        Mpd.Hooks.diagnose()
+
         print("""
 
         \u{001B}[1;32m✓ mpd --setup complete.\u{001B}[0m

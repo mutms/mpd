@@ -393,7 +393,36 @@ extension Mpd.Runtime {
             try waitForRuntimeSSHD(ip: runtimeIP)
         }
         ok("Started runtime '\(name)'.")
+
+        // Pre-warm every DB any project on this runtime might need —
+        // running or stopped — so subsequent `mpd start <project>` calls
+        // never have to wait for a cold-start. Daily dev machines have
+        // ~3 DBs total; release-test machines (separate mpd-machine, by
+        // convention) carry many DB versions. See docs/HOOKS.md
+        // §"Resource lifecycle model".
+        ensureProjectDatabases(runtimeName: name)
+
         restoreRunningProjects(name: name, cName: cName)
+    }
+
+    /// Ensure every distinct DB (engine,version) used by any project on
+    /// `runtimeName` is up. Idempotent; failures log a warning but don't
+    /// throw — a single broken DB shouldn't block runtime start, and the
+    /// per-project `mpd start <project>` path still ensures its own DB.
+    static func ensureProjectDatabases(runtimeName: String) {
+        let projects = Mpd.Runtime.State.loadProjects().projects
+            .filter { $0.runtimeName == runtimeName && !$0.databaseEngine.isEmpty }
+        var seen = Set<String>()
+        for proj in projects {
+            let key = "\(proj.databaseEngine):\(proj.databaseVersion)"
+            guard !seen.contains(key) else { continue }
+            seen.insert(key)
+            do {
+                try Mpd.Runtime.DB.ensure(engine: proj.databaseEngine, version: proj.databaseVersion)
+            } catch {
+                errPrint("Warning: failed to ensure DB '\(key)' for runtime '\(runtimeName)': \(error.localizedDescription)")
+            }
+        }
     }
 
     static func stop(_ name: String) throws {

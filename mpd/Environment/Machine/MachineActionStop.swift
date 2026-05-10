@@ -11,6 +11,12 @@ extension Mpd.Environment.Action.Stop {
             throw RuntimeError("mpd is not set up yet. Run: mpd --setup")
         }
 
+        // Graceful DB shutdown before poweroff. Without this, the next boot
+        // would find postgres doing crash recovery on first start. Failures
+        // are logged but never block — `.continue` failure mode.
+        step("Firing pre-stop hooks")
+        try Mpd.Hooks.fire(EventMpdPreStop(), verb: "stop")
+
         // Persist project status before poweroff. The VM's filesystem keeps the
         // state file across reboots; on next boot 'mpd --start' starts from a
         // consistent baseline.

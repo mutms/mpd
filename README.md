@@ -144,11 +144,14 @@ not manage a hypervisor explicitly: see
 
 ## Roadmap (short form)
 
-- **Hooks (top priority)** — `<event>.d/` directories for runtime,
-  database, and service containers, fired by Swift verbs at
-  well-defined lifecycle points. Replaces today's hardcoded
-  per-runtime / per-DB-type stop / configure logic with
-  asset-additive `bash` scripts. Concept sketch in
+- **Hooks (top priority)** — typed `Event` classes in Swift fire at
+  well-defined lifecycle points; `bash` scripts under
+  `hooks/<event>.d/` in container assets subscribe. v1 scope: engine
+  + four events covering mpd start/stop and basic project lifecycle,
+  plus systemd integration so VM shutdown triggers graceful DB
+  stop. Migrates today's hardcoded per-runtime / per-DB-type Swift
+  logic to asset-additive scripts, and closes the postgres
+  recovery-after-reboot bug. Design in
   [docs/HOOKS.md](docs/HOOKS.md).
 - Public preview URLs via **Cloudflare Tunnel + Cloudflare Access** —
   share a project URL with a teammate, client, or external collaborator.

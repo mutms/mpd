@@ -242,6 +242,16 @@ extension Mpd.Project {
             try Mpd.Runtime.DB.ensure(engine: entry.databaseEngine, version: entry.databaseVersion)
         }
 
+        // Pre-start hooks fire here — runtime + DB are up but project setup
+        // hasn't run yet. Hook authors can apply per-project DB migrations,
+        // seed data, etc. Failures abort the start (`.abort` failure mode).
+        try Mpd.Hooks.fire(EventProjectPreStart(
+            project: project,
+            runtime: runtimeName,
+            dbEngine: entry.databaseEngine,
+            dbVersion: entry.databaseVersion
+        ), verb: "start")
+
         // Ensure per-project TLS cert exists
         try ensureProjectCert(project: project, urls: entry.urls)
 
@@ -265,6 +275,15 @@ extension Mpd.Project {
         entry.status = .running
         Mpd.Runtime.State.upsertProject(entry)
 
+        // Post-start hooks fire here — project is fully live. Failures
+        // log a warning but don't undo the start (`.continue` failure mode).
+        try Mpd.Hooks.fire(EventProjectPostStart(
+            project: project,
+            runtime: runtimeName,
+            dbEngine: entry.databaseEngine,
+            dbVersion: entry.databaseVersion
+        ), verb: "start")
+
         let url = projectURL(entry: entry)
         ok("'\(project)' is running.")
         if !url.isEmpty { print("  \(url)") }
@@ -280,6 +299,16 @@ extension Mpd.Project {
         let runtimeName = entry.runtimeName
         let cName = Mpd.Runtime.containerName(runtimeName)
 
+        // Pre-stop hooks fire here — project is still running, runtime
+        // still up. Hook authors can drain in-flight work, flush caches,
+        // etc. `.continue` failure mode — we never block a stop.
+        try Mpd.Hooks.fire(EventProjectPreStop(
+            project: project,
+            runtime: runtimeName,
+            dbEngine: entry.databaseEngine,
+            dbVersion: entry.databaseVersion
+        ), verb: "stop")
+
         // Stop dev server if the type requires it (configuration.json: stop.systemdStop)
         let pType = ProjectType(entry.type)
         if let config = try? pType.loadConfiguration(), config.stopSystemd {
@@ -294,30 +323,12 @@ extension Mpd.Project {
         // Remove dnsmasq record for this project
         removeDnsmasqRecord(project: project)
 
-        // Cascade: stop DB if no other running projects use it
-        if !entry.databaseEngine.isEmpty {
-            let dbCName = Mpd.Runtime.DB.containerName(engine: entry.databaseEngine, version: entry.databaseVersion)
-            let otherRunning = Mpd.Runtime.State.loadProjects().projects
-                .filter {
-                    $0.name != project && $0.status == .running
-                        && $0.databaseEngine == entry.databaseEngine && $0.databaseVersion == entry.databaseVersion
-                }
-            if otherRunning.isEmpty {
-                Mpd.Podman.stop(dbCName)
-            }
-        }
-
-        // Cascade: stop runtime if no other running projects use it
-        if !runtimeName.isEmpty {
-            let otherRunning = Mpd.Runtime.State.loadProjects().projects
-                .filter {
-                    $0.name != project && $0.status == .running
-                        && $0.runtimeName == runtimeName
-                }
-            if otherRunning.isEmpty {
-                try? Mpd.Runtime.stop(runtimeName)
-            }
-        }
+        // Demand-driven DB model (see docs/HOOKS.md §"Resource lifecycle
+        // model"): databases are not auto-stopped when their last project
+        // stops. Devs poke at DBs after the project is down; beginners
+        // keep one DB. Memory reclamation is `mpd --gc`'s job, not the
+        // project-stop path's. Same rationale for runtimes — explicit user
+        // intent, not cascade.
 
         ok("'\(project)' stopped.")
     }

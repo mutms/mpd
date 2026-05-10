@@ -31,6 +31,13 @@ extension Mpd.Environment.Action.Uninstall {
             return
         }
 
+        // Step 0 — Remove the user-level systemd shutdown unit before we
+        // tear down everything else. Linger is left alone (user may have
+        // enabled it for other reasons; orphan linger is harmless).
+        step("Removing shutdown unit")
+        Mpd.Environment.ShutdownUnit.uninstall()
+        ok("~/.config/systemd/user/mpd.service removed.")
+
         // Step 1 — Force-remove all mpd-managed containers + pods.
         // We use rm -f (SIGKILL) — graceful shutdown isn't needed for teardown,
         // and `podman stop`'s 10s SIGTERM grace per container makes uninstall painful.

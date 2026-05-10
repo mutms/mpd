@@ -169,6 +169,11 @@ struct GlobalCommand: ParsableCommand {
     @Flag(name: .customLong("status"), help: "Show context-aware status (text output).")
     var status: Bool = false
 
+    // Hook diagnostics
+    @Flag(name: .customLong("check-hooks"),
+          help: "Cross-reference asset hook directories against the Event catalogue and print warnings for orphans and revision bumps. Also runs at the end of `mpd --setup`.")
+    var checkHooks: Bool = false
+
     // Global modifiers
     @Flag(name: .customLong("yes"),  help: "Skip confirmation prompts (for scripted use).")
     var yes: Bool = false
@@ -196,6 +201,8 @@ struct GlobalCommand: ParsableCommand {
         if let n = dbStart   { try handleDbStart(n);        return }
         if let n = dbStop    { try handleDbStop(n);         return }
         if let n = dbDelete  { try handleDbDelete(n);       return }
+
+        if checkHooks { try handleCheckHooks(); return }
 
         // If we get here with no flags matched, show status as fallback
         try handleStatus()

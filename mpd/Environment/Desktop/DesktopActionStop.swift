@@ -12,6 +12,11 @@ extension Mpd.Environment.Action.Stop {
             throw RuntimeError("mpd is not set up yet. Run: mpd --setup")
         }
 
+        // Graceful DB shutdown before tearing the Podman machine down.
+        // `.continue` failure mode — never blocks the stop sequence.
+        step("Firing pre-stop hooks")
+        try Mpd.Hooks.fire(EventMpdPreStop(), verb: "stop")
+
         try Mpd.Environment.PodmanMachine.stop(status.activeMachine)
 
         // Mark all running projects as stopped only after machine stop succeeds.

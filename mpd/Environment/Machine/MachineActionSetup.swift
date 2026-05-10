@@ -555,6 +555,19 @@ extension Mpd.Environment.Action.Setup {
         Mpd.Environment.Integration.printClientArtifacts(
             caPath: caRootPem, sshUser: user)
 
+        // Install the user-level systemd unit that fires `mpd --stop`
+        // on VM shutdown / reboot / suspend, so DBs get graceful
+        // EventMpdPreStop hooks instead of being killed mid-flight.
+        // See docs/HOOKS.md §"Systemd integration".
+        step("Installing shutdown unit")
+        try Mpd.Environment.ShutdownUnit.install()
+        ok("~/.config/systemd/user/mpd.service installed and enabled.")
+
+        // Hook diagnostics — orphans, audience drift, revision bumps.
+        // Silent in the happy path; prints warnings only when something
+        // is off. Stamps current event revisions for next-run comparison.
+        Mpd.Hooks.diagnose()
+
         print("""
 
         \u{001B}[1;32m✓ mpd --setup complete.\u{001B}[0m
