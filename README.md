@@ -4,7 +4,7 @@
 tool — PHP, Composer, Node, even AI coding agents — inside an
 isolated runtime container. Your laptop stays untouched. You SSH into
 the runtime from your terminal or IDE (PHPStorm Gateway, VSCode
-Remote-SSH) and find PHP, Composer, and your AI agent (Claude Code,
+Remote-SSH) and find PHP, Composer, Node, and your AI agent (Claude Code,
 Codex, Cursor, Aider) waiting for you there. Project dependencies
 and the AI itself stay confined to the runtime.
 
@@ -16,13 +16,15 @@ Three modes, distinguished by where you sit and where `mpd` runs:
   Recommended starting point.
 - **`mpd-machine`** — automated headless VM. You stay on your host
   (macOS / Ubuntu / Windows): your host browser visits `*.mpd.test`
-  directly (via the route + DNS the bootstrap configured), and your
-  host terminal SSH'es into the headless VM to use the `mpd` CLI
-  (PHPStorm Gateway / VSCode Remote-SSH for IDE work).
+  directly (via the route + DNS the bootstrap configured); your host
+  terminal SSH'es into the VM to run the `mpd` CLI; your IDE
+  (PHPStorm Gateway / VSCode Remote-SSH) SSH'es one hop further
+  into the runtime container inside the VM.
 - **`mpd-desktop`** — `mpd` is a native macOS binary you run in your
-  local Terminal — no SSH hop. macOS browser sees `*.mpd.test` via
-  a local WireGuard tunnel; Podman Desktop manages the Linux
-  container machine in the background.
+  local Terminal — no SSH hop to a VM. macOS browser sees `*.mpd.test`
+  via a local WireGuard tunnel; Podman Desktop manages the Linux
+  container machine in the background; your IDE SSH'es straight
+  into the runtime container.
 
 Same CLI surface, same `*.mpd.test` URLs, same per-project
 configuration model. Switch between modes without relearning.
@@ -50,14 +52,14 @@ configuration model. Switch between modes without relearning.
 
 ## Three modes
 
-| | **Sandbox VM** | **`mpd-machine`** | **`mpd-desktop`** |
-|---|---|---|---|
-| **Where `mpd` runs** | Inside the VM | Inside a headless VM | Natively on macOS |
-| **Where you sit** | Inside the VM (full GNOME) | On your host (browser + SSH-into-VM) | On your host (Terminal + browser) |
-| **Host OS** | Any (UTM, Hyper-V, VirtualBox, virt-manager, VMware…) | macOS, Ubuntu, Windows | macOS only |
-| **Bootstrap** | Install Ubuntu 26.04, snapshot, run one script in the VM | `setup.command` / `setup.sh` / `setup.cmd` | Install Podman Desktop + WireGuard, `mpd --setup` |
-| **Network** | Internal to the VM (host untouched) | Plain L3 route + DNS resolver on host | gvproxy + WireGuard tunnel |
-| **Best for** | Newcomers; AI-safety; host stays untouched; hypervisor snapshot/revert as the safety net | Native host integration — laptop browser sees `*.mpd.test` directly | Already on Podman Desktop; minimal explicit VM management |
+|                      | **Sandbox VM**                                                                           | **`mpd-machine`**                                                   | **`mpd-desktop`**                                         |
+|----------------------|------------------------------------------------------------------------------------------|---------------------------------------------------------------------|-----------------------------------------------------------|
+| **Where `mpd` runs** | Inside the VM                                                                            | Inside a headless VM                                                | Natively on macOS                                         |
+| **Where you sit**    | Inside the VM (full GNOME)                                                               | On your host (browser + SSH-into-VM)                                | On your host (Terminal + browser)                         |
+| **Host OS**          | Any (UTM, Hyper-V, VirtualBox, virt-manager, VMware…)                                    | macOS, Ubuntu, Windows                                              | macOS only                                                |
+| **Bootstrap**        | Install Ubuntu 26.04, snapshot, run one script in the VM                                 | `setup.command` / `setup.sh` / `setup.cmd`                          | Install Podman Desktop + WireGuard, `mpd --setup`         |
+| **Network**          | Internal to the VM (host untouched)                                                      | Plain L3 route + DNS resolver on host                               | gvproxy + WireGuard tunnel                                |
+| **Best for**         | Newcomers; AI-safety; host stays untouched; hypervisor snapshot/revert as the safety net | Native host integration — laptop browser sees `*.mpd.test` directly | Already on Podman Desktop; minimal explicit VM management |
 
 Same CLI surface, same `*.mpd.test` URLs, same per-project configuration
 model.
@@ -84,11 +86,11 @@ Pick this when you want your laptop's own browser/IDE to resolve
 `*.mpd.test` directly — host gets a static route + DNS resolver +
 CA trust automatically. Matched-host bootstrap per OS:
 
-| Host | Bootstrap |
-|---|---|
-| macOS (UTM) | [setup/macos-utm/README.md](setup/macos-utm/README.md) |
-| Ubuntu (libvirt/KVM) | [setup/ubuntu-kvm/README.md](setup/ubuntu-kvm/README.md) |
-| Windows (Hyper-V) | [setup/windows-hyperv/README.txt](setup/windows-hyperv/README.txt) |
+| Host                 | Bootstrap                                    |
+|----------------------|----------------------------------------------|
+| macOS (UTM)          | [setup/macos-utm/README.md](setup/macos-utm/README.md)             |
+| Ubuntu (libvirt/KVM) | [setup/ubuntu-kvm/README.md](setup/ubuntu-kvm/README.md)            |
+| Windows (Hyper-V)    | [setup/windows-hyperv/README.txt](setup/windows-hyperv/README.txt)       |
 
 ### 3. `mpd-desktop` (native Podman Desktop on macOS)
 

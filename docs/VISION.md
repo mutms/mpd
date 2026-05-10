@@ -280,9 +280,9 @@ your host. The matched-host bootstrap (`setup.command` on macOS+UTM,
 the VM with cloud-init, builds `mpd`, and configures the host's
 route + DNS + CA trust so `https://mpd.test/` works in your laptop's
 own browser. Your host browser visits `*.mpd.test` directly; your
-host terminal SSH'es into the VM to use the `mpd` CLI (or PHPStorm
-Gateway / VSCode Remote-SSH for IDE work). The VM has no GUI of its
-own.
+host terminal SSH'es into the VM to run the `mpd` CLI; your IDE
+(PHPStorm Gateway / VSCode Remote-SSH) SSH'es one hop further into
+the runtime container inside the VM. The VM has no GUI of its own.
 
 **mpd-desktop** — `mpd` is a native macOS binary you run directly in
 your local Terminal — no SSH hop. macOS browser sees `*.mpd.test`

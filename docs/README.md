@@ -37,8 +37,9 @@ Lowest friction.
 Automated headless Debian Trixie VM. The matched-host bootstrap
 creates the VM, builds `mpd`, and configures host-side networking +
 DNS + CA trust. Host browser visits `*.mpd.test` directly; host
-terminal SSH'es into the VM for the `mpd` CLI (or PHPStorm Gateway /
-VSCode Remote-SSH for IDE work).
+terminal SSH'es into the VM to run the `mpd` CLI; your IDE
+(PHPStorm Gateway / VSCode Remote-SSH) SSH'es one hop further into
+the runtime container inside the VM.
 
 - [`machine/README.md`](machine/README.md) — what mpd-machine is, when to pick it, picking a hypervisor
 - [`machine/USAGE.md`](machine/USAGE.md) — bootstrap, setup, first project, day-to-day (universal handbook)
@@ -64,12 +65,13 @@ in the background. No hypervisor to drive yourself.
 ## Vision and direction
 
 - [`VISION.md`](VISION.md) — *Why mpd* — origin lineage, design principles, what working with mpd feels like
-- [`ROADMAP.md`](ROADMAP.md) — what's queued next (`mpd <project> publish`, `mdl-backup` / `mdl-restore` tools)
+- [`ROADMAP.md`](ROADMAP.md) — what's queued next (`mdl-backup` / `mdl-restore` tools) and parked ideas
 
 ## Reference
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — repository architecture, mode split, networking summary, configuration model
 - [`CLI_BEHAVIOR.md`](CLI_BEHAVIOR.md) — CLI behavior contract
+- [`HOOKS.md`](HOOKS.md) — typed `Event` lifecycle hooks: events, audiences, asset-side `hooks/<event>.d/` scripts
 
 ## Shared host directory model
 

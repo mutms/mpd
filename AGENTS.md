@@ -77,6 +77,7 @@ across docs.
 - `docs/README.md` — documentation index
 - `docs/CLI_BEHAVIOR.md` — CLI behavior contract (both modes)
 - `docs/ARCHITECTURE.md` — repo architecture, mode split, networking summary, **verb/tool contract (§7)**
+- `docs/HOOKS.md` — typed `Event` lifecycle hooks: events, audiences, asset-side `hooks/<event>.d/` scripts
 - `docs/VISION.md` — product vision (origin lineage + design principles)
 - `docs/ROADMAP.md` — committed near-term work
 - `docs/desktop/README.md` — what mpd-desktop is, release scope
