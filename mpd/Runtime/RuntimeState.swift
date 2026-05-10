@@ -19,6 +19,7 @@ extension Mpd.Runtime.State {
 
     static func saveProjects(_ state: RegisteredProjects) {
         JSONStateStore.writeJSON(state, to: projectsPath)
+        refreshCurrentStateCache()
     }
 
     static func upsertProject(_ project: RegisteredProjectRecord) {
@@ -51,11 +52,13 @@ extension Mpd.Runtime.State {
 
     static func saveRuntimeStateEntry(_ entry: RuntimeStateEntry) {
         JSONStateStore.writeJSON(entry, to: runtimeStatePath(entry.name))
+        refreshCurrentStateCache()
     }
 
     static func deleteRuntimeStateEntry(_ name: String) {
         let dir = "\(runtimesDir)/\(name)"
         try? FileManager.default.removeItem(atPath: dir)
+        refreshCurrentStateCache()
     }
 
     static func listRuntimeStateEntries() -> [RuntimeStateEntry] {

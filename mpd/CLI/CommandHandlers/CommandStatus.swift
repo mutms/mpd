@@ -5,6 +5,7 @@ import Foundation
 
 extension GlobalCommand {
     func handleStatus() throws {
+        Mpd.Runtime.State.refreshCurrentStateCache()
         try Mpd.Environment.Action.Status.execute()
     }
 }

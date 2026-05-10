@@ -74,3 +74,79 @@ extension Mpd.Runtime.DB {
         return Mpd.Podman.running(cName) ? .running : .stopped
     }
 }
+
+// MARK: - current-state.json snapshot
+//
+// Out-of-process consumers — the portal container, in-runtime tools —
+// don't have podman access, so they can't compute `current` themselves.
+// We periodically snapshot live observations into
+// `~/.mpd/machines/<m>/current-state.json` (mounted into the portal
+// container at `/mpd-state/current-state.json`). The snapshot is
+// refreshed on every `mpd list`, `mpd --status`, `mpd --start/--stop/
+// --restart`, and the rebuild paths (`mpd --setup`).
+//
+// `requested` files (projects.json, runtimes/<n>/meta.json) are
+// strictly persisted intent. `current-state.json` is strictly
+// ephemeral observation. No mixing — readers consult whichever they
+// need.
+
+/// Snapshot of live container state at a point in time.
+/// Keys are bare names (`php`, `moodle520`, `postgres-latest`); values
+/// are the rawValue of the matching `*Current` enum
+/// (`"running"` / `"stopped"` / `"missing"`).
+struct CurrentStateSnapshot: Codable {
+    /// ISO-8601 timestamp the snapshot was written.
+    var refreshedAt: String
+    var runtimes: [String: String]
+    var projects: [String: String]
+    var databases: [String: String]
+}
+
+extension Mpd.Runtime.State {
+    /// Path to the live-state snapshot file for the active machine.
+    /// Bind-mounted into the portal container at
+    /// `/mpd-state/current-state.json`.
+    static var currentStatePath: String {
+        "\(Mpd.Core.State.machineDir())/current-state.json"
+    }
+
+    /// Refresh the live-state snapshot. Walks runtime metas, projects,
+    /// and DB containers; writes one JSON file. Cheap (a few podman
+    /// queries) — safe to call from list/status commands and at the end
+    /// of state-mutating verbs.
+    ///
+    /// Best-effort: if the active machine isn't set or podman isn't
+    /// reachable, silently skips. Never throws — diagnostic refresh
+    /// must never block a user-visible action.
+    static func refreshCurrentStateCache() {
+        let machine = Mpd.Core.State.activeMachine()
+        guard !machine.isEmpty else { return }
+
+        var runtimes: [String: String] = [:]
+        for entry in listRuntimeStateEntries() {
+            runtimes[entry.name] = Mpd.Runtime.current(entry.name).rawValue
+        }
+
+        var projects: [String: String] = [:]
+        for proj in loadProjects().projects {
+            projects[proj.name] = Mpd.Project.current(proj.name).rawValue
+        }
+
+        var databases: [String: String] = [:]
+        for item in Mpd.Podman.ps(filter: "label=mpd.type=db") {
+            guard let id = item.Labels?["mpd.name"], !id.isEmpty else { continue }
+            databases[id] = item.State == "running" ? "running" : "stopped"
+        }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let snapshot = CurrentStateSnapshot(
+            refreshedAt: formatter.string(from: Date()),
+            runtimes: runtimes,
+            projects: projects,
+            databases: databases
+        )
+
+        JSONStateStore.writeJSON(snapshot, to: currentStatePath)
+    }
+}

@@ -367,6 +367,9 @@ extension Mpd.Environment.Action.Setup {
         // is off. Stamps current event revisions for next-run comparison.
         Mpd.Hooks.diagnose()
 
+        // Live-state snapshot for out-of-process consumers (portal etc.).
+        Mpd.Runtime.State.refreshCurrentStateCache()
+
         print("""
 
         \u{001B}[1;32m✓ mpd --setup complete.\u{001B}[0m

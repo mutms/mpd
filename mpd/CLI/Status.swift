@@ -49,6 +49,11 @@ private func colorStatusLabel(_ status: String, width: Int) -> String {
 extension Mpd {
 
     static func showList() {
+        // Refresh the snapshot so out-of-process consumers (portal,
+        // in-runtime tools) see fresh `current` values without their
+        // own podman access. See `Mpd.Runtime.State.refreshCurrentStateCache`.
+        Mpd.Runtime.State.refreshCurrentStateCache()
+
         let projects = Mpd.Runtime.State.loadProjects().projects
         guard !projects.isEmpty else { print("No projects found."); return }
 
@@ -72,6 +77,7 @@ extension Mpd {
     }
 
     static func showServiceList() {
+        Mpd.Runtime.State.refreshCurrentStateCache()
         func col(_ s: String, _ w: Int) -> String {
             s.count < w ? s.padding(toLength: w, withPad: " ", startingAt: 0) : s + "  "
         }
@@ -111,6 +117,7 @@ extension Mpd {
     }
 
     static func showDbList() {
+        Mpd.Runtime.State.refreshCurrentStateCache()
         let items = Mpd.Podman.ps(filter: "label=mpd.type=db")
         guard !items.isEmpty else { print("No DB containers found."); return }
 

@@ -59,6 +59,10 @@ extension Mpd.Environment.Action.Start {
             }
         }
 
+        // Refresh the live-state snapshot (current-state.json) for
+        // out-of-process consumers (portal, runtime tools).
+        Mpd.Runtime.State.refreshCurrentStateCache()
+
         print("""
 
         \u{001B}[1;32m✓ mpd started.\u{001B}[0m

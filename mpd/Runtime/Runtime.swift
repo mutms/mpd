@@ -92,6 +92,7 @@ extension Mpd.Runtime {
     // MARK: - Runtime listing
 
     static func list() {
+        Mpd.Runtime.State.refreshCurrentStateCache()
         let created = allContainers()
         let createdByName = Dictionary(uniqueKeysWithValues: created.compactMap { item -> (String, PsItem)? in
             let name = item.Labels?["mpd.name"] ?? item.Names.first ?? ""

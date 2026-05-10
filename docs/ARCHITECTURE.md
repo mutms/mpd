@@ -239,6 +239,18 @@ Display layers show both columns side-by-side (`mpd list runtimes`,
 `requested=running, current=stopped` after a reboot but before
 `mpd --start` — is legible from the listing alone.
 
+Out-of-process consumers (the portal container, in-runtime tools)
+don't have podman access, so they can't compute `current` themselves.
+mpd writes a snapshot to
+`~/.mpd/machines/<m>/current-state.json` (`CurrentStateSnapshot` —
+runtimes/projects/databases name → status map plus a `refreshedAt`
+timestamp). The snapshot is refreshed automatically by `mpd list`,
+`mpd --status`, `mpd --start` / `--stop` / `--restart`, `mpd --setup`,
+and at every state-mutator save (`saveProjects`,
+`saveRuntimeStateEntry`, `deleteProject`, `deleteRuntimeStateEntry`).
+The portal bind-mounts the file at `/mpd-state/current-state.json` and
+prefers it over the persisted intent files for live status display.
+
 ## 6) Assets and Extension Contract
 
 `assets/` is the extension surface for runtime/type behavior.

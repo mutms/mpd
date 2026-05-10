@@ -2,10 +2,20 @@
 // mpd portal — served at https://mpd.test/ by mpd-service-portal (debian:trixie + apache2 + php)
 // SECURITY: This page is READ-ONLY. It displays status information only.
 // Do NOT add any command execution, form handling, API endpoints, or user input processing.
-// Reads project identity from /srv/meta/*/project.json (data volume, read-only).
-// Reads project status from /mpd-state/projects.json (bind-mounted from ~/.mpd/).
-// Reads runtime metadata from /mpd-state/runtimes/*/meta.json.
-// Reads runtime dashboards from /mnt/assets/runtimes and DB container state from /mpd-state/databases.json.
+//
+// Data sources (all bind-mounted read-only from the host machine dir):
+// - /mpd-state/current-state.json — live observation snapshot, refreshed
+//   on `mpd list` / `mpd --status` / `mpd --start` / state-mutating verbs.
+//   Authoritative for `current` (running / stopped / missing) of runtimes,
+//   projects, and DB containers.
+// - /mpd-state/projects.json — persisted project intent (`requested`).
+//   Source of project metadata (type, runtime, DB engine + version, urls).
+// - /mpd-state/runtimes/<n>/meta.json — persisted runtime intent + IP.
+// - /mpd-state/databases.json — DB container metadata cache (engine,
+//   version, containerName) used to resolve databaseId → engine.
+// - /srv/meta/<project>/project.json — ground-truth project identity
+//   (mpd-managed; read-only here).
+// - /mnt/assets/runtimes — list of available runtime templates.
 
 function h(string $s): string {
     return htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
@@ -38,7 +48,7 @@ function stateHash(): string {
         glob('/srv/meta/*/project.json') ?: [],
         glob('/srv/meta/*/urls.json') ?: [],
         glob('/mpd-state/runtimes/*/meta.json') ?: [],
-        ['/mpd-state/projects.json', '/mpd-state/databases.json']
+        ['/mpd-state/projects.json', '/mpd-state/databases.json', '/mpd-state/current-state.json']
     );
     sort($sources);
     $sig = '';
@@ -94,6 +104,29 @@ function collectAvailableRuntimeNames(string $assetsRuntimesDir): array {
     return $result;
 }
 
+/**
+ * Load the live-state snapshot written by mpd. Source-of-truth for
+ * `current` status of runtimes, projects, and DBs. Each map is
+ * name → "running" / "stopped" / "missing".
+ *
+ * Refreshed by `mpd list`, `mpd --status`, `mpd --start`, `mpd --setup`,
+ * and the state-mutating verbs. Falls back to an empty snapshot if
+ * the file is missing — older mpd versions or fresh setups before any
+ * refresh has run.
+ */
+function loadCurrentState(string $file): array {
+    $defaults = ['runtimes' => [], 'projects' => [], 'databases' => [], 'refreshedAt' => ''];
+    if (!is_readable($file)) return $defaults;
+    $raw = json_decode(file_get_contents($file), true);
+    if (!is_array($raw)) return $defaults;
+    return [
+        'runtimes' => is_array($raw['runtimes'] ?? null) ? $raw['runtimes'] : [],
+        'projects' => is_array($raw['projects'] ?? null) ? $raw['projects'] : [],
+        'databases' => is_array($raw['databases'] ?? null) ? $raw['databases'] : [],
+        'refreshedAt' => (string)($raw['refreshedAt'] ?? ''),
+    ];
+}
+
 function loadDatabaseStateCache(string $databasesFile): array {
     if (!is_readable($databasesFile)) return [];
 
@@ -142,7 +175,12 @@ function tcpProbe(string $host, int $port, float $timeoutSeconds = 0.20): bool {
     return true;
 }
 
-// --- Load project status cache (Mac-side projects.json) ---
+// --- Load live-state snapshot (current-state.json) ---
+// Source-of-truth for `current` status of runtimes/projects/DBs.
+// Refreshed on `mpd list` / `mpd --status` / `mpd --start` / mutating verbs.
+$currentState = loadCurrentState('/mpd-state/current-state.json');
+
+// --- Load project records (projects.json — persisted intent + metadata) ---
 $projects = [];
 $projectsFile = '/mpd-state/projects.json';
 if (is_readable($projectsFile)) {
@@ -150,7 +188,13 @@ if (is_readable($projectsFile)) {
     if (is_array($data['projects'] ?? null)) {
         foreach ($data['projects'] as $p) {
             $name = $p['name'] ?? '';
-            if ($name !== '') $projects[$name] = $p;
+            if ($name !== '') {
+                // Inject `current` from the live snapshot. Fall back to
+                // 'not-configured' if neither source provides one.
+                $p['status'] = $currentState['projects'][$name]
+                    ?? (string)($p['status'] ?? 'not-configured');
+                $projects[$name] = $p;
+            }
         }
     }
 }
@@ -227,13 +271,16 @@ sort($allRuntimeNames);
 $runtimes = [];
 foreach ($allRuntimeNames as $name) {
     $created = $createdRuntimes[$name] ?? null;
-    $metaStatus = $created['status'] ?? '';
-    if ($metaStatus !== 'running' && $metaStatus !== 'stopped') {
-        $metaStatus = '';
-    }
 
-    if ($metaStatus !== '') {
-        $status = $metaStatus;
+    // Live status comes from the current-state snapshot. Mapping:
+    //   "running"  → "running"
+    //   "stopped"  → "stopped"
+    //   "missing"  → "available" (no container exists)
+    //   (absent)   → "available" if no record, else "stopped"
+    $liveStatus = $currentState['runtimes'][$name] ?? '';
+    if ($liveStatus === 'missing') $liveStatus = 'available';
+    if ($liveStatus === 'running' || $liveStatus === 'stopped' || $liveStatus === 'available') {
+        $status = $liveStatus;
     } else if ($created !== null) {
         $status = 'stopped';
     } else {
@@ -255,6 +302,16 @@ foreach ($allRuntimeNames as $name) {
 
 // --- Databases from machine cache (/mpd-state/databases.json), with project counts ---
 $databases = loadDatabaseStateCache('/mpd-state/databases.json');
+// Layer fresher live status from current-state.json on top — databases.json
+// is only rebuilt on `mpd --setup` / `mpd list dbs` / db verbs; the live
+// snapshot refreshes on every `mpd list` and is more up-to-date.
+foreach ($databases as $dbId => &$db) {
+    $live = $currentState['databases'][$dbId] ?? '';
+    if ($live === 'running' || $live === 'stopped') {
+        $db['status'] = $live;
+    }
+}
+unset($db);
 foreach ($projects as $p) {
     $engine = (string)($p['databaseEngine'] ?? '');
     $version = (string)($p['databaseVersion'] ?? '');
