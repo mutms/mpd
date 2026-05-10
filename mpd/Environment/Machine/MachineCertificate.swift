@@ -81,7 +81,35 @@ extension Mpd.Environment.Certificate {
             label = "Firefox (Mozilla / snap)"
         }
 
-        let policyJSON = #"{"policies":{"Certificates":{"Install":["\#(certPathInPolicy)"]}}}"# + "\n"
+        // Build the policy dict and serialize with sortedKeys so the
+        // file content is deterministic (byte-comparable across runs).
+        // Homepage policy: nudge users to the portal (`https://mpd.test/`)
+        // — the single entry point that lists every project — but leave
+        // Locked=false so a user who picks a project-specific homepage
+        // (e.g. their main moodle) keeps that preference.
+        let policyDict: [String: Any] = [
+            "policies": [
+                "Certificates": ["Install": [certPathInPolicy]],
+                "Homepage": [
+                    "URL": "https://mpd.test/",
+                    "Locked": false,
+                    "StartPage": "homepage",
+                ],
+            ] as [String: Any]
+        ]
+        let policyData: Data
+        do {
+            policyData = try JSONSerialization.data(
+                withJSONObject: policyDict,
+                options: [.prettyPrinted, .sortedKeys])
+        } catch {
+            print("  Warning: failed to serialize Firefox policy: \(error.localizedDescription)")
+            return
+        }
+        guard let policyJSON = String(data: policyData, encoding: .utf8).map({ $0 + "\n" }) else {
+            print("  Warning: failed to encode Firefox policy as UTF-8.")
+            return
+        }
 
         // Idempotency: if the policy JSON is already correct AND, when
         // needed, the staged cert matches the source, nothing to do.

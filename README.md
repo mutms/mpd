@@ -11,10 +11,12 @@ and the AI itself stay confined to the runtime.
 Three modes, distinguished by where you sit and where `mpd` runs:
 
 - **Sandbox VM** — full GNOME desktop inside the VM. GNOME terminal
-  runs `mpd`, GNOME Firefox visits `mpd.test`, you live in the VM
-  window. Lowest friction; safest for AI-driven workloads. One
-  command (`demo moodle v5.2.0`) gets you a fully-installed Moodle
-  site for kicking the tires. Recommended starting point.
+  runs `mpd`, GNOME Firefox visits `mpd.test`, GNOME-launched VS Code
+  Remote-SSH'es one hop into the local runtime container — no
+  host↔VM hop because GNOME *is* the VM. Lowest friction; safest for
+  AI-driven workloads. One command (`demo moodle v5.2.0`) gets you a
+  fully-installed Moodle site for kicking the tires. Recommended
+  starting point.
 - **`mpd-machine`** — automated headless VM. You stay on your host
   (macOS / Ubuntu / Windows): your host browser visits `*.mpd.test`
   directly (via the route + DNS the bootstrap configured); your host

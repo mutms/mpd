@@ -70,6 +70,7 @@ enum Mpd {
     enum Runtime {
         enum DB {}
         enum State {}
+        enum IdeLinks {}
     }
     enum Project {}
     enum Core {

@@ -64,6 +64,28 @@ else
     ok "All required packages already installed"
 fi
 
+# --- VS Code (Microsoft official apt repo) -----------------------------
+# Gives the sandbox an in-VM IDE so the GNOME desktop story is complete:
+# terminal + browser + IDE, all running inside the VM, no SSH hop to the
+# host. Idempotent — re-runs are no-ops.
+step "VS Code"
+if command -v code >/dev/null 2>&1; then
+    ok "VS Code already installed ($(code --version | head -n1))"
+else
+    if [ ! -f /usr/share/keyrings/microsoft.gpg ]; then
+        curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+            | gpg --dearmor \
+            | sudo tee /usr/share/keyrings/microsoft.gpg >/dev/null
+    fi
+    if [ ! -f /etc/apt/sources.list.d/vscode.list ]; then
+        echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/code stable main" \
+            | sudo tee /etc/apt/sources.list.d/vscode.list >/dev/null
+        sudo env DEBIAN_FRONTEND=noninteractive apt-get update -qq
+    fi
+    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y code
+    ok "Installed: VS Code"
+fi
+
 # --- Build mpd ----------------------------------------------------------
 step "Building mpd"
 if ! command -v swift >/dev/null 2>&1; then
@@ -149,6 +171,16 @@ if [ -d "$HOME/Desktop" ]; then
     # trusted. No-op on KDE/XFCE; harmless if `gio` is missing.
     gio set "$desktop_shortcut" metadata::trusted true 2>/dev/null || true
     ok "Launcher: ${desktop_shortcut}"
+
+    # Mirror VS Code's system-wide launcher to the desktop so the IDE
+    # icon sits next to the mpd one.
+    if [ -f /usr/share/applications/code.desktop ]; then
+        code_shortcut="$HOME/Desktop/code.desktop"
+        cp -f /usr/share/applications/code.desktop "$code_shortcut"
+        chmod 0755 "$code_shortcut"
+        gio set "$code_shortcut" metadata::trusted true 2>/dev/null || true
+        ok "Launcher: ${code_shortcut}"
+    fi
 fi
 
 # --- Done ---------------------------------------------------------------
@@ -162,9 +194,15 @@ Open Firefox in this VM and browse to:
 
     https://mpd.test/
 
-You'll also find an "mpd" launcher in GNOME Activities (and on your
-Desktop, if desktop icons are on). Click it any time to drop into
-the interactive TUI.
+You'll also find an "mpd" launcher and a "Visual Studio Code"
+launcher in GNOME Activities (and on your Desktop, if desktop icons
+are on). Click "mpd" any time to drop into the interactive TUI.
+
+For VS Code: install the "Remote - SSH" extension on first launch,
+then connect to user@php.runtime.mpd.test (or whichever runtime
+holds your project) and open /srv/projects/<your-project>/. The
+runtime container lives in this same VM, so the connection is
+local — no host↔VM hop.
 
 To use mpd's tools (demo, etc.) in THIS shell right now, pick up the
 PATH drop-in that 'mpd --setup' just installed:

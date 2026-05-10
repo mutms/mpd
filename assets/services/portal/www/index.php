@@ -39,6 +39,38 @@ function displayName(): string {
 }
 
 /**
+ * Dev user for SSH-based IDE links (vscode://, jetbrains-gateway://).
+ * Written by Mpd.Service.Portal.setup() — matches the runtime container's
+ * dev user (host UID/username). Falls back to "user" so we always render
+ * something clickable; the user fixes their SSH config if it's wrong.
+ */
+function devUser(): string {
+    $path = '/mpd-state/portal/dev-user.txt';
+    if (is_readable($path)) {
+        $name = trim((string)@file_get_contents($path));
+        if ($name !== '') return $name;
+    }
+    return 'user';
+}
+
+/**
+ * Read a project type's `ideLinks` flag from
+ * /mnt/assets/runtimes/*&#47;project_types/<type>/configuration.json.
+ * Default true (matches Swift's ProjectTypeConfiguration default).
+ * Cached per type — config files don't change inside a request.
+ */
+function projectTypeAllowsIdeLinks(string $type): bool {
+    static $cache = [];
+    if (isset($cache[$type])) return $cache[$type];
+    if ($type === '') return $cache[$type] = false;
+    $matches = glob("/mnt/assets/runtimes/*/project_types/{$type}/configuration.json") ?: [];
+    if (empty($matches)) return $cache[$type] = true;
+    $data = json_decode((string)@file_get_contents($matches[0]), true);
+    if (!is_array($data)) return $cache[$type] = true;
+    return $cache[$type] = !(isset($data['ideLinks']) && $data['ideLinks'] === false);
+}
+
+/**
  * Cheap state hash — md5 of name+mtime+size for every file the portal reads.
  * Used by the client to detect changes without re-rendering the full page,
  * so an open popover survives idle polling.
@@ -474,6 +506,7 @@ foreach ($services as $svc) {
         .kind-behat   { background: #fef3c7; color: #92400e; }
         .kind-mail    { background: #d1fae5; color: #065f46; }
         .kind-devport { background: #fce7f3; color: #9d174d; }
+        .kind-ide     { background: #ede9fe; color: #5b21b6; }
     </style>
 </head>
 <body>
@@ -574,6 +607,27 @@ foreach ($services as $svc) {
                     <?php endif; ?>
                 </li>
                 <?php endforeach; ?>
+            </ul>
+        <?php endif; ?>
+        <?php if ($running && $pRuntime !== '' && projectTypeAllowsIdeLinks($pType)):
+            $sshHost = "{$pRuntime}.runtime.mpd.test";
+            $devUser = devUser();
+            $projectPath = "/srv/projects/{$pName}";
+            $vscodeUrl = "vscode://vscode-remote/ssh-remote+{$devUser}@{$sshHost}{$projectPath}";
+            $phpstormUrl = "jetbrains-gateway://connect#host={$sshHost}&user=" . rawurlencode($devUser)
+                . "&port=22&type=ssh&deploy=false&projectPath=" . rawurlencode($projectPath)
+                . "&idePath=";
+        ?>
+            <h4>Open in IDE</h4>
+            <ul class="urls">
+                <li>
+                    <span class="kind-badge kind-ide">VS Code</span>
+                    <a href="<?= h($vscodeUrl) ?>">Remote-SSH connect</a>
+                </li>
+                <li>
+                    <span class="kind-badge kind-ide">PHPStorm</span>
+                    <a href="<?= h($phpstormUrl) ?>">Gateway connect</a>
+                </li>
             </ul>
         <?php endif; ?>
     </div>
@@ -728,3 +782,4 @@ foreach ($services as $svc) {
 
 </body>
 </html>
+

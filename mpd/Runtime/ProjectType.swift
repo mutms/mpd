@@ -121,6 +121,12 @@ struct ProjectTypeConfiguration {
     /// it (e.g. `cftunnel`); generic types like `moodle` leave it nil
     /// so they don't accidentally absorb arbitrary suffixes.
     let nameSuffix: String?
+    /// Whether to emit IDE quick-launch link files for projects of
+    /// this type into `~/.mpd/links/<ide>/`. Default true. Set to
+    /// false in `configuration.json` for project types that hold no
+    /// editable code (e.g. cftunnel — runs `cloudflared`, no source
+    /// to open in an IDE).
+    let ideLinks: Bool
 }
 
 // MARK: - JSON loading helpers
@@ -177,13 +183,15 @@ extension ProjectType {
 
         let nextSteps     = json["nextSteps"] as? [String] ?? []
         let nameSuffix    = (json["nameSuffix"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        let ideLinks      = json["ideLinks"] as? Bool ?? true
 
         return ProjectTypeConfiguration(
             assetsType: assetsType, assetsRuntime: assetsRuntime,
             sidecars: sidecars,
             stopSystemd: stopSystemd,
             nextSteps: nextSteps,
-            nameSuffix: nameSuffix)
+            nameSuffix: nameSuffix,
+            ideLinks: ideLinks)
     }
 
 }

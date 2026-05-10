@@ -63,16 +63,19 @@ freshly cloned tree.
 4. Enables passwordless sudo (one-time password prompt for the install).
 5. apt-installs `git` if missing; clones the repo if missing.
 6. apt-installs `build-essential pkg-config make swiftlang libnss3-tools qemu-guest-agent`.
-7. `make install` of mpd; symlinks `/usr/local/bin/mpd`.
-8. Writes `~/Developer/mpd/conf/platform.env` with `MPD_PLATFORM=sandbox`.
-9. `mpd --setup` — generates the CA, installs system trust + Firefox
-   policies + `~/.pki/nssdb` import, brings up podman + dnsmasq + portal
-   + adminer + fileaccess.
-10. Best-effort pre-warm: `mpd --runtime-create=php` and
+7. Adds Microsoft's apt repo and installs **VS Code** so the in-VM
+   IDE story works without leaving the desktop.
+8. `make install` of mpd; symlinks `/usr/local/bin/mpd`.
+9. Writes `~/Developer/mpd/conf/platform.env` with `MPD_PLATFORM=sandbox`.
+10. `mpd --setup` — generates the CA, installs system trust + Firefox
+    policies + `~/.pki/nssdb` import, brings up podman + dnsmasq + portal
+    + adminer + fileaccess.
+11. Best-effort pre-warm: `mpd --runtime-create=php` and
     `mpd --db-create=postgres:latest`.
-11. Drops a GNOME launcher (`~/.local/share/applications/mpd.desktop`,
-    plus `~/Desktop/mpd.desktop` when desktop icons are on) that opens
-    `mpd --tui` in the user's default terminal.
+12. Drops GNOME launchers (`~/.local/share/applications/mpd.desktop` for
+    `mpd --tui`, plus a desktop-icon copy of VS Code's launcher when
+    desktop icons are on) so the user has both an mpd icon and a
+    VS Code icon ready to click.
 
 ## Reverting
 

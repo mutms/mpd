@@ -3,6 +3,7 @@
     "systemdStop": true
   },
   "nameSuffix": "cftunnel",
+  "ideLinks": false,
   "nextSteps": [
     "Create a tunnel in the Cloudflare dashboard, copy its token",
     "mpd configure %%PROJECT%% MPD_CFTUNNEL_TOKEN=<token-from-cf>",

@@ -55,14 +55,15 @@ extension Mpd.Service.Portal {
         let serviceKey = "\(Mpd.Environment.confServiceDir)/key.pem"
 
         let portalDir = "\(assetsDir)/services/portal"
-        let portalPhp = "\(portalDir)/index.php"
+        let portalWWW = "\(portalDir)/www"
+        let portalPhp = "\(portalWWW)/index.php"
         let apacheConf = "\(portalDir)/apache.conf"
         let portalPhpIni = "\(portalDir)/php.ini"
         let vhostTemplate = "\(portalDir)/templates/service-vhost.conf.tpl"
         let runtimesAssetsDir = "\(assetsDir)/runtimes"
 
         guard fm.fileExists(atPath: portalPhp) else {
-            throw RuntimeError("portal/index.php not found at \(portalPhp)")
+            throw RuntimeError("portal/www/index.php not found at \(portalPhp)")
         }
         guard fm.fileExists(atPath: apacheConf) else {
             throw RuntimeError("portal/apache.conf not found at \(apacheConf)")
@@ -101,6 +102,15 @@ extension Mpd.Service.Portal {
             atomically: true,
             encoding: .utf8)
 
+        // Dev user for IDE link URLs (vscode://, jetbrains-gateway://). The
+        // runtime container's dev user matches the host UID/username; portal
+        // PHP reads this to render correct Remote-SSH connection targets in
+        // the per-project popover.
+        try? NSUserName().write(
+            toFile: "\(portalStateDir)/dev-user.txt",
+            atomically: true,
+            encoding: .utf8)
+
         let proxyArtifactsChanged = try ensurePortalProxyArtifacts(
             vhostTemplatePath: vhostTemplate,
             portalStateDir: portalStateDir,
@@ -113,7 +123,7 @@ extension Mpd.Service.Portal {
         if !Mpd.Podman.exists(containerName) {
             print("Creating portal")
             let portalMounts = [
-                "-v", "\(portalPhp):/var/www/html/index.php:ro",
+                "-v", "\(portalWWW):/var/www/html:ro",
                 "-v", "\(Mpd.dataVolume):/srv:ro",
                 "-v", "\(machineDir):/mpd-state:ro",
                 "-v", "\(apacheConf):/etc/apache2/sites-available/mpd-portal.conf:ro",
