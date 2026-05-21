@@ -240,10 +240,20 @@ extension Mpd.Environment.Action.Setup {
         return rc == 0 && out.contains("install ok installed")
     }
 
-    /// Generate ~/.ssh/id_ed25519 if no id_*.pub already exists. No passphrase
-    /// (the VM is the trust boundary; key only authenticates VM→runtime hops).
-    /// Idempotent — once a key is present we leave it alone, even if the user
-    /// later swaps in their own.
+    /// Generate ~/.ssh/id_ed25519 if no id_*.pub already exists, then make
+    /// sure ~/.ssh/authorized_keys exists (touched empty if missing) with
+    /// the VM's own pubkey appended. Idempotent.
+    ///
+    /// Why authorized_keys matters even on a never-SSH'd sandbox VM:
+    /// `Service.FileAccess` bind-mounts the host's authorized_keys into the
+    /// fileaccess container (`statfs` fails the service start if the file
+    /// doesn't exist). Cloud-init platforms get the file as a side-effect
+    /// of injecting the laptop's pubkey via user-data, but sandbox has
+    /// no laptop side and the file may genuinely be absent. Touching it
+    /// (and adding the VM key so VM→fileaccess SSH works) covers both.
+    ///
+    /// No passphrase on the key — the VM is the trust boundary; the key
+    /// only authenticates VM→runtime / VM→fileaccess hops.
     private static func ensureVMSSHKey() throws {
         let fm = FileManager.default
         let home = NSHomeDirectory()
@@ -254,20 +264,61 @@ extension Mpd.Environment.Action.Setup {
 
         let entries = (try? fm.contentsOfDirectory(atPath: sshDir)) ?? []
         let hasIdPub = entries.contains { $0.hasPrefix("id_") && $0.hasSuffix(".pub") }
+        let keyPath = "\(sshDir)/id_ed25519"
+        let pubPath = "\(sshDir)/id_ed25519.pub"
         if hasIdPub {
             ok("VM-local key already present in ~/.ssh/.")
+        } else {
+            let host = ProcessInfo.processInfo.hostName
+            let comment = "mpd-machine \(host)"
+            guard Mpd.Environment.HostExec.run([
+                "ssh-keygen", "-t", "ed25519", "-N", "", "-f", keyPath, "-C", comment, "-q",
+            ]) == 0 else {
+                throw RuntimeError("Failed to generate ~/.ssh/id_ed25519. Run `ssh-keygen -t ed25519` manually and re-run mpd --setup.")
+            }
+            ok("Generated VM-local key at ~/.ssh/id_ed25519 (no passphrase, used for VM→runtime / VM→fileaccess SSH).")
+        }
+
+        try ensureAuthorizedKeysHasVMKey(sshDir: sshDir, vmPubKeyPath: pubPath)
+    }
+
+    /// Make sure `~/.ssh/authorized_keys` exists (mode 600) and contains
+    /// the VM's own pubkey. Required because Service.FileAccess
+    /// bind-mounts the file into the container; a missing host file
+    /// fails the service start with statfs ENOENT.
+    private static func ensureAuthorizedKeysHasVMKey(sshDir: String, vmPubKeyPath: String) throws {
+        let fm = FileManager.default
+        let authPath = "\(sshDir)/authorized_keys"
+        if !fm.fileExists(atPath: authPath) {
+            fm.createFile(atPath: authPath, contents: Data(), attributes: [
+                .posixPermissions: 0o600
+            ])
+        } else {
+            try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: authPath)
+        }
+
+        guard let pub = try? String(contentsOfFile: vmPubKeyPath, encoding: .utf8) else {
+            return  // No VM pubkey (shouldn't happen after ssh-keygen); leave the empty file in place.
+        }
+        let pubLine = pub.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Match on the base64 key blob (middle field), so a re-keyed VM
+        // with a different comment doesn't duplicate the line.
+        let fields = pubLine.split(separator: " ", maxSplits: 2).map(String.init)
+        guard fields.count >= 2 else { return }
+        let blob = fields[1]
+
+        let existing = (try? String(contentsOfFile: authPath, encoding: .utf8)) ?? ""
+        if existing.contains(blob) {
+            ok("VM pubkey already in ~/.ssh/authorized_keys.")
             return
         }
 
-        let keyPath = "\(sshDir)/id_ed25519"
-        let host = ProcessInfo.processInfo.hostName
-        let comment = "mpd-machine \(host)"
-        guard Mpd.Environment.HostExec.run([
-            "ssh-keygen", "-t", "ed25519", "-N", "", "-f", keyPath, "-C", comment, "-q",
-        ]) == 0 else {
-            throw RuntimeError("Failed to generate ~/.ssh/id_ed25519. Run `ssh-keygen -t ed25519` manually and re-run mpd --setup.")
-        }
-        ok("Generated VM-local key at ~/.ssh/id_ed25519 (no passphrase, used for VM→runtime SSH).")
+        var updated = existing
+        if !updated.isEmpty && !updated.hasSuffix("\n") { updated += "\n" }
+        updated += pubLine + "\n"
+        try updated.write(toFile: authPath, atomically: true, encoding: .utf8)
+        try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: authPath)
+        ok("Appended VM pubkey to ~/.ssh/authorized_keys.")
     }
 
     /// Import the mpd CA into the dev user's NSS DB at ~/.pki/nssdb/.
