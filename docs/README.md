@@ -46,10 +46,9 @@ the runtime container inside the VM.
 - [`machine/NETWORKING.md`](machine/NETWORKING.md) — host ↔ VM ↔ container routing model, per-OS laptop recipes
 - [`machine/SECURITY.md`](machine/SECURITY.md) — trust boundaries
 - Per-platform bootstrap:
-  - [`../setup/macos-utm/README.md`](../setup/macos-utm/README.md) — UTM on macOS
-  - [`../setup/macos-prl/README.md`](../setup/macos-prl/README.md) — Parallels Desktop Pro on macOS
-  - [`../setup/ubuntu-kvm/README.md`](../setup/ubuntu-kvm/README.md) — libvirt/KVM on Ubuntu
-  - [`../setup/windows-hyperv/README.txt`](../setup/windows-hyperv/README.txt) — Hyper-V on Windows
+  - [`../setup/macos/README.md`](../setup/macos/README.md) — Parallels Desktop Pro on macOS
+  - [`../setup/linux/README.md`](../setup/linux/README.md) — libvirt/KVM on Ubuntu
+  - [`../setup/windows/README.txt`](../setup/windows/README.txt) — Hyper-V on Windows
 
 ## Mode 3 — mpd-desktop (native macOS binary in your local Terminal)
 

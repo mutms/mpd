@@ -5,7 +5,7 @@ Automation for `mpd-machine` on **Ubuntu 26.04 LTS** using
 any hypervisor, see the [sandbox platform](../sandbox/README.md).
 
 This directory ships polished, single-developer-laptop scripts that
-mirror the macos-utm flow — sudo recipe affordance, host-only CA
+mirror the macos flow — sudo recipe affordance, host-only CA
 trust, per-VM `[y/N]` uninstall, no surprises during the long
 unattended VM-creation phase.
 
@@ -24,7 +24,7 @@ open them).
 Run from a terminal:
 
 ```bash
-bash setup/ubuntu-kvm/setup.sh
+bash setup/linux/setup.sh
 ```
 
 GNOME's Files (Nautilus 43+) doesn't double-click-launch executable

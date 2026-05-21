@@ -5,7 +5,7 @@ build:
 
 release: install
 	@mkdir -p release
-	@for platform in macos-utm ubuntu-kvm windows-hyperv; do \
+	@for platform in macos linux windows; do \
 		out="release/$$platform.zip"; \
 		rm -f "$$out"; \
 		(cd setup && zip -qr "../$$out" "$$platform" \
@@ -59,7 +59,7 @@ check-mpdenv-source-boundary:
 # Privilege rule (AGENTS.md §"Mandatory privilege rule"). Scope:
 # in-runtime/in-VM/in-service shell code — assets/ in full, plus the
 # in-VM scripts of the sandbox platform (siblings like
-# setup/macos-utm/create-vm.sh that run on the user's host are out of
+# setup/macos/create-vm.sh that run on the user's host are out of
 # scope). Bans:
 #   - `sudo` wrapping a script file (`sudo bash foo.sh`, `sudo foo.sh`).
 #     `sudo bash -c '…'` / `sudo sh -c '…'` one-liners are allowed —

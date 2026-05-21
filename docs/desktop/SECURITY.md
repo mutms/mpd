@@ -26,7 +26,7 @@ Desktop mode uses a loopback-only bootstrap endpoint:
 - CA is constrained for local `mpd.test` usage
 - on a Mac that also has mpd-machine installed, `mpd --setup` adopts
   the existing CA from `~/.mpd-machine/ca/` if `caroot/` is missing
-  (the macos-utm bootstrap scripts mirror to that path), so both
+  (the macos bootstrap scripts mirror to that path), so both
   modes share a single CA. CAs flow host → VM only — neither mode
   pulls a cert off a VM into the keychain. Full rule in
   [../machine/SECURITY.md §"TLS and the certificate authority"](../machine/SECURITY.md#tls-and-the-certificate-authority).

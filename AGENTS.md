@@ -88,9 +88,9 @@ across docs.
 - `docs/machine/USAGE.md` — machine workflow
 - `docs/machine/NETWORKING.md` — machine networking (static route, no WG)
 - `docs/machine/SECURITY.md` — machine security model
-- `setup/macos-utm/README.md` — UTM-on-macOS automation + recovery
-- `setup/ubuntu-kvm/README.md` — Ubuntu host + libvirt/KVM automation
-- `setup/windows-hyperv/README.txt` — Windows host + Hyper-V automation
+- `setup/macos/README.md` — Parallels Desktop Pro on macOS automation
+- `setup/linux/README.md` — Ubuntu host + libvirt/KVM automation
+- `setup/windows/README.txt` — Windows host + Hyper-V automation
 - `setup/sandbox/README.md` — graphical "live in the VM" Ubuntu sandbox
 
 There is no `docs/machine/platform/*` tree — earlier drafts imagined per-OS
@@ -385,7 +385,7 @@ not found." Internal sudo on specific operations is the right shape.
 - `mpd --setup`, `mpd --start`, `mpd --stop`, `mpd --uninstall`
 
 **Machine throw-away-VM smoke checks:**
-- fresh VM via `setup/macos-utm/create-vm.sh [<suffix>]`
+- fresh VM via `setup/macos/setup.command` (or `bash setup/macos/lib/setup.sh`)
 - `mpd --setup`, `mpd --start`, `mpd --status`
 - optional: `mpd create/start/stop <project>` end-to-end including HTTPS hit
 - `mpd --stop`, `mpd --uninstall --yes`

@@ -10,21 +10,19 @@
 #   3. Import the mpd CA certificate into /Library/Keychains/System.keychain
 #      so browsers trust *.mpd.test HTTPS without warnings. CA source: the
 #      local cache at ~/Developer/mpd/conf/caroot/rootCA.pem if present
-#      (shared with mpd-desktop), otherwise scp from the VM.
+#      (shared with mpd-desktop and macos), otherwise ~/.mpd-machine/ca/.
 #
-# Privilege model: the script first inspects current state without sudo.
-# If anything needs to change, it prints the exact runnable `sudo` commands
-# (same recipe affordance setup.sh's new-VM path uses) and lets the dev
-# choose: run them in another Terminal, or press Enter and let the script
-# sudo. After the pause it re-detects and applies only what's still needed.
-# If the host is already in the desired state, no sudo prompt happens at all.
+# Privilege model: inspect current state without sudo first, print a
+# runnable recipe for any work needed, let the dev choose between running
+# it themselves vs. letting the script sudo. If everything is already in
+# the desired state, no sudo prompt happens at all.
 #
 # Called by lib/setup.sh after VM creation or when switching VMs, and by
 # lib/start.sh (route is not persistent across reboot — re-asserted on
 # every start).
 #
 # Usage:
-#   bash lib/configure-client.sh --vm-ip=192.168.64.158 --vm-user=skodak [--skip-ca]
+#   bash lib/configure-client.sh --vm-ip=10.211.55.155 --vm-user=skodak [--skip-ca]
 
 set -euo pipefail
 
@@ -47,21 +45,12 @@ done
 [ -n "$VM_IP" ]   || die "Missing --vm-ip"
 [ -n "$VM_USER" ] || die "Missing --vm-user"
 
-# Always drop cached sudo credentials when this script exits (success, error,
-# or early termination) so a later bug can't accidentally piggy-back on the
-# elevated session — the next sudo, if any, would re-prompt.
 cleanup() {
     sudo -k 2>/dev/null || true
 }
 trap cleanup EXIT
 
-# --- Phase 1a: locate the host CA (host-only — never pulled from a VM) ---
-# Look in caroot/ first, then ~/.mpd-machine/ca/, and mirror between them so
-# the redundant copy stays in sync. We do NOT pull a CA from the VM: the
-# keychain only ever trusts certificates generated on the host, full stop.
-# If neither location has the CA (e.g. an imported VM created on another
-# Mac), CA import is skipped; route + resolver still get configured, and
-# HTTPS will warn until you bring a host CA over yourself.
+# --- Phase 1a: locate the host CA ---
 
 resolver_path="/etc/resolver/${DNS_DOMAIN}"
 desired_resolver="nameserver ${DNSMASQ_IP}"
@@ -100,9 +89,6 @@ if [ -n "$cert_source" ]; then
 fi
 
 # --- Phase 1b: detect what host config is needed ---
-# Factored into a function so Phase 2 can re-detect after the recipe pause
-# (the dev may have run the printed commands in another terminal). Sets
-# globals: needed[], need_route, need_resolver, need_ca, route_dest, route_gw.
 
 needed=()
 need_route=0
@@ -148,8 +134,6 @@ detect_host_needs() {
 
 detect_host_needs
 
-# Snapshot Phase-1 state — drives Phase-3 report wording regardless of
-# whether the recipe was run manually or by the script.
 initial_need_route="$need_route"
 initial_need_resolver="$need_resolver"
 initial_need_ca="$need_ca"
@@ -157,9 +141,6 @@ initial_route_dest="$route_dest"
 initial_route_gw="$route_gw"
 
 # --- Phase 2: privileged operations (sudo recipe affordance) ---
-# Mirror setup.sh's new-VM path: print the runnable commands, let the dev
-# choose between running them in another terminal vs. letting the script
-# sudo. After the choice, re-detect and apply only what's still needed.
 
 if [ ${#needed[@]} -gt 0 ]; then
     cmds=()
@@ -180,7 +161,6 @@ if [ ${#needed[@]} -gt 0 ]; then
 
     print_sudo_recipe "${cmds[@]}"
 
-    # Re-detect: did the dev already run the recipe in another terminal?
     detect_host_needs
 
     if [ ${#needed[@]} -eq 0 ]; then
@@ -207,9 +187,7 @@ if [ ${#needed[@]} -gt 0 ]; then
     fi
 fi
 
-# --- Phase 3: report + non-privileged state writes (no sudo from here on) ---
-# Reports are framed by *initial* state so a manual-recipe run still surfaces
-# the right wording ("added"/"replaced stale route" vs "already correct").
+# --- Phase 3: report + non-privileged state writes ---
 
 step "Route ${CONTAINER_SUBNET_PREFIX} via ${VM_IP}"
 if [ "$initial_need_route" = 1 ]; then
@@ -240,8 +218,6 @@ elif [ -n "$cert_source" ]; then
     else
         ok "CA cert already trusted (sha1 ${fp_lc})"
     fi
-    # Record the SHA-1 so uninstall.sh can remove this exact cert without
-    # guessing at the subject string.
     mkdir -p "$STATE_DIR"
     printf '%s\n' "$new_fp" > "$STATE_CA_FILE"
 fi

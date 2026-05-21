@@ -14,7 +14,7 @@ Current scope:
 - Both `mpd-desktop` and `mpd-machine` ship as supported execution modes.
 - The Swift control plane is at parity across modes — setup, lifecycle (`--setup/--start/--stop/--uninstall`, `--status`, `mpd list`), runtime/project orchestration, and per-runtime sidecar reconciliation work the same way on both.
 - Mode-specific surfaces are limited to host integration: `mpd-desktop` runs on top of Podman Desktop with a WireGuard bootstrap; `mpd-machine` runs under rootful Podman in a dedicated Debian Trixie VM with plain L3 routing from the laptop.
-- The `mpd-machine/` directory additionally holds bootstrap scripts and platform-specific setup logic (`platforms/macos-utm/`, `platforms/ubuntu-kvm/`, `platforms/windows-hyperv/`, `platforms/sandbox/`) that grow into setup packages/installers.
+- The `mpd-machine/` directory additionally holds bootstrap scripts and platform-specific setup logic (`platforms/macos/`, `platforms/linux/`, `platforms/windows/`, `platforms/sandbox/`) that grow into setup packages/installers.
 - Outstanding work is project-type coverage under `assets/runtimes/<runtime>/project_types/` — shared by both modes — not control-plane functionality.
 
 ## 2) Core Execution Model
@@ -76,10 +76,10 @@ text in [`AGENTS.md` §"Mandatory privilege rule"](../AGENTS.md), with
 the in-depth tool-level explanation in §7 below. Enforced by `make
 check-privilege-boundary`.
 
-### Sister rule: host-side fenced `sudo` (macos-utm + ubuntu-kvm bootstrap)
+### Sister rule: host-side fenced `sudo` (macos + linux bootstrap)
 
 Bootstrap-stage shell scripts under
-`setup/{macos-utm,ubuntu-kvm}/lib/` run on the dev host
+`setup/{macos,linux}/lib/` run on the dev host
 (not in a container or VM) and need `sudo` for a fixed set of operations
 — route to the container subnet, DNS resolver pointing `*.mpd.test` at
 the in-VM dnsmasq, system-trust import of the mpd CA, plus
@@ -152,10 +152,10 @@ host-first CA), `lib/configure-client.sh` (existing-VM and `start.sh`
 warm path), and `lib/uninstall.sh` (teardown path).
 
 This rule applies to the two automated `mpd-machine` platforms whose
-bootstrap runs as the dev user on the host: **macos-utm** and
-**ubuntu-kvm**. The other platforms differ:
+bootstrap runs as the dev user on the host: **macos** and
+**linux**. The other platforms differ:
 
-- **windows-hyperv** runs each entry script wholesale via UAC
+- **windows** runs each entry script wholesale via UAC
   elevation (the `.cmd` shim's `Start-Process -Verb RunAs` is the
   privilege gate); the whole script body is the "fenced section" by
   design, and there is no per-operation `sudo`. CA generation and
@@ -578,7 +578,7 @@ Sibling to `caroot/`, `service/`, `wireguard/`. Lives under `conf/` so it
 **survives `mpd --uninstall`** (which wipes `~/.mpd/`).
 
 ```
-MPD_PLATFORM=desktop | macos-utm | macos-prl | ubuntu-kvm | windows-hyperv | sandbox
+MPD_PLATFORM=desktop | macos | linux | windows | sandbox
 MPD_VM_IP=<ip>                  # empty for desktop and sandbox
 MPD_INSTANCE_SUFFIX=<-suffix>   # e.g. "-161"; empty for the unsuffixed instance
 ```
@@ -601,10 +601,9 @@ and Platform can share the same file without clobbering each other.
 | Path                              | Writer                                                           | Values                      | Behavior                                               |
 |-----------------------------------|------------------------------------------------------------------|-----------------------------|--------------------------------------------------------|
 | `mpd-desktop`                     | `Mpd.Core.Platform.ensureWritten(...)` from `DesktopActionSetup` | `desktop`, `""`             | bootstrap on first `mpd --setup`; no prompt            |
-| `mpd-machine` via UTM             | `setup/macos-utm/lib/create-vm.sh` (over SSH)                    | `macos-utm`, `${VM_IP}`     | written before `mpd --setup` runs in the VM            |
-| `mpd-machine` via Parallels       | `setup/macos-prl/lib/create-vm.sh` (over SSH, template clone)    | `macos-prl`, `${VM_IP}`     | written before `mpd --setup` runs in the VM            |
-| `mpd-machine` via Ubuntu+KVM      | `setup/ubuntu-kvm/lib/create-vm.sh` (over SSH)                   | `ubuntu-kvm`, `${VM_IP}`    | written before `mpd --setup` runs in the VM            |
-| `mpd-machine` via Windows/Hyper-V | `setup/windows-hyperv/lib/create-vm.ps1` (over SSH)              | `windows-hyperv`, `${VmIp}` | written before `mpd --setup` runs in the VM            |
+| `mpd-machine` via Parallels       | `setup/macos/lib/create-vm.sh` (over SSH, template clone)    | `macos`, `${VM_IP}`     | written before `mpd --setup` runs in the VM            |
+| `mpd-machine` via Ubuntu+KVM      | `setup/linux/lib/create-vm.sh` (over SSH)                   | `linux`, `${VM_IP}`    | written before `mpd --setup` runs in the VM            |
+| `mpd-machine` via Windows/Hyper-V | `setup/windows/lib/create-vm.ps1` (over SSH)              | `windows`, `${VmIp}` | written before `mpd --setup` runs in the VM            |
 | `mpd-machine` via sandbox         | `setup/sandbox/lib/provision.sh`                                 | `sandbox`, `""`             | written before `mpd --setup` runs inside the Debian VM |
 
 **Reader:** `Mpd.Core.Platform.load()` (Swift). Throws with a fix-it message

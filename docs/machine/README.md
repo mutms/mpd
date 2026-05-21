@@ -61,10 +61,9 @@ built and reachable, plus host-side networking (route + DNS resolver
 
 | Host OS                   | Hypervisor                      | Bootstrap                                                                                                                                                                                                                                                        |
 |---------------------------|---------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **macOS** (Apple Silicon) | UTM with QEMU backend           | [`setup/macos-utm/`](../../setup/macos-utm/README.md) — double-click `setup.command`. QEMU+SPICE gives clipboard sync, dynamic display resize, and visible DHCP leases in UTM's GUI. `start.command` / `stop.command` / `uninstall.command` cover the lifecycle. |
-| **macOS** (Apple Silicon) | Parallels Desktop Pro           | [`setup/macos-prl/`](../../setup/macos-prl/README.md) — double-click `setup.command`. Clones a one-time-built Parallels template via `prlctl` and configures the result over SSH. Requires a Parallels Desktop Pro license.                                     |
-| **Ubuntu 26.04 LTS**      | libvirt + KVM                   | [`setup/ubuntu-kvm/`](../../setup/ubuntu-kvm/README.md) — `bash setup.sh` for end-to-end VM creation + host networking + a desktop launcher in GNOME Activities. `start.sh` / `stop.sh` / `uninstall.sh` cover the lifecycle.                                    |
-| **Windows**               | Hyper-V (free with Windows Pro) | [`setup/windows-hyperv/`](../../setup/windows-hyperv/README.txt) — `setup.cmd` does VM creation + cloud-init + repo clone + `mpd` build + Windows networking in one shot.                                                                                        |
+| **macOS** (Apple Silicon) | Parallels Desktop Pro           | [`setup/macos/`](../../setup/macos/README.md) — double-click `setup.command`. Clones a one-time-built Parallels template via `prlctl` and configures the result over SSH. Requires a Parallels Desktop Pro license.                                     |
+| **Ubuntu 26.04 LTS**      | libvirt + KVM                   | [`setup/linux/`](../../setup/linux/README.md) — `bash setup.sh` for end-to-end VM creation + host networking + a desktop launcher in GNOME Activities. `start.sh` / `stop.sh` / `uninstall.sh` cover the lifecycle.                                    |
+| **Windows**               | Hyper-V (free with Windows Pro) | [`setup/windows/`](../../setup/windows/README.txt) — `setup.cmd` does VM creation + cloud-init + repo clone + `mpd` build + Windows networking in one shot.                                                                                        |
 
 Other hosts (Fedora, Arch, NixOS, cloud Debian instances, anywhere
 the matched-host bootstrap doesn't apply) → use the
@@ -106,13 +105,13 @@ lifecycle, SSH workflow), see [USAGE.md](USAGE.md).
 
 - No prebuilt binaries are stored in git; `mpd` is built in-VM.
 - VM IP is recorded in `~/Developer/mpd/conf/platform.env` (set by
-  the bootstrap script; the macOS+UTM bootstrap prompts for the last
-  IP octet on the vmnet shared bridge with default `158`, see
-  [`setup/macos-utm/README.md`](../../setup/macos-utm/README.md#why-the-vm-ip-is-pinned)).
+  the bootstrap script; the macOS+Parallels bootstrap prompts for
+  the last IP octet on the Parallels Shared network with default
+  `155`, see [`setup/macos/README.md`](../../setup/macos/README.md#why-the-vm-ip-is-pinned)).
 - Laptop-side route + DNS resolver + CA trust are configured
   automatically by every matched-host setup script
-  (macOS+UTM `setup.command`, Ubuntu+KVM `setup.sh`, Windows+Hyper-V
-  `setup.cmd`). No manual host-side commands required.
+  (macOS+Parallels `setup.command`, Ubuntu+KVM `setup.sh`,
+  Windows+Hyper-V `setup.cmd`). No manual host-side commands required.
 
 ## Directory model (in the VM)
 
@@ -137,11 +136,11 @@ For full directory-contract detail (including data-volume layout under
 - [NETWORKING.md](NETWORKING.md) — host ↔ VM ↔ container routing model,
   per-OS laptop recipes
 - [SECURITY.md](SECURITY.md) — trust boundaries, intentional compromises
-- [`setup/macos-utm/README.md`](../../setup/macos-utm/README.md)
-  — UTM bootstrap on macOS + recovery
-- [`setup/ubuntu-kvm/README.md`](../../setup/ubuntu-kvm/README.md)
+- [`setup/macos/README.md`](../../setup/macos/README.md)
+  — Parallels Desktop Pro bootstrap on macOS
+- [`setup/linux/README.md`](../../setup/linux/README.md)
   — libvirt/KVM bootstrap on Ubuntu 26.04 LTS
-- [`setup/windows-hyperv/README.txt`](../../setup/windows-hyperv/README.txt)
+- [`setup/windows/README.txt`](../../setup/windows/README.txt)
   — Hyper-V bootstrap on Windows
 
 For the related "live entirely inside a sandbox VM" mode, see

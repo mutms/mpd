@@ -142,7 +142,7 @@ extension Mpd.Environment.Action.Setup {
             ok("CA already exists in \(caRootPem)")
         } else {
             // Adopt the mpd-machine platform CA when present so a Mac running
-            // both modes shares one CA (the macos-utm bash scripts do the
+            // both modes shares one CA (the macos bash scripts do the
             // symmetric thing — they reuse caroot/ when it exists).
             let machineCAPem = "\(Mpd.Environment.mpdMachineCARootDir)/rootCA.pem"
             let machineCAKey = "\(Mpd.Environment.mpdMachineCARootDir)/rootCA-key.pem"

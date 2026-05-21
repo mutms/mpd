@@ -14,28 +14,22 @@ see [../VISION.md](../VISION.md).
 You need a Debian Trixie VM with `mpd` built and reachable over SSH.
 Pick the path that matches your host:
 
-- **macOS + UTM (automated)** —
-  [`setup/macos-utm/`](../../setup/macos-utm/README.md).
-  Double-click `setup.command` for end-to-end VM creation, cloud-init,
-  repo clone, `mpd` build, and macOS networking (route, resolver, CA);
-  `start.command` / `stop.command` / `uninstall.command` cover the
-  lifecycle.
 - **macOS + Parallels Desktop Pro (automated)** —
-  [`setup/macos-prl/`](../../setup/macos-prl/README.md).
+  [`setup/macos/`](../../setup/macos/README.md).
   Double-click `setup.command`. Clones a one-time-built Parallels VM
   template (`mpd-machine-template`) via `prlctl`, configures the clone
-  over SSH, and applies the same macOS networking as macos-utm.
+  over SSH, and applies macOS networking (route, resolver, CA).
   Requires Parallels Desktop Pro. `start.command` / `stop.command` /
   `uninstall.command` cover the lifecycle.
 - **Ubuntu 26.04 LTS + libvirt/KVM (automated)** —
-  [`setup/ubuntu-kvm/`](../../setup/ubuntu-kvm/README.md).
+  [`setup/linux/`](../../setup/linux/README.md).
   `bash setup.sh` from a terminal: preflight (apt deps, libvirt group,
   KVM, default network) → libvirt-driven VM creation against `virbr0`
   → Linux host networking (route, systemd-resolved drop-in, system
   trust, Firefox policies, NSS DB) → desktop launcher in GNOME
   Activities. `start.sh` / `stop.sh` / `uninstall.sh` cover the lifecycle.
 - **Windows + Hyper-V (automated)** —
-  [`setup/windows-hyperv/`](../../setup/windows-hyperv/README.txt).
+  [`setup/windows/`](../../setup/windows/README.txt).
   `setup.cmd` does the same end-to-end and also configures Windows
   networking (route, NRPT DNS, CA certificate import).
 - **Sandbox (graphical, any hypervisor)** —
@@ -76,16 +70,16 @@ Run `mpd --setup-info` any time to print the platform identity plus a
 pointer to the platform's bootstrap README (where the host-side trust
 + route + resolver setup actually lives, when there is one).
 
-## Hooking up your laptop (cloud-init platforms only)
+## Hooking up your laptop (laptop-driven platforms only)
 
-The cloud-init platforms (macos-utm, ubuntu-kvm, windows-hyperv) reach
-the container subnet (`10.163.0.0/24`) over a static route to the VM,
-with split DNS pointing `*.mpd.test` at dnsmasq. **Each platform's
-bootstrap script applies all of this on the host automatically** —
-`setup.command`, `setup.sh`, or `setup.cmd` does the route + resolver
-+ CA trust in one shot. You normally don't have to do anything by
-hand. Concrete network recipes (for the curious or for recovery) live
-in [NETWORKING.md](NETWORKING.md).
+The laptop-driven platforms (macos, linux, windows)
+reach the container subnet (`10.163.0.0/24`) over a static route to
+the VM, with split DNS pointing `*.mpd.test` at dnsmasq. **Each
+platform's bootstrap script applies all of this on the host
+automatically** — `setup.command`, `setup.sh`, or `setup.cmd` does
+the route + resolver + CA trust in one shot. You normally don't have
+to do anything by hand. Concrete network recipes (for the curious or
+for recovery) live in [NETWORKING.md](NETWORKING.md).
 
 The **sandbox platform has no laptop side** — mpd lives entirely
 inside the VM, so there's no host route, no host resolver drop-in, and

@@ -1,4 +1,4 @@
-# common.ps1 -- shared constants and helpers for the windows-hyperv platform.
+# common.ps1 -- shared constants and helpers for the windows platform.
 # Dot-source this from every lib/*.ps1 script:  . "$PSScriptRoot\common.ps1"
 
 $MpdRepo        = "https://github.com/mutms/mpd.git"
@@ -188,7 +188,7 @@ function Wait-ForSsh {
 # explicit start/end markers so re-runs are idempotent (the previous comment-
 # only delimiter form leaked the `Host mpd-machine` line on every switch).
 
-$SshBlockStart = "# >>> mpd-machine (managed by windows-hyperv) >>>"
+$SshBlockStart = "# >>> mpd-machine (managed by windows) >>>"
 $SshBlockEnd   = "# <<< mpd-machine <<<"
 
 # Strip any existing mpd-machine block (new marker form OR legacy formats

@@ -1,5 +1,5 @@
 #!/bin/bash
-# common.sh -- bash helpers for the windows-hyperv platform.
+# common.sh -- bash helpers for the windows platform.
 # Sourced from scripts run inside WSL Debian via Invoke-WSLScript in common.ps1.
 # All file paths passed in are /mnt/c/... translations of Windows paths.
 # Do NOT set -euo pipefail here; callers own their own shell options.

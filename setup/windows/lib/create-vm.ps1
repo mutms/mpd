@@ -167,8 +167,8 @@ Send-SshScript -User $VmUser -RemoteHost $VmIp -Script @"
 set -e
 mkdir -p "`$HOME/Developer/mpd/conf"
 cat > "`$HOME/Developer/mpd/conf/platform.env" <<'PLATFORM_EOF'
-# mpd platform identity - written by windows-hyperv/lib/create-vm.ps1.
-MPD_PLATFORM=windows-hyperv
+# mpd platform identity - written by windows/lib/create-vm.ps1.
+MPD_PLATFORM=windows
 MPD_CLIENT_OS=windows
 MPD_VM_IP=$VmIp
 MPD_NETWORK_MODE=static

@@ -68,7 +68,7 @@ step "Creating VM: name=${VM_NAME} ip=${VM_IP} user=${VM_USER} memory=${VM_MEMOR
 [ -x "$PRLCTL" ] || die "prlctl not found at ${PRLCTL}. Install Parallels Desktop Pro."
 
 template_exists \
-    || die "Parallels template '${TEMPLATE_NAME}' not found. Prepare it per setup/macos-prl/README.md."
+    || die "Parallels template '${TEMPLATE_NAME}' not found. Prepare it per setup/macos/README.md."
 
 if vm_exists "$VM_NAME"; then
     die "VM '$VM_NAME' already exists in Parallels. Delete it first or pick a different octet."
@@ -195,7 +195,7 @@ wait_for_ssh "$VM_IP" "$VM_USER" 120 \
     || die "VM did not come back at ${VM_IP} within 120s."
 ok "SSH ready (${VM_USER}@${VM_IP})"
 
-# --- Disable IPv6 (mpd is IPv4-only; matches macos-utm's cloud-init step) ---
+# --- Disable IPv6 (mpd is IPv4-only; matches macos's cloud-init step) ---
 
 step "Disabling IPv6 inside the guest"
 ssh_cmd "$VM_IP" "$VM_USER" 'bash -se' <<'EOF'
@@ -242,9 +242,9 @@ ssh_cmd "$VM_IP" "$VM_USER" "export VM_IP=$(printf '%q' "$VM_IP"); bash -se" <<'
 set -e
 mkdir -p "$HOME/Developer/mpd/conf"
 cat > "$HOME/Developer/mpd/conf/platform.env" <<PLATFORM_EOF
-# mpd platform identity — written by macos-prl/lib/create-vm.sh.
+# mpd platform identity — written by macos/lib/create-vm.sh.
 # Lives under conf/ so it survives \`mpd --uninstall\`.
-MPD_PLATFORM=macos-prl
+MPD_PLATFORM=macos
 MPD_CLIENT_OS=macos
 MPD_VM_IP=${VM_IP}
 PLATFORM_EOF

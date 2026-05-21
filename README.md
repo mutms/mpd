@@ -94,11 +94,11 @@ Pick this when you want your laptop's own browser/IDE to resolve
 `*.mpd.test` directly — host gets a static route + DNS resolver +
 CA trust automatically. Matched-host bootstrap per OS:
 
-| Host                 | Bootstrap                                    |
-|----------------------|----------------------------------------------|
-| macOS (UTM)          | [setup/macos-utm/README.md](setup/macos-utm/README.md)             |
-| Ubuntu (libvirt/KVM) | [setup/ubuntu-kvm/README.md](setup/ubuntu-kvm/README.md)            |
-| Windows (Hyper-V)    | [setup/windows-hyperv/README.txt](setup/windows-hyperv/README.txt)       |
+| Host                          | Bootstrap                                                          |
+|-------------------------------|--------------------------------------------------------------------|
+| macOS (Parallels Desktop Pro) | [setup/macos/README.md](setup/macos/README.md)             |
+| Ubuntu (libvirt/KVM)          | [setup/linux/README.md](setup/linux/README.md)           |
+| Windows (Hyper-V)             | [setup/windows/README.txt](setup/windows/README.txt) |
 
 ### 3. `mpd-desktop` (native Podman Desktop on macOS)
 

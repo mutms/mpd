@@ -1,6 +1,6 @@
 #!/bin/bash
 # uninstall.sh — undo host networking + trust, then (per-VM y/N) delete
-# mpd VMs. Mirrors macos-utm/lib/uninstall.sh's structure.
+# mpd VMs. Mirrors macos/lib/uninstall.sh's structure.
 #
 # Order is deliberate: host cleanup runs first, VM deletion is the last
 # step. Ctrl-C during the per-VM prompts therefore leaves the host fully

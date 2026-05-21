@@ -116,9 +116,9 @@ mpd generates a private CA at `mpd --setup` time. The CA signs all TLS certifica
 | Property                                   | Value                                                           |
 |--------------------------------------------|-----------------------------------------------------------------|
 | Location (canonical)                       | `~/Developer/mpd/conf/caroot/rootCA.pem` + `rootCA-key.pem`     |
-| Location (platform mirror, macos-utm)      | `~/.mpd-machine/ca/rootCA.pem` + `rootCA-key.pem`               |
-| Location (platform mirror, ubuntu-kvm)     | `~/.mpd-machine/ca/rootCA.pem` + `rootCA-key.pem`               |
-| Location (platform mirror, windows-hyperv) | `%USERPROFILE%\mpd-machine\ca\rootCA.pem` + `rootCA-key.pem`    |
+| Location (platform mirror, macos)      | `~/.mpd-machine/ca/rootCA.pem` + `rootCA-key.pem`               |
+| Location (platform mirror, linux)     | `~/.mpd-machine/ca/rootCA.pem` + `rootCA-key.pem`               |
+| Location (platform mirror, windows) | `%USERPROFILE%\mpd-machine\ca\rootCA.pem` + `rootCA-key.pem`    |
 | CA validity                                | 10 years                                                        |
 | Leaf cert validity                         | 397 days (macOS requires < 398 for trust)                       |
 | Name constraints                           | `mpd.test` + `.mpd.test` only                                   |
@@ -128,9 +128,9 @@ mpd generates a private CA at `mpd --setup` time. The CA signs all TLS certifica
 
 **Name constraints** limit the CA to signing certificates for `*.mpd.test` domains only. Even if the CA key is compromised, it cannot sign certificates for real domains (e.g. `google.com`). Browsers enforce name constraints.
 
-**Two real-file locations on macos-utm hosts only.** On macOS the same machine can run both mpd-desktop and mpd-machine, so the CA is mirrored between `caroot/` and `~/.mpd-machine/ca/` on every `setup.command` run. Wiping either side auto-restores from the other; mpd-desktop's `mpd --setup` adopts from `~/.mpd-machine/ca/` when `caroot/` is absent so both modes converge on a single CA. On ubuntu-kvm there is no `~/Developer/mpd` on the host (the repo only lives inside the VM), so `~/.mpd-machine/ca/` is the sole location and no mirroring is needed.
+**Two real-file locations on macos hosts only.** On macOS the same machine can run both mpd-desktop and mpd-machine, so the CA is mirrored between `caroot/` and `~/.mpd-machine/ca/` on every `setup.command` run. Wiping either side auto-restores from the other; mpd-desktop's `mpd --setup` adopts from `~/.mpd-machine/ca/` when `caroot/` is absent so both modes converge on a single CA. On linux there is no `~/Developer/mpd` on the host (the repo only lives inside the VM), so `~/.mpd-machine/ca/` is the sole location and no mirroring is needed.
 
-**Single location on windows-hyperv hosts.** `setup.cmd` uses WSL Debian (`lib/common.sh`) to run `openssl genrsa` + `openssl req` as root, writing the CA keypair directly to `%USERPROFILE%\mpd-machine\ca\` via WSL path translation (`/mnt/c/...`). There is no `~/Developer/mpd/conf/caroot/` on Windows — the repo only lives inside the VM. `configure-client.ps1` reads from `%USERPROFILE%\mpd-machine\ca\rootCA.pem` for the Windows trust store import (`Import-Certificate -CertStoreLocation Cert:\LocalMachine\Root`).
+**Single location on windows hosts.** `setup.cmd` uses WSL Debian (`lib/common.sh`) to run `openssl genrsa` + `openssl req` as root, writing the CA keypair directly to `%USERPROFILE%\mpd-machine\ca\` via WSL path translation (`/mnt/c/...`). There is no `~/Developer/mpd/conf/caroot/` on Windows — the repo only lives inside the VM. `configure-client.ps1` reads from `%USERPROFILE%\mpd-machine\ca\rootCA.pem` for the Windows trust store import (`Import-Certificate -CertStoreLocation Cert:\LocalMachine\Root`).
 
 **Host-only trust rule.** CAs flow host → VM only. The macOS keychain only ever trusts certificates the host generated itself. `configure-client.sh` will not pull a CA off a VM and import it into the keychain — that would invert the trust direction. On Windows, `configure-client.ps1` reads from the Windows-side CA file (`%USERPROFILE%\mpd-machine\ca\rootCA.pem`) generated locally by WSL; it never SCPs a cert off a VM. Setup scripts always generate the host CA before creating the VM, so the CA is always present when trust import runs.
 
@@ -165,7 +165,7 @@ Reachable only via the static route to the VM's container subnet — no public e
 
 SSH agent forwarding (`ssh -A`) is optional for runtimes that need host-agent-backed git/auth inside the container. It passes the developer's key into the container for the session — the private key never touches the container filesystem. fileaccess does not need agent forwarding (it's not a shell environment).
 
-**Lost the laptop's private key?** Recovery via UTM single-user mode is documented in [`setup/macos-utm/README.md`](../../setup/macos-utm/README.md#recovery-lost-ssh-key) — the gotcha is that the VM has no graphical display, so you first need to point UTM's serial console at its built-in terminal before GRUB output is visible.
+**Lost the laptop's private key?** The simplest recovery is to re-clone the template via `setup.command` (cheap with Parallels) and side-by-side it with the old VM until you've migrated anything you care about. If you want to rescue the existing VM instead, boot Parallels into single-user mode (interrupt GRUB, append `init=/bin/bash`, `mount -o remount,rw /`, replace `~/.ssh/authorized_keys`, reboot).
 
 ### WireGuard (mpd-desktop only)
 

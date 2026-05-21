@@ -1,6 +1,6 @@
 #!/bin/bash
-# setup.sh — Create a new mpd-machine VM or switch the active VM.
-# Called by setup.command.
+# setup.sh — Create a new mpd-machine VM in Parallels Desktop Pro or
+# switch the active VM. Called by setup.command.
 
 set -euo pipefail
 
@@ -11,13 +11,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 step "Checking prerequisites"
 
-[ -d "/Applications/UTM.app" ] \
-    || die "UTM is not installed. Get it from https://mac.getutm.app/ or the Mac App Store."
-[ -x "$UTMCTL" ] \
-    || die "UTM utmctl not found at $UTMCTL — UTM may need to be reinstalled."
-ok "UTM installed"
+if [ ! -d "/Applications/Parallels Desktop.app" ]; then
+    die "Parallels Desktop.app not found in /Applications/. Install Parallels Desktop Pro from https://www.parallels.com/."
+fi
+[ -x "$PRLCTL" ] \
+    || die "prlctl not found at $PRLCTL — Parallels Desktop Pro may need to be reinstalled."
+ok "Parallels Desktop Pro installed"
 
-for tool in ssh ssh-keygen scp osascript security route openssl awk; do
+if ! template_exists; then
+    die "Parallels template '${TEMPLATE_NAME}' not found. Prepare it per setup/macos/README.md."
+fi
+ok "Template '${TEMPLATE_NAME}' available"
+
+for tool in ssh ssh-keygen scp security route openssl awk; do
     command -v "$tool" >/dev/null 2>&1 \
         || die "$tool not found on PATH (should be present on every macOS — check your shell setup)."
 done
@@ -43,14 +49,6 @@ if [ -z "$SSH_KEY" ]; then
     SSH_KEY="$HOME/.ssh/id_ed25519.pub"
 fi
 ok "SSH key: $SSH_KEY"
-
-# --- sudo strategy ---
-# New-VM path: `prepare_host_ca` runs before any VM work; route, resolver,
-# and CA-trust are applied in a single upfront fenced `sudo` block, then
-# `sudo -k`. The long unattended phase that follows holds no sudo creds.
-# Existing-VM paths (re-verify / switch): `configure-client.sh` runs at
-# the end and prompts for sudo only if it actually has work — usually
-# silent on a warm Mac.
 
 # --- VM selection ---
 
@@ -90,18 +88,19 @@ if [ ${#vm_lines[@]} -gt 0 ]; then
 else
     echo "    No mpd VMs found yet."
     echo
-    default_octet="158"
-    prompt="Enter last IP octet for the new VM [${default_octet}]: "
+    default_octet="155"
+    prompt="Enter last IP octet for the new VM [${default_octet}] (must be ${MIN_STATIC_OCTET}–${MAX_STATIC_OCTET}, since Parallels DHCP owns .1–.$(($MIN_STATIC_OCTET - 1))): "
 fi
 
 VM_OCTET=""
 while [ -z "$VM_OCTET" ]; do
     read -r -p "    $prompt" inp
     inp="${inp:-$default_octet}"
-    if [[ "$inp" =~ ^[0-9]+$ ]] && [ "$inp" -ge 2 ] && [ "$inp" -le 254 ]; then
+    if [[ "$inp" =~ ^[0-9]+$ ]] \
+       && [ "$inp" -ge "$MIN_STATIC_OCTET" ] && [ "$inp" -le "$MAX_STATIC_OCTET" ]; then
         VM_OCTET="$inp"
     else
-        echo "    Please enter a number between 2 and 254."
+        echo "    Please enter a number between ${MIN_STATIC_OCTET} and ${MAX_STATIC_OCTET} (the Parallels Shared DHCP pool owns .1–.$(($MIN_STATIC_OCTET - 1)))."
     fi
 done
 
@@ -118,7 +117,7 @@ if vm_exists "$VM_NAME"; then
         step "Re-verifying current VM (${VM_NAME} at ${VM_IP})"
 
         state=$(get_vm_state "$VM_NAME")
-        if [ "$state" != "started" ]; then
+        if [ "$state" != "running" ]; then
             echo "    VM state is ${state} — starting..."
             vm_start "$VM_NAME"
             wait_for_ssh "$VM_IP" "$VM_USER" 120 \
@@ -140,7 +139,7 @@ if vm_exists "$VM_NAME"; then
 
         if [ -n "${current_octet:-}" ]; then
             cur="${VM_NAME_PREFIX}${current_octet}"
-            if vm_exists "$cur" && [ "$(get_vm_state "$cur")" = "started" ]; then
+            if vm_exists "$cur" && [ "$(get_vm_state "$cur")" = "running" ]; then
                 step "Suspending ${cur}"
                 vm_suspend "$cur"
                 ok "Suspended"
@@ -161,7 +160,7 @@ if vm_exists "$VM_NAME"; then
 else
     # ── Create new VM ────────────────────────────────────────────────────
     echo
-    echo "    No VM named '${VM_NAME}' found — creating a new one."
+    echo "    No VM named '${VM_NAME}' found — cloning from '${TEMPLATE_NAME}'."
     echo
 
     # Username
@@ -169,7 +168,7 @@ else
     [ -z "$user_guess" ] && user_guess="dev"
     VM_USER=""
     while [ -z "$VM_USER" ]; do
-        read -r -p "    Username on the VM [${user_guess}]: " inp
+        read -r -p "    Username on the VM (must already exist in the template) [${user_guess}]: " inp
         inp="${inp:-$user_guess}"
         if [[ "$inp" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
             VM_USER="$inp"
@@ -178,10 +177,10 @@ else
         fi
     done
 
-    # Memory (GB) — virtio-balloon means this is an upper bound
+    # Memory (GB)
     VM_MEMORY_GB=""
     while [ -z "$VM_MEMORY_GB" ]; do
-        read -r -p "    Memory in GB (maximum) [12]: " inp
+        read -r -p "    Memory in GB [12]: " inp
         inp="${inp:-12}"
         if [[ "$inp" =~ ^[0-9]+$ ]] && [ "$inp" -ge 2 ]; then
             VM_MEMORY_GB="$inp"
@@ -203,24 +202,17 @@ else
     done
 
     # ── Host-side preparation: CA + upfront fenced sudo ─────────────────
-    # All host-side privileged ops happen here, *before* VM creation.
-    # Then the long unattended phase runs without holding sudo creds.
 
     step "Preparing CA on host"
     prepare_host_ca
     trap 'sudo -k 2>/dev/null || true' EXIT
 
-    # Detect — short slugs name the operations so we can switch on them
-    # below. (Pretty descriptions are derived per-slug for printing.)
     needs=()
     if route_needs_update    "$VM_IP";        then needs+=(route);    fi
     if resolver_needs_update;                  then needs+=(resolver); fi
     if ! ca_in_keychain      "$HOST_CA_PEM";  then needs+=(ca);       fi
 
     if [ ${#needs[@]} -gt 0 ]; then
-        # Build the runnable command list, mirroring exactly what
-        # apply_* would do. Includes the optional stale-route delete
-        # so the printed recipe matches what the script would run.
         cmds=()
         case " ${needs[*]} " in *" route "*)
             probe_out=$(route -n get -inet "$CONTAINER_PROBE_IP" 2>/dev/null || true)
@@ -242,7 +234,6 @@ else
 
         print_sudo_recipe "${cmds[@]}"
 
-        # Re-check: did the dev already run them in another terminal?
         needs2=()
         if route_needs_update    "$VM_IP";        then needs2+=(route);    fi
         if resolver_needs_update;                  then needs2+=(resolver); fi
@@ -259,9 +250,6 @@ else
             ok "host networking + CA trust applied"
         fi
 
-        # Always record the trusted CA's fingerprint so uninstall.sh can
-        # find and remove this exact cert later — regardless of whether
-        # the script or the dev did the import.
         if ca_in_keychain "$HOST_CA_PEM"; then
             record_ca_fingerprint "$HOST_CA_PEM"
         fi
@@ -272,7 +260,7 @@ else
     # Suspend any currently-active VM before we create.
     if [ -n "${current_octet:-}" ]; then
         cur="${VM_NAME_PREFIX}${current_octet}"
-        if vm_exists "$cur" && [ "$(get_vm_state "$cur")" = "started" ]; then
+        if vm_exists "$cur" && [ "$(get_vm_state "$cur")" = "running" ]; then
             step "Suspending ${cur}"
             vm_suspend "$cur"
             ok "Suspended"
@@ -280,7 +268,7 @@ else
     fi
 
     echo
-    echo "    Creating VM: name=${VM_NAME}  IP=${VM_IP}  user=${VM_USER}  memory=${VM_MEMORY_GB}GB  disk=${VM_DISK_SIZE}GB"
+    echo "    Cloning VM: name=${VM_NAME}  IP=${VM_IP}  user=${VM_USER}  memory=${VM_MEMORY_GB}GB  disk=${VM_DISK_SIZE}GB"
     echo
 
     bash "${SCRIPT_DIR}/create-vm.sh" \
@@ -293,7 +281,6 @@ else
         --host-ca-key="$HOST_CA_KEY"
 
     # Pre-warm demo stack so the user's first `demo moodle …` is fast.
-    # Best-effort: a failure here just means lazy provisioning later.
     step "Pre-warming demo runtime and database"
     if ssh_cmd "$VM_IP" "$VM_USER" 'mpd --runtime-create=php'; then
         ok "PHP runtime built"

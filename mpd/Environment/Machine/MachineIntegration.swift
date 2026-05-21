@@ -17,10 +17,10 @@ extension Mpd.Environment.Integration {
 
     /// Verify the host is in the standardized network state mpd-machine
     /// expects: systemd-resolved active, fed by some link manager (NM or
-    /// systemd-networkd). The platform bootstrap scripts (cloud-init for
-    /// macos-utm/ubuntu-kvm/windows-hyperv; `sandbox/lib/provision.sh` for
-    /// sandbox) are responsible for putting the host here. mpd just
-    /// checks and bails with a hint if not.
+    /// systemd-networkd). The platform bootstrap scripts (macos/
+    /// linux/windows; `sandbox/lib/provision.sh` for sandbox)
+    /// are responsible for putting the host here. mpd just checks and
+    /// bails with a hint if not.
     static func requireSystemdResolvedActive() throws {
         guard systemctlIsActive("systemd-resolved.service") else {
             throw RuntimeError("""
@@ -145,7 +145,7 @@ extension Mpd.Environment.Integration {
         case .desktop:
             // Desktop's footer is owned by DesktopIntegration.
             return
-        case .macosUTM, .macosPRL, .ubuntuKVM, .windowsHyperV:
+        case .macos, .linux, .windows:
             let readme = "setup/\(identity.platform.rawValue)/README.md"
             print("\n  Host-side setup is owned by your platform's bootstrap script — see")
             print("  \(readme) for details and post-setup operations.")

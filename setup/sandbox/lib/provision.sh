@@ -13,7 +13,7 @@ set -euo pipefail
 
 REPO_DIR="$HOME/Developer/mpd"
 
-# --- Output helpers (matching ubuntu-kvm/lib/common.sh style) ---
+# --- Output helpers (matching linux/lib/common.sh style) ---
 step() { printf '\n==> %s\n' "$*"; }
 ok()   { printf '    ok: %s\n' "$*"; }
 warn() { printf '    warn: %s\n' "$*"; }
@@ -226,7 +226,7 @@ fi
 step "Running 'mpd --setup'"
 mpd --setup
 
-# --- Pre-warm (best-effort, mirrors ubuntu-kvm symmetry) ---------------
+# --- Pre-warm (best-effort, mirrors linux symmetry) ---------------
 step "Pre-warming demo runtime + database (best-effort)"
 if mpd --runtime-create=php; then
     ok "PHP runtime built"

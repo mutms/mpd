@@ -26,7 +26,7 @@ no need to open them).
 You can also invoke the underlying scripts directly from a Terminal:
 
 ```bash
-bash setup/macos-prl/lib/setup.sh
+bash setup/macos/lib/setup.sh
 ```
 
 ## Prerequisites
@@ -104,7 +104,7 @@ the long unattended phase:
 
 1. Prepares the mpd CA on the host — reuses
    `~/Developer/mpd/conf/caroot/{rootCA.pem,rootCA-key.pem}` if
-   populated (shared with mpd-desktop and macos-utm), or
+   populated (shared with mpd-desktop and macos), or
    `~/.mpd-machine/ca/` as a fallback, otherwise generates fresh.
 2. Prints the exact commands it would run as root and lets you choose:
    copy/paste them into another terminal, or press Enter to let the
@@ -130,7 +130,7 @@ the long unattended phase:
     `~/Desktop/mpd-machine.command`, which reads
     `~/.mpd-machine/current.env` at click time and SSHes to whichever
     VM is currently active. The block uses platform-agnostic markers
-    — macos-utm and macos-prl share it, so switching between them
+    — macos and macos share it, so switching between them
     just replaces the previous platform's entries cleanly.
 
 The whole process takes 5–15 minutes depending on Parallels clone
@@ -191,7 +191,7 @@ resolver, and (if needed) CA trust for it.
 and mirrors between them on every run:
 
 - `~/Developer/mpd/conf/caroot/{rootCA.pem,rootCA-key.pem}` — the
-  canonical mpd location, shared with mpd-desktop **and** macos-utm.
+  canonical mpd location, shared with mpd-desktop **and** macos.
   Populated whenever `~/Developer/mpd/conf/` exists.
 - `~/.mpd-machine/ca/{rootCA.pem,rootCA-key.pem}` — the disposable
   platform mirror. Always populated on any Mac that has run

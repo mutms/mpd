@@ -14,7 +14,7 @@ extension Mpd.Environment.Action.Setup {
     /// Notably absent: `systemd-resolved` and `network-manager`. The host's
     /// network stack (link manager + DNS sink) is standardized to
     /// systemd-networkd or NetworkManager + systemd-resolved by the
-    /// platform bootstrap (cloud-init for macos-utm/ubuntu-kvm/windows-hyperv;
+    /// platform bootstrap (cloud-init for macos/linux/windows;
     /// `sandbox/lib/provision.sh` for sandbox). By the time `mpd --setup`
     /// runs, systemd-resolved is already active. mpd touches it through a
     /// single drop-in for `*.mpd.test`; nothing else.
@@ -59,7 +59,7 @@ extension Mpd.Environment.Action.Setup {
     }
 
     /// Hard gate: mpd-machine targets Debian Trixie across every
-    /// platform — cloud-init (macos-utm, ubuntu-kvm, windows-hyperv) and
+    /// platform — cloud-init (macos, linux, windows) and
     /// sandbox alike. Other distros / releases are unsupported (package
     /// names, Swift availability, systemd unit layout, NetworkManager
     /// defaults all vary).
@@ -362,7 +362,7 @@ extension Mpd.Environment.Action.Setup {
 
         // Verify the host's network stack is in the standardized state
         // (systemd-resolved active, fed by either NetworkManager or
-        // systemd-networkd). cloud-init (macos-utm/ubuntu-kvm/windows-hyperv)
+        // systemd-networkd). cloud-init (macos/linux/windows)
         // and `sandbox/lib/provision.sh` (sandbox) are both responsible
         // for putting the system here; mpd --setup just verifies and
         // bails with a hint if not.

@@ -1,5 +1,5 @@
 #!/bin/bash
-# setup.sh — Pre-flight + create/switch an mpd-machine VM (ubuntu-kvm).
+# setup.sh — Pre-flight + create/switch an mpd-machine VM (linux).
 # Called by the entry shim at ../setup.sh.
 
 set -euo pipefail

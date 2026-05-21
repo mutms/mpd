@@ -1,15 +1,16 @@
 #!/bin/bash
-# create-vm.sh — Create a single Debian Trixie VM on UTM for mpd-machine.
+# create-vm.sh — Create a single Debian Trixie VM via libvirt for mpd-machine.
 #
 # Called by lib/setup.sh after the user has selected octet/user/memory/disk.
-# This script is non-interactive (no prompts) and does not configure host
-# networking — that lives in lib/configure-client.sh.
+# Non-interactive (no prompts). Does not configure host networking — that's
+# in lib/configure-client.sh and the host-side privileged block in setup.sh.
 #
 # Usage:
 #   bash lib/create-vm.sh \
 #       --octet=158 --user=skodak \
 #       --ssh-pub-key="$HOME/.ssh/id_ed25519.pub" \
-#       --memory-gb=12 --disk-gb=200
+#       --memory-gb=12 --disk-gb=200 \
+#       --host-ca-pem=... --host-ca-key=...
 
 set -euo pipefail
 
@@ -44,7 +45,7 @@ done
 [ -n "$SSH_KEY" ]          || die "Missing --ssh-pub-key"
 [ -n "$VM_MEMORY_GB" ]     || die "Missing --memory-gb"
 [ -n "$VM_DISK_SIZE" ]     || die "Missing --disk-gb"
-[ -n "$ARG_HOST_CA_PEM" ]  || die "Missing --host-ca-pem (setup.sh prepares it via prepare_host_ca)"
+[ -n "$ARG_HOST_CA_PEM" ]  || die "Missing --host-ca-pem"
 [ -n "$ARG_HOST_CA_KEY" ]  || die "Missing --host-ca-key"
 [ -f "$SSH_KEY" ]          || die "SSH public key not found: $SSH_KEY"
 [ -f "$ARG_HOST_CA_PEM" ]  || die "Host CA cert not found: $ARG_HOST_CA_PEM"
@@ -53,16 +54,59 @@ done
 VM_NAME="${VM_NAME_PREFIX}${VM_OCTET}"
 VM_IP="${BRIDGE_SUBNET}.${VM_OCTET}"
 VM_MEMORY_MIB=$((VM_MEMORY_GB * 1024))
-VM_CPUS=4   # configurable later in UTM (stop VM > Edit > System)
+VM_CPUS=4
 
+# Deterministic MAC: 52:54:00 (libvirt OUI) + 00:00 + octet (hex).
+# Same OUI libvirt picks for `default` network, doesn't collide with the
+# bridge gateway.
+VM_MAC=$(printf '52:54:00:00:00:%02x' "$VM_OCTET")
+
+POOL_NAME="$LIBVIRT_POOL_NAME"
+POOL_DIR="$LIBVIRT_POOL_DIR"
 TEMP_DIR="${SCRIPT_DIR}/temp"
 mkdir -p "$TEMP_DIR"
+# Preflight has already created LIBVIRT_POOL_PARENT (root-owned parent
+# + user-owned subdir at /var/lib/mpd-machine/$USER); the pool's `disks/`
+# subdir is created by `virsh pool-build` further down.
 
-step "Creating VM: name=${VM_NAME} ip=${VM_IP} user=${VM_USER} memory=${VM_MEMORY_GB}GB disk=${VM_DISK_SIZE}GB"
+step "Creating VM: name=${VM_NAME} ip=${VM_IP} user=${VM_USER} memory=${VM_MEMORY_GB}GB disk=${VM_DISK_SIZE}GB mac=${VM_MAC}"
 
 if vm_exists "$VM_NAME"; then
-    die "VM '$VM_NAME' already exists in UTM. Delete it first or pick a different octet."
+    die "VM '$VM_NAME' already exists in libvirt. Delete it first or pick a different octet."
 fi
+
+# --- Storage pool ---
+# User-owned dir pool keeps disks accessible without sudo on the host;
+# libvirtd's apparmor profile auto-allows libvirt-managed pool paths.
+
+step "Ensuring libvirt storage pool '${POOL_NAME}' at ${POOL_DIR}"
+
+# Pool target lives under /var/lib/mpd-machine/$USER/disks. The user-owned
+# parent ($LIBVIRT_POOL_PARENT) was created by the preflight sudo recipe.
+# We mkdir the `disks/` subdir ourselves rather than via `virsh pool-build`
+# — libvirtd would execute pool-build as root, leaving the dir owned by
+# root, and qemu-img convert later would fail with "Permission denied".
+# libvirt-qemu still gets to read/write inside; apparmor permits any
+# libvirt-managed pool path, and dynamic_ownership chowns disks to
+# libvirt-qemu when VMs start.
+mkdir -p "$POOL_DIR"
+
+if ! virsh -c "$LIBVIRT_URI" pool-info "$POOL_NAME" >/dev/null 2>&1; then
+    virsh -c "$LIBVIRT_URI" pool-define-as "$POOL_NAME" dir --target "$POOL_DIR" >/dev/null
+    virsh -c "$LIBVIRT_URI" pool-start "$POOL_NAME" >/dev/null
+    virsh -c "$LIBVIRT_URI" pool-autostart "$POOL_NAME" >/dev/null
+    ok "pool created and started"
+else
+    state=$(virsh -c "$LIBVIRT_URI" pool-info "$POOL_NAME" 2>/dev/null \
+        | awk -F: '/^State:/ { sub(/^[[:space:]]*/, "", $2); print $2 }')
+    if [ "$state" != "running" ]; then
+        virsh -c "$LIBVIRT_URI" pool-start "$POOL_NAME" >/dev/null
+    fi
+    ok "pool already exists"
+fi
+
+DISK_PATH="${POOL_DIR}/${VM_NAME}.qcow2"
+SEED_ISO="${POOL_DIR}/${VM_NAME}-seed.iso"
 
 # --- Download cloud image ---
 
@@ -72,15 +116,15 @@ CACHED_ARCHIVE="${TEMP_DIR}/${CLOUD_ARCHIVE}"
 if [ -f "$CACHED_ARCHIVE" ]; then
     ok "Using cached: $(basename "$CACHED_ARCHIVE")"
 else
-    echo "    Downloading ${CLOUD_ARCHIVE} (~200 MB)..."
+    echo "    Downloading ${CLOUD_ARCHIVE} (~250 MB)..."
     curl -L --progress-bar -o "$CACHED_ARCHIVE" "${CLOUD_BASE}/${CLOUD_ARCHIVE}"
     ok "Downloaded: ${CLOUD_ARCHIVE}"
 fi
 
-# --- Extract + resize raw disk ---
+# --- Extract raw + convert+resize to qcow2 in the pool ---
 
-DISK_PATH="${TEMP_DIR}/${VM_NAME}.raw"
-echo "    Extracting raw disk image..."
+step "Converting raw image to qcow2 in pool (${VM_DISK_SIZE}G sparse)"
+
 # Clear any leftover raw images from prior runs so the freshly-extracted file
 # is unambiguous (the extracted name varies by Debian release).
 find "$TEMP_DIR" -maxdepth 1 \( -name "*.raw" -o -name "disk.*" \) -delete 2>/dev/null || true
@@ -90,22 +134,26 @@ if [ -z "$RAW_FILE" ]; then
     RAW_FILE=$(find "$TEMP_DIR" -maxdepth 1 -name "disk.*" -print -quit)
 fi
 [ -z "$RAW_FILE" ] && die "Could not find raw disk image in archive"
-mv "$RAW_FILE" "$DISK_PATH"
 
+# Reject too-small target sizes upfront.
+RAW_BYTES=$(stat -c %s "$RAW_FILE")
 TARGET_BYTES=$((VM_DISK_SIZE * 1024 * 1024 * 1024))
-CURRENT_BYTES=$(stat -f %z "$DISK_PATH")
-if [ "$TARGET_BYTES" -lt "$CURRENT_BYTES" ]; then
-    die "Requested disk size ${VM_DISK_SIZE} GB is smaller than the cloud image ($((CURRENT_BYTES / 1024 / 1024 / 1024)) GB). Pick a larger size."
+if [ "$TARGET_BYTES" -lt "$RAW_BYTES" ]; then
+    die "Requested disk size ${VM_DISK_SIZE}G is smaller than the cloud image ($((RAW_BYTES / 1024 / 1024 / 1024))G). Pick a larger size."
 fi
-dd if=/dev/zero of="$DISK_PATH" bs=1 count=0 seek="$TARGET_BYTES" 2>/dev/null
-ok "Disk extracted and resized to ${VM_DISK_SIZE} GB (sparse)"
+
+qemu-img convert -O qcow2 -o lazy_refcounts=on "$RAW_FILE" "$DISK_PATH"
+qemu-img resize "$DISK_PATH" "${VM_DISK_SIZE}G" >/dev/null
+rm -f "$RAW_FILE"
+ok "qcow2 ready at ${DISK_PATH}"
 
 # --- Cloud-init seed ISO ---
 
-step "Creating cloud-init configuration"
+step "Building cloud-init seed ISO"
 
 SSH_PUB_KEY=$(cat "$SSH_KEY")
 CIDATA_DIR="${TEMP_DIR}/cidata"
+rm -rf "$CIDATA_DIR"
 mkdir -p "$CIDATA_DIR"
 
 cat > "${CIDATA_DIR}/meta-data" <<EOF
@@ -150,86 +198,123 @@ runcmd:
   - sysctl --load=/etc/sysctl.d/99-mpd-disable-ipv6.conf
 EOF
 
+# netplan via cloud-init network-config v2. Match by virtio_net driver so
+# we don't have to hard-code an interface name (libvirt's interface naming
+# can vary across machine types).
 cat > "${CIDATA_DIR}/network-config" <<EOF
 version: 2
 ethernets:
-  enp0s1:
+  primary:
+    match:
+      driver: virtio_net
     addresses: [${VM_IP}/24]
     gateway4: ${BRIDGE_GATEWAY}
     nameservers:
       addresses: [${BRIDGE_GATEWAY}]
 EOF
 
-# Volume label "cidata" required by cloud-init NoCloud datasource.
-SEED_ISO="${TEMP_DIR}/seed.iso"
-hdiutil makehybrid -o "$SEED_ISO" -iso -joliet -default-volume-name cidata "$CIDATA_DIR" >/dev/null 2>&1
-ok "Cloud-init seed ISO created"
-
+genisoimage -output "$SEED_ISO" -volid cidata -joliet -rock "$CIDATA_DIR" >/dev/null 2>&1
 rm -rf "$CIDATA_DIR"
+ok "seed ISO at ${SEED_ISO}"
 
-# --- Create VM in UTM ---
+# Refresh the pool so libvirt sees both files as managed volumes.
+virsh -c "$LIBVIRT_URI" pool-refresh "$POOL_NAME" >/dev/null
 
-step "Creating VM in UTM '${VM_NAME}'"
+# --- Define VM ---
 
-# QEMU backend, aarch64. The primary disk is imported into the VM bundle so
-# the machine does not depend on TEMP_DIR after creation. QEMU + SPICE gives
-# clipboard sync, dynamic display resize, and visible DHCP leases in UTM's GUI.
-osascript <<APPLESCRIPT
-tell application "UTM"
-    set diskFile to POSIX file "${DISK_PATH}"
-    set seedFile to POSIX file "${SEED_ISO}"
-    make new virtual machine with properties { ¬
-        backend:qemu, ¬
-        configuration:{ ¬
-            name:"${VM_NAME}", ¬
-            architecture:"aarch64", ¬
-            memory:${VM_MEMORY_MIB}, ¬
-            cpu cores:${VM_CPUS}, ¬
-            drives:{ ¬
-                {source:diskFile}, ¬
-                {source:seedFile} ¬
-            }, ¬
-            network interfaces:{{mode:shared}} ¬
-        } ¬
-    }
-end tell
-APPLESCRIPT
-ok "VM created"
+step "Defining VM in libvirt"
 
-# --- Memory ballooning ---
-# UTM's QEMU backend leaves virtio-balloon off for AppleScript-created VMs,
-# so the full ${VM_MEMORY_MIB} MiB sits pinned in macOS even when the guest
-# is idle. Adding the balloon device with free-page-reporting lets macOS
-# reclaim unused guest pages.
+VM_XML="${TEMP_DIR}/${VM_NAME}.xml"
+cat > "$VM_XML" <<EOF
+<domain type='kvm'>
+  <name>${VM_NAME}</name>
+  <metadata>
+    <mpd xmlns='https://github.com/mutms/mpd'>
+      <octet>${VM_OCTET}</octet>
+      <user>${VM_USER}</user>
+      <ip>${VM_IP}</ip>
+    </mpd>
+  </metadata>
+  <memory unit='MiB'>${VM_MEMORY_MIB}</memory>
+  <currentMemory unit='MiB'>${VM_MEMORY_MIB}</currentMemory>
+  <vcpu placement='static'>${VM_CPUS}</vcpu>
+  <os>
+    <type arch='x86_64' machine='q35'>hvm</type>
+    <boot dev='hd'/>
+    <boot dev='cdrom'/>
+  </os>
+  <features>
+    <acpi/>
+    <apic/>
+    <vmport state='off'/>
+  </features>
+  <cpu mode='host-passthrough' check='none' migratable='on'/>
+  <clock offset='utc'>
+    <timer name='rtc' tickpolicy='catchup'/>
+    <timer name='pit' tickpolicy='delay'/>
+    <timer name='hpet' present='no'/>
+  </clock>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>destroy</on_crash>
+  <devices>
+    <emulator>/usr/bin/qemu-system-x86_64</emulator>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2' discard='unmap'/>
+      <source file='${DISK_PATH}'/>
+      <target dev='vda' bus='virtio'/>
+    </disk>
+    <disk type='file' device='cdrom'>
+      <driver name='qemu' type='raw'/>
+      <source file='${SEED_ISO}'/>
+      <target dev='sda' bus='sata'/>
+      <readonly/>
+    </disk>
+    <interface type='network'>
+      <mac address='${VM_MAC}'/>
+      <source network='default'/>
+      <model type='virtio'/>
+    </interface>
+    <serial type='pty'><target type='isa-serial' port='0'/></serial>
+    <console type='pty'><target type='serial' port='0'/></console>
+    <channel type='unix'>
+      <target type='virtio' name='org.qemu.guest_agent.0'/>
+    </channel>
+    <video>
+      <model type='virtio' heads='1'/>
+    </video>
+    <graphics type='spice' autoport='yes'>
+      <listen type='address'/>
+    </graphics>
+    <memballoon model='virtio'>
+      <stats period='10'/>
+    </memballoon>
+    <rng model='virtio'>
+      <backend model='random'>/dev/urandom</backend>
+    </rng>
+  </devices>
+</domain>
+EOF
 
-step "Enabling memory ballooning"
+virsh -c "$LIBVIRT_URI" define "$VM_XML" >/dev/null
+rm -f "$VM_XML"
+ok "VM defined"
 
-osascript <<APPLESCRIPT
-tell application "UTM"
-    set vm to virtual machine named "${VM_NAME}"
-    set config to configuration of vm
-    set qemu additional arguments of config to {{argument string:"-device"}, {argument string:"virtio-balloon-pci,free-page-reporting=on"}}
-    update configuration of vm with config
-end tell
-APPLESCRIPT
-ok "virtio-balloon-pci attached (free-page-reporting on)"
-
-# --- Start VM (first boot — cloud-init runs) ---
+# --- Start VM ---
 
 step "Starting VM (cloud-init runs on first boot — takes 1-3 minutes)"
-vm_start "$VM_NAME"
-ok "VM started"
 
-# Strip cached host keys for the IPs/names this VM will own; old VMs reused
-# the same address space and `ssh` would otherwise reject the new keys.
+vm_start "$VM_NAME"
+
+# Strip cached host keys for the IPs/names this VM will own.
 clear_known_hosts
 for h in "${VM_IP}" "${VM_NAME}"; do
     ssh-keygen -R "$h" >/dev/null 2>&1 || true
 done
 
-step "Waiting for SSH at ${VM_IP} (VM first boot — user creation, disk grow)"
+step "Waiting for SSH at ${VM_IP} (first boot — user creation, disk grow)"
 wait_for_ssh "$VM_IP" "$VM_USER" 300 \
-    || die "SSH not available after 300s. Check the VM in UTM — cloud-init may still be running."
+    || die "SSH not available after 300s. Check 'virsh console ${VM_NAME}' or virt-manager for boot progress."
 ok "SSH ready (${VM_USER}@${VM_IP})"
 
 step "Waiting for cloud-init to complete"
@@ -248,7 +333,7 @@ done
 [ $elapsed -ge $timeout ] && warn "cloud-init may not have finished. Continuing anyway..."
 ok "Cloud-init complete"
 
-# --- Verify root filesystem resize ---
+# --- Verify root filesystem grew ---
 
 step "Verifying root filesystem size"
 ROOT_DEVICE=$(ssh_cmd "$VM_IP" "$VM_USER" "findmnt -n -o SOURCE /" 2>/dev/null || true)
@@ -267,13 +352,8 @@ fi
 # --- Clone mpd repo ---
 
 step "Cloning mpd repository in VM"
-
 ssh_cmd "$VM_IP" "$VM_USER" "export MPD_REPO=$(printf '%q' "$MPD_REPO"); bash -se" <<'EOF'
 set -e
-# Debian generic cloud image is minimal — git/curl/libnss3-tools/qemu-guest-agent
-# are not preinstalled. Install them now (we don't put apt installs in cloud-init
-# itself because cloud-init's package phase is racy on flaky Debian mirrors;
-# doing it here gives us retries and visible output).
 if ! command -v git >/dev/null 2>&1; then
     echo "    installing base packages (git, curl, libnss3-tools, qemu-guest-agent)"
     sudo apt-get -o Acquire::Retries=3 update
@@ -302,10 +382,10 @@ ssh_cmd "$VM_IP" "$VM_USER" "export VM_IP=$(printf '%q' "$VM_IP"); bash -se" <<'
 set -e
 mkdir -p "$HOME/Developer/mpd/conf"
 cat > "$HOME/Developer/mpd/conf/platform.env" <<PLATFORM_EOF
-# mpd platform identity — written by macos-utm/lib/create-vm.sh.
+# mpd platform identity — written by linux/lib/create-vm.sh.
 # Lives under conf/ so it survives \`mpd --uninstall\`.
-MPD_PLATFORM=macos-utm
-MPD_CLIENT_OS=macos
+MPD_PLATFORM=linux
+MPD_CLIENT_OS=debian
 MPD_VM_IP=${VM_IP}
 PLATFORM_EOF
 chmod 0644 "$HOME/Developer/mpd/conf/platform.env"
@@ -313,53 +393,32 @@ echo "    Wrote $HOME/Developer/mpd/conf/platform.env"
 EOF
 ok "Platform identity recorded"
 
-# --- Detach cloud-init ISO ---
+# --- Detach cloud-init CD ---
 
 step "Detaching cloud-init CD"
 
 ssh_cmd "$VM_IP" "$VM_USER" "sudo shutdown -h now" >/dev/null 2>&1 || true
-rm -f "$DISK_PATH"
-rm -f "$SEED_ISO"
-ok "Temporary VM import images removed"
+elapsed=0
+while [ $elapsed -lt 120 ]; do
+    [ "$(get_vm_state "$VM_NAME")" = "shut off" ] && break
+    sleep 1
+    elapsed=$((elapsed + 1))
+done
+if [ "$(get_vm_state "$VM_NAME")" != "shut off" ]; then
+    warn "VM didn't power off cleanly within 120s — forcing"
+    vm_force_stop "$VM_NAME" 2>/dev/null || true
+fi
 
-osascript <<APPLESCRIPT
-tell application "UTM"
-    set vm to virtual machine named "${VM_NAME}"
-    set deadline to (current date) + 120
-    repeat
-        if status of vm is stopped then exit repeat
-        delay 1
-        if (current date) > deadline then
-            stop vm
-        end if
-    end repeat
-    set config to configuration of vm
-    set vmDrives to drives of config
-    set keptDrives to {}
-    repeat with vmDrive in vmDrives
-        if (host size of vmDrive) is not 0 then
-            set end of keptDrives to vmDrive
-        end if
-    end repeat
-    set drives of config to keptDrives
-    update configuration of vm with config
-end tell
-APPLESCRIPT
-ok "Cloud-init CD detached"
+# Eject the seed CD via virsh change-media.
+virsh -c "$LIBVIRT_URI" change-media "$VM_NAME" sda --eject --config 2>/dev/null \
+    || warn "Could not eject seed CDROM via virsh; VM may still try to attach it on next boot"
+
+rm -f "$SEED_ISO"
+virsh -c "$LIBVIRT_URI" pool-refresh "$POOL_NAME" >/dev/null
+ok "Seed ISO detached and removed"
 
 step "Restarting VM without cloud-init CD"
-osascript <<APPLESCRIPT
-tell application "UTM"
-    set vm to virtual machine named "${VM_NAME}"
-    start vm
-    set deadline to (current date) + 60
-    repeat
-        if status of vm is started then exit repeat
-        if (current date) > deadline then exit repeat
-        delay 1
-    end repeat
-end tell
-APPLESCRIPT
+vm_start "$VM_NAME"
 wait_for_ssh "$VM_IP" "$VM_USER" 300 \
     || die "VM did not come back after detaching the cloud-init CD."
 ok "VM restarted"
@@ -400,8 +459,6 @@ sudo ln -sf "$HOME/Developer/mpd/bin/mpd" /usr/local/bin/mpd
 EOF
 ok "mpd built and installed"
 
-# Debian's default ~/.profile adds ~/.local/bin only for login shells. This
-# covers `ssh user@host <cmd>` and other non-login interactive sessions.
 step "Ensuring ~/.local/bin on PATH"
 ssh_cmd "$VM_IP" "$VM_USER" 'bash -se' <<'EOF'
 mkdir -p "$HOME/.local/bin"
@@ -416,12 +473,6 @@ fi
 EOF
 ok "~/.local/bin on PATH"
 
-# Upload the host-side CA into the VM before `mpd --setup` runs. mpd
-# detects the existing CA and reuses it (see
-# mpd/Environment/Machine/MachineActionSetup.swift:331), so every VM on
-# this Mac shares the same CA the macOS keychain already trusts. setup.sh
-# guarantees these files exist via prepare_host_ca.
-
 step "Uploading host CA into VM (mpd will reuse it)"
 ssh_cmd "$VM_IP" "$VM_USER" \
     "mkdir -p ~/Developer/mpd/conf/caroot && chmod 700 ~/Developer/mpd/conf/caroot"
@@ -434,14 +485,6 @@ ok "Host CA uploaded"
 step "Running 'mpd --setup' (CA, podman network, services)"
 ssh_cmd "$VM_IP" "$VM_USER" 'mpd --setup'
 ok "mpd --setup complete"
-
-step "Setting login banner"
-ssh_cmd "$VM_IP" "$VM_USER" 'bash -se' <<'EOF'
-set -e
-sudo chmod -x /etc/update-motd.d/* 2>/dev/null || true
-sudo cp "$HOME/Developer/mpd/assets/machine/motd" /etc/motd
-EOF
-ok "Login banner set"
 
 step "VM bootstrap complete"
 echo "    ${VM_USER}@${VM_IP} (${VM_NAME})"

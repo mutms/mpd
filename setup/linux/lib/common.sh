@@ -1,9 +1,9 @@
 #!/bin/bash
-# common.sh — shared constants and helpers for the ubuntu-kvm platform.
+# common.sh — shared constants and helpers for the linux platform.
 # Source from every lib/*.sh script:
 #   . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 #
-# Sister to setup/macos-utm/lib/common.sh — same shape,
+# Sister to setup/macos/lib/common.sh — same shape,
 # Linux-ized: virsh + libvirt instead of utmctl + AppleScript;
 # `ip route` instead of macOS's `route`; systemd-resolved drop-in
 # instead of /etc/resolver/; ca-certificates + NSS DB instead of
@@ -39,7 +39,7 @@ FIREFOX_POLICIES_FILE="${FIREFOX_POLICIES_DIR}/policies.json"
 # bind-mount permits /etc/firefox/policies/ but generally not /usr/local/share/.
 FIREFOX_POLICIES_CERT="${FIREFOX_POLICIES_DIR}/mpd-rootCA.crt"
 
-# Platform state — dotfile, matches macos-utm so Swift's
+# Platform state — dotfile, matches macos so Swift's
 # Mpd.Environment.mpdMachineCARootDir resolves uniformly across hosts.
 STATE_DIR="${HOME}/.mpd-machine"
 STATE_CA_FILE="${STATE_DIR}/ca.sha1"
@@ -159,7 +159,7 @@ get_vm_ssh_user() {
 
 # --- known_hosts cleanup ---
 # Strip stale host keys for any address mpd reuses across VM rebuilds.
-# Same intent as macos-utm; bridge subnet differs (192.168.122 vs 64).
+# Same intent as macos; bridge subnet differs (192.168.122 vs 64).
 clear_known_hosts() {
     local known="${HOME}/.ssh/known_hosts"
     [ -f "$known" ] || return 0
@@ -234,7 +234,7 @@ vm_delete() {
 # --- ~/.ssh/config block ---
 # Managed with explicit start/end markers so re-runs are idempotent.
 
-SSH_BLOCK_START="# >>> mpd-machine (managed by ubuntu-kvm) >>>"
+SSH_BLOCK_START="# >>> mpd-machine (managed by linux) >>>"
 SSH_BLOCK_END="# <<< mpd-machine <<<"
 
 set_mpd_ssh_config() {
@@ -356,7 +356,7 @@ remove_desktop_shortcut() {
 # --- CA generation (host-side) ---
 # Bash twin of Mpd.Environment.Certificate.generateCA in
 # mpd/Environment/Certificate.swift, identical to the version in
-# macos-utm/lib/common.sh. KEEP IN SYNC across all three.
+# macos/lib/common.sh. KEEP IN SYNC across all three.
 
 generate_mpd_ca() {
     local key_path="$1" cert_path="$2"
