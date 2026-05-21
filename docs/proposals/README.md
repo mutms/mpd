@@ -14,10 +14,17 @@ Difference from sibling docs:
 
 ## Index
 
+- [`macos-host-state-and-wireguard.md`](macos-host-state-and-wireguard.md) —
+  Two intertwined architectural decisions for the macOS host:
+  three-directory state model (`conf/` / `~/.mpd-<product>/` / `~/.mpd/`),
+  and WireGuard-based networking that eliminates daily sudo. **Top
+  priority** — anchors `mpd-prl`'s networking story. mpd-desktop
+  alignment is deferred.
 - [`host-binary-parallels.md`](host-binary-parallels.md) — `mpd-prl`, a
   macOS Swift binary replacing `setup/macos/`'s bash scripts. Primary
   reference for the host-binary trio; specifies cross-cutting design
   (verb surface, namespace tree, sudo-recipe UX, state-file layout).
+  Builds on the state-and-WG proposal above.
 - [`host-binary-kvm.md`](host-binary-kvm.md) — `mpd-kvm`, the
   Linux+libvirt twin. Delegates cross-cutting design to the Parallels
   proposal; specs only the libvirt-specific deltas.
