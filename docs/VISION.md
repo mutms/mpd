@@ -296,11 +296,43 @@ container machine in the background. Pick this if you're already
 invested in Podman Desktop or prefer not to drive a hypervisor
 yourself.
 
-**For Windows users specifically**, the sandbox or `mpd-machine`
-Hyper-V path is the answer: either install Debian Trixie + GNOME in
-any Windows hypervisor and run `take-over-sandbox-vm.sh`, or
-double-click `setup.cmd` for the host-integrated Hyper-V flow.
-Windows itself stays untouched either way.
+### How the three modes settle into daily roles on macOS
+
+On Apple Silicon the three modes aren't really competitors — they
+each cover a workflow the others can't:
+
+- **Sandbox** is the *experiments and Linux-testing* slot.
+  Throwaway Debian, snapshot-and-revert before anything destructive,
+  no risk to your real work. It's also where mpd itself gets
+  developed — editing the macOS-side scripts and Swift in a sandbox
+  VM means you can break the daily setup without breaking your
+  daily setup.
+- **mpd-machine via Parallels** is the *real Moodle work* slot.
+  Daily-driver VM with persistent state, host browser at
+  `https://mpd.test/`, IDE Remote-SSH into the runtime container.
+  This is where actual plugin development happens.
+- **mpd-desktop** is the *AI playground* slot. Two reasons:
+  the `mpd` binary itself runs native on macOS, so anything outside
+  containers (Metal, MLX, Core ML, native `llama.cpp`, …) gets
+  full host access; *and* Podman Desktop's Apple Silicon backend
+  (libkrun + Apple's Virtualization.framework) passes the host GPU
+  into the Linux container machine, so container workloads get GPU
+  acceleration too. Parallels can't do either — its passthrough is
+  limited to its own Direct3D shim, not the host Metal stack.
+
+The three caroot directories don't clash: mpd-prl and mpd-desktop
+share `~/Developer/mpd/conf/caroot/` on the macOS host; sandbox has
+its own self-contained one inside its own VM. No coordination
+needed.
+
+### Linux and Windows hosts
+
+Linux+KVM and Windows+Hyper-V hosts get **two** of the three modes
+(sandbox + mpd-machine). The AI-playground role doesn't carry over
+— mpd-desktop is macOS-only because it leans on Podman Desktop and
+native Apple Silicon GPU access. On a Linux/Windows host, AI
+experiments either run inside a sandbox VM (CPU-only or with
+hypervisor-mediated GPU passthrough) or outside mpd entirely.
 
 All three modes share the same `mpd.env` configuration model, the
 same `https://<project>.mpd.test/` URLs, the same SSH-into-runtime

@@ -65,7 +65,7 @@ configuration model. Switch between modes without relearning.
 | **Host OS**          | Any (UTM, Parallels, Hyper-V, VirtualBox, virt-manager, VMware…)                         | macOS, Ubuntu, Windows                                              | macOS only                                                |
 | **Bootstrap**        | Install Debian Trixie + GNOME, snapshot, run one script in the VM                        | `setup.command` / `setup.sh` / `setup.cmd`                          | Install Podman Desktop + WireGuard, `mpd --setup`         |
 | **Network**          | Internal to the VM (host untouched)                                                      | Plain L3 route + DNS resolver on host                               | gvproxy + WireGuard tunnel                                |
-| **Best for**         | Newcomers; AI-safety; host stays untouched; hypervisor snapshot/revert as the safety net | Native host integration — laptop browser sees `*.mpd.test` directly | Already on Podman Desktop; minimal explicit VM management |
+| **Best for**         | Experiments + Linux testing; throwaway VM with snapshot/revert as the safety net         | Daily-driver work — laptop browser/IDE see `*.mpd.test` directly    | AI/GPU playground — Apple Silicon GPU is in scope for both native macOS code (Metal/MLX/Core ML) and Podman Desktop containers (via libkrun + Virtualization.framework) |
 
 Same CLI surface, same `*.mpd.test` URLs, same per-project configuration
 model.

@@ -9,6 +9,29 @@ The hypervisor owns VM lifecycle (start / stop / snapshot / revert from
 its own GUI); mpd inside owns project lifecycle (`mpd create / start /
 stop / configure`).
 
+## When to pick sandbox
+
+- **Experiments and Linux testing.** Anything destructive — testing
+  a Trixie upgrade path, trying a PPA, validating a one-off hack —
+  goes here. Snapshot before, revert if it breaks.
+- **Dogfooding mpd itself.** If you're editing mpd's macOS-side
+  scripts (or the future `mpd-prl` Swift binary), a sandbox VM is
+  where you can break the whole setup safely. Real Mac stays
+  pristine.
+- **First-time evaluation.** Newcomers who want to see mpd work
+  without touching their host. The "host stays untouched" promise
+  is strict: zero DNS, route, or keychain changes outside the VM.
+- **Hosts where mpd-machine's matched-host bootstrap doesn't apply.**
+  Fedora, Arch, NixOS, cloud VMs, ARM Linux desktops — anywhere a
+  hypervisor can boot Debian Trixie. mpd's flow inside the VM is
+  identical regardless of how you got there.
+
+For *daily* Moodle plugin work on macOS, you probably want the
+host-integrated [Parallels Desktop Pro mode](../macos/README.md)
+instead, where your host browser/IDE see `*.mpd.test` directly. See
+[`docs/VISION.md` §"How the three modes settle into daily roles"](../../docs/VISION.md)
+for the full split.
+
 ## Files in this directory
 
 | File | What it does |

@@ -11,8 +11,22 @@ page is the "what is it, when do I pick it, what do I need" reference.
 
 ## When to pick mpd-desktop
 
+mpd-desktop's primary role on macOS is the **AI playground**: Apple
+Silicon GPU access is in scope both for native-macOS code and for
+container workloads. The `mpd` binary runs native, so anything
+outside containers (Metal, MLX, Core ML, native `llama.cpp`, …)
+hits the host GPU directly. And Podman Desktop's Apple Silicon
+backend (libkrun + Apple's Virtualization.framework) passes the host
+GPU into the Linux container machine, so container workloads get
+GPU acceleration too. mpd-machine via Parallels can't match either —
+Parallels' GPU passthrough is limited to its own Direct3D shim, not
+the host Metal stack.
+
 Pick this mode if you want:
 
+- **Apple Silicon GPU access for AI work**, native *and* inside
+  containers, as above. The single strongest reason on Apple
+  Silicon.
 - **Direct IP access to every container from macOS** — once the
   WireGuard tunnel is up, every project URL
   (`https://<project>.mpd.test/`), every runtime SSH
@@ -33,11 +47,13 @@ mpd-machine. macOS Finder / Time Machine / Spotlight do not see
 project files; only the mpd source checkout (`~/Developer/mpd/`) is
 on the host.
 
-Prefer [`mpd-machine`](../machine/README.md) on macOS if you'd rather
-drive the VM yourself (UTM) for explicit lifecycle control, or want
-a snapshottable VM. Prefer
-[Sandbox VM](../../setup/sandbox/README.md) if you want the strongest
-isolation and don't need anything on the host configured.
+For *daily-driver Moodle plugin work* (host browser, IDE Remote-SSH,
+explicit VM lifecycle control), prefer
+[`mpd-machine` via Parallels Desktop Pro](../../setup/macos/README.md).
+For *throwaway experiments* with a snapshot-revert safety net, prefer
+[Sandbox VM](../../setup/sandbox/README.md). The three modes are
+complementary, not alternatives — see [`../VISION.md`](../VISION.md)
+§"How the three modes settle into daily roles."
 
 ## Prerequisites
 

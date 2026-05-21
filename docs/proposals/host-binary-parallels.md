@@ -178,7 +178,7 @@ One library target, two executables. Genuine cross-binary reuse is
 small enough that a single library covers it; everything else lives
 inside its consuming executable.
 
-**Library: `MpdCore`** (built for every platform mpd ever ships on)
+**Library: `MpdCore`** (Swift module; macOS + Linux only)
 
 ```
 MpdCore  (Swift module)
@@ -191,6 +191,16 @@ MpdCore  (Swift module)
                         # promoted from Mpd.Environment.Certificate —
                         # it's foundational, not environment-specific
 ```
+
+**Build platforms**: macOS (for `mpd-prl` and the macOS side of the
+existing `mpd` desktop binary) and Linux (for the in-VM `mpd`
+binary, `mpd-kvm` on libvirt/KVM hosts, and `mpd-hpv` running
+inside WSL2 Debian on Windows hosts — see
+[`host-binary-hyperv.md`](host-binary-hyperv.md)). **Not** Windows:
+the WSL-resident mpd-hpv design means no host binary ever needs a
+native Windows Swift build, so MpdCore stays free of Windows-specific
+carve-outs. `Mpd.Core.Certificate` invokes `openssl` via `Process()`
+with the identical code path on both supported platforms.
 
 **Executable: `mpd`** (existing — Linux in-VM and macOS desktop)
 

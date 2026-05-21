@@ -22,17 +22,25 @@ If you're installing mpd for the first time:
 
 [`VISION.md`](VISION.md) covers the origin and design principles.
 
-## Mode 1 — Sandbox VM (you live inside the VM)
+On macOS the three modes settle into three distinct workflows:
+sandbox for experiments and Linux testing, mpd-machine via Parallels
+for daily-driver Moodle work, mpd-desktop as the native-GPU AI
+playground. Linux and Windows hosts get the first two; the
+AI-playground role is macOS-only. [`VISION.md`](VISION.md)
+§"How the three modes settle into daily roles" has the full framing.
+
+## Mode 1 — Sandbox VM (experiments + Linux testing; "live inside the VM")
 
 Full GNOME desktop inside the VM. Install Debian Trixie with the
 GNOME desktop in any hypervisor, snapshot, run one script inside the
 VM. GNOME terminal runs `mpd`; GNOME Firefox-ESR sees `mpd.test`.
-Host stays untouched. Lowest friction.
+Host stays untouched. Lowest friction. Snapshot-and-revert is the
+safety net.
 
 - [`../setup/sandbox/README.md`](../setup/sandbox/README.md) — install,
   prerequisites (hostname rename), revert.
 
-## Mode 2 — mpd-machine (you stay on your host; SSH into a headless VM)
+## Mode 2 — mpd-machine (daily-driver Moodle work; host browser + SSH into headless VM)
 
 Automated headless Debian Trixie VM. The matched-host bootstrap
 creates the VM, builds `mpd`, and configures host-side networking +
@@ -50,12 +58,17 @@ the runtime container inside the VM.
   - [`../setup/linux/README.md`](../setup/linux/README.md) — libvirt/KVM on Ubuntu
   - [`../setup/windows/README.txt`](../setup/windows/README.txt) — Hyper-V on Windows
 
-## Mode 3 — mpd-desktop (native macOS binary in your local Terminal)
+## Mode 3 — mpd-desktop (native macOS, AI/GPU playground; native binary + WG tunnel)
 
 `mpd` is a native macOS binary you run directly in your local
 Terminal — no SSH hop. macOS browser sees `*.mpd.test` via a
 WireGuard tunnel; Podman Desktop manages the Linux container machine
-in the background. No hypervisor to drive yourself.
+in the background. No hypervisor to drive yourself. Apple Silicon
+GPU is in scope both ways: native-macOS code (Metal, MLX, Core ML,
+native `llama.cpp`, …) hits the host GPU directly, *and* Podman
+Desktop's Apple Silicon backend (libkrun + Virtualization.framework)
+passes the host GPU into the Linux container machine so container
+workloads get acceleration too.
 
 - [`desktop/README.md`](desktop/README.md) — what mpd-desktop is, when to pick it, prerequisites
 - [`desktop/USAGE.md`](desktop/USAGE.md) — install, setup, first project, day-to-day

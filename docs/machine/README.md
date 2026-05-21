@@ -19,14 +19,22 @@ get a VM" reference.
 
 ## When to pick mpd-machine
 
+mpd-machine is the **daily-driver Moodle work** mode. Your host
+browser visits `https://mpd.test/` directly, your IDE Remote-SSH's
+into the runtime container, your terminal SSH'es into the VM for the
+`mpd` CLI. The VM is persistent (not throwaway), so projects,
+databases, and personal area survive reboots.
+
 Pick this mode if any of these apply:
 
-- **You're on macOS, Ubuntu, or Windows and want native host
-  integration.** Browser/IDE on the host see `*.mpd.test` directly
-  (no need to open a VM window or SSH-tunnel browser traffic).
+- **You want a daily-driver Moodle plugin development environment**
+  with host browser + host IDE integration, on macOS, Ubuntu, or
+  Windows.
+- **You're on macOS and want explicit VM lifecycle control** (start,
+  suspend, snapshot, revert) — Parallels Desktop Pro's GUI is the
+  canonical example.
 - **You want the AI agent to be able to do drastic things.** `rm -rf /`
-  doesn't matter when the VM is throwaway — wreck it, rebuild it
-  via the bootstrap script, keep going.
+  inside the VM is bounded — the hypervisor is the wall.
 - **You don't want any container surface area on your primary
   machine.** The hypervisor is a strong boundary; containers,
   services, ports, and DNS all live on the other side of it.
@@ -34,6 +42,10 @@ Pick this mode if any of these apply:
 If your host isn't one of the matched-host targets (you're on Fedora,
 or any other Linux flavor, or you'd rather work inside the VM
 window), pick [Sandbox VM](../../setup/sandbox/README.md) instead.
+
+For *native-macOS AI/GPU experiments* (Metal, MLX, Core ML), prefer
+[mpd-desktop](../desktop/README.md) — same mpd infrastructure but
+the `mpd` binary runs natively on macOS so the host GPU is in scope.
 
 ## Where mpd's invasive changes live — inside the VM
 
