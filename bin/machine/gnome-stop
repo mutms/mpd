@@ -1,7 +1,7 @@
 #!/bin/bash
-
-# NOTE: use following to stop gnome auto-starting on reboot:
-#
-#   sudo systemctl set-default multi-user.target
-
+# gnome-stop — switch to headless now and make multi-user the boot default.
+# Persistent: next reboot stays headless until `gnome-start` flips it back.
+set -euo pipefail
+sudo systemctl set-default multi-user.target >/dev/null
 sudo systemctl isolate multi-user.target
+echo "GNOME stopped. Default target: multi-user.target."

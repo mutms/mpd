@@ -1,2 +1,7 @@
 #!/bin/bash
+# gnome-start — bring GNOME up now and make graphical the boot default.
+# Persistent: next reboot lands in GNOME again until `gnome-stop` flips it back.
+set -euo pipefail
+sudo systemctl set-default graphical.target >/dev/null
 sudo systemctl isolate graphical.target
+echo "GNOME started. Default target: graphical.target."
