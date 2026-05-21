@@ -116,21 +116,17 @@ ok "systemd-resolved active"
 # connected.
 sudo systemctl restart NetworkManager
 
-# A `systemctl restart NetworkManager` with continue-active=true keeps
-# the existing connection up but does NOT always re-push DNS info into
-# systemd-resolved when the dns plugin has just changed from the default
-# resolv.conf-writer to `systemd-resolved`. Without re-pushing, resolved
-# stays empty of upstream DNS and every lookup fails until a reboot —
-# observed once on a fresh VM where the next `apt update` (VS Code) hung
-# on name resolution.
-#
-# `nmcli device reapply` re-applies the connection profile on each
-# managed device without dropping the link, which forces NM to recompute
-# its DNS state and push it into resolved via D-Bus. Cheap and
-# idempotent — safe even when DNS already works.
-for dev in $(nmcli -t -f DEVICE,STATE device 2>/dev/null | awk -F: '$2=="connected" {print $1}'); do
-    sudo nmcli device reapply "$dev" >/dev/null 2>&1 || true
-done
+# Restart resolved AFTER NM is up. NM's "continue-active" restart does
+# NOT reliably re-push DNS into resolved when the dns plugin has just
+# flipped from `default` to `systemd-resolved` — resolved sits with no
+# upstream nameserver and every lookup fails ("Temporary failure in
+# name resolution"). `nmcli device reapply` does not fix it either
+# (tested). What does: restarting resolved forces a fresh D-Bus name
+# acquisition on `org.freedesktop.resolve1`; NM's resolved-watcher
+# fires on that event and pushes DNS over D-Bus. Brief 1s pause so
+# NM finishes settling before resolved bounces.
+sleep 1
+sudo systemctl restart systemd-resolved
 
 ok_dns=0
 for _ in $(seq 1 30); do
@@ -147,22 +143,22 @@ else
 
 ============================================================
 DNS via systemd-resolved did not come up within 30 seconds
-after restarting NetworkManager.
+after restarting NetworkManager + systemd-resolved.
 
-This is a one-time race between NetworkManager and a
-freshly-installed systemd-resolved. A single reboot resolves it
-permanently.
+Manual recovery (idempotent):
 
-Please reboot the VM and re-run take-over-sandbox-vm.sh:
+    sudo systemctl restart systemd-resolved
+    getent hosts deb.debian.org   # should succeed
 
-    sudo reboot
-    # after reboot, log back in and:
-    bash ~/Developer/mpd/setup/sandbox/take-over-sandbox-vm.sh
+Then re-run take-over-sandbox-vm.sh — it's idempotent and picks
+up where it left off (build deps and systemd-resolved are
+already installed; the remaining steps are mpd build,
+mpd --setup, pre-warm, and the GNOME launchers).
 
-The script is idempotent — it will pick up from where it left
-off (build deps and systemd-resolved are already installed; the
-remaining steps are mpd build, mpd --setup, pre-warm, and the
-GNOME launchers).
+Inspect: resolvectl status;
+         nmcli -t -f IP4.DNS device show;
+         journalctl -u NetworkManager -u systemd-resolved -b \
+             --no-pager | tail -50
 ============================================================
 EOF
     die "Aborting — see message above."
