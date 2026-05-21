@@ -141,7 +141,7 @@ extension Mpd.Environment.Action.Uninstall {
             return "  (sandbox platform — no laptop-side cleanup; mpd lived entirely inside this VM)"
         case .desktop:
             return "  (desktop — see docs/desktop/USAGE.md for laptop-side teardown)"
-        case .macosUTM, .ubuntuKVM, .windowsHyperV:
+        case .macosUTM, .macosPRL, .ubuntuKVM, .windowsHyperV:
             let dir = "setup/\(identity.platform.rawValue)"
             return "  See \(dir)/uninstall.* (or its README) for the host-side teardown."
         }

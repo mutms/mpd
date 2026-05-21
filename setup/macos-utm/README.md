@@ -92,8 +92,13 @@ away through the long unattended phase:
 9. **Pre-warms the demo stack**: builds the PHP runtime image and
    creates a `postgres:latest` DB container inside the VM so your
    first `demo moodle v5.2.0` doesn't pay the build/pull cost.
-10. Updates `~/.ssh/config` with a `Host mpd-machine` block and creates
-    `~/Desktop/mpd-machine.command` for one-click SSH access.
+10. Adds a `Host mpd-machine-NN` block to `~/.ssh/config` (so
+    `ssh mpd-machine-158` works) and writes
+    `~/Desktop/mpd-machine.command`, which reads
+    `~/.mpd-machine/current.env` at click time and SSHes to whichever
+    VM is currently active. The block uses platform-agnostic markers
+    — macos-utm and macos-prl share it, so switching between them
+    just replaces the previous platform's entries cleanly.
 
 The whole process takes 15–25 minutes depending on internet speed and
 your Mac. After step 3 (the host-side privileged work) the script
@@ -139,7 +144,7 @@ Asks for confirmation (`Type YES`), then runs in order:
    Enter and letting the script sudo for you. If everything is already
    clean, no password prompt happens.
 2. Deletes `~/.mpd-machine/` (helper state).
-3. Removes the `Host mpd-machine` block from `~/.ssh/config`.
+3. Removes the mpd-machine block from `~/.ssh/config`.
 4. Removes `~/Desktop/mpd-machine.command`.
 5. Asks `Delete <name>? [y/N]` for each `mpd-machine-NN` VM — default is
    keep. Only y'd VMs are stopped and deleted (UTM moves bundles to Trash;

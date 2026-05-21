@@ -578,7 +578,7 @@ Sibling to `caroot/`, `service/`, `wireguard/`. Lives under `conf/` so it
 **survives `mpd --uninstall`** (which wipes `~/.mpd/`).
 
 ```
-MPD_PLATFORM=desktop | macos-utm | ubuntu-kvm | windows-hyperv | sandbox
+MPD_PLATFORM=desktop | macos-utm | macos-prl | ubuntu-kvm | windows-hyperv | sandbox
 MPD_VM_IP=<ip>                  # empty for desktop and sandbox
 MPD_INSTANCE_SUFFIX=<-suffix>   # e.g. "-161"; empty for the unsuffixed instance
 ```
@@ -602,6 +602,7 @@ and Platform can share the same file without clobbering each other.
 |-----------------------------------|------------------------------------------------------------------|-----------------------------|--------------------------------------------------------|
 | `mpd-desktop`                     | `Mpd.Core.Platform.ensureWritten(...)` from `DesktopActionSetup` | `desktop`, `""`             | bootstrap on first `mpd --setup`; no prompt            |
 | `mpd-machine` via UTM             | `setup/macos-utm/lib/create-vm.sh` (over SSH)                    | `macos-utm`, `${VM_IP}`     | written before `mpd --setup` runs in the VM            |
+| `mpd-machine` via Parallels       | `setup/macos-prl/lib/create-vm.sh` (over SSH, template clone)    | `macos-prl`, `${VM_IP}`     | written before `mpd --setup` runs in the VM            |
 | `mpd-machine` via Ubuntu+KVM      | `setup/ubuntu-kvm/lib/create-vm.sh` (over SSH)                   | `ubuntu-kvm`, `${VM_IP}`    | written before `mpd --setup` runs in the VM            |
 | `mpd-machine` via Windows/Hyper-V | `setup/windows-hyperv/lib/create-vm.ps1` (over SSH)              | `windows-hyperv`, `${VmIp}` | written before `mpd --setup` runs in the VM            |
 | `mpd-machine` via sandbox         | `setup/sandbox/lib/provision.sh`                                 | `sandbox`, `""`             | written before `mpd --setup` runs inside the Debian VM |

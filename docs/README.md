@@ -47,6 +47,7 @@ the runtime container inside the VM.
 - [`machine/SECURITY.md`](machine/SECURITY.md) — trust boundaries
 - Per-platform bootstrap:
   - [`../setup/macos-utm/README.md`](../setup/macos-utm/README.md) — UTM on macOS
+  - [`../setup/macos-prl/README.md`](../setup/macos-prl/README.md) — Parallels Desktop Pro on macOS
   - [`../setup/ubuntu-kvm/README.md`](../setup/ubuntu-kvm/README.md) — libvirt/KVM on Ubuntu
   - [`../setup/windows-hyperv/README.txt`](../setup/windows-hyperv/README.txt) — Hyper-V on Windows
 

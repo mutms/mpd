@@ -17,9 +17,16 @@ Pick the path that matches your host:
 - **macOS + UTM (automated)** —
   [`setup/macos-utm/`](../../setup/macos-utm/README.md).
   Double-click `setup.command` for end-to-end VM creation, cloud-init,
-  repo clone, `mpd` build, and macOS networking (route, resolver, CA);
-  `start.command` / `stop.command` / `uninstall.command` cover the
-  lifecycle.
+  repo clone, `mpd` build, and macOS networking (route LaunchDaemon,
+  resolver, CA); `start.command` / `stop.command` / `uninstall.command`
+  cover the lifecycle.
+- **macOS + Parallels Desktop Pro (automated)** —
+  [`setup/macos-prl/`](../../setup/macos-prl/README.md).
+  Double-click `setup.command`. Clones a one-time-built Parallels VM
+  template (`mpd-machine-template`) via `prlctl`, configures the clone
+  over SSH, and applies the same macOS networking as macos-utm.
+  Requires Parallels Desktop Pro. `start.command` / `stop.command` /
+  `uninstall.command` cover the lifecycle.
 - **Ubuntu 26.04 LTS + libvirt/KVM (automated)** —
   [`setup/ubuntu-kvm/`](../../setup/ubuntu-kvm/README.md).
   `bash setup.sh` from a terminal: preflight (apt deps, libvirt group,

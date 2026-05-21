@@ -20,14 +20,11 @@ while IFS=$'\t' read -r name state; do
 done < <(get_mpd_vms)
 
 # --- Detect host cleanup targets (read-only — no sudo needed) ---
-# Globals it sets: remove_route, remove_resolver, ca_targets[].
-# Called twice: once for the upfront banner / sudo recipe, once after
-# the recipe to see what (if anything) the dev already ran manually.
 
 remove_route=0
 remove_resolver=0
 ca_targets=()
-ca_preserved_caroot=""  # set to the caroot path when keychain CA is preserved
+ca_preserved_caroot=""
 
 detect_host_targets() {
     remove_route=0
@@ -39,8 +36,6 @@ detect_host_targets() {
     cur_out=$(route -n get -inet "$CONTAINER_PROBE_IP" 2>/dev/null || true)
     cur_dest=$(awk '/destination:/ { print $2; exit }' <<<"$cur_out")
     [[ "$cur_dest" == 10.163.0* ]] && remove_route=1
-    # Treat a stale LaunchDaemon plist as "route still needs cleanup"
-    # even if the active route is already gone.
     [ -f "$ROUTE_PLIST_PATH" ] && remove_route=1
 
     [ -f "/etc/resolver/${DNS_DOMAIN}" ] && remove_resolver=1
@@ -56,9 +51,6 @@ detect_host_targets() {
         return
     fi
 
-    # Tracked fingerprint from configure-client.sh / setup.sh — only count
-    # it if the cert is still present in the keychain (the user might have
-    # removed it via Keychain Access).
     if [ -f "$STATE_CA_FILE" ]; then
         local tracked_fp
         tracked_fp=$(cat "$STATE_CA_FILE" 2>/dev/null | tr 'a-f' 'A-F')
@@ -68,7 +60,6 @@ detect_host_targets() {
         fi
     fi
 
-    # Sweep for any other mpd CA certs in the System keychain by subject.
     while IFS= read -r fp; do
         [ -z "$fp" ] && continue
         local skip=0 existing
@@ -128,22 +119,11 @@ if [ "$confirm" != "YES" ]; then
     exit 0
 fi
 
-# Drop cached sudo credentials whenever this script exits (success, error, or
-# Ctrl-C) — backstop in case the explicit sudo -k after the fenced block is
-# missed for any reason.
 trap 'sudo -k 2>/dev/null || true' EXIT
 
 # --- Host cleanup (sudo recipe affordance) ---
 
 if [ "$remove_route" = 1 ] || [ "$remove_resolver" = 1 ] || [ ${#ca_targets[@]} -gt 0 ]; then
-    # Cert deletion uses `-c` (common name) + `-t` rather than `-Z` (SHA1).
-    # `-Z` is unreliable for certs that carry admin trust settings (added via
-    # `add-trusted-cert -d`), failing with "Unable to delete certificate
-    # matching <hash>" even with sudo. `-c` is the form mkcert and similar
-    # local-CA tools use, and it works regardless of trust-setting state.
-    # Each call deletes one cert; running it N times deletes N certs with
-    # the same CN — handy for users who accumulated multiple mpd CAs across
-    # repeat setups that didn't share `caroot/`.
     cmds=()
     if [ "$remove_route" = 1 ]; then
         if [ -f "$ROUTE_PLIST_PATH" ]; then
@@ -159,7 +139,6 @@ if [ "$remove_route" = 1 ] || [ "$remove_resolver" = 1 ] || [ ${#ca_targets[@]} 
 
     print_sudo_recipe "${cmds[@]}"
 
-    # Re-check: did the dev already run them in another terminal?
     detect_host_targets
 
     if [ "$remove_route" = 0 ] && [ "$remove_resolver" = 0 ] && [ ${#ca_targets[@]} -eq 0 ]; then
@@ -208,7 +187,8 @@ fi
 
 # --- Per-VM deletion (last step — Ctrl-C here is safe) ---
 # Default is keep: empty input or 'n' preserves the VM. This guards the
-# active VM the dev may live in. UTM can delete kept VMs manually later.
+# active VM the dev may live in. Parallels Desktop can delete kept VMs
+# manually later.
 
 if [ ${#vms[@]} -gt 0 ]; then
     echo
@@ -221,7 +201,6 @@ if [ ${#vms[@]} -gt 0 ]; then
             if [ "$state" != "stopped" ]; then
                 echo "    Stopping ${name} ..."
                 vm_force_stop "$name" 2>/dev/null || true
-                # UTM/utmctl status updates lag ~15s after a stop; poll up to 20s.
                 elapsed=0
                 while [ "$elapsed" -lt 20 ]; do
                     [ "$(get_vm_state "$name")" = "stopped" ] && break
@@ -231,7 +210,7 @@ if [ ${#vms[@]} -gt 0 ]; then
             fi
             echo "    Deleting ${name} ..."
             vm_delete "$name" 2>/dev/null \
-                || warn "Could not delete ${name} via AppleScript — remove it from UTM manually."
+                || warn "Could not delete ${name} via prlctl — remove it from Parallels Desktop manually."
         else
             echo "    Kept ${name}."
         fi

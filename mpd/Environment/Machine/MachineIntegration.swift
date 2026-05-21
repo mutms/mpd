@@ -145,7 +145,7 @@ extension Mpd.Environment.Integration {
         case .desktop:
             // Desktop's footer is owned by DesktopIntegration.
             return
-        case .macosUTM, .ubuntuKVM, .windowsHyperV:
+        case .macosUTM, .macosPRL, .ubuntuKVM, .windowsHyperV:
             let readme = "setup/\(identity.platform.rawValue)/README.md"
             print("\n  Host-side setup is owned by your platform's bootstrap script — see")
             print("  \(readme) for details and post-setup operations.")

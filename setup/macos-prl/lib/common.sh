@@ -1,15 +1,27 @@
 #!/bin/bash
-# common.sh — shared constants and helpers for the macos-utm platform.
+# common.sh — shared constants and helpers for the macos-prl platform.
 # Source from every lib/*.sh script:
 #   . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
+#
+# Parallels twin of setup/macos-utm/lib/common.sh. Same shape, same
+# globals — only the host hypervisor (Parallels Desktop Pro vs UTM) and
+# the bridge subnet differ. Each setup/ platform directory must stay
+# self-contained per AGENTS.md, so this is a deliberate duplicate
+# rather than a sourced shared file.
 
 # --- Constants ---
 
 MPD_REPO="https://github.com/mutms/mpd.git"
 VM_NAME_PREFIX="mpd-machine-"
+TEMPLATE_NAME="mpd-machine-template"
 
-BRIDGE_SUBNET="192.168.64"                # macOS vmnet shared bridge — fixed by vmnet.framework
+BRIDGE_SUBNET="10.211.55"                 # Parallels Shared network (default)
 BRIDGE_GATEWAY="${BRIDGE_SUBNET}.1"
+# Parallels Shared DHCP must be pinned to ${BRIDGE_SUBNET}.1–.99 by the
+# template builder (see README). mpd VMs pick a static IP from .100+ so
+# they never collide with DHCP-assigned guests.
+MIN_STATIC_OCTET=100
+MAX_STATIC_OCTET=254
 
 CONTAINER_SUBNET_PREFIX="10.163.0.0/24"
 CONTAINER_PROBE_IP="10.163.0.3"           # any IP in the subnet — used for `route get`
@@ -24,11 +36,9 @@ STATE_CA_FILE="${STATE_DIR}/ca.sha1"
 SSH_CONFIG="${HOME}/.ssh/config"
 DESKTOP_SHORTCUT="${HOME}/Desktop/mpd-machine.command"
 
-UTMCTL="/Applications/UTM.app/Contents/MacOS/utmctl"
-
-# Cloud image URL (tar.xz of raw disk — small download, resizable with dd)
-CLOUD_BASE="https://cloud.debian.org/images/cloud/trixie/20260501-2465"
-CLOUD_ARCHIVE="debian-13-genericcloud-arm64-20260501-2465.tar.xz"
+# Parallels Desktop Pro ships prlctl in /usr/local/bin/. Symlinked
+# automatically by the Parallels installer; no PATH dance needed.
+PRLCTL="/usr/local/bin/prlctl"
 
 # --- Output helpers ---
 
@@ -37,38 +47,77 @@ ok()   { printf '    ok: %s\n' "$*"; }
 warn() { printf '    warn: %s\n' "$*"; }
 die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
-# --- VM discovery (UTM) ---
+# --- VM discovery (Parallels) ---
 
-# Echoes "<name>\t<status>" per line for every VM whose name starts with the prefix.
-# `utmctl list` columns: UUID  Status  Name (header line + body, status is single word).
+# Echoes "<name>\t<status>" per line for every VM matching ${VM_NAME_PREFIX}<N>.
+# `prlctl list -a -o status,name --no-header` outputs "<status> <name>" with
+# arbitrary whitespace; statuses observed: running, stopped, suspended,
+# paused, mounted. Templates are excluded by `-a` (templates show under -t).
 get_mpd_vms() {
-    [ -x "$UTMCTL" ] || return 0
-    "$UTMCTL" list 2>/dev/null \
+    [ -x "$PRLCTL" ] || return 0
+    "$PRLCTL" list -a -o status,name --no-header 2>/dev/null \
         | awk -v prefix="$VM_NAME_PREFIX" '
-            NR == 1 { next }
-            NF >= 3 {
-                name = ""
-                for (i = 3; i <= NF; i++) { name = (i == 3 ? $i : name " " $i) }
-                if (name ~ ("^" prefix "[0-9]+$")) { printf "%s\t%s\n", name, $2 }
+            NF >= 2 {
+                status = $1
+                name = $2
+                for (i = 3; i <= NF; i++) name = name " " $i
+                if (name ~ ("^" prefix "[0-9]+$")) { printf "%s\t%s\n", name, status }
             }
           ' \
         | sort
 }
 
+# Returns the runtime state ("running" / "stopped" / "suspended" /
+# "paused" / "missing"). `prlctl status` prints lines of the form:
+#   VM '<name>' exist <state>
+# When the VM doesn't exist, the command exits non-zero.
 get_vm_state() {
     local name="$1"
-    [ -x "$UTMCTL" ] || { echo "missing"; return; }
-    "$UTMCTL" status "$name" 2>/dev/null || echo "missing"
+    [ -x "$PRLCTL" ] || { echo "missing"; return; }
+    local out
+    out=$("$PRLCTL" status "$name" 2>/dev/null) || { echo "missing"; return; }
+    awk '{ print $NF }' <<<"$out"
 }
 
 vm_exists() {
     local name="$1"
-    [ -x "$UTMCTL" ] && "$UTMCTL" status "$name" >/dev/null 2>&1
+    [ -x "$PRLCTL" ] && "$PRLCTL" status "$name" >/dev/null 2>&1
+}
+
+# Poll prlctl for the VM's current guest IP. Parallels Tools reports it
+# back over the guest channel; takes 10–30s after boot. Returns 0 + the
+# IP on stdout, 1 on timeout. Only matches IPs inside ${BRIDGE_SUBNET}.
+# (Parallels also reports loopback addresses; we filter those out.)
+get_vm_ip() {
+    local name="$1" timeout="${2:-90}" elapsed=0
+    while [ $elapsed -lt $timeout ]; do
+        local raw ip
+        raw=$("$PRLCTL" list "$name" -o ip --no-header 2>/dev/null) || raw=""
+        # The IP column may contain comma-separated addresses or "-" when
+        # Parallels Tools hasn't reported yet. Pick the first match on our
+        # bridge subnet.
+        ip=$(awk -v sub="$BRIDGE_SUBNET" '
+            { gsub(/,/, " "); for (i = 1; i <= NF; i++) if ($i ~ "^" sub "\\.") { print $i; exit } }
+        ' <<<"$raw")
+        if [[ "$ip" =~ ^${BRIDGE_SUBNET//./\\.}\.[0-9]+$ ]]; then
+            echo "$ip"; return 0
+        fi
+        sleep 2; elapsed=$((elapsed + 2))
+    done
+    return 1
+}
+
+# Returns 0 if the Parallels template exists and is marked as template.
+template_exists() {
+    [ -x "$PRLCTL" ] || return 1
+    "$PRLCTL" list -t -o name --no-header 2>/dev/null \
+        | awk '{ print $1 }' \
+        | grep -qx "$TEMPLATE_NAME"
 }
 
 # Octet portion of "<prefix><N>" — e.g. "mpd-machine-158" → "158". Empty on no match.
 # Always returns exit 0 so callers under `set -e` (e.g. octet=$(extract_octet …))
-# don't crash when the VM name has a non-numeric suffix (mpd-machine-sandbox).
+# don't crash when the VM name has a non-numeric suffix.
 extract_octet() {
     local name="$1"
     local prefix_len=${#VM_NAME_PREFIX}
@@ -97,10 +146,6 @@ get_current_vm_octet() {
 
 # SSH user for a VM. Lookup order: state file, ssh config, host login fallback.
 get_vm_ssh_user() {
-    # Split into two `local` statements. macOS ships bash 3.2, which expands
-    # all RHS values in a single `local` BEFORE assigning any LHS — so a
-    # combined `local a=$1 b=$a` would look up the (still-unbound) `a` and
-    # trip `set -u` in our callers (e.g. start.sh).
     local name="$1"
     local envfile="${STATE_DIR}/${name}.env"
     if [ -f "$envfile" ]; then
@@ -137,7 +182,7 @@ clear_known_hosts() {
     awk '
         $0 ~ /^10\.163\.0\./       { next }
         $0 ~ /\.mpd\.test/         { next }
-        $0 ~ /^192\.168\.64\./     { next }
+        $0 ~ /^10\.211\.55\./      { next }
         $0 ~ /^mpd-machine-/       { next }
         { print }
     ' "$known" > "$tmp" && mv "$tmp" "$known"
@@ -170,38 +215,32 @@ wait_for_ssh() {
     return 1
 }
 
-# --- UTM control via AppleScript ---
+# --- Parallels VM control ---
 
+# `prlctl start` is idempotent on running VMs (no-op + 0 exit). For a
+# suspended VM it resumes; for stopped it cold-starts.
 vm_start() {
-    osascript <<APPLESCRIPT
-tell application "UTM"
-    start (virtual machine named "$1")
-end tell
-APPLESCRIPT
+    "$PRLCTL" start "$1"
 }
 
+# Suspend = freeze RAM to disk, fast resume on next start (Parallels'
+# default for `Cmd+P` in the GUI). Matches macos-utm's vm_suspend
+# semantics.
 vm_suspend() {
-    osascript <<APPLESCRIPT
-tell application "UTM"
-    suspend (virtual machine named "$1")
-end tell
-APPLESCRIPT
+    "$PRLCTL" suspend "$1"
 }
 
+# Hard stop (--kill). For graceful ACPI shutdown use `prlctl stop`
+# without --kill; mpd's lifecycle hooks (~/.config/systemd/user/mpd.service)
+# already drained things by the time we reach here, so killing is fine.
 vm_force_stop() {
-    osascript <<APPLESCRIPT
-tell application "UTM"
-    stop (virtual machine named "$1")
-end tell
-APPLESCRIPT
+    "$PRLCTL" stop "$1" --kill 2>/dev/null || "$PRLCTL" stop "$1"
 }
 
+# Delete: unregister + remove from disk. Prompts in the Parallels GUI by
+# default; --force skips that.
 vm_delete() {
-    osascript <<APPLESCRIPT
-tell application "UTM"
-    delete (virtual machine named "$1")
-end tell
-APPLESCRIPT
+    "$PRLCTL" delete "$1"
 }
 
 # --- ~/.ssh/config block ---
@@ -291,13 +330,13 @@ read_current_env_field() {
 ensure_desktop_shortcut() {
     cat > "$DESKTOP_SHORTCUT" <<'EOF'
 #!/bin/bash
-# Auto-generated by setup/macos-utm/lib/setup.sh.
+# Auto-generated by setup/macos-prl/lib/setup.sh.
 # Opens an SSH session to the currently-active mpd VM. The VM's name
 # is read from ~/.mpd-machine/current.env at click time, so this single
 # shortcut tracks whichever VM `setup.command` last activated. If the
 # VM is offline, lib/start.sh boots it first.
 
-START_SH="$HOME/Developer/mpd/setup/macos-utm/lib/start.sh"
+START_SH="$HOME/Developer/mpd/setup/macos-prl/lib/start.sh"
 CURRENT_ENV="$HOME/.mpd-machine/current.env"
 
 VM_NAME=""
@@ -307,11 +346,10 @@ fi
 if [ -z "$VM_NAME" ]; then
     echo
     echo "  No active mpd VM recorded at ${CURRENT_ENV}."
-    echo "  Run setup.command in setup/macos-utm/ first."
+    echo "  Run setup.command in setup/macos-prl/ first."
     exit 1
 fi
 
-# Fast liveness probe — non-interactive, no host-key prompts, short timeout.
 if ! ssh -o ConnectTimeout=3 -o BatchMode=yes -o StrictHostKeyChecking=no \
         "$VM_NAME" true 2>/dev/null; then
     if [ -x "$START_SH" ]; then
@@ -324,7 +362,7 @@ if ! ssh -o ConnectTimeout=3 -o BatchMode=yes -o StrictHostKeyChecking=no \
         echo "  Could not reach ${VM_NAME}, and lib/start.sh was not found at:"
         echo "    $START_SH"
         echo
-        echo "  Run setup.command in setup/macos-utm/ to repair."
+        echo "  Run setup.command in setup/macos-prl/ to repair."
         exit 1
     fi
 fi
@@ -334,8 +372,8 @@ status=$?
 if [ "$status" -eq 255 ]; then
     echo
     echo "  Could not connect to ${VM_NAME}."
-    echo "  Open UTM and check that the VM is running, or run"
-    echo "  start.command from setup/macos-utm/ ."
+    echo "  Open Parallels Desktop and check that the VM is running, or run"
+    echo "  start.command from setup/macos-prl/ ."
     exit 1
 fi
 EOF
@@ -346,8 +384,7 @@ EOF
 # generate_mpd_ca is the bash twin of Mpd.Environment.Certificate.generateCA
 # in mpd/Environment/Certificate.swift. Both must produce certs with the
 # same DN, v3_ca extensions, and name constraints so mpd inside the VM
-# can reuse a host-generated CA (per the reuse check at
-# mpd/Environment/Machine/MachineActionSetup.swift:331). KEEP IN SYNC.
+# can reuse a host-generated CA. KEEP IN SYNC with the macos-utm twin.
 
 generate_mpd_ca() {
     local key_path="$1" cert_path="$2"
@@ -383,40 +420,13 @@ EOF
 }
 
 # --- Host CA preparation ---
-# Keeps a single host CA alive in two real-file locations and mirrors
-# between them on every run. The redundant copy is the safety net: wiping
-# one (or the keychain entry) still lets the next setup restore from the
-# other side automatically.
-#
-#   - ~/Developer/mpd/conf/caroot/{rootCA.pem,rootCA-key.pem}
-#     Canonical mpd location. Shared with mpd-desktop. Only populated when
-#     ~/Developer/mpd/conf/ already exists (we never pre-create the repo
-#     path on a Mac that hasn't cloned mpd).
-#   - ~/.mpd-machine/ca/{rootCA.pem,rootCA-key.pem}
-#     Platform-owned location. Always populated on any Mac that has run
-#     setup.command at least once.
-#
-# Behavior matrix:
-#   both present, identical content  → reuse caroot/, no-op.
-#   both present, divergent content  → caroot/ wins (canonical), platform
-#                                       copy overwritten, with a warn.
-#   only caroot/                     → mirror to platform.
-#   only platform                    → mirror to caroot/ (if conf/ exists),
-#                                       else stay platform-only.
-#   neither                          → generate fresh; populate caroot/ if
-#                                       conf/ exists, else platform-only.
-#
-# Sets globals HOST_CA_PEM and HOST_CA_KEY; the path points at caroot/
-# whenever caroot/ holds the cert, otherwise at the platform copy. Either
-# way, both files at the chosen path are real files (not symlinks) ready
-# for `scp` upload to a new VM.
+# See setup/macos-utm/lib/common.sh:prepare_host_ca for the rationale.
+# This is a verbatim copy modulo wording; both platforms share the same
+# caroot canonical + ~/.mpd-machine/ca/ mirror layout.
 
 HOST_CA_PEM=""
 HOST_CA_KEY=""
 
-# copy_ca_files SRC_PEM SRC_KEY DEST_DIR
-# Copies a CA cert+key into DEST_DIR with the right modes. Creates DEST_DIR
-# if missing. Used to mirror between caroot/ and the platform's state dir.
 copy_ca_files() {
     local src_pem="$1" src_key="$2" dest_dir="$3"
     mkdir -p "$dest_dir"
@@ -437,17 +447,7 @@ copy_ca_files() {
 #
 # Disposable mirror: ${STATE_DIR}/ca/ (~/.mpd-machine/ca/). Survives a
 # corrupted/blown-away repo checkout so the user can re-clone without
-# regenerating a CA (which would orphan every runtime cert + force a
-# fresh System keychain trust prompt). Deleted on uninstall.
-#
-# Resolution order (each branch sets HOST_CA_PEM / HOST_CA_KEY):
-#   1. caroot + mirror both present, identical          → use caroot
-#   2. caroot + mirror both present, *differ*           → caroot wins; rewrite mirror
-#   3. caroot only                                      → mirror it; use caroot
-#   4. mirror only + caroot dir absent (no repo on host)→ keep mirror-only
-#   5. mirror only + caroot dir present (repo on host)  → promote mirror into caroot; use caroot
-#   6. neither + caroot dir present                     → generate at caroot, mirror it
-#   7. neither + caroot dir absent                      → generate at mirror only
+# regenerating a CA. Deleted on uninstall.
 prepare_host_ca() {
     local mpd_conf="${HOME}/Developer/mpd/conf"
     local caroot="${mpd_conf}/caroot"
@@ -560,8 +560,6 @@ route_plist_body() {
 PLIST
 }
 
-# Returns 0 if the plist exists with the right VM IP. World-readable
-# location, no sudo needed for the check.
 route_daemon_in_sync() {
     local vm_ip="$1"
     [ -f "$ROUTE_PLIST_PATH" ] || return 1
@@ -570,8 +568,6 @@ route_daemon_in_sync() {
     return 0
 }
 
-# Install (or replace) the plist and load it. RunAtLoad=true means the
-# route gets added now too — no separate `route add` needed.
 install_route_daemon() {
     local vm_ip="$1"
     local body
@@ -583,10 +579,6 @@ install_route_daemon() {
     sudo chmod 0644 "$ROUTE_PLIST_PATH"
     sudo chown root:wheel "$ROUTE_PLIST_PATH" 2>/dev/null || true
     sudo launchctl bootstrap system "$ROUTE_PLIST_PATH"
-    # bootstrap returns when the daemon starts; the `route add` call
-    # takes a few ms but the daemon may not have finished by the
-    # time bootstrap returns. A short settle pause makes the followup
-    # `route get` probe deterministic.
     sleep 1
 }
 
@@ -594,24 +586,13 @@ uninstall_route_daemon() {
     [ -f "$ROUTE_PLIST_PATH" ] || return 0
     sudo launchctl bootout "system/${ROUTE_PLIST_LABEL}" >/dev/null 2>&1 || true
     sudo rm -f "$ROUTE_PLIST_PATH"
-    # Clean up any route the daemon added but bootout didn't tear down
-    # (launchctl bootout sends SIGTERM to a one-shot that has already
-    # exited — the route survives, so remove it explicitly).
     sudo route -n delete -net "$CONTAINER_SUBNET_PREFIX" >/dev/null 2>&1 || true
 }
 
 # --- Idempotent host-side privileged ops ---
-# Predicate `*_needs_update` returns 0 when the operation is needed,
-# 1 when current state is already correct. The matching `apply_*`
-# performs the privileged action; both detect + apply share the same
-# state read so a caller can list what's needed before sudo, then
-# apply only those after.
 
 route_needs_update() {
     local target_ip="$1"
-    # Need to update if either the active route is missing/wrong OR the
-    # persistence plist doesn't match. The plist check is what protects
-    # us against the next reboot dropping the route silently.
     local out dest gw
     out=$(route -n get -inet "$CONTAINER_PROBE_IP" 2>/dev/null || true)
     dest=$(awk '/destination:/ { print $2; exit }' <<<"$out")
@@ -644,9 +625,6 @@ apply_resolver() {
     sudo chmod 0644 "$path"
 }
 
-# Returns 0 if the cert at <path> is already trusted in the System keychain,
-# 1 if not (or if the cert can't be read). Echoes the cert's SHA-1 fingerprint
-# (uppercase hex, no separators) on stdout for callers that want to record it.
 ca_fingerprint() {
     local cert_path="$1"
     openssl x509 -fingerprint -sha1 -noout -in "$cert_path" 2>/dev/null \
@@ -668,9 +646,6 @@ apply_ca_from_file() {
     record_ca_fingerprint "$cert_path"
 }
 
-# Always record the trusted CA's SHA-1 in $STATE_CA_FILE so uninstall.sh
-# can remove this exact cert later. Safe to call whether the script or
-# the dev did the import — only depends on the cert file existing on host.
 record_ca_fingerprint() {
     local cert_path="$1"
     local fp
@@ -681,20 +656,6 @@ record_ca_fingerprint() {
     fi
 }
 
-# print_sudo_recipe — present the privileged commands the script is about
-# to run and let the dev choose between running them in another terminal
-# (and pressing Enter to continue) or pressing Enter to let the script
-# sudo for them. Returns 0 unconditionally; the caller MUST re-run its
-# predicate checks afterward to determine what (if anything) still needs
-# sudo.
-#
-# Args: each command as a separate string. The function appends a final
-# bare `sudo -k` so the dev's terminal also drops cached creds the moment
-# the manual recipe finishes — symmetric with the script's own fence.
-# The lines are emitted with NO inline `#` comments so they paste cleanly
-# into either bash *or* zsh (zsh's `interactive_comments` is off by default
-# on macOS, which would otherwise turn `# invalidate ...` into command
-# arguments).
 print_sudo_recipe() {
     echo
     echo "    The following commands need to run as root:"
@@ -708,9 +669,10 @@ print_sudo_recipe() {
     echo "    after the recipe completes — same fence the script applies on"
     echo "    its own privileged block.)"
     echo
-    echo "    You can either:"
-    echo "      (a) Open another Terminal, run the recipe yourself, and press Enter here."
-    echo "      (b) Press Enter and let this script sudo for you (you'll be asked for your password)."
+    echo "    You can:"
+    echo "      (a) Run them yourself in another terminal, then press Enter here."
+    echo "      (b) Press Enter to let this script run them (it will prompt"
+    echo "          for your password once)."
     echo
     read -r -p "    Press Enter to continue: " _
 }

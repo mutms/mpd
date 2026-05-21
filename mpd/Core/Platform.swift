@@ -1,7 +1,7 @@
 // mpd — Mpd.Core.Platform namespace
 // Reads/writes ~/Developer/mpd/conf/platform.env — the host-side identity file
 // that records *which* kind of mpd setup this is and where it lives:
-//   MPD_PLATFORM=desktop | macos-utm | ubuntu-kvm | windows-hyperv | sandbox
+//   MPD_PLATFORM=desktop | macos-utm | macos-prl | ubuntu-kvm | windows-hyperv | sandbox
 //   MPD_VM_IP=<ip>           (empty for desktop and sandbox)
 //   MPD_INSTANCE_SUFFIX=<-suffix>   (e.g. "-161"; empty for the unsuffixed
 //                                    instance — used for hostname disambiguation
@@ -12,6 +12,7 @@
 //     bootstraps the file on first run with platform=desktop, vm_ip="".
 //   - mpd-machine via macos-utm/create-vm.sh: writes the file via SSH before
 //     `mpd --setup` runs in the VM.
+//   - mpd-machine via macos-prl/create-vm.sh: same, via SSH (Parallels template).
 //   - mpd-machine via ubuntu-kvm/lib/create-vm.sh: same, via SSH.
 //   - mpd-machine via windows-hyperv: same, via WinRM.
 //   - mpd-machine via sandbox/lib/provision.sh: writes the file with
@@ -29,6 +30,7 @@ extension Mpd.Core.Platform {
     enum PlatformKind: String {
         case desktop        = "desktop"
         case macosUTM       = "macos-utm"
+        case macosPRL       = "macos-prl"
         case ubuntuKVM      = "ubuntu-kvm"
         case windowsHyperV  = "windows-hyperv"
         case sandbox        = "sandbox"
@@ -54,6 +56,7 @@ extension Mpd.Core.Platform {
                 "Run the matching bootstrap script first:\n" +
                 "  • sandbox VM:      setup/sandbox/take-over-sandbox-vm.sh\n" +
                 "  • macOS+UTM:       setup/macos-utm/setup.command\n" +
+                "  • macOS+Parallels: setup/macos-prl/setup.command\n" +
                 "  • Ubuntu+KVM:      setup/ubuntu-kvm/setup.sh\n" +
                 "  • Windows Hyper-V: setup/windows-hyperv/setup.cmd\n" +
                 "  • desktop:         re-run `mpd --setup` (will write the file).")
@@ -63,7 +66,7 @@ extension Mpd.Core.Platform {
         let kv = parseKV(raw)
 
         guard let platformRaw = kv["MPD_PLATFORM"], let platform = PlatformKind(rawValue: platformRaw) else {
-            throw RuntimeError("\(path): MPD_PLATFORM missing or invalid (expected: desktop, macos-utm, ubuntu-kvm, windows-hyperv, sandbox).")
+            throw RuntimeError("\(path): MPD_PLATFORM missing or invalid (expected: desktop, macos-utm, macos-prl, ubuntu-kvm, windows-hyperv, sandbox).")
         }
         let vmIP = kv["MPD_VM_IP"] ?? ""
         let instanceSuffix = kv["MPD_INSTANCE_SUFFIX"] ?? ""
