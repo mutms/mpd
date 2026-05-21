@@ -22,5 +22,7 @@ Difference from sibling docs:
   Linux+libvirt twin. Delegates cross-cutting design to the Parallels
   proposal; specs only the libvirt-specific deltas.
 - [`host-binary-hyperv.md`](host-binary-hyperv.md) — `mpd-hpv`, the
-  Windows+Hyper-V twin. Same shape, Hyper-V-specific deltas. Most
-  speculative of the three (no current users; Swift-on-Windows tax).
+  Windows+Hyper-V twin. Runs **inside WSL2 Debian** as a Linux
+  binary and drives Windows-side Hyper-V via `powershell.exe`
+  interop — no native Swift-on-Windows toolchain needed. Most
+  speculative of the three (no current users).

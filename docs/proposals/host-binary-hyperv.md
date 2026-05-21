@@ -1,231 +1,263 @@
-# Proposal: `mpd-hpv` — Windows host binary for mpd-machine on Hyper-V
+# Proposal: `mpd-hpv` — Hyper-V host binary, WSL-resident
 
-A Swift twin of `mpd-prl`, targeting Windows+Hyper-V. Same verb
-surface, same number-to-clipboard sudo-equivalent UX, same tab
-completion.
-
-**Most speculative of the host-binary trio.** Status today: zero
-known Windows users, the existing PowerShell scripts under
-`setup/windows/` work, and Swift-on-Windows has a meaningfully rougher
-toolchain story than macOS/Linux. **Recommendation: defer until a
-Windows user actually shows up** — the maintenance cost of three
-host binaries (kvm and hpv) without users is hard to justify. The
-PowerShell scripts are a fine endpoint until then.
-
-This proposal documents the design so an interested contributor can
-pick it up without re-deriving the spec.
+A Linux Swift binary that runs inside **WSL2 Debian** and drives
+Windows-side Hyper-V via `powershell.exe` interop. Same verb surface
+as `mpd-prl` / `mpd-kvm`, same number-to-clipboard sudo-equivalent UX,
+same tab completion.
 
 **Cross-cutting design** is owned by
 [`host-binary-parallels.md`](host-binary-parallels.md). Implement
 `mpd-prl` first; this proposal is the diff against it.
 
+The "WSL-resident" choice is the key architectural decision. An
+earlier draft of this proposal targeted native Swift-on-Windows; the
+WSL approach is materially simpler in every dimension (toolchain,
+build matrix, signing) and inherits the WSL+Debian prereq the existing
+`setup.cmd` already imposes.
+
 ## Goals
 
-1. One executable on `%PATH%`. `mpd-hpv <verb>` from any PowerShell
-   or cmd terminal.
-2. Replace the PowerShell scripts under `setup/windows/lib/` with
-   typed Swift.
-3. Drop the PowerShell twin of CA generation — reuse
-   `Mpd.Environment.Certificate.generateCA`.
-4. Same ArgumentParser-driven tab completion (bash + PowerShell
-   completion shims).
+1. One executable on `$PATH` *inside WSL Debian*. `mpd-hpv <verb>`
+   from any WSL terminal, or via `wsl mpd-hpv <verb>` from a Windows
+   shell.
+2. Replace the PowerShell scripts under `setup/windows/lib/*.ps1`
+   **and** the WSL bash helper `setup/windows/lib/common.sh` with
+   one Linux Swift binary.
+3. Reuse `Mpd.Core.Certificate` like the other two host binaries.
+4. ArgumentParser-driven tab completion (bash + zsh shims inside WSL).
 
 ## Non-goals
 
-- Replacing the existing `setup.cmd` Finder-equivalent entry point.
-  Double-click via Explorer should still work — `setup.cmd` becomes
-  a one-line shim that `start "" mpd-hpv setup`.
-- WSL-based delivery. mpd-hpv is a native Windows binary; the
-  existing `setup/windows/lib/common.sh` (a WSL Debian helper) goes
-  away entirely. Swift on Windows is the WSL replacement.
+- Native Windows binary. Swift-on-Windows is real but the toolchain
+  cost + signing requirements aren't worth it for a feature that has
+  ~zero Windows users today. WSL is already a hard prereq for the
+  current setup; reusing it is free.
+- A `.cmd` shim layer over the WSL binary, beyond a trivial entry
+  point. The current `setup.cmd` becomes a one-liner: `wsl -d Debian
+  mpd-hpv setup`. That's the only Windows-side artifact mpd-hpv
+  ships.
 
-## Why this is the most speculative of the three
+## Why WSL-resident
 
-- **Swift on Windows is real but newer.** Toolchain install is more
-  work (Visual Studio dependencies, SwiftPM less battle-tested),
-  fewer libraries, more `#if os(Windows)` carve-outs in shared code.
-  Apple's "Swift on Windows" page covers it; expect some friction.
-- **No current Windows users** that anyone's aware of. mpd-machine on
-  Windows works in principle (the existing PowerShell setup is
-  functional) but it's an "in case anyone wants it" path more than a
-  daily-driver target.
-- **Hyper-V's privilege model differs.** Windows doesn't have
-  per-command `sudo`; the typical pattern is whole-process UAC
-  elevation via `Start-Process -Verb RunAs`. The sudo-recipe UX from
-  `mpd-prl` partially translates (numbered list, copy via
-  `Set-Clipboard`), but the "run all via sudo prompt" branch becomes
-  "relaunch self elevated" — different shape.
+- **Same Swift toolchain as `mpd-kvm`.** Both are Linux binaries. One
+  build pattern, one `swiftlang` apt package, one set of `Process()`
+  patterns.
+- **PowerShell interop is mature.** `powershell.exe` is on `$PATH`
+  inside every WSL distro; `wslpath` translates between Linux and
+  Windows paths; `cmd.exe`, `clip.exe`, and `route.exe` are all
+  callable from WSL.
+- **Inherits the existing WSL prereq.** `setup/windows/README.txt`
+  already says `wsl --install -d Debian` is required. The current
+  bash-in-WSL helper does CA generation there today; mpd-hpv just
+  expands that pattern from "one bash file" to "one Swift binary."
+- **No Windows code-signing.** ELF binary in WSL; Windows' SmartScreen
+  / Authenticode rules don't apply.
+- **One less platform target in `Package.swift`.** macOS for
+  `mpd-prl`, Linux for both `mpd-kvm` and `mpd-hpv`.
+
+## Architecture
+
+```
+┌─────────────────── Windows host ─────────────────────────────┐
+│                                                              │
+│   Hyper-V VMs (mpd-machine guests, Debian Trixie)            │
+│                  ↑                                           │
+│                  │ Get-VM / Start-VM / Set-VMMemory /        │
+│                  │ Add-DnsClientNrptRule / route.exe /       │
+│                  │ Import-Certificate / Set-Clipboard        │
+│                  │                                           │
+│   powershell.exe ◀── spawned via Process() ──┐               │
+│                                              │               │
+│   ┌────────────── WSL2 Debian distro ────────┴─────────┐     │
+│   │                                                    │     │
+│   │   ~/.local/bin/mpd-hpv  (Linux Swift binary)       │     │
+│   │   ~/.mpd-machine/<uuid>.env                        │     │
+│   │   /mnt/c/Users/<user>/mpd-machine/ca/rootCA.pem    │     │
+│   │     (Windows-visible CA path; written via wslpath) │     │
+│   │                                                    │     │
+│   └────────────────────────────────────────────────────┘     │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Linux binary, talking to Windows side exclusively via PowerShell
+spawn. State files live inside WSL (Linux-native paths).
+Cross-visible artifacts (CA cert+key) live on the Windows filesystem
+via `/mnt/c/...` so Windows-side tools can read them.
 
 ## Backend specifics
 
-### `prlctl` → Hyper-V PowerShell cmdlets
+### Hyper-V via `powershell.exe`
 
-Swap `Mpd.Environment.Host.Parallels.PRLCtl` for
-`Mpd.Environment.Host.HyperV.PSCmdlets` — Swift wrappers that spawn
-`powershell.exe -NoProfile -NonInteractive -Command …` via
+Swap `mpd-prl`'s `Mpd.PRL.Parallels` namespace (prlctl wrappers) for
+`Mpd.HPV.HyperV` inside the `mpd-hpv` target. Swift wrappers that
+spawn `powershell.exe -NoProfile -NonInteractive -Command …` via
 `Process()`. Cmdlet mapping:
 
-| mpd-prl uses                 | mpd-hpv uses                                                |
-|------------------------------|-------------------------------------------------------------|
-| `prlctl list -a`             | `Get-VM \| Select-Object Id,Name,State`                     |
-| `prlctl status <uuid>`       | `(Get-VM -Id <guid>).State`                                 |
-| `prlctl start <uuid>`        | `Start-VM -Id <guid>`                                       |
-| `prlctl suspend <uuid>`      | `Suspend-VM -Id <guid>` (or `Save-VM` for save-state)       |
-| `prlctl stop <uuid> --kill`  | `Stop-VM -Id <guid> -Force`                                 |
-| `prlctl clone <src> --name`  | export + import via `Export-VM` / `Import-VM` with rename   |
-| guest IP discovery           | Hyper-V Integration Services: `(Get-VM <id>).NetworkAdapters.IPAddresses[0]` |
+| mpd-prl uses                 | mpd-hpv uses                                                       |
+|------------------------------|--------------------------------------------------------------------|
+| `prlctl list -a`             | `Get-VM \| Select-Object Id,Name,State \| ConvertTo-Json`          |
+| `prlctl status <uuid>`       | `(Get-VM -Id <guid>).State`                                        |
+| `prlctl start <uuid>`        | `Start-VM -Id <guid>`                                              |
+| `prlctl suspend <uuid>`      | `Suspend-VM -Id <guid>` (or `Save-VM` for save-state)              |
+| `prlctl stop <uuid> --kill`  | `Stop-VM -Id <guid> -Force`                                        |
+| `prlctl clone <src> --name`  | `Export-VM` + `Import-VM -Copy -GenerateNewId -Path … -Rename`     |
+| guest IP discovery           | `(Get-VM <id>).NetworkAdapters.IPAddresses[0]`                     |
 
-Hyper-V VM IDs are GUIDs, formatted with dashes (no braces). State
-files use the GUID as-is — same shape as macOS UUIDs.
+Hyper-V VM IDs are GUIDs (36-char dashed, no braces) — same shape
+as macOS UUIDs. State files use the GUID as-is.
+
+**Output parsing**: prefer `ConvertTo-Json` on the PowerShell side and
+parse Swift-side via `JSONDecoder`. Avoids fragile column-aligned
+parsing.
+
+**PowerShell startup overhead**: ~200–500ms per invocation. For
+interactive setup, fine. For tighter operations (the doctor's
+running-VM enumeration), batch multiple cmdlets into a single
+`powershell.exe -Command "…"` invocation.
 
 ### Static-IP pinning
 
-The guest is Debian Trixie + GNOME — same as the other backends. The
+The guest is Debian Trixie + GNOME (same as the other backends). The
 in-guest NetworkManager keyfile pattern still works; the SSH-driven
 provisioning step is identical to `mpd-prl`.
 
 Hyper-V's "Default Switch" gives DHCP-assigned IPs that vary across
-host reboots. mpd-hpv would need to either:
+host reboots. mpd-hpv creates a private virtual switch on first
+setup (`New-VMSwitch -SwitchType Private -Name "mpd-machine-switch"`)
+on `10.10.0.0/24`. Static IPs come from the same in-guest NM
+keyfile machinery `mpd-prl` uses.
 
-- Use a custom internal virtual switch with a known subnet (like
-  Parallels Shared's 10.211.55.0/24), or
-- Bind a static IP inside the guest regardless of what DHCP would have
-  given.
+### Host-side networking (via PowerShell)
 
-Today's PowerShell setup creates a "mpd-machine-switch" private
-switch on 10.10.0.0/24. Carry that forward — `mpd-hpv setup` runs
-`New-VMSwitch` if absent.
+| Operation              | Spawned PowerShell                                                                  |
+|------------------------|-------------------------------------------------------------------------------------|
+| Add route (persistent) | `route.exe ADD 10.163.0.0 MASK 255.255.255.0 <vm-ip> -p`                            |
+| Split DNS              | `Add-DnsClientNrptRule -Namespace ".mpd.test" -NameServers <vm-ip>`                 |
+| Trust the CA           | `Import-Certificate -FilePath "C:\Users\…\rootCA.pem" -CertStoreLocation Cert:\LocalMachine\Root` |
+| Firefox CA trust       | system store (since Firefox 49 with `security.enterprise_roots.enabled = true`)     |
 
-### Host-side networking (the biggest delta)
+Route persistence: `route.exe -p` makes Windows persist automatically
+— **no LaunchDaemon equivalent needed**, unlike `mpd-prl`'s macOS
+situation. mpd-hpv's `doctor` verb still has value (IP-collision
+check, "configured" tag per running VM) but the post-reboot route
+refresh is typically a no-op.
 
-Windows differs from both macOS and Linux:
+### CA generation
 
-| Operation                  | macOS                                              | Windows                                                                          |
-|----------------------------|----------------------------------------------------|----------------------------------------------------------------------------------|
-| Add route                  | `route -n add -net 10.163.0.0/24 <vm-ip>`          | `route.exe ADD 10.163.0.0 MASK 255.255.255.0 <vm-ip> -p` (`-p` = persistent)     |
-| Split DNS                  | `/etc/resolver/mpd.test`                           | NRPT rule: `Add-DnsClientNrptRule -Namespace ".mpd.test" -NameServers <vm-ip>`   |
-| Trust the CA               | `security add-trusted-cert -k System.keychain …`   | `Import-Certificate -FilePath … -CertStoreLocation Cert:\LocalMachine\Root`      |
-| Firefox CA trust           | System keychain                                    | Either system store (since Firefox 49 with `security.enterprise_roots.enabled`) or an enterprise policy at `HKLM\Software\Policies\Mozilla\Firefox` |
-| Persistent route           | (deferred)                                         | `-p` flag makes Windows persist it automatically — no LaunchDaemon equivalent needed |
+Runs inside WSL with the same `Mpd.Core.Certificate.generateCA`
+Swift code the other binaries use. Writes the cert + key to a
+Windows-visible path under `/mnt/c/Users/<wsl-user>/mpd-machine/ca/`
+so PowerShell's `Import-Certificate` can read it. `wslpath -w` does
+the Linux→Windows path translation when constructing the
+PowerShell command.
 
-The Windows route is automatically persisted with `route.exe -p`, so
-the "doctor after host reboot" problem mpd-prl has *doesn't exist*
-here. mpd-hpv's `doctor` verb still has value (IP-collision check,
-"configured" tag per running VM), but the route refresh step is
-typically a no-op.
-
-### CA model
-
-The Windows host has always had a single CA location —
-`%USERPROFILE%\mpd-machine\ca\rootCA.pem` — because the repo doesn't
-live on the Windows side (cloned inside the VM only). No mirror to
-remove. `mpd-hpv setup` generates or reuses that single file via
-`Mpd.Environment.Certificate.generateCA`, trusts it in
-`Cert:\LocalMachine\Root`, and that's it.
-
-Uninstall follows the parallels model: print the `Remove-Item …` /
-`Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -match
-"mpd.test" | Remove-Item` line as part of the number-to-clipboard
-recipe (Windows variant uses `Set-Clipboard`); user picks which to
-run. Orphan trust-store entries are name-constrained to `*.mpd.test`
-and harmless if left.
-
-See `host-binary-parallels.md` §"CA model" for the full rationale.
+WSL→Windows path detection: `cmd.exe /c "echo %USERPROFILE%"` gives
+the Windows user-profile path; `wslpath -u` converts it for Linux
+side. Cache this once at startup.
 
 ### Privilege model — UAC, not sudo
 
-Windows has no per-command privilege elevation. Two reasonable
-patterns:
+Two patterns the implementation can pick from:
 
-- **(A) Re-launch self elevated**: when a verb detects it needs admin,
-  it spawns a second copy of itself via
-  `Start-Process -Verb RunAs mpd-hpv … --elevated`. The elevated
-  copy runs the privileged work and exits; the original waits for it
-  and resumes.
+- **(A) Re-launch self elevated**: when a verb detects it needs
+  admin, spawn an elevated PowerShell that runs the privileged work.
+  ```
+  powershell.exe -Command "Start-Process powershell -Verb RunAs -ArgumentList '-Command', '<cmd>'"
+  ```
+  The UAC prompt appears on Windows side; the WSL Swift binary waits
+  for it to complete.
 - **(B) Print recipe, user runs in elevated PowerShell**: number-to-
-  clipboard, same as mpd-prl. The user opens an admin PowerShell and
-  pastes. No re-launch dance.
+  clipboard via `clip.exe < /tmp/recipe-N`. User opens an admin
+  PowerShell and pastes. No UAC popup mid-flow.
 
-Recommendation: **(B)** for the first cut. Cleaner audit trail
-("here's what's about to happen, paste it"), no UAC popup mid-flow,
-matches the macOS/Linux UX.
+Recommendation: **(B)** for the first cut. Cleaner audit trail,
+matches the macOS/Linux UX, no surprise UAC popups. (A) is an
+optional `--run-elevated` flag if anyone wants the auto-spawn path.
 
 ### Clipboard helper
 
-Spawn `powershell -Command "Set-Clipboard -Value '<text>'"` for the
-copy step. `LinuxClipboard`'s xclip/wl-copy detection logic doesn't
-apply here.
-
-### Swift toolchain on Windows
-
-- Install: see https://www.swift.org/install/windows/ — winget or
-  manual installer + Visual Studio Build Tools. Heavier than `apt
-  install swiftlang` on Debian.
-- `swift build` works for executable targets on Windows.
-- `Process()` is supported. File APIs (`FileManager`, `String(contentsOfFile:)`)
-  work. UNC paths and Windows path conventions need care.
-- Static linking: prefer it (avoids Swift runtime DLL dependency on
-  end-user machines). `swift build -c release --static-swift-stdlib`.
-- Code signing: required for non-warning install. Defer until users.
+`clip.exe` accepts stdin natively — `printf '%s' "<text>" | clip.exe`
+writes to the Windows clipboard. Single-shot, no PowerShell startup
+tax. Lives in `Mpd.HPV.Host.Clipboard` inside the mpd-hpv target.
 
 ## Build & Package.swift
 
 ```swift
 .executableTarget(
     name: "mpd-hpv",
-    dependencies: ["Mpd.Shared"],
+    dependencies: ["MpdCore"],
     path: "mpd-hpv",
-    condition: .when(platforms: [.windows])
+    condition: .when(platforms: [.linux])    // runs in WSL Debian, not native Windows
 ),
 ```
 
-`make install` doesn't run on Windows. Distribution path probably ends
-up as a GitHub release artifact (zipped Swift-built binary). Defer
-until users.
+Note `.linux`, **not** `.windows`. mpd-hpv is a Linux ELF binary.
+
+Build inside WSL Debian via `make install` (same as the in-VM `mpd`
+binary), installs to `/usr/local/bin/mpd-hpv` or
+`~/.local/bin/mpd-hpv`.
 
 ## Migration from PowerShell
 
+When `mpd-hpv` lands and is validated, `setup/windows/` collapses to:
+
+```
+setup/windows/
+└── README.md       # documentation only; points users at `mpd-hpv`
+```
+
+Deletions:
+
 - `setup/windows/setup.cmd` / `start.cmd` / `stop.cmd` /
-  `uninstall.cmd` become one-line shims:
-  ```
+  `uninstall.cmd` — replaced by:
+  ```cmd
   @echo off
-  mpd-hpv setup %*
+  wsl -d Debian mpd-hpv setup %*
   ```
-- `setup/windows/lib/*.ps1` and `setup/windows/lib/common.sh` (WSL
-  helper) deleted after Swift verbs land and are validated.
-- The WSL Debian dependency for CA generation (`setup/windows/lib/
-  common.sh` running OpenSSL in WSL) goes away — Swift generates the
-  CA directly via `Mpd.Environment.Certificate.generateCA`. One less
-  moving part on Windows.
+  Or just drop the `.cmd` shims entirely and tell users to invoke
+  `wsl mpd-hpv setup` from any Windows shell. Same trade-off as the
+  macOS `.command` decision (see parallels proposal §"Migration"
+  — drop, don't wrap).
+- `setup/windows/lib/*.ps1` — gone.
+- `setup/windows/lib/common.sh` — gone. The CA-generation-in-WSL
+  pattern this file implemented is the literal foundation of the
+  mpd-hpv WSL-resident approach; the Swift binary subsumes it.
+
+The cross-platform CA path moves from `%USERPROFILE%\mpd-machine\ca\`
+to `%USERPROFILE%\mpd-machine\ca\` (same place, written from WSL via
+`/mnt/c/...`). No user-visible change.
 
 ## Testing
 
-- Hyper-V is Windows-Pro-only. CI would need a Windows runner with
-  Hyper-V enabled. Cost / complexity argues for relying on contributor
-  smoke tests rather than CI.
-- Smoke test: clone the Debian Trixie cloud image via `mpd-hpv setup`,
-  verify HTTPS, `doctor`, `stop`, `start`, `uninstall`. Document the
-  recipe in `setup/windows/README.txt` once mpd-hpv exists.
+- Hyper-V is Windows-Pro-only. Need a Windows host with Hyper-V
+  enabled + WSL2 + Debian distro. CI cost is significant; rely on
+  contributor smoke tests rather than CI.
+- Smoke test recipe (inside WSL): `mpd-hpv setup` (clones the cloud
+  image, creates the Hyper-V switch, provisions the VM), HTTPS hit,
+  `mpd-hpv doctor`, suspend/resume cycle, `mpd-hpv uninstall`.
 
 ## Open questions
 
-- **Whether to do at all.** See top of this file. The PowerShell
-  scripts work. mpd-hpv replaces them mostly for code-organization
-  reasons (one Swift codebase across hosts) — not because the
-  PowerShell is broken. If you, the implementer reading this, are
-  the first Windows mpd user: PowerShell is fine. Build mpd-hpv if
-  you want to maintain it long-term; otherwise contribute fixes to
-  the existing PowerShell.
-- **WSL2 vs. native Hyper-V VM.** The user-facing question of whether
-  mpd-machine on Windows means "Hyper-V VM" or "WSL2 distro" has
-  always tilted toward Hyper-V (real VM, real isolation; see
-  [`setup/README.md`](../../setup/README.md) §"What's not here").
-  Carry that forward.
-- **`virt-clone`-style fast cloning.** Hyper-V's `Export-VM` +
-  `Import-VM` is slow (full disk copy) compared to Parallels' clone.
-  Hyper-V supports differencing disks but the UX is clunky. Initial
-  implementation: full clone. Optimize later if anyone uses it.
-- **PowerShell-side completion.** Native PowerShell tab completion
-  uses `Register-ArgumentCompleter`. ArgumentParser doesn't generate
-  PowerShell completion natively; could either auto-translate from
-  the bash completion script or hand-write a `.ps1` shim. Defer.
+- **Whether to do at all.** Still the dominant question. The
+  WSL-resident approach makes the implementation cost reasonable
+  (Linux Swift is the toolchain the implementer already has from
+  `mpd-kvm`), so the bar drops. But zero current Windows users
+  means the "build it now" case is still weak. Build when a real
+  Windows mpd user shows up.
+- **WSL → Windows path edge cases.** `wslpath` is reliable for
+  user-profile paths but can be fussy with UNC paths, drive
+  mappings, and case-sensitive collisions. Worth a defensive helper
+  that wraps `wslpath -w`/`-u` with explicit error handling on
+  weird inputs.
+- **`Export-VM` + `Import-VM` cloning is slow** (full disk copy)
+  compared to Parallels'. Hyper-V supports differencing disks but the
+  UX is clunky. First-cut: full clone via the export/import
+  round-trip. Optimize later if anyone uses it.
+- **PowerShell tab completion.** Native PowerShell completion uses
+  `Register-ArgumentCompleter`. The mpd-hpv binary lives in WSL, so
+  `mpd-hpv <TAB>` works in WSL bash/zsh via ArgumentParser's
+  generated completion script. `wsl mpd-hpv <TAB>` from a Windows
+  shell doesn't propagate completion through the wsl wrapper —
+  acceptable; Windows users who want completion can either invoke
+  from a WSL terminal or write a PowerShell completion shim.

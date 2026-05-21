@@ -150,55 +150,92 @@ as a primary motivation here. Spec:
 3. After each manual copy-and-run, re-detect what's still needed.
    If the user fixed everything by hand, exit without prompting again.
 
-Centralize this in `Mpd.Environment.Host.SudoRecipe` so kvm and hpv
-can reuse it (the kvm one calls `xclip -selection clipboard` or
-`wl-copy` instead of `pbcopy`; hpv uses `Set-Clipboard` via
-PowerShell). The protocol:
+Lives at `Mpd.PRL.Host.SudoRecipe` inside the `mpd-prl` target.
+Future mpd-kvm and mpd-hpv reimplement the same shape under
+`Mpd.KVM.Host.SudoRecipe` / `Mpd.HPV.Host.SudoRecipe` — the recipe
+logic is ~30 lines wrapping per-platform calls (pbcopy vs.
+xclip/wl-copy vs. Set-Clipboard, sudo vs. UAC re-launch), so the
+duplication is honest. Pre-abstracting into a cross-binary library
+would have been more code than the duplication and would have hidden
+the platform variance.
+
+A protocol-shaped sketch of the clipboard call inside the mpd-prl
+recipe:
 
 ```swift
-protocol ClipboardWriter {
-    func write(_ text: String) throws
+// Inside mpd-prl/Mpd.PRL.Host/SudoRecipe.swift
+private func copyToPasteboard(_ text: String) throws {
+    var stdin: FileHandle?
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/pbcopy")
+    // pipe text into pbcopy's stdin …
 }
 ```
 
-Per-platform impl: `MacOSPasteboard`, `LinuxClipboard` (auto-detects
-xclip/wl-copy), `WindowsClipboard`.
-
 ## Swift namespace layout
 
-Add a third sibling under `Mpd.Environment`, parallel to existing
-`Desktop` and `Machine`:
+One library target, two executables. Genuine cross-binary reuse is
+small enough that a single library covers it; everything else lives
+inside its consuming executable.
+
+**Library: `MpdCore`** (built for every platform mpd ever ships on)
 
 ```
-Mpd
-├── Core                            # platform-agnostic (existing)
-├── Environment
-│   ├── Desktop                     # mpd-desktop (existing, macOS-only)
-│   ├── Machine                     # mpd-machine in-VM (existing, Linux-only)
-│   └── Host                        # NEW: host-side drivers for mpd-machine
-│       ├── (sudo-recipe printer)   # shared across backends
-│       ├── (clipboard helper)      # shared, platform-specific impls
-│       ├── (state file reader)     # shared
-│       ├── (route abstraction)     # protocol; per-OS impls
-│       └── Parallels               # macOS-only
-│           ├── PRLCtl              # wrapper around `prlctl`
-│           ├── Setup               # create / clone / configure verb impls
-│           ├── Doctor              # health check
-│           └── Lifecycle           # start / stop / suspend / ssh
-├── Runtime                         # existing
-├── Service                         # existing
-└── CLI                             # existing
+MpdCore  (Swift module)
+└── Mpd.Core
+    ├── Platform        # platform.env reader (existing)
+    ├── State           # JSON state files (existing)
+    ├── Assets          # assets path resolution (existing)
+    ├── Identity        # dev-user / host identity (existing)
+    └── Certificate     # CA generation via OpenSSL/Process()
+                        # promoted from Mpd.Environment.Certificate —
+                        # it's foundational, not environment-specific
 ```
 
-Shared host-side code (sudo recipe, clipboard, state files, route
-abstraction protocol) lives at `Mpd.Environment.Host`. Backend
-specifics (PRLCtl, libvirt, Hyper-V) live under
-`Mpd.Environment.Host.<Backend>`.
+**Executable: `mpd`** (existing — Linux in-VM and macOS desktop)
 
-Pull `Mpd.Core` + `Mpd.Environment.Certificate` into a shared library
-target in `Package.swift` so both `mpd` and `mpd-prl` (and future
-`mpd-kvm`/`mpd-hpv`) link against it without duplication. Half-day
-refactor; pays dividends regardless of whether kvm/hpv ever ship.
+```
+mpd  (Swift module, imports MpdCore)
+├── Mpd.Environment
+│   ├── Desktop         # macOS Podman Desktop + WireGuard
+│   └── Machine         # Linux in-VM
+├── Mpd.Runtime
+├── Mpd.Service
+└── Mpd.CLI
+```
+
+**Executable: `mpd-prl`** (new — macOS host)
+
+```
+mpd-prl  (Swift module, imports MpdCore, macOS-only)
+├── Mpd.PRL.Parallels   # prlctl wrappers
+├── Mpd.PRL.Host        # sudo recipe printer, pasteboard helper,
+│                       # route + resolver + keychain via Process()
+├── Mpd.PRL.Setup       # setup / clone / configure verb impls
+├── Mpd.PRL.Doctor      # health check verb impl
+├── Mpd.PRL.Lifecycle   # start / stop / suspend / ssh verb impls
+└── Mpd.PRL.CLI
+```
+
+**What deliberately isn't shared:**
+
+The sudo-recipe printer, pasteboard helper, host networking helpers —
+their cross-platform shape is thin enough that the duplication
+between mpd-prl, future mpd-kvm, and future mpd-hpv is less code
+than the abstraction would be. Each binary owns its own host-side
+machinery in its own namespace (`Mpd.PRL.Host`, `Mpd.KVM.Host`,
+`Mpd.HPV.Host`). The honest reuse — Core + Certificate — is the only
+thing in a library.
+
+The `Mpd` enum is defined in MpdCore as `public enum Mpd { public
+enum Core { ... } }`; the consuming executable extends it
+(`extension Mpd { enum Environment { ... } }` etc.). Mechanical
+Swift; no naming gymnastics.
+
+Migration footnote: today's `Mpd.Environment.Certificate` is a global
+symbol used in 1–2 call sites in the existing `mpd` executable.
+Promotion to `Mpd.Core.Certificate` is a single-import + qualified-name
+update.
 
 ## State files
 
@@ -404,14 +441,18 @@ of scope for `mpd-prl` itself.
 
 ## Package.swift changes
 
-1. Add a `Mpd.Shared` library target containing `Mpd.Core` +
-   `Mpd.Environment.Certificate` + `Mpd.Environment.Host.*`
-   (cross-cutting host-side code).
-2. Existing `mpd` executable depends on `Mpd.Shared`.
-3. New `mpd-prl` executable depends on `Mpd.Shared` +
-   `Mpd.Environment.Host.Parallels`.
-4. Both executables compile from the same sources; only the entry
-   point and the per-target `Mpd.CLI` command surface differ.
+1. Carve out `mpd/Core/` (existing namespace) and move
+   `mpd/Environment/Certificate.swift` into it, renaming the
+   namespace from `Mpd.Environment.Certificate` to
+   `Mpd.Core.Certificate`.
+2. Define a library target `MpdCore` whose sources are `mpd/Core/`
+   only. This library declares the root `Mpd` namespace (as a public
+   enum) so both executables can extend it with their own
+   sub-namespaces.
+3. Existing `mpd` executable target gains a dependency on `MpdCore`
+   and excludes `Core/` from its own sources.
+4. New `mpd-prl` executable target, macOS-only, also depends on
+   `MpdCore`.
 
 ```swift
 // sketch
@@ -419,24 +460,28 @@ let package = Package(
     name: "mpd",
     targets: [
         .target(
-            name: "Mpd.Shared",
-            path: "mpd/Shared"
+            name: "MpdCore",
+            path: "mpd/Core"
         ),
         .executableTarget(
             name: "mpd",
-            dependencies: ["Mpd.Shared"],
+            dependencies: ["MpdCore"],
             path: "mpd",
-            exclude: ["Shared"]
+            exclude: ["Core"]
         ),
         .executableTarget(
             name: "mpd-prl",
-            dependencies: ["Mpd.Shared"],
+            dependencies: ["MpdCore"],
             path: "mpd-prl",
             condition: .when(platforms: [.macOS])
         ),
     ]
 )
 ```
+
+That's it. No shared "Host" library. `mpd-prl`'s sudo-recipe printer,
+pasteboard helper, route/resolver/keychain code live under its own
+`Mpd.PRL.Host` namespace inside the `mpd-prl` target.
 
 ## Testing
 
@@ -455,13 +500,17 @@ let package = Package(
 
 ## Open questions
 
-- **Single Mpd.Shared library or `Mpd.Core` + `Mpd.Environment.Host`
-  as two separate library targets?** Two is technically cleaner
-  (Core is platform-agnostic, Host is "host-side, OS-specific"); one
-  is simpler to manage. Decide based on whether you eventually want
-  `Mpd.Core` consumed by anything else.
 - **Codesigning / notarization** if `mpd-prl` ever gets distributed
   outside `make install`. Apple Developer ID + altool dance. Defer.
 - **Status-bar app / Dock notifications.** Tempting once Swift is on
   the host; explicitly out of scope here. Could become its own
   proposal later.
+- **Host-side namespace reuse if mpd-kvm/mpd-hpv ever ship.** The
+  expectation here is each binary owns its own `Mpd.<Backend>.Host.*`
+  code, duplicated rather than lifted. If real cross-binary code
+  emerges and the duplication starts to actually bite, the
+  refactor at that point is straightforward: lift the shared
+  fragments into a new library target named after the actual
+  content (e.g. `MpdSudoRecipe`), not a generic "shared"
+  catch-all. Avoid pre-abstracting before the duplication actually
+  bites.

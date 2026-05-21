@@ -30,8 +30,8 @@ layout. Implement `mpd-prl` first; this proposal is the diff against it.
 
 ### `prlctl` → `virsh`
 
-Swap `Mpd.Environment.Host.Parallels.PRLCtl` for
-`Mpd.Environment.Host.LibvirtKVM.Virsh`. Verb mapping:
+Swap `mpd-prl`'s `Mpd.PRL.Parallels` namespace (prlctl wrappers) for
+`Mpd.KVM.Libvirt` inside the `mpd-kvm` target. Verb mapping:
 
 | mpd-prl uses                 | mpd-kvm uses                              |
 |------------------------------|-------------------------------------------|
@@ -62,8 +62,9 @@ generalize.
 ### Host-side networking (the bigger delta)
 
 Linux host integration differs substantially from macOS. The Swift
-abstraction is the `Mpd.Environment.Host.Route` protocol; per-OS
-implementations:
+abstraction is in `Mpd.KVM.Host` inside the mpd-kvm target. (Same
+shape as `mpd-prl`'s `Mpd.PRL.Host`, duplicated rather than lifted —
+see parallels proposal §"Swift namespace layout".) Per-OS deltas:
 
 | Operation                  | macOS                                                | Linux                                                                  |
 |----------------------------|------------------------------------------------------|------------------------------------------------------------------------|
@@ -76,7 +77,7 @@ implementations:
 
 All of this is encoded in today's `setup/linux/lib/configure-client.sh`
 and `setup/linux/lib/common.sh` — port that knowledge into Swift
-methods under `Mpd.Environment.Host.LibvirtKVM.HostNetworking`.
+methods under `Mpd.KVM.Host.Networking`.
 
 ### Clipboard helper
 
@@ -124,7 +125,7 @@ Add to the `mpd-prl` shape:
 ```swift
 .executableTarget(
     name: "mpd-kvm",
-    dependencies: ["Mpd.Shared"],
+    dependencies: ["MpdCore"],
     path: "mpd-kvm",
     condition: .when(platforms: [.linux])
 ),
