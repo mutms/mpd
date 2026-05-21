@@ -129,9 +129,16 @@ plus passwordless sudo.
 4. **Never identity-switch to a non-root user.** All of the
    following are forbidden — anywhere in mpd shell code, no
    exceptions: `sudo -u <user>`, `runuser -u <user>`, `runuser
-   <user>`, `su - <user>`, `su <user> -c …`. If you find yourself
-   reaching for one, the orchestrator is invoking the script with
-   the wrong identity — fix that, don't switch in-script.
+   <user>`, `su <user>`, `su - <user>`, `su <user> -c …`. If you find
+   yourself reaching for one, the orchestrator is invoking the script
+   with the wrong identity — fix that, don't switch in-script.
+
+   *Elevation to root* via `su -c '<cmd>'` or `su -` / `su -l` (no
+   target user — defaults to root) is **allowed**. The sandbox
+   take-over bootstrap uses `su -c` to write the NOPASSWD sudoers
+   drop-in on vanilla Debian (where the user isn't in the `sudo`
+   group yet); the same one-shot/root-only pattern as `sudo bash -c`
+   from inside the script.
 
 **Single bootstrap exception.** The dev user must exist before
 rule (1) can hold. Exactly one root-context script,
