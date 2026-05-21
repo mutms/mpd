@@ -138,22 +138,69 @@ extension Mpd.Environment.Action.Setup {
         return h.hasPrefix(prefix) ? "-" + String(h.dropFirst(prefix.count)) : ""
     }
 
-    /// Drop /etc/profile.d/mpd-machine.sh that prepends the repo's
-    /// `bin/machine/` directory to PATH for every login shell on the
-    /// mpd-machine VM. Idempotent — re-run rewrites the file. Uses
-    /// literal `$HOME` so the snippet works for any account that might
-    /// log into the VM (single-user expected, but no reason to hardcode).
+    /// Append a single conditional `PATH` line to the dev user's
+    /// `~/.bashrc` so `bin/machine/` tools (demo, claude-install, …) are
+    /// on PATH in every bash session. Same shape as Debian's stock
+    /// `~/.profile` block for `~/.local/bin`.
+    ///
+    /// Single-user assumption: mpd-machine is a sandbox VM with one
+    /// developer account, so user-scoped wiring is enough — no sudo, no
+    /// /etc/profile.d (where ordering/file-existence-at-login bites IDE
+    /// terminals that snapshot env before mpd --setup runs).
+    ///
+    /// Idempotent: the marker comment is the dedupe key. Re-runs no-op.
+    /// Also strips the legacy provision.sh snippet that sourced
+    /// /etc/profile.d/mpd-machine.sh, then `sudo rm`s the drop-in.
     private static func installMachineBinPath() throws {
-        let snippet = "export PATH=\"$HOME/Developer/mpd/bin/machine:$PATH\"\n"
-        let tmp = "/tmp/mpd-machine-path.sh"
-        try snippet.write(toFile: tmp, atomically: true, encoding: .utf8)
-        defer { try? FileManager.default.removeItem(atPath: tmp) }
-        guard Mpd.Environment.HostExec.run(
-            ["sudo", "install", "-D", "-m", "644", tmp, "/etc/profile.d/mpd-machine.sh"]
-        ) == 0 else {
-            throw RuntimeError("Failed to install /etc/profile.d/mpd-machine.sh.")
+        let bashrc = "\(NSHomeDirectory())/.bashrc"
+        let marker = "# mpd-machine: bin/machine on PATH"
+        let snippet = """
+
+        \(marker)
+        if [ -d "$HOME/Developer/mpd/bin/machine" ] ; then
+            PATH="$HOME/Developer/mpd/bin/machine:$PATH"
+        fi
+
+        """
+
+        var contents = (try? String(contentsOfFile: bashrc, encoding: .utf8)) ?? ""
+        let original = contents
+        contents = stripLegacyBashrcSnippet(contents)
+        if !contents.contains(marker) {
+            if !contents.isEmpty && !contents.hasSuffix("\n") { contents += "\n" }
+            contents += snippet
         }
-        ok("/etc/profile.d/mpd-machine.sh — adds bin/machine/ to PATH.")
+        if contents != original {
+            do {
+                try contents.write(toFile: bashrc, atomically: true, encoding: .utf8)
+            } catch {
+                throw RuntimeError("Failed to write \(bashrc): \(error.localizedDescription)")
+            }
+        }
+
+        // Clean up the legacy /etc/profile.d drop-in for upgraders.
+        // Best-effort (file may be absent or sudo may be unavailable).
+        _ = Mpd.Environment.HostExec.run(
+            ["sudo", "rm", "-f", "/etc/profile.d/mpd-machine.sh"])
+
+        ok("~/.bashrc — adds bin/machine/ to PATH (run `source ~/.bashrc` to update the current shell).")
+    }
+
+    /// Strip the older provision.sh-installed bashrc snippet that sourced
+    /// /etc/profile.d/mpd-machine.sh. Removes the marker comment plus the
+    /// next line. No-op when absent.
+    private static func stripLegacyBashrcSnippet(_ text: String) -> String {
+        let legacy = "# mpd-machine: pick up /etc/profile.d/mpd-machine.sh for non-login shells"
+        guard text.contains(legacy) else { return text }
+        let lines = text.components(separatedBy: "\n")
+        var out: [String] = []
+        var skipNext = false
+        for line in lines {
+            if skipNext { skipNext = false; continue }
+            if line == legacy { skipNext = true; continue }
+            out.append(line)
+        }
+        return out.joined(separator: "\n")
     }
 
     /// Install assets/machine/motd as /etc/motd and disable Debian's

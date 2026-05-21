@@ -59,9 +59,10 @@ Idempotent — safe to re-run any time. Walks you through:
 - creating the Podman network and data volume
 - bringing up the always-on infra services (dnsmasq, portal, Adminer,
   fileaccess) inside the VM
-- adding `~/Developer/mpd/bin/machine/` to login PATH (via
-  `/etc/profile.d/mpd-machine.sh`) so VM-side helpers like
-  `claude-install` are reachable from a fresh shell
+- adding `~/Developer/mpd/bin/machine/` to PATH via a conditional
+  block appended to `~/.bashrc` (mirrors Debian's stock
+  `~/.local/bin` pattern) so VM-side helpers like `claude-install`
+  are reachable from any new shell
 - a final DNS sanity check
 
 Run `mpd --setup-info` any time to print the platform identity plus a

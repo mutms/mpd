@@ -304,12 +304,11 @@ holds your project) and open /srv/projects/<your-project>/. The
 runtime container lives in this same VM, so the connection is
 local — no host↔VM hop.
 
-To use mpd's tools (demo, etc.) in THIS shell right now, pick up the
-PATH drop-in that 'mpd --setup' just installed:
+'mpd --setup' added bin/machine/ to your PATH via ~/.bashrc. Any new
+shell (GNOME Terminal tab, SSH session, IDE terminal) picks it up
+automatically. For THIS shell, refresh now with:
 
-    source /etc/profile.d/mpd-machine.sh
-
-Any new SSH session will pick it up automatically.
+    source ~/.bashrc
 
 Create a Moodle project:
 
