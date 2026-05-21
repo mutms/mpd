@@ -54,72 +54,81 @@ ok "SSH key: $SSH_KEY"
 
 step "VM selection"
 
-current_octet=$(get_current_vm_octet)
+# Tracked VMs come from ~/.mpd-machine/<uuid>.env files; get_mpd_vms
+# resolves the current friendly name + state from prlctl. Lines look
+# like "<uuid>\t<name>\t<state>".
+current_uuid=$(get_current_vm_uuid)
 vm_lines=()
 while IFS= read -r line; do
     vm_lines+=("$line")
 done < <(get_mpd_vms)
 
 echo
+SELECTED_UUID=""
+SELECTED_NAME=""
+SELECTED_IP=""
+SELECTED_USER=""
+NEW_VM=0
+
 if [ ${#vm_lines[@]} -gt 0 ]; then
     echo "    Existing mpd VMs:"
+    default_idx=1
+    idx=0
     for line in "${vm_lines[@]}"; do
-        name=$(awk '{print $1}' <<<"$line")
-        state=$(awk '{print $2}' <<<"$line")
-        octet=$(extract_octet "$name")
+        idx=$((idx + 1))
+        uuid=$(awk -F'\t' '{print $1}' <<<"$line")
+        name=$(awk -F'\t' '{print $2}' <<<"$line")
+        state=$(awk -F'\t' '{print $3}' <<<"$line")
         tag=""
-        [ -n "$octet" ] && [ "$octet" = "$current_octet" ] && tag="  <-- current"
-        printf '      %-22s %s%s\n' "$name" "$state" "$tag"
+        if [ -n "$current_uuid" ] && [ "$uuid" = "$current_uuid" ]; then
+            tag="  <-- current"
+            default_idx=$idx
+        fi
+        printf '      [%d]  %-24s %-10s %s\n' "$idx" "$name" "$state" "$tag"
     done
     echo
-
-    default_octet="$current_octet"
-    if [ -z "$default_octet" ] \
-       || ! printf '%s\n' "${vm_lines[@]}" | awk '{print $1}' \
-            | grep -qx "${VM_NAME_PREFIX}${default_octet}"; then
-        first_name=$(awk '{print $1}' <<<"${vm_lines[0]}")
-        default_octet=$(extract_octet "$first_name")
-    fi
-    if [ -n "$default_octet" ]; then
-        prompt="Enter VM number [${default_octet}]: "
-    else
-        prompt="Enter VM number: "
-    fi
+    prompt="Pick a VM by number [${default_idx}], or 'n' for a new VM: "
 else
     echo "    No mpd VMs found yet."
     echo
-    default_octet="155"
-    prompt="Enter last IP octet for the new VM [${default_octet}] (must be ${MIN_STATIC_OCTET}–${MAX_STATIC_OCTET}, since Parallels DHCP owns .1–.$(($MIN_STATIC_OCTET - 1))): "
+    default_idx=""
+    prompt="Press Enter (or 'n') to create the first mpd VM: "
 fi
 
-VM_OCTET=""
-while [ -z "$VM_OCTET" ]; do
+while :; do
     read -r -p "    $prompt" inp
-    inp="${inp:-$default_octet}"
-    if [[ "$inp" =~ ^[0-9]+$ ]] \
-       && [ "$inp" -ge "$MIN_STATIC_OCTET" ] && [ "$inp" -le "$MAX_STATIC_OCTET" ]; then
-        VM_OCTET="$inp"
-    else
-        echo "    Please enter a number between ${MIN_STATIC_OCTET} and ${MAX_STATIC_OCTET} (the Parallels Shared DHCP pool owns .1–.$(($MIN_STATIC_OCTET - 1)))."
+    inp="${inp:-${default_idx:-n}}"
+    if [[ "$inp" =~ ^[Nn]$ ]] || [ -z "$inp" ]; then
+        NEW_VM=1
+        break
     fi
+    if [[ "$inp" =~ ^[0-9]+$ ]] && [ "$inp" -ge 1 ] && [ "$inp" -le ${#vm_lines[@]} ]; then
+        sel="${vm_lines[$((inp - 1))]}"
+        SELECTED_UUID=$(awk -F'\t' '{print $1}' <<<"$sel")
+        SELECTED_NAME=$(awk -F'\t' '{print $2}' <<<"$sel")
+        SELECTED_IP=$(get_vm_ip_by_uuid "$SELECTED_UUID")
+        SELECTED_USER=$(get_vm_ssh_user_by_uuid "$SELECTED_UUID")
+        break
+    fi
+    echo "    Enter a number in [1..${#vm_lines[@]}] to pick an existing VM, or 'n' to create a new one."
 done
-
-VM_NAME="${VM_NAME_PREFIX}${VM_OCTET}"
-VM_IP="${BRIDGE_SUBNET}.${VM_OCTET}"
 
 # --- Branch on selection ---
 
-if vm_exists "$VM_NAME"; then
-    VM_USER=$(get_vm_ssh_user "$VM_NAME")
+if [ "$NEW_VM" = 0 ]; then
+    VM_UUID="$SELECTED_UUID"
+    VM_NAME="$SELECTED_NAME"
+    VM_IP="$SELECTED_IP"
+    VM_USER="$SELECTED_USER"
 
-    if [ "$VM_OCTET" = "${current_octet:-}" ]; then
+    if [ "$VM_UUID" = "${current_uuid:-}" ]; then
         # ── Re-verify current VM ──────────────────────────────────────────
         step "Re-verifying current VM (${VM_NAME} at ${VM_IP})"
 
-        state=$(get_vm_state "$VM_NAME")
+        state=$(get_vm_state "$VM_UUID")
         if [ "$state" != "running" ]; then
             echo "    VM state is ${state} — starting..."
-            vm_start "$VM_NAME"
+            vm_start "$VM_UUID"
             wait_for_ssh "$VM_IP" "$VM_USER" 120 \
                 || die "SSH not available after 120s."
             ok "VM online"
@@ -128,7 +137,10 @@ if vm_exists "$VM_NAME"; then
         fi
     else
         # ── Switch to a different VM ──────────────────────────────────────
-        current_name="${current_octet:+${VM_NAME_PREFIX}${current_octet}}"
+        current_name=""
+        if [ -n "${current_uuid:-}" ]; then
+            current_name=$(get_vm_name_by_uuid "$current_uuid")
+        fi
         current_name="${current_name:-(none)}"
         echo
         read -r -p "    Suspend ${current_name} and switch to ${VM_NAME}? [Y/n]: " inp
@@ -137,19 +149,18 @@ if vm_exists "$VM_NAME"; then
             exit 0
         fi
 
-        if [ -n "${current_octet:-}" ]; then
-            cur="${VM_NAME_PREFIX}${current_octet}"
-            if vm_exists "$cur" && [ "$(get_vm_state "$cur")" = "running" ]; then
-                step "Suspending ${cur}"
-                vm_suspend "$cur"
-                ok "Suspended"
-            fi
+        if [ -n "${current_uuid:-}" ] \
+           && vm_exists "$current_uuid" \
+           && [ "$(get_vm_state "$current_uuid")" = "running" ]; then
+            step "Suspending ${current_name}"
+            vm_suspend "$current_uuid"
+            ok "Suspended"
         fi
 
         clear_known_hosts
 
         step "Starting ${VM_NAME}"
-        vm_start "$VM_NAME"
+        vm_start "$VM_UUID"
         wait_for_ssh "$VM_IP" "$VM_USER" 180 \
             || die "SSH not available after 180s."
         ok "SSH ready"
@@ -160,8 +171,40 @@ if vm_exists "$VM_NAME"; then
 else
     # ── Create new VM ────────────────────────────────────────────────────
     echo
-    echo "    No VM named '${VM_NAME}' found — cloning from '${TEMPLATE_NAME}'."
+    echo "    Cloning a new VM from template '${TEMPLATE_NAME}'."
     echo
+
+    # IP octet (drives the VM's static IP, default Parallels name, and host
+    # route). User can rename the VM in Parallels later; mpd tracks by UUID
+    # so the rename is invisible to the host-side state files.
+    VM_OCTET=""
+    while [ -z "$VM_OCTET" ]; do
+        read -r -p "    Last IP octet for the new VM [155] (must be ${MIN_STATIC_OCTET}–${MAX_STATIC_OCTET}, since Parallels DHCP owns .1–.$(($MIN_STATIC_OCTET - 1))): " inp
+        inp="${inp:-155}"
+        if [[ "$inp" =~ ^[0-9]+$ ]] \
+           && [ "$inp" -ge "$MIN_STATIC_OCTET" ] && [ "$inp" -le "$MAX_STATIC_OCTET" ]; then
+            # Reject if an existing tracked VM already uses this IP.
+            existing_uuid=$(get_uuid_by_ip "${BRIDGE_SUBNET}.${inp}")
+            if [ -n "$existing_uuid" ]; then
+                existing_name=$(get_vm_name_by_uuid "$existing_uuid")
+                echo "    Octet ${inp} is already used by VM '${existing_name}' (uuid=${existing_uuid}). Pick a different octet, or select that VM from the list above."
+            else
+                VM_OCTET="$inp"
+            fi
+        else
+            echo "    Please enter a number between ${MIN_STATIC_OCTET} and ${MAX_STATIC_OCTET}."
+        fi
+    done
+
+    VM_NAME="${VM_NAME_PREFIX}${VM_OCTET}"
+    VM_IP="${BRIDGE_SUBNET}.${VM_OCTET}"
+
+    # Refuse if Parallels already has a VM under that initial name (we
+    # only collide on the name we'd create — a renamed VM at the same IP
+    # was already caught above by the IP check).
+    if vm_exists "$VM_NAME"; then
+        die "Parallels already has a VM named '${VM_NAME}'. Delete it or pick a different octet."
+    fi
 
     # Username
     user_guess=$(whoami | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-')
@@ -258,20 +301,27 @@ else
     fi
 
     # Suspend any currently-active VM before we create.
-    if [ -n "${current_octet:-}" ]; then
-        cur="${VM_NAME_PREFIX}${current_octet}"
-        if vm_exists "$cur" && [ "$(get_vm_state "$cur")" = "running" ]; then
-            step "Suspending ${cur}"
-            vm_suspend "$cur"
-            ok "Suspended"
-        fi
+    if [ -n "${current_uuid:-}" ] \
+       && vm_exists "$current_uuid" \
+       && [ "$(get_vm_state "$current_uuid")" = "running" ]; then
+        cur_name=$(get_vm_name_by_uuid "$current_uuid")
+        step "Suspending ${cur_name:-${current_uuid}}"
+        vm_suspend "$current_uuid"
+        ok "Suspended"
     fi
 
     echo
     echo "    Cloning VM: name=${VM_NAME}  IP=${VM_IP}  user=${VM_USER}  memory=${VM_MEMORY_GB}GB  disk=${VM_DISK_SIZE}GB"
     echo
 
-    bash "${SCRIPT_DIR}/create-vm.sh" \
+    # create-vm.sh writes the new VM's UUID to this file on success.
+    NEW_VM_UUID_FILE=$(mktemp -t mpd-new-vm-uuid)
+    trap '
+        sudo -k 2>/dev/null || true
+        rm -f "$NEW_VM_UUID_FILE"
+    ' EXIT
+
+    MPD_NEW_VM_UUID_FILE="$NEW_VM_UUID_FILE" bash "${SCRIPT_DIR}/create-vm.sh" \
         --octet="$VM_OCTET" \
         --user="$VM_USER" \
         --ssh-pub-key="$SSH_KEY" \
@@ -279,6 +329,9 @@ else
         --disk-gb="$VM_DISK_SIZE" \
         --host-ca-pem="$HOST_CA_PEM" \
         --host-ca-key="$HOST_CA_KEY"
+
+    VM_UUID=$(<"$NEW_VM_UUID_FILE")
+    [ -n "$VM_UUID" ] || die "create-vm.sh did not record a UUID at ${NEW_VM_UUID_FILE}."
 
     # Pre-warm demo stack so the user's first `demo moodle …` is fast.
     step "Pre-warming demo runtime and database"
@@ -295,9 +348,15 @@ else
 fi
 
 # --- State refresh ---
+# Re-resolve the friendly name from Parallels (the user may have renamed
+# it between setup runs); we use the current name in the SSH config
+# alias and as the snapshot in current.env.
+
+resolved_name=$(get_vm_name_by_uuid "$VM_UUID")
+[ -n "$resolved_name" ] && VM_NAME="$resolved_name"
 
 set_mpd_ssh_config    "$VM_NAME" "$VM_IP" "$VM_USER"
-write_mpd_current_env "$VM_NAME" "$VM_IP" "$VM_USER"
+write_mpd_current_env "$VM_UUID" "$VM_NAME" "$VM_IP" "$VM_USER"
 ensure_desktop_shortcut
 
 # --- Done ---

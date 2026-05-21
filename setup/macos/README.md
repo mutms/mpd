@@ -15,11 +15,10 @@ is provisioned from a Parallels template you build once and reuse.
 | File | What it does |
 |---|---|
 | `setup.command` | Clone the template into a new mpd VM or switch the active VM (double-click). |
-| `start.command` | Start the current VM. |
-| `stop.command` | Suspend all mpd VMs (state preserved on disk; resumes instantly). |
+| `doctor.command` | List all mpd-tracked VMs with state; if exactly one is running, verify + re-apply host route / DNS resolver / CA trust. |
 | `uninstall.command` | Delete all mpd VMs and remove host networking. |
 
-All four are double-clickable from Finder — macOS opens Terminal.app
+All three are double-clickable from Finder — macOS opens Terminal.app
 automatically. Implementation lives under [`lib/`](lib/) (`*.sh` scripts —
 no need to open them).
 
@@ -28,6 +27,12 @@ You can also invoke the underlying scripts directly from a Terminal:
 ```bash
 bash setup/macos/lib/setup.sh
 ```
+
+VM start / suspend / shutdown is **owned by Parallels Desktop** — use
+the GUI (Cmd+R, Cmd+P, the toolbar buttons) or `prlctl start|stop|
+suspend <name-or-uuid>` directly. mpd no longer ships start/stop shims;
+they were a UTM-era crutch and Parallels' own VM management is good
+enough on its own.
 
 ## Prerequisites
 
@@ -46,9 +51,10 @@ choice: open another Terminal and run them yourself, or press Enter and
 let `setup.command` sudo for you. On a Mac that's already configured,
 no password prompt happens at all.
 
-Day-to-day `start.command` and `stop.command` rarely need sudo (only
-`start.command` after a host reboot, to re-add the container subnet
-route).
+After a host reboot the route to `10.163.0.0/24` is gone — run
+`doctor.command` to re-add it (one sudo prompt). Doctor also surfaces
+the IP-collision footgun if you forget and start more than one mpd VM at
+once.
 
 ## VM template preparation
 
@@ -149,15 +155,30 @@ When switching to a different VM: the current VM is suspended in
 Parallels, the selected VM starts (or resumes), and macOS networking is
 updated to point to the new VM (route + CA).
 
-## `start.command` / `stop.command`
+## `doctor.command`
 
-`start.command` — starts the VM that is currently configured (detected
-from the persistent route or `~/.mpd-machine/current.env`). Re-asserts
-the route afterward (the route does not survive a host reboot). No
-prompts.
+Prints every mpd-tracked VM with its current state (running / stopped /
+suspended). For each running VM it shows whether the host route
+currently points at that VM's IP ("configured" vs. "NOT configured").
 
-`stop.command` — suspends all running mpd VMs via `prlctl suspend`.
-Useful before shutting down the Mac. No prompts, no sudo.
+Then:
+
+- **Exactly one running** — verifies + re-applies host networking
+  (route to `10.163.0.0/24`, `/etc/resolver/mpd.test`, mpd CA in the
+  System keychain). Same sudo-recipe affordance as `setup.command`. If
+  `current.env` was pointing at a different VM, doctor refreshes it +
+  the SSH alias to match the running one.
+- **More than one running** — warns (the IP collision footgun) and
+  exits without changing anything. Suspend all but one (Parallels:
+  Cmd+P, free + instant) and re-run.
+- **None running** — reports and exits. Nothing to fix.
+
+Day-to-day use: run after a host reboot (the route doesn't persist), or
+any time `https://mpd.test/` stops resolving. Doctor is idempotent and
+safe to re-run.
+
+VM start / suspend / shutdown stays inside Parallels — use the GUI or
+`prlctl start|stop|suspend <name-or-uuid>`.
 
 ## `uninstall.command`
 

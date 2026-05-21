@@ -13,10 +13,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${SCRIPT_DIR}/common.sh"
 
 # --- Discover VMs ---
+# Each entry is "<uuid>|<name>|<state>" so we can drive prlctl by UUID
+# but show the friendly name to the user in the per-VM prompt.
 
 vms=()
-while IFS=$'\t' read -r name state; do
-    [ -n "$name" ] && vms+=("${name}|${state}")
+while IFS=$'\t' read -r uuid name state; do
+    [ -n "$uuid" ] && vms+=("${uuid}|${name}|${state}")
 done < <(get_mpd_vms)
 
 # --- Detect host cleanup targets (read-only — no sudo needed) ---
@@ -104,7 +106,9 @@ if [ ${#vms[@]} -eq 0 ]; then
 else
     echo "Existing mpd VMs (you'll be asked about each individually at the end):"
     for entry in "${vms[@]}"; do
-        echo "    ${entry%|*}  (${entry#*|})"
+        # entry = uuid|name|state
+        IFS='|' read -r e_uuid e_name e_state <<<"$entry"
+        echo "    ${e_name}  (${e_state})"
     done
     echo
     echo "If you keep any VM, host networking will still be removed; re-run"
@@ -187,23 +191,26 @@ if [ ${#vms[@]} -gt 0 ]; then
     echo
     echo "VM deletion (default keeps each VM — press Enter or 'n' to skip):"
     for entry in "${vms[@]}"; do
-        name="${entry%|*}"
-        state="${entry#*|}"
+        IFS='|' read -r uuid name state <<<"$entry"
         read -r -p "    Delete ${name} (${state})? [y/N]: " ans
         if [[ "$ans" =~ ^[Yy] ]]; then
             if [ "$state" != "stopped" ]; then
                 echo "    Stopping ${name} ..."
-                vm_force_stop "$name" 2>/dev/null || true
+                vm_force_stop "$uuid" 2>/dev/null || true
                 elapsed=0
                 while [ "$elapsed" -lt 20 ]; do
-                    [ "$(get_vm_state "$name")" = "stopped" ] && break
+                    [ "$(get_vm_state "$uuid")" = "stopped" ] && break
                     sleep 1
                     elapsed=$((elapsed + 1))
                 done
             fi
             echo "    Deleting ${name} ..."
-            vm_delete "$name" 2>/dev/null \
-                || warn "Could not delete ${name} via prlctl — remove it from Parallels Desktop manually."
+            if vm_delete "$uuid" 2>/dev/null; then
+                # Drop the now-stale state file too.
+                rm -f "${STATE_DIR}/${uuid}.env"
+            else
+                warn "Could not delete ${name} via prlctl — remove it from Parallels Desktop manually."
+            fi
         else
             echo "    Kept ${name}."
         fi

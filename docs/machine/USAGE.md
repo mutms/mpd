@@ -19,8 +19,9 @@ Pick the path that matches your host:
   Double-click `setup.command`. Clones a one-time-built Parallels VM
   template (`mpd-machine-template`) via `prlctl`, configures the clone
   over SSH, and applies macOS networking (route, resolver, CA).
-  Requires Parallels Desktop Pro. `start.command` / `stop.command` /
-  `uninstall.command` cover the lifecycle.
+  Requires Parallels Desktop Pro. `doctor.command` re-applies host
+  networking when needed; `uninstall.command` tears everything down.
+  VM start / suspend / shutdown is owned by Parallels' GUI.
 - **Ubuntu 26.04 LTS + libvirt/KVM (automated)** —
   [`setup/linux/`](../../setup/linux/README.md).
   `bash setup.sh` from a terminal: preflight (apt deps, libvirt group,

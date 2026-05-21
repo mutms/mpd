@@ -17,9 +17,9 @@
 # it themselves vs. letting the script sudo. If everything is already in
 # the desired state, no sudo prompt happens at all.
 #
-# Called by lib/setup.sh after VM creation or when switching VMs, and by
-# lib/start.sh (route is not persistent across reboot — re-asserted on
-# every start).
+# Called by lib/setup.sh after VM creation or when switching VMs, and
+# by lib/doctor.sh (route is not persistent across host reboots; doctor
+# re-asserts it).
 #
 # Usage:
 #   bash lib/configure-client.sh --vm-ip=10.211.55.155 --vm-user=skodak [--skip-ca]

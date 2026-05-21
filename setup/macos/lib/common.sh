@@ -45,41 +45,88 @@ ok()   { printf '    ok: %s\n' "$*"; }
 warn() { printf '    warn: %s\n' "$*"; }
 die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
+# --- VM identity model ---
+#
+# mpd tracks VMs by their stable Parallels UUID, not by name. The user
+# is free to rename a VM in the Parallels GUI; mpd will keep tracking it
+# under the same UUID, and the picker will show the current friendly
+# name resolved from `prlctl list <uuid>`.
+#
+# Per-VM state lives at ${STATE_DIR}/<uuid>.env (braces stripped from
+# UUID for filename hygiene). The pointer to the currently-active VM
+# lives at ${STATE_DIR}/current.env with `MPD_VM_UUID=...`.
+#
+# `prlctl` accepts both UUID-with-braces and UUID-without-braces, plus
+# the friendly name. We always pass the bare UUID when scripted, so a
+# concurrent rename in Parallels can't trip us up.
+
+# Strip braces from a Parallels UUID. Idempotent.
+uuid_strip() {
+    printf '%s' "$1" | tr -d '{}'
+}
+
 # --- VM discovery (Parallels) ---
 
-# Echoes "<name>\t<status>" per line for every VM matching ${VM_NAME_PREFIX}<N>.
-# `prlctl list -a -o status,name --no-header` outputs "<status> <name>" with
-# arbitrary whitespace; statuses observed: running, stopped, suspended,
-# paused, mounted. Templates are excluded by `-a` (templates show under -t).
+# Echoes "<uuid>\t<name>\t<status>" per line for every mpd-tracked VM
+# (one env file per UUID under $STATE_DIR). Resolves the current name +
+# state from prlctl at call time; prunes env files for VMs that no
+# longer exist in Parallels.
 get_mpd_vms() {
     [ -x "$PRLCTL" ] || return 0
-    "$PRLCTL" list -a -o status,name --no-header 2>/dev/null \
-        | awk -v prefix="$VM_NAME_PREFIX" '
-            NF >= 2 {
-                status = $1
-                name = $2
-                for (i = 3; i <= NF; i++) name = name " " $i
-                if (name ~ ("^" prefix "[0-9]+$")) { printf "%s\t%s\n", name, status }
-            }
-          ' \
-        | sort
+    [ -d "$STATE_DIR" ] || return 0
+    local envfile base uuid line name state
+    for envfile in "$STATE_DIR"/*.env; do
+        [ -f "$envfile" ] || continue
+        base=$(basename "$envfile")
+        # Skip current.env — pointer file, not a tracked VM.
+        [ "$base" = "current.env" ] && continue
+        uuid=$(awk -F= '/^MPD_VM_UUID=/ { sub(/^MPD_VM_UUID=/, ""); print; exit }' "$envfile")
+        [ -z "$uuid" ] && continue
+        # `prlctl list <uuid> -o name,status --no-header` returns
+        # "<name> <status>" on one line, non-zero exit if missing.
+        if ! line=$("$PRLCTL" list "$uuid" -o name,status --no-header 2>/dev/null); then
+            # VM is gone from Parallels — drop the stale env file.
+            rm -f "$envfile"
+            continue
+        fi
+        name=$(awk '{ print $1 }' <<<"$line")
+        state=$(awk '{ print $NF }' <<<"$line")
+        printf '%s\t%s\t%s\n' "$uuid" "$name" "$state"
+    done | sort -t$'\t' -k 2
 }
 
 # Returns the runtime state ("running" / "stopped" / "suspended" /
-# "paused" / "missing"). `prlctl status` prints lines of the form:
-#   VM '<name>' exist <state>
-# When the VM doesn't exist, the command exits non-zero.
+# "paused" / "missing"). Accepts UUID or name (prlctl handles both).
 get_vm_state() {
-    local name="$1"
+    local id="$1"
     [ -x "$PRLCTL" ] || { echo "missing"; return; }
     local out
-    out=$("$PRLCTL" status "$name" 2>/dev/null) || { echo "missing"; return; }
+    out=$("$PRLCTL" status "$id" 2>/dev/null) || { echo "missing"; return; }
     awk '{ print $NF }' <<<"$out"
 }
 
 vm_exists() {
-    local name="$1"
-    [ -x "$PRLCTL" ] && "$PRLCTL" status "$name" >/dev/null 2>&1
+    local id="$1"
+    [ -x "$PRLCTL" ] && "$PRLCTL" status "$id" >/dev/null 2>&1
+}
+
+# Resolve a VM's current friendly Parallels name from its UUID. Empty
+# on miss. The name *can* drift between setup runs (the user may rename
+# in the Parallels GUI); call this at the moment you need the current
+# name rather than relying on the snapshot in the env file.
+get_vm_name_by_uuid() {
+    local uuid="$1"
+    [ -x "$PRLCTL" ] || return 0
+    "$PRLCTL" list "$uuid" -o name --no-header 2>/dev/null | awk '{ print $1 }'
+}
+
+# Read a VM's UUID directly from Parallels (by name or UUID input).
+# Strips braces. Empty on miss.
+prlctl_uuid_of() {
+    local id="$1"
+    [ -x "$PRLCTL" ] || return 0
+    "$PRLCTL" list "$id" -o uuid --no-header 2>/dev/null \
+        | awk '{ print $1 }' | tr -d '{}'
 }
 
 # Poll prlctl for the VM's current guest IP. Parallels Tools reports it
@@ -128,42 +175,71 @@ extract_octet() {
 
 # --- Active VM detection ---
 
-# Echoes the last octet of the VM the persistent route currently points at, or empty.
-get_current_vm_octet() {
+# Echo the IP of the VM the persistent route currently points at, or empty.
+# We use this as a backstop when current.env is missing/stale: route → IP
+# → env file lookup → UUID.
+get_current_vm_route_ip() {
     local out dest gw
     out=$(route -n get -inet "$CONTAINER_PROBE_IP" 2>/dev/null) || return 0
     dest=$(awk '/destination:/ { print $2; exit }' <<<"$out")
     gw=$(awk '/gateway:/    { print $2; exit }' <<<"$out")
-    # When a 10.163.0.0/24 route exists, destination is "10.163.0/24", "10.163.0",
-    # or similar — always begins with "10.163.0". Default route shows "default".
     [[ "$dest" == 10.163.0* ]] || return 0
-    if [[ "$gw" =~ ^${BRIDGE_SUBNET//./\\.}\.([0-9]+)$ ]]; then
-        echo "${BASH_REMATCH[1]}"
-    fi
+    [[ "$gw" =~ ^${BRIDGE_SUBNET//./\\.}\.[0-9]+$ ]] || return 0
+    echo "$gw"
 }
 
-# SSH user for a VM. Lookup order: state file, ssh config, host login fallback.
-get_vm_ssh_user() {
-    local name="$1"
-    local envfile="${STATE_DIR}/${name}.env"
+# Echo the UUID of the env file whose MPD_VM_IP matches the given IP.
+# Empty on miss.
+get_uuid_by_ip() {
+    local target_ip="$1" envfile base ip uuid
+    [ -d "$STATE_DIR" ] || return 0
+    for envfile in "$STATE_DIR"/*.env; do
+        [ -f "$envfile" ] || continue
+        base=$(basename "$envfile")
+        [ "$base" = "current.env" ] && continue
+        ip=$(awk -F= '/^MPD_VM_IP=/ { sub(/^MPD_VM_IP=/, ""); print; exit }' "$envfile")
+        if [ "$ip" = "$target_ip" ]; then
+            uuid=$(awk -F= '/^MPD_VM_UUID=/ { sub(/^MPD_VM_UUID=/, ""); print; exit }' "$envfile")
+            [ -n "$uuid" ] && { echo "$uuid"; return 0; }
+        fi
+    done
+    return 0
+}
+
+# Echo the UUID of the currently-active VM, or empty. Primary source:
+# current.env. Fallback: route → IP → env file lookup. The fallback lets
+# us recover after the user blew away ~/.mpd-machine/current.env but
+# kept the per-VM env files (and the host route still points somewhere).
+get_current_vm_uuid() {
+    local uuid
+    uuid=$(read_current_env_field "MPD_VM_UUID")
+    if [ -n "$uuid" ]; then
+        echo "$uuid"
+        return
+    fi
+    local ip
+    ip=$(get_current_vm_route_ip)
+    [ -n "$ip" ] && get_uuid_by_ip "$ip"
+}
+
+# Read MPD_VM_USER from a UUID's env file; fallback to the host login.
+get_vm_ssh_user_by_uuid() {
+    local uuid="$1"
+    local envfile="${STATE_DIR}/${uuid}.env"
     if [ -f "$envfile" ]; then
         local v
         v=$(awk -F= '/^MPD_VM_USER=/ { sub(/^MPD_VM_USER=/, ""); print; exit }' "$envfile")
         [ -n "$v" ] && { echo "$v"; return; }
     fi
-    if [ -f "$SSH_CONFIG" ]; then
-        local v
-        v=$(awk -v target="$name" '
-            $1 == "Host" {
-                in_block = 0
-                for (i = 2; i <= NF; i++) if ($i == target) in_block = 1
-                next
-            }
-            in_block && tolower($1) == "user" { print $2; exit }
-        ' "$SSH_CONFIG")
-        [ -n "$v" ] && { echo "$v"; return; }
-    fi
     whoami | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-'
+}
+
+# Read MPD_VM_IP from a UUID's env file.
+get_vm_ip_by_uuid() {
+    local uuid="$1"
+    local envfile="${STATE_DIR}/${uuid}.env"
+    [ -f "$envfile" ] || return 0
+    awk -F= '/^MPD_VM_IP=/ { sub(/^MPD_VM_IP=/, ""); print; exit }' "$envfile"
 }
 
 # --- known_hosts cleanup ---
@@ -304,14 +380,14 @@ remove_mpd_ssh_config() {
 # --- ~/.mpd-machine/ state files ---
 
 write_mpd_current_env() {
-    local vm_name="$1" vm_ip="$2" vm_user="$3"
+    local vm_uuid="$1" vm_name="$2" vm_ip="$3" vm_user="$4"
     mkdir -p "$STATE_DIR"
     local content
-    content=$(printf 'MPD_VM_NAME=%s\nMPD_VM_IP=%s\nMPD_VM_USER=%s\n' \
-                     "$vm_name" "$vm_ip" "$vm_user")
-    printf '%s' "$content" > "${STATE_DIR}/${vm_name}.env"
+    content=$(printf 'MPD_VM_UUID=%s\nMPD_VM_NAME=%s\nMPD_VM_IP=%s\nMPD_VM_USER=%s\n' \
+                     "$vm_uuid" "$vm_name" "$vm_ip" "$vm_user")
+    printf '%s' "$content" > "${STATE_DIR}/${vm_uuid}.env"
     printf '%s' "$content" > "${STATE_DIR}/current.env"
-    ok "current.env updated ($vm_name at $vm_ip)"
+    ok "current.env updated ($vm_name [${vm_uuid}] at $vm_ip)"
 }
 
 read_current_env_field() {
@@ -329,12 +405,12 @@ ensure_desktop_shortcut() {
     cat > "$DESKTOP_SHORTCUT" <<'EOF'
 #!/bin/bash
 # Auto-generated by setup/macos/lib/setup.sh.
-# Opens an SSH session to the currently-active mpd VM. The VM's name
-# is read from ~/.mpd-machine/current.env at click time, so this single
-# shortcut tracks whichever VM `setup.command` last activated. If the
-# VM is offline, lib/start.sh boots it first.
+# Opens an SSH session to the currently-active mpd VM. The VM's name is
+# read from ~/.mpd-machine/current.env at click time, so this single
+# shortcut tracks whichever VM `setup.command` last activated. VM
+# start/suspend is owned by Parallels Desktop — if the VM is offline,
+# this shortcut tells you to start it there.
 
-START_SH="$HOME/Developer/mpd/setup/macos/lib/start.sh"
 CURRENT_ENV="$HOME/.mpd-machine/current.env"
 
 VM_NAME=""
@@ -350,19 +426,12 @@ fi
 
 if ! ssh -o ConnectTimeout=3 -o BatchMode=yes -o StrictHostKeyChecking=no \
         "$VM_NAME" true 2>/dev/null; then
-    if [ -x "$START_SH" ]; then
-        echo "${VM_NAME} is not reachable — bringing the VM up..."
-        echo
-        bash "$START_SH" || true
-        echo
-    else
-        echo
-        echo "  Could not reach ${VM_NAME}, and lib/start.sh was not found at:"
-        echo "    $START_SH"
-        echo
-        echo "  Run setup.command in setup/macos/ to repair."
-        exit 1
-    fi
+    echo
+    echo "  ${VM_NAME} is not reachable."
+    echo "  Start it in Parallels Desktop (Cmd+R or the toolbar), then"
+    echo "  double-click this shortcut again. If the route went stale,"
+    echo "  run doctor.command from setup/macos/ ."
+    exit 1
 fi
 
 ssh "$VM_NAME"
@@ -370,8 +439,8 @@ status=$?
 if [ "$status" -eq 255 ]; then
     echo
     echo "  Could not connect to ${VM_NAME}."
-    echo "  Open Parallels Desktop and check that the VM is running, or run"
-    echo "  start.command from setup/macos/ ."
+    echo "  Open Parallels Desktop and check the VM is running, or run"
+    echo "  doctor.command from setup/macos/ ."
     exit 1
 fi
 EOF
@@ -517,7 +586,7 @@ prepare_host_ca() {
 }
 
 # --- Idempotent host-side privileged ops ---
-# Route is *not* persisted across host reboots — `start.command`
+# Route is *not* persisted across host reboots — `doctor.command`
 # re-asserts it (one sudo prompt). Macs reboot rarely; the upside of
 # avoiding a LaunchDaemon is a sudo recipe that is two lines of
 # `route` instead of an opaque launchctl + plist dance.

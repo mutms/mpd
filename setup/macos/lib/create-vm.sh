@@ -83,27 +83,32 @@ fi
 step "Cloning template '${TEMPLATE_NAME}' (full clone — this can take a couple of minutes)"
 "$PRLCTL" clone "$TEMPLATE_NAME" --name "$VM_NAME" >/dev/null \
     || die "prlctl clone failed for ${TEMPLATE_NAME} → ${VM_NAME}"
-ok "Clone created"
+
+# Capture the new VM's UUID — this is the stable identifier mpd tracks
+# going forward, regardless of any Parallels-side rename later.
+VM_UUID=$(prlctl_uuid_of "$VM_NAME")
+[ -n "$VM_UUID" ] || die "Could not read the new VM's UUID via prlctl list ${VM_NAME} -o uuid."
+ok "Clone created (uuid=${VM_UUID})"
 
 # --- Resize hardware ---
 
 step "Configuring memory / cpus / disk"
-"$PRLCTL" set "$VM_NAME" --memsize "$VM_MEMORY_MIB" >/dev/null
-"$PRLCTL" set "$VM_NAME" --cpus "$VM_CPUS" >/dev/null
+"$PRLCTL" set "$VM_UUID" --memsize "$VM_MEMORY_MIB" >/dev/null
+"$PRLCTL" set "$VM_UUID" --cpus "$VM_CPUS" >/dev/null
 
 # Grow the primary disk if the requested size exceeds the template's. We
 # rely on Parallels' guest-tools-driven online resize to push the new
 # size into the partition + filesystem; if Tools aren't running or the
 # resize doesn't take, the in-guest verify step later in this script
 # warns but doesn't fail.
-"$PRLCTL" set "$VM_NAME" --device-set hdd0 --size "$VM_DISK_MB" >/dev/null 2>&1 \
+"$PRLCTL" set "$VM_UUID" --device-set hdd0 --size "$VM_DISK_MB" >/dev/null 2>&1 \
     || warn "could not resize hdd0 (template may already be ≥${VM_DISK_SIZE} GB)"
 ok "Hardware: ${VM_MEMORY_GB} GB RAM, ${VM_CPUS} vCPU, ${VM_DISK_SIZE} GB disk"
 
 # --- Start VM (template's seed user + injected SSH key get us in) ---
 
-step "Starting VM '${VM_NAME}'"
-vm_start "$VM_NAME"
+step "Starting VM '${VM_NAME}' (uuid=${VM_UUID})"
+vm_start "$VM_UUID"
 ok "VM started"
 
 # Strip cached host keys for the IPs/names this VM will own.
@@ -113,7 +118,7 @@ for h in "$VM_IP" "$VM_NAME"; do
 done
 
 step "Waiting for Parallels Tools to report a DHCP-assigned IP"
-DHCP_IP=$(get_vm_ip "$VM_NAME" 120) \
+DHCP_IP=$(get_vm_ip "$VM_UUID" 120) \
     || die "VM never reported an IP via Parallels Tools. Open Parallels Desktop to investigate."
 ok "Guest reported IP: ${DHCP_IP}"
 
@@ -313,4 +318,11 @@ EOF
 ok "Login banner set"
 
 step "VM bootstrap complete"
-echo "    ${VM_USER}@${VM_IP} (${VM_NAME})"
+echo "    ${VM_USER}@${VM_IP} (${VM_NAME}, uuid=${VM_UUID})"
+
+# Surface the new UUID to setup.sh so it can write state files keyed by UUID.
+# Side-channel via a known filename rather than parsing stdout — keeps the
+# rest of create-vm.sh's output free to be human-readable.
+if [ -n "${MPD_NEW_VM_UUID_FILE:-}" ]; then
+    printf '%s\n' "$VM_UUID" > "$MPD_NEW_VM_UUID_FILE"
+fi
