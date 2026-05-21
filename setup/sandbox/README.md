@@ -96,6 +96,46 @@ freshly cloned tree.
     desktop icons are on) so the user has both an mpd icon and a
     VS Code icon ready to click.
 
+## Optional: GNOME tweaks for macOS users
+
+GNOME 48's default "Dash" hides at the bottom of the Activities
+overview — discoverable on Super-press, but invisible the rest of the
+time, which feels alien if you're coming from a macOS dock. Two
+optional add-ons make the desktop noticeably closer to Mac muscle
+memory; both are user-scoped, no `mpd --setup` interaction.
+
+```bash
+# Extension Manager GUI — browse / install / configure GNOME Shell
+# extensions, including everything below.
+sudo apt install -y gnome-shell-extension-manager
+extension-manager   # launches the GUI
+
+# Dash to Dock (apt-shipped build, ready immediately after a logout).
+sudo apt install -y gnome-shell-extension-dashtodock
+# …then log out / log back in (Wayland can't hot-reload extensions),
+# then enable + pin to the bottom:
+gnome-extensions enable dash-to-dock@micxgx.gmail.com
+gsettings set org.gnome.shell.extensions.dash-to-dock dock-position BOTTOM
+gsettings set org.gnome.shell.extensions.dash-to-dock dock-fixed true
+gsettings set org.gnome.shell.extensions.dash-to-dock autohide false
+gsettings set org.gnome.shell.extensions.dash-to-dock intellihide false
+gsettings set org.gnome.shell.extensions.dash-to-dock extend-height false
+```
+
+A couple of extra `gsettings` knobs that lean further into Mac-feel:
+
+```bash
+# Hot corner top-left → Activities (≈ macOS Mission Control corner).
+gsettings set org.gnome.desktop.interface enable-hot-corners true
+
+# Click an app icon to minimize its window (macOS dock click-to-hide).
+gsettings set org.gnome.shell.extensions.dash-to-dock click-action 'minimize'
+```
+
+This is purely cosmetic — the mpd flow works fine with or without it.
+If you want to undo everything: `sudo apt purge gnome-shell-extension-dashtodock`
+and the gsettings keys reset to defaults next session.
+
 ## Reverting
 
 `take-over-sandbox-vm.sh` is destructive on purpose. The only supported
