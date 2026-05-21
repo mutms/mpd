@@ -113,19 +113,59 @@ ok "systemd-resolved active"
 # Restart NM so the dns=systemd-resolved drop-in takes effect. On the
 # Trixie GNOME default, NM keeps the active connection up across restart
 # (continue-active behavior), so any in-VM terminal or SSH session stays
-# connected. systemd-resolved gets upstream DNS pushed in via D-Bus.
+# connected.
 sudo systemctl restart NetworkManager
-# Give NM a couple of seconds to re-establish DNS through resolved.
-for _ in 1 2 3 4 5 6 7 8 9 10; do
+
+# A `systemctl restart NetworkManager` with continue-active=true keeps
+# the existing connection up but does NOT always re-push DNS info into
+# systemd-resolved when the dns plugin has just changed from the default
+# resolv.conf-writer to `systemd-resolved`. Without re-pushing, resolved
+# stays empty of upstream DNS and every lookup fails until a reboot —
+# observed once on a fresh VM where the next `apt update` (VS Code) hung
+# on name resolution.
+#
+# `nmcli device reapply` re-applies the connection profile on each
+# managed device without dropping the link, which forces NM to recompute
+# its DNS state and push it into resolved via D-Bus. Cheap and
+# idempotent — safe even when DNS already works.
+for dev in $(nmcli -t -f DEVICE,STATE device 2>/dev/null | awk -F: '$2=="connected" {print $1}'); do
+    sudo nmcli device reapply "$dev" >/dev/null 2>&1 || true
+done
+
+ok_dns=0
+for _ in $(seq 1 30); do
     if getent hosts deb.debian.org >/dev/null 2>&1; then
+        ok_dns=1
         break
     fi
     sleep 1
 done
-if ! getent hosts deb.debian.org >/dev/null 2>&1; then
-    warn "DNS via systemd-resolved did not resolve deb.debian.org within 10s — VS Code apt step below may fail"
-else
+if [ "$ok_dns" -eq 1 ]; then
     ok "DNS resolves through systemd-resolved (deb.debian.org)"
+else
+    cat >&2 <<'EOF'
+
+============================================================
+DNS via systemd-resolved did not come up within 30 seconds
+after restarting NetworkManager.
+
+This is a one-time race between NetworkManager and a
+freshly-installed systemd-resolved. A single reboot resolves it
+permanently.
+
+Please reboot the VM and re-run take-over-sandbox-vm.sh:
+
+    sudo reboot
+    # after reboot, log back in and:
+    bash ~/Developer/mpd/setup/sandbox/take-over-sandbox-vm.sh
+
+The script is idempotent — it will pick up from where it left
+off (build deps and systemd-resolved are already installed; the
+remaining steps are mpd build, mpd --setup, pre-warm, and the
+GNOME launchers).
+============================================================
+EOF
+    die "Aborting — see message above."
 fi
 
 # --- VS Code (Microsoft official apt repo) -----------------------------

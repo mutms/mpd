@@ -76,11 +76,19 @@ cat <<EOF
 ================================================================
 
 This script is about to take over '${current_hostname}' and turn it
-into an mpd sandbox. To do so it intentionally weakens VM security:
+into an mpd sandbox. To do so it intentionally weakens VM security
+and reconfigures the host:
 
   * passwordless sudo for '${USER}'
   * mpd's self-signed CA installed in the system trust store
   * persistent SSH host keys, runtime credentials, generated secrets
+  * network stack switched to systemd-resolved fed by NetworkManager
+    (a NetworkManager drop-in is written, systemd-resolved is
+    apt-installed, /etc/resolv.conf becomes the resolved stub symlink,
+    and NetworkManager is restarted). mpd-machine requires resolved
+    as the DNS sink; on a brand-new install the NM→resolved DNS push
+    occasionally needs a single reboot to take effect, in which case
+    the script aborts cleanly and asks you to reboot and re-run.
 
 This is appropriate ONLY for a sandbox VM you can wipe and rebuild.
 Never run this on a workstation, on a shared host, or on a VM with
