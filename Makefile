@@ -65,9 +65,13 @@ check-mpdenv-source-boundary:
 #     `sudo bash -c '…'` / `sudo sh -c '…'` one-liners are allowed —
 #     they're a single privileged command, not a whole script.
 #   - identity-switching to a non-root user: `sudo -u <user>`,
-#     `runuser`, `su -`, `su <user>`, `su <user> -c …`.
+#     `runuser`, `su <user>`, `su - <user>`, `su <user> -c …`.
+# Allowed (elevation to root only — no identity-switch):
+#   - `su -c '<cmd>'` (run one command as root; the take-over bootstrap
+#     uses this on vanilla Debian where the user isn't yet in sudoers).
+#   - `su -` / `su -l` (login shell as root, no target user).
 check-privilege-boundary:
-	@violations=$$(grep -RInE '(\bsudo[[:space:]]+(bash|sh)[[:space:]]+[^-[:space:]]|\bsudo[[:space:]]+[^-[:space:]][^[:space:]]*\.(sh|bash)\b|\bsudo[[:space:]]+-u\b|\brunuser\b|\bsu[[:space:]]+\S)' \
+	@violations=$$(grep -RInE '(\bsudo[[:space:]]+(bash|sh)[[:space:]]+[^-[:space:]]|\bsudo[[:space:]]+[^-[:space:]][^[:space:]]*\.(sh|bash)\b|\bsudo[[:space:]]+-u\b|\brunuser\b|\bsu[[:space:]]+(-[a-zA-Z]*[[:space:]]+)?[a-zA-Z_][a-zA-Z0-9_-]*)' \
 		assets/ \
 		setup/sandbox/take-over-sandbox-vm.sh \
 		setup/sandbox/lib/provision.sh \
@@ -76,6 +80,7 @@ check-privilege-boundary:
 		echo "Privilege boundary violation: forbidden shape detected."; \
 		echo "Rule: AGENTS.md §\"Mandatory privilege rule\"."; \
 		echo "Banned: 'sudo bash script.sh', 'sudo -u <user>', 'runuser', 'su <user>', 'su - <user>'."; \
+		echo "Allowed root-elevation: 'su -c <quoted-cmd>', 'su -', 'su -l'."; \
 		echo "$$violations"; \
 		exit 1; \
 	fi; \

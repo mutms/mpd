@@ -104,13 +104,16 @@ EOF
 read -r -p "Press Enter to proceed (Ctrl-C to abort): " _
 
 # --- Enable passwordless sudo ------------------------------------------
-# One-time: sudo will prompt for a password the first time. Subsequent
-# invocations in this script and in lib/provision.sh use passwordless sudo.
+# Vanilla Debian doesn't put the default user in the 'sudo' group (unlike
+# Ubuntu), so `sudo` is locked out for ${USER} on a fresh install. The
+# root account, however, is unlocked. Bootstrap passwordless sudo by
+# `su -c`-ing the sudoers drop-in as root — one prompt for the ROOT
+# password, then every later `sudo` call in this script and provision.sh
+# runs without any prompt. Idempotent: skipped when sudo -n already works.
 if ! sudo -n true 2>/dev/null; then
     echo
-    echo "==> Enabling passwordless sudo for ${USER} (you will be prompted once for your password)"
-    echo "${USER} ALL=(ALL) NOPASSWD:ALL" \
-        | sudo install -m 440 /dev/stdin "${SUDOERS_FILE}"
+    echo "==> Enabling passwordless sudo for ${USER} (you will be prompted once for the root password)"
+    su -c "echo '${USER} ALL=(ALL) NOPASSWD:ALL' | install -m 440 /dev/stdin '${SUDOERS_FILE}'"
     echo "    Wrote ${SUDOERS_FILE}"
 else
     echo
