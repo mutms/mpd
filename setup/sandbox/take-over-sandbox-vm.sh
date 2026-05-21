@@ -7,8 +7,10 @@
 # or any host with data you would be sad to lose.
 #
 # Two valid invocation modes:
-#   1. Standalone (curl|bash flow, no separate clone step):
-#        bash <(curl -sSL https://raw.githubusercontent.com/mutms/mpd/main/setup/sandbox/take-over-sandbox-vm.sh)
+#   1. Standalone (wget|bash flow, no separate clone step — `wget` is in
+#      Debian's standard task and always present; `curl` is not, so the
+#      published recipe uses wget):
+#        bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/sandbox/take-over-sandbox-vm.sh)
 #      Self-bootstraps: apt-installs git, clones mpd to ~/Developer/mpd/,
 #      then exec's lib/provision.sh from the cloned tree.
 #   2. In-repo (when the mpd repo is already cloned):

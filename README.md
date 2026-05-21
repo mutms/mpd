@@ -81,9 +81,10 @@ virt-manager, VMware…):
    hypervisor of choice. When the installer asks for a hostname,
    type **`mpd-machine-sandbox`**.
 2. Take a hypervisor snapshot.
-3. Inside the VM, run:
+3. Inside the VM, run (uses `wget` — `curl` isn't in Debian's default
+   install):
 
-       bash <(curl -sSL https://raw.githubusercontent.com/mutms/mpd/main/setup/sandbox/take-over-sandbox-vm.sh)
+       bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/sandbox/take-over-sandbox-vm.sh)
 
 Open Firefox-ESR inside the VM and browse to https://mpd.test/.
 

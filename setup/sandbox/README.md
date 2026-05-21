@@ -51,10 +51,12 @@ stop / configure`).
 
 ## Run it
 
-Inside the VM, either curl-bash directly:
+Inside the VM, one-shot via `wget` (preinstalled on Debian's standard
+task; `curl` is not — it's `Priority: optional` on Debian, so a stock
+install doesn't have it):
 
 ```bash
-bash <(curl -sSL https://raw.githubusercontent.com/mutms/mpd/main/setup/sandbox/take-over-sandbox-vm.sh)
+bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/sandbox/take-over-sandbox-vm.sh)
 ```
 
 …or, if the repo is already cloned:
@@ -67,6 +69,9 @@ In standalone mode (no repo present), the script self-bootstraps:
 `apt install git`, clones `https://github.com/mutms/mpd.git` to
 `~/Developer/mpd/`, then hands off to `lib/provision.sh` from the
 freshly cloned tree.
+
+If you've installed `curl` yourself, the equivalent invocation also
+works: `bash <(curl -sSL <url>)`.
 
 ## What it does
 
