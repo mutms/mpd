@@ -27,7 +27,11 @@ extension Mpd.Environment.Action.Setup {
         "bash", "coreutils", "git", "iputils-ping", "ca-certificates",
         "systemd", "iproute2", "jq",
         // diagnostics
-        "dnsutils", "traceroute", "tcpdump", "lsof", "curl",
+        // bind9-dnsutils (dig/nslookup/host). `dnsutils` is a virtual
+        // package on Trixie — dpkg-query against the virtual name always
+        // reports not-installed, so we'd reinstall every setup. Use the
+        // real package name to make the idempotent check work.
+        "bind9-dnsutils", "traceroute", "tcpdump", "lsof", "curl",
         "less", "vim-tiny", "psmisc",
     ]
 
