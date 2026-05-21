@@ -80,6 +80,9 @@ across docs.
 - `docs/HOOKS.md` — typed `Event` lifecycle hooks: events, audiences, asset-side `hooks/<event>.d/` scripts
 - `docs/VISION.md` — product vision (origin lineage + design principles)
 - `docs/ROADMAP.md` — committed near-term work
+- `docs/proposals/` — uncommitted design proposals (spec-level detail
+  so a future contributor can implement without re-deriving). See
+  `docs/proposals/README.md` for the index.
 - `docs/desktop/README.md` — what mpd-desktop is, release scope
 - `docs/desktop/USAGE.md` — desktop workflows
 - `docs/desktop/NETWORKING.md` — desktop networking model (WireGuard)
