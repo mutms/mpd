@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# NOTE: use following to stop gnome auto-starting on reboot:
+#
+#   sudo systemctl set-default multi-user.target
+
+sudo systemctl isolate multi-user.target
