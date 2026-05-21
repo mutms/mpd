@@ -28,10 +28,10 @@ if [ ! -r /etc/os-release ]; then
 fi
 # shellcheck disable=SC1091
 . /etc/os-release
-if [ "${ID:-}" != "ubuntu" ] || [ "${VERSION_ID:-}" != "26.04" ]; then
-    die "This script targets Ubuntu 26.04 LTS (detected: ${ID:-unknown}/${VERSION_ID:-unknown})."
+if [ "${ID:-}" != "debian" ] || [ "${VERSION_CODENAME:-}" != "trixie" ]; then
+    die "This script targets Debian Trixie (13). Detected: ${ID:-unknown}/${VERSION_CODENAME:-unknown}."
 fi
-ok "Ubuntu 26.04 LTS"
+ok "Debian Trixie"
 
 if ! sudo -n true 2>/dev/null; then
     die "Passwordless sudo not configured. Run take-over-sandbox-vm.sh first."
@@ -44,8 +44,9 @@ fi
 ok "Repo at ${REPO_DIR}"
 
 # --- Apt-install build dependencies ------------------------------------
-# Single-shot install. git/curl/ca-certificates/systemd-resolved/spice-vdagent
-# already ship with default Ubuntu desktop. podman is installed by `mpd --setup`.
+# Done BEFORE the network-stack switch below, so apt's name resolution is
+# still served by NetworkManager directly (the simple, known-good path).
+# podman is installed by `mpd --setup`.
 step "Build dependencies"
 required_pkgs=(
     build-essential pkg-config make swiftlang
@@ -62,6 +63,69 @@ if [ ${#missing_pkgs[@]} -gt 0 ]; then
     ok "Installed: ${missing_pkgs[*]}"
 else
     ok "All required packages already installed"
+fi
+
+# --- Standardize the network stack: systemd-resolved fed by NetworkManager
+# Debian Trixie with GNOME desktop ships with NetworkManager writing
+# /etc/resolv.conf directly; systemd-resolved is not installed. mpd-machine
+# expects systemd-resolved active (mpd/Environment/Machine/MachineIntegration
+# .requireSystemdResolvedActive). The other mpd-machine platforms get there
+# via cloud-init; sandbox does it here.
+#
+# Order is important to avoid a broken-DNS window:
+#   1. Write NM drop-in declaring `dns=systemd-resolved` (no effect yet).
+#   2. apt-install systemd-resolved — postinst enables+starts the service
+#      and turns /etc/resolv.conf into a stub symlink to 127.0.0.53.
+#   3. Restart NetworkManager so it reads the drop-in and pushes upstream
+#      DNS (from DHCP / the active connection) into systemd-resolved via
+#      D-Bus instead of writing /etc/resolv.conf.
+# libnss-resolve makes glibc NSS go through resolved (so getent/curl use
+# the stub even without /etc/resolv.conf). It's a Recommends of
+# systemd-resolved but we're using --no-install-recommends, so request it.
+step "Network stack — systemd-resolved fed by NetworkManager"
+nm_conf_dir=/etc/NetworkManager/conf.d
+nm_drop_in=${nm_conf_dir}/10-mpd-dns.conf
+nm_drop_in_body=$'[main]\ndns=systemd-resolved\n'
+if [ ! -f "$nm_drop_in" ] || [ "$(sudo cat "$nm_drop_in" 2>/dev/null || true)" != "$nm_drop_in_body" ]; then
+    sudo install -d -m 755 "$nm_conf_dir"
+    printf '%s' "$nm_drop_in_body" | sudo install -m 644 /dev/stdin "$nm_drop_in"
+    ok "Wrote ${nm_drop_in}"
+else
+    ok "${nm_drop_in} already in place"
+fi
+
+if ! dpkg -s systemd-resolved >/dev/null 2>&1 || ! dpkg -s libnss-resolve >/dev/null 2>&1; then
+    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        systemd-resolved libnss-resolve
+    ok "Installed: systemd-resolved + libnss-resolve"
+else
+    ok "systemd-resolved + libnss-resolve already installed"
+fi
+
+# Postinst usually enables+starts systemd-resolved on its own; make it
+# explicit so re-runs converge even if the unit was disabled by hand.
+sudo systemctl enable --now systemd-resolved >/dev/null 2>&1 || true
+if ! systemctl is-active --quiet systemd-resolved; then
+    die "systemd-resolved did not come up after install — investigate with: systemctl status systemd-resolved"
+fi
+ok "systemd-resolved active"
+
+# Restart NM so the dns=systemd-resolved drop-in takes effect. On the
+# Trixie GNOME default, NM keeps the active connection up across restart
+# (continue-active behavior), so any in-VM terminal or SSH session stays
+# connected. systemd-resolved gets upstream DNS pushed in via D-Bus.
+sudo systemctl restart NetworkManager
+# Give NM a couple of seconds to re-establish DNS through resolved.
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if getent hosts deb.debian.org >/dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+done
+if ! getent hosts deb.debian.org >/dev/null 2>&1; then
+    warn "DNS via systemd-resolved did not resolve deb.debian.org within 10s — VS Code apt step below may fail"
+else
+    ok "DNS resolves through systemd-resolved (deb.debian.org)"
 fi
 
 # --- VS Code (Microsoft official apt repo) -----------------------------

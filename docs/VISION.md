@@ -269,14 +269,15 @@ HTTPS still works without re-trusting). When you come back,
 The three modes differ in where you sit and where `mpd` runs.
 
 **Sandbox VM** — full GNOME desktop inside the VM, and `mpd` runs
-there too. You install Ubuntu 26.04 desktop in your hypervisor of
-choice (UTM, Hyper-V, VirtualBox, virt-manager, VMware…), set the
-hostname to `mpd-machine-sandbox`, take a snapshot, and run one bash
-script inside the VM. GNOME terminal runs `mpd`; GNOME Firefox sees
-`mpd.test`. The host is never touched. Lowest-friction entry,
-strongest isolation for AI-driven workloads (the VM is the wall,
-the snapshot is the safety net), recommended starting point if you
-don't already know which mode to pick.
+there too. You install Debian Trixie with the GNOME desktop in your
+hypervisor of choice (UTM, Parallels, Hyper-V, VirtualBox,
+virt-manager, VMware…), set the hostname to `mpd-machine-sandbox`,
+take a snapshot, and run one bash script inside the VM. GNOME
+terminal runs `mpd`; GNOME Firefox-ESR sees `mpd.test`. The host is
+never touched. Lowest-friction entry, strongest isolation for
+AI-driven workloads (the VM is the wall, the snapshot is the safety
+net), recommended starting point if you don't already know which
+mode to pick.
 
 **mpd-machine** — automated headless Debian Trixie VM; you stay on
 your host. The matched-host bootstrap (`setup.command` on macOS+UTM,
@@ -296,8 +297,8 @@ invested in Podman Desktop or prefer not to drive a hypervisor
 yourself.
 
 **For Windows users specifically**, the sandbox or `mpd-machine`
-Hyper-V path is the answer: either install Ubuntu 26.04 in any
-Windows hypervisor and run `take-over-sandbox-vm.sh`, or
+Hyper-V path is the answer: either install Debian Trixie + GNOME in
+any Windows hypervisor and run `take-over-sandbox-vm.sh`, or
 double-click `setup.cmd` for the host-integrated Hyper-V flow.
 Windows itself stays untouched either way.
 

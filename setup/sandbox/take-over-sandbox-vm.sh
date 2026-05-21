@@ -1,5 +1,5 @@
 #!/bin/bash
-# take-over-sandbox-vm.sh — turn a fresh Ubuntu 26.04 VM into an mpd sandbox.
+# take-over-sandbox-vm.sh — turn a fresh Debian Trixie VM into an mpd sandbox.
 #
 # This script intentionally weakens VM security (passwordless sudo, mpd's
 # self-signed CA in the system trust store, persistent SSH host keys).
@@ -60,10 +60,10 @@ if [ ! -r /etc/os-release ]; then
 fi
 # shellcheck disable=SC1091
 . /etc/os-release
-if [ "${ID:-}" != "ubuntu" ] || [ "${VERSION_ID:-}" != "26.04" ]; then
+if [ "${ID:-}" != "debian" ] || [ "${VERSION_CODENAME:-}" != "trixie" ]; then
     cat >&2 <<EOF
-ERROR: This script targets Ubuntu 26.04 LTS.
-       Detected: ${ID:-unknown}/${VERSION_ID:-unknown}
+ERROR: This script targets Debian Trixie (13).
+       Detected: ${ID:-unknown}/${VERSION_CODENAME:-unknown}
 EOF
     exit 1
 fi

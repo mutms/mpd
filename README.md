@@ -62,8 +62,8 @@ configuration model. Switch between modes without relearning.
 |----------------------|------------------------------------------------------------------------------------------|---------------------------------------------------------------------|-----------------------------------------------------------|
 | **Where `mpd` runs** | Inside the VM                                                                            | Inside a headless VM                                                | Natively on macOS                                         |
 | **Where you sit**    | Inside the VM (full GNOME)                                                               | On your host (browser + SSH-into-VM)                                | On your host (Terminal + browser)                         |
-| **Host OS**          | Any (UTM, Hyper-V, VirtualBox, virt-manager, VMware…)                                    | macOS, Ubuntu, Windows                                              | macOS only                                                |
-| **Bootstrap**        | Install Ubuntu 26.04, snapshot, run one script in the VM                                 | `setup.command` / `setup.sh` / `setup.cmd`                          | Install Podman Desktop + WireGuard, `mpd --setup`         |
+| **Host OS**          | Any (UTM, Parallels, Hyper-V, VirtualBox, virt-manager, VMware…)                         | macOS, Ubuntu, Windows                                              | macOS only                                                |
+| **Bootstrap**        | Install Debian Trixie + GNOME, snapshot, run one script in the VM                        | `setup.command` / `setup.sh` / `setup.cmd`                          | Install Podman Desktop + WireGuard, `mpd --setup`         |
 | **Network**          | Internal to the VM (host untouched)                                                      | Plain L3 route + DNS resolver on host                               | gvproxy + WireGuard tunnel                                |
 | **Best for**         | Newcomers; AI-safety; host stays untouched; hypervisor snapshot/revert as the safety net | Native host integration — laptop browser sees `*.mpd.test` directly | Already on Podman Desktop; minimal explicit VM management |
 
@@ -74,17 +74,18 @@ model.
 
 ### 1. Sandbox VM (recommended for newcomers)
 
-Works in any hypervisor (UTM, Hyper-V, VirtualBox, virt-manager,
-VMware…):
+Works in any hypervisor (UTM, Parallels, Hyper-V, VirtualBox,
+virt-manager, VMware…):
 
-1. Install Ubuntu 26.04 LTS desktop in your hypervisor of choice.
-   When the installer asks for a hostname, type **`mpd-machine-sandbox`**.
+1. Install Debian Trixie (13) with the GNOME desktop in your
+   hypervisor of choice. When the installer asks for a hostname,
+   type **`mpd-machine-sandbox`**.
 2. Take a hypervisor snapshot.
 3. Inside the VM, run:
 
        bash <(curl -sSL https://raw.githubusercontent.com/mutms/mpd/main/setup/sandbox/take-over-sandbox-vm.sh)
 
-Open Firefox inside the VM and browse to https://mpd.test/.
+Open Firefox-ESR inside the VM and browse to https://mpd.test/.
 
 ### 2. `mpd-machine` (host reaches into a Linux VM)
 
@@ -107,9 +108,9 @@ not manage a hypervisor explicitly: see
 ## Prerequisites at a glance
 
 **Sandbox VM**
-- Any hypervisor that boots Ubuntu 26.04 LTS desktop. Set the hostname
-  to `mpd-machine-sandbox` during install and take a snapshot before
-  running the take-over script.
+- Any hypervisor that boots Debian Trixie with the GNOME desktop. Set
+  the hostname to `mpd-machine-sandbox` during install and take a
+  snapshot before running the take-over script.
 
 **`mpd-machine`**
 - A matched host: macOS+UTM, Ubuntu+KVM, or Windows+Hyper-V.

@@ -65,7 +65,7 @@ built and reachable, plus host-side networking (route + DNS resolver
 | **Ubuntu 26.04 LTS**      | libvirt + KVM                   | [`setup/ubuntu-kvm/`](../../setup/ubuntu-kvm/README.md) — `bash setup.sh` for end-to-end VM creation + host networking + a desktop launcher in GNOME Activities. `start.sh` / `stop.sh` / `uninstall.sh` cover the lifecycle.                                    |
 | **Windows**               | Hyper-V (free with Windows Pro) | [`setup/windows-hyperv/`](../../setup/windows-hyperv/README.txt) — `setup.cmd` does VM creation + cloud-init + repo clone + `mpd` build + Windows networking in one shot.                                                                                        |
 
-Other hosts (Fedora, Arch, NixOS, cloud Ubuntu instances, anywhere
+Other hosts (Fedora, Arch, NixOS, cloud Debian instances, anywhere
 the matched-host bootstrap doesn't apply) → use the
 [Sandbox VM mode](../../setup/sandbox/README.md) instead. mpd's flow
 inside the VM is identical regardless of how you got there.

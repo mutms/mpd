@@ -24,10 +24,10 @@ If you're installing mpd for the first time:
 
 ## Mode 1 — Sandbox VM (you live inside the VM)
 
-Full GNOME desktop inside the VM. Install Ubuntu 26.04 in any
-hypervisor, snapshot, run one script inside the VM. GNOME terminal
-runs `mpd`; GNOME Firefox sees `mpd.test`. Host stays untouched.
-Lowest friction.
+Full GNOME desktop inside the VM. Install Debian Trixie with the
+GNOME desktop in any hypervisor, snapshot, run one script inside the
+VM. GNOME terminal runs `mpd`; GNOME Firefox-ESR sees `mpd.test`.
+Host stays untouched. Lowest friction.
 
 - [`../setup/sandbox/README.md`](../setup/sandbox/README.md) — install,
   prerequisites (hostname rename), revert.

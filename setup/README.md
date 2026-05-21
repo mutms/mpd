@@ -16,23 +16,23 @@ If you're new and don't know which to pick — start with **sandbox**.
 
 | Platform | Path | What it gives you |
 |---|---|---|
-| **Sandbox** (any hypervisor — UTM, Hyper-V, VirtualBox, VMware, virt-manager, …) | [`sandbox/`](sandbox/README.md) | Install Ubuntu 26.04 desktop in your hypervisor, set the hostname to `mpd-machine-sandbox`, snapshot, run `take-over-sandbox-vm.sh`. mpd lives entirely inside the VM; the host gets zero DNS/route/trust changes. The hypervisor owns VM lifecycle from its own GUI. |
+| **Sandbox** (any hypervisor — UTM, Parallels, Hyper-V, VirtualBox, VMware, virt-manager, …) | [`sandbox/`](sandbox/README.md) | Install Debian Trixie with the GNOME desktop in your hypervisor, set the hostname to `mpd-machine-sandbox`, snapshot, run `take-over-sandbox-vm.sh`. mpd lives entirely inside the VM; the host gets zero DNS/route/trust changes. The hypervisor owns VM lifecycle from its own GUI. |
 | **macOS + UTM** (Apple Silicon) | [`macos-utm/`](macos-utm/README.md) | Double-click `setup.command`: downloads the Debian cloud image, prepares cloud-init, imports into UTM, builds `bin/mpd` inside the VM, and configures macOS networking (route, NRPT-equivalent DNS resolver, CA trust). `start.command` / `stop.command` / `uninstall.command` cover the lifecycle. |
 | **Ubuntu + KVM** (Linux desktop) | [`ubuntu-kvm/`](ubuntu-kvm/README.md) | `bash setup.sh` from a terminal: preflight (KVM, libvirt-daemon-system + friends, libvirt group, libvirt default network, `/var/lib/mpd-machine/$USER/`) with the same `(a)` run-yourself / `(b)` press-Enter sudo recipe affordance as macos-utm; libvirt-driven VM creation against the default `virbr0` network with cloud-init for static IP; host configuration (`ip route` + systemd-resolved drop-in + `update-ca-certificates` + Firefox policies + `~/.pki/nssdb`); pre-warm + `mpd-machine.desktop` launcher in GNOME Activities. Ubuntu 26.04 LTS only. |
 | **Windows + Hyper-V** | [`windows-hyperv/`](windows-hyperv/README.txt) | PowerShell bootstrap: `setup.cmd` downloads the Debian cloud image, provisions a Hyper-V Generation 2 VM with cloud-init, builds `bin/mpd` inside the VM, and configures Windows networking (route, NRPT DNS, CA certificate). |
 
 **Sandbox** is the lowest-friction path: one bash script, runs inside
-the VM, no host configuration, works on any hypervisor that boots
-Ubuntu desktop. The other three platforms reach *into* a Debian Trixie
-VM from a matched host (macOS / Ubuntu / Windows respectively) — pick
-one of those when you want your laptop's own browser to resolve
-`*.mpd.test` directly.
+the VM, no host configuration, works on any hypervisor that boots a
+Debian Trixie desktop. The other three platforms reach *into* a
+Debian Trixie VM from a matched host (macOS / Ubuntu / Windows
+respectively) — pick one of those when you want your laptop's own
+browser to resolve `*.mpd.test` directly.
 
 ## What's not here
 
 - **Cloud-provider-specific tooling** (Hetzner Cloud images, AWS AMIs,
   GCP, Azure) — none planned at the moment. The sandbox path on a
-  cloud Ubuntu instance is the closest current option.
+  cloud Debian instance with GNOME is the closest current option.
 - **WSL2** — not the right shape. WSL2 is a partial Linux environment
   with surprising filesystem and networking semantics; mpd-machine
   expects a real, isolated VM. On Windows, use Hyper-V.

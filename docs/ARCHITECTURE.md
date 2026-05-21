@@ -604,7 +604,7 @@ and Platform can share the same file without clobbering each other.
 | `mpd-machine` via UTM             | `setup/macos-utm/lib/create-vm.sh` (over SSH)                    | `macos-utm`, `${VM_IP}`     | written before `mpd --setup` runs in the VM            |
 | `mpd-machine` via Ubuntu+KVM      | `setup/ubuntu-kvm/lib/create-vm.sh` (over SSH)                   | `ubuntu-kvm`, `${VM_IP}`    | written before `mpd --setup` runs in the VM            |
 | `mpd-machine` via Windows/Hyper-V | `setup/windows-hyperv/lib/create-vm.ps1` (over SSH)              | `windows-hyperv`, `${VmIp}` | written before `mpd --setup` runs in the VM            |
-| `mpd-machine` via sandbox         | `setup/sandbox/lib/provision.sh`                                 | `sandbox`, `""`             | written before `mpd --setup` runs inside the Ubuntu VM |
+| `mpd-machine` via sandbox         | `setup/sandbox/lib/provision.sh`                                 | `sandbox`, `""`             | written before `mpd --setup` runs inside the Debian VM |
 
 **Reader:** `Mpd.Core.Platform.load()` (Swift). Throws with a fix-it message
 when missing, pointing at the matching bootstrap script. The cloud-init

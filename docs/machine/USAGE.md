@@ -33,10 +33,11 @@ Pick the path that matches your host:
   networking (route, NRPT DNS, CA certificate import).
 - **Sandbox (graphical, any hypervisor)** —
   [`setup/sandbox/`](../../setup/sandbox/README.md).
-  You install Ubuntu 26.04 desktop in your hypervisor of choice
-  (UTM / Hyper-V / VirtualBox / virt-manager / VMware), snapshot, and
-  run `bash take-over-sandbox-vm.sh` from inside the VM. mpd lives entirely
-  inside the VM; the host gets zero DNS/route/trust changes.
+  You install Debian Trixie with the GNOME desktop in your hypervisor
+  of choice (UTM / Parallels / Hyper-V / VirtualBox / virt-manager /
+  VMware), snapshot, and run `bash take-over-sandbox-vm.sh` from inside
+  the VM. mpd lives entirely inside the VM; the host gets zero
+  DNS/route/trust changes.
 
 End state of either path: a VM where `mpd` is on `PATH`, your laptop
 SSH key is in `~/.ssh/authorized_keys`, and `~/Developer/mpd/conf/platform.env`

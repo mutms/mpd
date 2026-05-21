@@ -15,7 +15,7 @@
 //   - mpd-machine via ubuntu-kvm/lib/create-vm.sh: same, via SSH.
 //   - mpd-machine via windows-hyperv: same, via WinRM.
 //   - mpd-machine via sandbox/lib/provision.sh: writes the file with
-//     platform=sandbox before `mpd --setup` runs inside the Ubuntu VM.
+//     platform=sandbox before `mpd --setup` runs inside the Debian VM.
 //
 // Reader: mpd's setup actions and helpers that need to know the platform
 // or the VM IP at run-time. Lives under conf/ so it survives

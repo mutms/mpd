@@ -18,7 +18,7 @@ extension Mpd.Environment.Integration {
     /// Verify the host is in the standardized network state mpd-machine
     /// expects: systemd-resolved active, fed by some link manager (NM or
     /// systemd-networkd). The platform bootstrap scripts (cloud-init for
-    /// macos-utm/ubuntu-kvm/windows-hyperv; Ubuntu desktop default for
+    /// macos-utm/ubuntu-kvm/windows-hyperv; `sandbox/lib/provision.sh` for
     /// sandbox) are responsible for putting the host here. mpd just
     /// checks and bails with a hint if not.
     static func requireSystemdResolvedActive() throws {

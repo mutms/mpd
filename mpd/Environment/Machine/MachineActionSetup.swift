@@ -15,9 +15,9 @@ extension Mpd.Environment.Action.Setup {
     /// network stack (link manager + DNS sink) is standardized to
     /// systemd-networkd or NetworkManager + systemd-resolved by the
     /// platform bootstrap (cloud-init for macos-utm/ubuntu-kvm/windows-hyperv;
-    /// Ubuntu desktop default for sandbox). By the time `mpd --setup` runs,
-    /// systemd-resolved is already active. mpd touches it through a single
-    /// drop-in for `*.mpd.test`; nothing else.
+    /// `sandbox/lib/provision.sh` for sandbox). By the time `mpd --setup`
+    /// runs, systemd-resolved is already active. mpd touches it through a
+    /// single drop-in for `*.mpd.test`; nothing else.
     private static let aptPackages: [String] = [
         // runtime
         // `catatonit` is a Recommends of podman (init binary used as the pause
@@ -54,44 +54,17 @@ extension Mpd.Environment.Action.Setup {
         return (id, codename)
     }
 
-    /// Hard gate: mpd-machine targets Debian Trixie for the cloud-init
-    /// platforms (macos-utm, ubuntu-kvm, windows-hyperv), and Ubuntu 26.04
-    /// LTS (Resolute) for the sandbox platform. Other distros /
-    /// releases are unsupported (package names, Swift availability, systemd
-    /// unit layout, NetworkManager defaults all vary). The platform identity
-    /// is read from `~/Developer/mpd/conf/platform.env`, which the matching
-    /// bootstrap script writes before invoking `mpd --setup`.
+    /// Hard gate: mpd-machine targets Debian Trixie across every
+    /// platform — cloud-init (macos-utm, ubuntu-kvm, windows-hyperv) and
+    /// sandbox alike. Other distros / releases are unsupported (package
+    /// names, Swift availability, systemd unit layout, NetworkManager
+    /// defaults all vary).
     private static func requireSupportedHost() throws {
         guard let os = readOSRelease() else {
             throw RuntimeError("""
-            Cannot read /etc/os-release. mpd-machine targets Debian Trixie
-            (or Ubuntu 26.04 LTS for the sandbox platform).
+            Cannot read /etc/os-release. mpd-machine targets Debian Trixie.
             """)
         }
-
-        // platform.env is written by the matching bootstrap script before
-        // `mpd --setup` runs. Sandbox writes platform=sandbox; others write
-        // their own value. If the file is missing, we fall through to the
-        // strict Debian gate (the original behavior — preserves the helpful
-        // "use a Debian Trixie VM" error for users who skipped bootstrap).
-        let isSandbox = (try? Mpd.Core.Platform.load())?.platform == .sandbox
-
-        if isSandbox {
-            guard os.id == "ubuntu" else {
-                throw RuntimeError("""
-                mpd-machine sandbox platform targets Ubuntu (got ID=\(os.id)).
-                Use an Ubuntu 26.04 LTS VM and re-run via take-over-sandbox-vm.sh.
-                """)
-            }
-            guard os.codename == "resolute" else {
-                throw RuntimeError("""
-                mpd-machine sandbox platform targets Ubuntu 26.04 LTS Resolute
-                (got VERSION_CODENAME=\(os.codename)).
-                """)
-            }
-            return
-        }
-
         guard os.id == "debian" else {
             throw RuntimeError("""
             mpd-machine targets Debian (got ID=\(os.id)).
@@ -183,7 +156,7 @@ extension Mpd.Environment.Action.Setup {
         ok("/etc/profile.d/mpd-machine.sh — adds bin/machine/ to PATH.")
     }
 
-    /// Install assets/machine/motd as /etc/motd and disable Ubuntu/Debian's
+    /// Install assets/machine/motd as /etc/motd and disable Debian's
     /// dynamic update-motd scripts so the static banner survives every login.
     /// Idempotent. Single source for the banner across all platforms — the
     /// per-platform `create-vm.sh` scripts no longer touch /etc/motd.
@@ -192,9 +165,9 @@ extension Mpd.Environment.Action.Setup {
         guard FileManager.default.fileExists(atPath: source) else {
             throw RuntimeError("motd asset missing: \(source)")
         }
-        // Disable dynamic motd generation. Ubuntu cloud images ship a few
+        // Disable dynamic motd generation. Some Debian images ship
         // /etc/update-motd.d/* scripts that would otherwise compete with our
-        // static /etc/motd. Best-effort — directory may not exist on Debian.
+        // static /etc/motd. Best-effort — directory may not exist.
         _ = Mpd.Environment.HostExec.run(
             ["sudo", "bash", "-c", "chmod -x /etc/update-motd.d/* 2>/dev/null || true"]
         )
@@ -282,15 +255,15 @@ extension Mpd.Environment.Action.Setup {
 
     static func preflight() throws {
         // Distro gate — fail fast on unsupported hosts before any apt work.
-        // Debian Trixie for cloud-init platforms; Ubuntu 26.04 for sandbox.
+        // Debian Trixie across every platform.
         try requireSupportedHost()
 
         // Verify the host's network stack is in the standardized state
         // (systemd-resolved active, fed by either NetworkManager or
         // systemd-networkd). cloud-init (macos-utm/ubuntu-kvm/windows-hyperv)
-        // and the Ubuntu desktop default (sandbox) are both responsible for
-        // putting the system here; mpd --setup just verifies and bails with
-        // a hint if not.
+        // and `sandbox/lib/provision.sh` (sandbox) are both responsible
+        // for putting the system here; mpd --setup just verifies and
+        // bails with a hint if not.
         try Mpd.Environment.Integration.requireSystemdResolvedActive()
 
         // Single apt phase: runtime essentials + diagnostics + aardvark-dns.
