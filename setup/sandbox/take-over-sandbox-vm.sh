@@ -129,10 +129,15 @@ if ! command -v git >/dev/null 2>&1; then
 fi
 
 # --- Detect self-location: in-repo vs standalone -----------------------
+# When invoked via `bash <(curl …)` against an already-cloned repo,
+# fast-forward-pull so the user picks up upstream fixes without thinking
+# about it. When invoked from inside the cloned repo (running the local
+# working copy), we leave the tree alone — that's an explicit "use what
+# I checked out" signal.
 script_path="$(realpath "${BASH_SOURCE[0]}")"
 if [ "$script_path" = "$EXPECTED_SCRIPT" ]; then
     echo
-    echo "==> Running from inside cloned repo at ${REPO_DIR} — skipping clone"
+    echo "==> Running from inside cloned repo at ${REPO_DIR} — leaving tree as-is"
 else
     if [ -d "$REPO_DIR" ] && [ ! -d "$REPO_DIR/.git" ]; then
         cat >&2 <<EOF
@@ -148,7 +153,22 @@ EOF
         git clone "$REPO_URL" "$REPO_DIR"
     else
         echo
-        echo "==> Repo already cloned at ${REPO_DIR} — using as-is"
+        echo "==> Repo already cloned at ${REPO_DIR} — pulling latest"
+        if ! git -C "$REPO_DIR" pull --ff-only 2>&1 | sed 's/^/    /'; then
+            cat >&2 <<EOF
+
+ERROR: git pull --ff-only failed in ${REPO_DIR}.
+       Likely causes: local commits diverged from upstream, dirty working
+       tree, or no upstream configured. Inspect with:
+
+           git -C ${REPO_DIR} status
+           git -C ${REPO_DIR} log --oneline -5
+
+       Resolve (commit/stash/reset), or wipe ${REPO_DIR} entirely to let
+       the take-over re-clone, then re-run.
+EOF
+            exit 1
+        fi
     fi
 fi
 
