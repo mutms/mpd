@@ -18,8 +18,8 @@
 # the desired state, no sudo prompt happens at all.
 #
 # Called by lib/setup.sh after VM creation or when switching VMs, and by
-# lib/start.sh (route is not persistent across reboot unless the shared
-# LaunchDaemon is installed — re-asserted on every start either way).
+# lib/start.sh (route is not persistent across reboot — re-asserted on
+# every start).
 #
 # Usage:
 #   bash lib/configure-client.sh --vm-ip=10.211.55.155 --vm-user=skodak [--skip-ca]
@@ -145,13 +145,10 @@ initial_route_gw="$route_gw"
 if [ ${#needed[@]} -gt 0 ]; then
     cmds=()
     if [ "$need_route" = 1 ]; then
-        ROUTE_PLIST_STAGED="/tmp/com.mpd.machine.route.plist"
-        route_plist_body "$VM_IP" > "$ROUTE_PLIST_STAGED"
-        if [ -f "$ROUTE_PLIST_PATH" ]; then
-            cmds+=("sudo launchctl bootout system/${ROUTE_PLIST_LABEL} 2>/dev/null || true")
+        if [[ "$route_dest" == 10.163.0* ]] && [ -n "$route_gw" ]; then
+            cmds+=("sudo route -n delete -net ${CONTAINER_SUBNET_PREFIX}")
         fi
-        cmds+=("sudo install -m 644 -o root -g wheel ${ROUTE_PLIST_STAGED} ${ROUTE_PLIST_PATH}")
-        cmds+=("sudo launchctl bootstrap system ${ROUTE_PLIST_PATH}")
+        cmds+=("sudo route -n add -net ${CONTAINER_SUBNET_PREFIX} ${VM_IP}")
     fi
     if [ "$need_resolver" = 1 ]; then
         cmds+=("sudo mkdir -p /etc/resolver")
@@ -172,7 +169,10 @@ if [ ${#needed[@]} -gt 0 ]; then
         sudo -v || die "sudo authentication failed."
 
         if [ "$need_route" = 1 ]; then
-            install_route_daemon "$VM_IP"
+            if [[ "$route_dest" == 10.163.0* ]] && [ -n "$route_gw" ]; then
+                sudo route -n delete -net "$CONTAINER_SUBNET_PREFIX" >/dev/null 2>&1 || true
+            fi
+            sudo route -n add -net "$CONTAINER_SUBNET_PREFIX" "$VM_IP" >/dev/null
         fi
         if [ "$need_resolver" = 1 ]; then
             sudo mkdir -p /etc/resolver

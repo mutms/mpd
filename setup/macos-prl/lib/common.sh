@@ -518,78 +518,11 @@ prepare_host_ca() {
     ok "generated host CA at ${platform_caroot}"
 }
 
-# --- Shared route LaunchDaemon ---
-# `route add` doesn't persist across host reboots. To eliminate the
-# daily sudo from start.command, mpd installs a LaunchDaemon at a
-# single path shared by every mpd-machine platform (macos-utm,
-# macos-prl, …). Last setup wins — each platform's setup.command
-# rewrites the plist with the active VM's IP.
-#
-# mpd-desktop's WireGuard tunnel installs its own route at a higher
-# precedence when active, so the LaunchDaemon-added route coexists
-# cleanly and only takes effect when WG is down.
-ROUTE_PLIST_PATH="/Library/LaunchDaemons/com.mpd.machine.route.plist"
-ROUTE_PLIST_LABEL="com.mpd.machine.route"
-
-route_plist_body() {
-    local vm_ip="$1"
-    cat <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTD/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>${ROUTE_PLIST_LABEL}</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/sbin/route</string>
-        <string>-n</string>
-        <string>add</string>
-        <string>-net</string>
-        <string>${CONTAINER_SUBNET_PREFIX}</string>
-        <string>${vm_ip}</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <false/>
-    <key>StandardErrorPath</key>
-    <string>/var/log/mpd-machine-route.log</string>
-</dict>
-</plist>
-PLIST
-}
-
-route_daemon_in_sync() {
-    local vm_ip="$1"
-    [ -f "$ROUTE_PLIST_PATH" ] || return 1
-    grep -q "<string>${vm_ip}</string>" "$ROUTE_PLIST_PATH" || return 1
-    grep -q "<string>${CONTAINER_SUBNET_PREFIX}</string>" "$ROUTE_PLIST_PATH" || return 1
-    return 0
-}
-
-install_route_daemon() {
-    local vm_ip="$1"
-    local body
-    body=$(route_plist_body "$vm_ip")
-    if [ -f "$ROUTE_PLIST_PATH" ]; then
-        sudo launchctl bootout "system/${ROUTE_PLIST_LABEL}" >/dev/null 2>&1 || true
-    fi
-    printf '%s\n' "$body" | sudo tee "$ROUTE_PLIST_PATH" >/dev/null
-    sudo chmod 0644 "$ROUTE_PLIST_PATH"
-    sudo chown root:wheel "$ROUTE_PLIST_PATH" 2>/dev/null || true
-    sudo launchctl bootstrap system "$ROUTE_PLIST_PATH"
-    sleep 1
-}
-
-uninstall_route_daemon() {
-    [ -f "$ROUTE_PLIST_PATH" ] || return 0
-    sudo launchctl bootout "system/${ROUTE_PLIST_LABEL}" >/dev/null 2>&1 || true
-    sudo rm -f "$ROUTE_PLIST_PATH"
-    sudo route -n delete -net "$CONTAINER_SUBNET_PREFIX" >/dev/null 2>&1 || true
-}
-
 # --- Idempotent host-side privileged ops ---
+# Route is *not* persisted across host reboots — `start.command`
+# re-asserts it (one sudo prompt). Macs reboot rarely; the upside of
+# avoiding a LaunchDaemon is a sudo recipe that is two lines of
+# `route` instead of an opaque launchctl + plist dance.
 
 route_needs_update() {
     local target_ip="$1"
@@ -597,17 +530,22 @@ route_needs_update() {
     out=$(route -n get -inet "$CONTAINER_PROBE_IP" 2>/dev/null || true)
     dest=$(awk '/destination:/ { print $2; exit }' <<<"$out")
     gw=$(awk '/gateway:/    { print $2; exit }' <<<"$out")
-    if ! { [[ "$dest" == 10.163.0* ]] && [ "$gw" = "$target_ip" ]; }; then
-        return 0
+    if [[ "$dest" == 10.163.0* ]] && [ "$gw" = "$target_ip" ]; then
+        return 1
     fi
-    if ! route_daemon_in_sync "$target_ip"; then
-        return 0
-    fi
-    return 1
+    return 0
 }
 
 apply_route() {
-    install_route_daemon "$1"
+    local target_ip="$1"
+    local out dest gw
+    out=$(route -n get -inet "$CONTAINER_PROBE_IP" 2>/dev/null || true)
+    dest=$(awk '/destination:/ { print $2; exit }' <<<"$out")
+    gw=$(awk '/gateway:/    { print $2; exit }' <<<"$out")
+    if [[ "$dest" == 10.163.0* ]] && [ -n "$gw" ]; then
+        sudo route -n delete -net "$CONTAINER_SUBNET_PREFIX" >/dev/null 2>&1 || true
+    fi
+    sudo route -n add -net "$CONTAINER_SUBNET_PREFIX" "$target_ip" >/dev/null
 }
 
 resolver_needs_update() {

@@ -36,7 +36,6 @@ detect_host_targets() {
     cur_out=$(route -n get -inet "$CONTAINER_PROBE_IP" 2>/dev/null || true)
     cur_dest=$(awk '/destination:/ { print $2; exit }' <<<"$cur_out")
     [[ "$cur_dest" == 10.163.0* ]] && remove_route=1
-    [ -f "$ROUTE_PLIST_PATH" ] && remove_route=1
 
     [ -f "/etc/resolver/${DNS_DOMAIN}" ] && remove_resolver=1
 
@@ -125,13 +124,7 @@ trap 'sudo -k 2>/dev/null || true' EXIT
 
 if [ "$remove_route" = 1 ] || [ "$remove_resolver" = 1 ] || [ ${#ca_targets[@]} -gt 0 ]; then
     cmds=()
-    if [ "$remove_route" = 1 ]; then
-        if [ -f "$ROUTE_PLIST_PATH" ]; then
-            cmds+=("sudo launchctl bootout system/${ROUTE_PLIST_LABEL} 2>/dev/null || true")
-            cmds+=("sudo rm -f ${ROUTE_PLIST_PATH}")
-        fi
-        cmds+=("sudo route -n delete -net ${CONTAINER_SUBNET_PREFIX} 2>/dev/null || true")
-    fi
+    [ "$remove_route" = 1 ]    && cmds+=("sudo route -n delete -net ${CONTAINER_SUBNET_PREFIX}")
     [ "$remove_resolver" = 1 ] && cmds+=("sudo rm -f /etc/resolver/${DNS_DOMAIN}")
     for _ in "${ca_targets[@]}"; do
         cmds+=("sudo security delete-certificate -t -c \"${CA_SUBJECT_MATCH}\" ${SYSTEM_KEYCHAIN}")
@@ -146,8 +139,8 @@ if [ "$remove_route" = 1 ] || [ "$remove_resolver" = 1 ] || [ ${#ca_targets[@]} 
     else
         sudo -v || die "sudo authentication failed."
         if [ "$remove_route" = 1 ]; then
-            uninstall_route_daemon
-            echo "Container subnet route + persistence daemon removed."
+            sudo route -n delete -net "$CONTAINER_SUBNET_PREFIX" >/dev/null 2>&1 || true
+            echo "Container subnet route removed."
         fi
         if [ "$remove_resolver" = 1 ]; then
             sudo rm -f "/etc/resolver/${DNS_DOMAIN}"

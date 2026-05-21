@@ -164,13 +164,10 @@ initial_route_gw="$route_gw"
 if [ ${#needed[@]} -gt 0 ]; then
     cmds=()
     if [ "$need_route" = 1 ]; then
-        ROUTE_PLIST_STAGED="/tmp/com.mpd.machine.route.plist"
-        route_plist_body "$VM_IP" > "$ROUTE_PLIST_STAGED"
-        if [ -f "$ROUTE_PLIST_PATH" ]; then
-            cmds+=("sudo launchctl bootout system/${ROUTE_PLIST_LABEL} 2>/dev/null || true")
+        if [[ "$route_dest" == 10.163.0* ]] && [ -n "$route_gw" ]; then
+            cmds+=("sudo route -n delete -net ${CONTAINER_SUBNET_PREFIX}")
         fi
-        cmds+=("sudo install -m 644 -o root -g wheel ${ROUTE_PLIST_STAGED} ${ROUTE_PLIST_PATH}")
-        cmds+=("sudo launchctl bootstrap system ${ROUTE_PLIST_PATH}")
+        cmds+=("sudo route -n add -net ${CONTAINER_SUBNET_PREFIX} ${VM_IP}")
     fi
     if [ "$need_resolver" = 1 ]; then
         cmds+=("sudo mkdir -p /etc/resolver")
@@ -192,10 +189,10 @@ if [ ${#needed[@]} -gt 0 ]; then
         sudo -v || die "sudo authentication failed."
 
         if [ "$need_route" = 1 ]; then
-            # Installs the LaunchDaemon at $ROUTE_PLIST_PATH; RunAtLoad
-            # immediately runs `route add`, so the active route gets
-            # populated synchronously inside install_route_daemon.
-            install_route_daemon "$VM_IP"
+            if [[ "$route_dest" == 10.163.0* ]] && [ -n "$route_gw" ]; then
+                sudo route -n delete -net "$CONTAINER_SUBNET_PREFIX" >/dev/null 2>&1 || true
+            fi
+            sudo route -n add -net "$CONTAINER_SUBNET_PREFIX" "$VM_IP" >/dev/null
         fi
         if [ "$need_resolver" = 1 ]; then
             sudo mkdir -p /etc/resolver

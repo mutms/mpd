@@ -219,20 +219,17 @@ else
 
     if [ ${#needs[@]} -gt 0 ]; then
         # Build the runnable command list, mirroring exactly what
-        # apply_* would do. The route step installs a LaunchDaemon at
-        # /Library/LaunchDaemons/com.mpd.machine.route.plist so the
-        # route persists across host reboots — no sudo on daily start.
-        # The plist is pre-staged to /tmp so the printed recipe stays a
-        # short list of clean one-liners.
+        # apply_* would do. Includes the optional stale-route delete
+        # so the printed recipe matches what the script would run.
         cmds=()
         case " ${needs[*]} " in *" route "*)
-            ROUTE_PLIST_STAGED="/tmp/com.mpd.machine.route.plist"
-            route_plist_body "$VM_IP" > "$ROUTE_PLIST_STAGED"
-            if [ -f "$ROUTE_PLIST_PATH" ]; then
-                cmds+=("sudo launchctl bootout system/${ROUTE_PLIST_LABEL} 2>/dev/null || true")
+            probe_out=$(route -n get -inet "$CONTAINER_PROBE_IP" 2>/dev/null || true)
+            probe_dest=$(awk '/destination:/ { print $2; exit }' <<<"$probe_out")
+            probe_gw=$(awk   '/gateway:/    { print $2; exit }' <<<"$probe_out")
+            if [[ "$probe_dest" == 10.163.0* ]] && [ -n "$probe_gw" ]; then
+                cmds+=("sudo route -n delete -net ${CONTAINER_SUBNET_PREFIX}")
             fi
-            cmds+=("sudo install -m 644 -o root -g wheel ${ROUTE_PLIST_STAGED} ${ROUTE_PLIST_PATH}")
-            cmds+=("sudo launchctl bootstrap system ${ROUTE_PLIST_PATH}")
+            cmds+=("sudo route -n add -net ${CONTAINER_SUBNET_PREFIX} ${VM_IP}")
         ;; esac
         case " ${needs[*]} " in *" resolver "*)
             cmds+=("sudo mkdir -p /etc/resolver")

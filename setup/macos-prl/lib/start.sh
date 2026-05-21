@@ -53,8 +53,7 @@ else
 fi
 
 # The persistent route to 10.163.0.0/24 is not preserved across host
-# reboots unless the shared LaunchDaemon is installed; re-assert it
-# (and refresh the resolver / CA if missing) cheaply. Skip CA fetch
-# since the VM may still be settling.
+# reboots; re-assert it (and refresh the resolver / CA if missing)
+# cheaply. Skip CA fetch since the VM may still be settling.
 bash "${SCRIPT_DIR}/configure-client.sh" \
     --vm-ip="$vm_ip" --vm-user="$vm_user" --skip-ca

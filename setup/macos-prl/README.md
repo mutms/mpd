@@ -39,16 +39,16 @@ bash setup/macos-prl/lib/setup.sh
   "VM template preparation" below.
 
 `setup.command` may ask for your sudo password — but only if it actually
-needs to change something (install/refresh the persistent-route
-LaunchDaemon, write `/etc/resolver/mpd.test`, or import the mpd CA into
-the System keychain). Before asking, it prints the exact runnable
-commands and gives you a choice: open another Terminal and run them
-yourself, or press Enter and let `setup.command` sudo for you. On a Mac
-that's already configured, no password prompt happens at all.
+needs to change something (add the route to the container subnet, write
+`/etc/resolver/mpd.test`, or import the mpd CA into the System keychain).
+Before asking, it prints the exact runnable commands and gives you a
+choice: open another Terminal and run them yourself, or press Enter and
+let `setup.command` sudo for you. On a Mac that's already configured,
+no password prompt happens at all.
 
-Day-to-day `start.command` and `stop.command` need **no sudo at all**
-once setup has installed the route LaunchDaemon (the daemon re-asserts
-the route at every host boot).
+Day-to-day `start.command` and `stop.command` rarely need sudo (only
+`start.command` after a host reboot, to re-add the container subnet
+route).
 
 ## VM template preparation
 
@@ -109,26 +109,23 @@ the long unattended phase:
 2. Prints the exact commands it would run as root and lets you choose:
    copy/paste them into another terminal, or press Enter to let the
    script sudo for you. Either path ends at the same state.
-3. Installs the shared route LaunchDaemon at
-   `/Library/LaunchDaemons/com.mpd.machine.route.plist` (added route
-   persists across host reboots; same plist used by macos-utm — last
-   setup wins).
-4. Writes `/etc/resolver/mpd.test` and imports the mpd CA into the
-   System keychain; drops cached sudo creds.
-5. **Clones the template** via `prlctl clone mpd-machine-template
+3. Adds the route to `10.163.0.0/24`, writes `/etc/resolver/mpd.test`,
+   imports the mpd CA into the System keychain, and drops cached sudo
+   creds.
+4. **Clones the template** via `prlctl clone mpd-machine-template
    --name mpd-machine-NN` (full clone — independent of the template's
    future lifecycle).
-6. Sets memory, CPU, and disk size on the clone.
-7. Starts the VM, discovers the DHCP-assigned IP via Parallels Tools,
+5. Sets memory, CPU, and disk size on the clone.
+6. Starts the VM, discovers the DHCP-assigned IP via Parallels Tools,
    waits for SSH.
-8. Renames the hostname, switches the active NetworkManager connection
+7. Renames the hostname, switches the active NetworkManager connection
    from DHCP to manual `10.211.55.NN/24`, restarts NetworkManager (SSH
    on the DHCP IP dies — by design).
-9. Reconnects on the static IP, ensures the dev's SSH key is
+8. Reconnects on the static IP, ensures the dev's SSH key is
    authorized, disables IPv6, pulls the repo to latest, rebuilds
    `bin/mpd`, uploads the host CA, runs `mpd --setup`.
-10. **Pre-warms the demo stack** (PHP runtime + `postgres:latest`).
-11. Adds a `Host mpd-machine-NN` block to `~/.ssh/config` (so
+9. **Pre-warms the demo stack** (PHP runtime + `postgres:latest`).
+10. Adds a `Host mpd-machine-NN` block to `~/.ssh/config` (so
     `ssh mpd-machine-155` works) and writes
     `~/Desktop/mpd-machine.command`, which reads
     `~/.mpd-machine/current.env` at click time and SSHes to whichever
@@ -137,7 +134,7 @@ the long unattended phase:
     just replaces the previous platform's entries cleanly.
 
 The whole process takes 5–15 minutes depending on Parallels clone
-speed and your Mac. After step 4 (the host-side privileged work) the
+speed and your Mac. After step 3 (the host-side privileged work) the
 script holds no sudo creds; you can leave it running unattended.
 
 When setup finishes:
@@ -156,8 +153,8 @@ updated to point to the new VM (route + CA).
 
 `start.command` — starts the VM that is currently configured (detected
 from the persistent route or `~/.mpd-machine/current.env`). Re-asserts
-the route afterward via the LaunchDaemon, so no sudo needed in the
-common case.
+the route afterward (the route does not survive a host reboot). No
+prompts.
 
 `stop.command` — suspends all running mpd VMs via `prlctl suspend`.
 Useful before shutting down the Mac. No prompts, no sudo.
@@ -166,8 +163,7 @@ Useful before shutting down the Mac. No prompts, no sudo.
 
 Asks for confirmation (`Type YES`), then runs in order:
 
-1. Removes host networking and trust — the
-   `com.mpd.machine.route.plist` LaunchDaemon + its route,
+1. Removes host networking and trust — route to `10.163.0.0/24`,
    `/etc/resolver/mpd.test`, and any mpd CA certificate(s) in the
    System keychain. Same sudo affordance as `setup.command`.
 
