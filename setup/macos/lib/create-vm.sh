@@ -9,8 +9,10 @@
 #   bash lib/create-vm.sh \
 #       --octet=155 --user=skodak \
 #       --ssh-pub-key="$HOME/.ssh/id_ed25519.pub" \
-#       --memory-gb=12 --disk-gb=200 \
 #       --host-ca-pem=... --host-ca-key=...
+#
+# Memory, CPU count, and disk size are inherited from the Parallels
+# template (`mpd-template`) — tune them on the template, not here.
 
 set -euo pipefail
 
@@ -22,8 +24,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VM_OCTET=""
 VM_USER=""
 SSH_KEY=""
-VM_MEMORY_GB=""
-VM_DISK_SIZE=""
 ARG_HOST_CA_PEM=""
 ARG_HOST_CA_KEY=""
 
@@ -32,8 +32,6 @@ for arg in "$@"; do
         --octet=*)         VM_OCTET="${arg#*=}" ;;
         --user=*)          VM_USER="${arg#*=}" ;;
         --ssh-pub-key=*)   SSH_KEY="${arg#*=}" ;;
-        --memory-gb=*)     VM_MEMORY_GB="${arg#*=}" ;;
-        --disk-gb=*)       VM_DISK_SIZE="${arg#*=}" ;;
         --host-ca-pem=*)   ARG_HOST_CA_PEM="${arg#*=}" ;;
         --host-ca-key=*)   ARG_HOST_CA_KEY="${arg#*=}" ;;
         *) die "Unknown argument: $arg" ;;
@@ -43,8 +41,6 @@ done
 [ -n "$VM_OCTET" ]         || die "Missing --octet"
 [ -n "$VM_USER" ]          || die "Missing --user"
 [ -n "$SSH_KEY" ]          || die "Missing --ssh-pub-key"
-[ -n "$VM_MEMORY_GB" ]     || die "Missing --memory-gb"
-[ -n "$VM_DISK_SIZE" ]     || die "Missing --disk-gb"
 [ -n "$ARG_HOST_CA_PEM" ]  || die "Missing --host-ca-pem (setup.sh prepares it via prepare_host_ca)"
 [ -n "$ARG_HOST_CA_KEY" ]  || die "Missing --host-ca-key"
 [ -f "$SSH_KEY" ]          || die "SSH public key not found: $SSH_KEY"
@@ -59,11 +55,8 @@ fi
 
 VM_NAME="${VM_NAME_PREFIX}${VM_OCTET}"
 VM_IP="${BRIDGE_SUBNET}.${VM_OCTET}"
-VM_MEMORY_MIB=$((VM_MEMORY_GB * 1024))
-VM_DISK_MB=$((VM_DISK_SIZE * 1024))
-VM_CPUS=4
 
-step "Creating VM: name=${VM_NAME} ip=${VM_IP} user=${VM_USER} memory=${VM_MEMORY_GB}GB disk=${VM_DISK_SIZE}GB"
+step "Creating VM: name=${VM_NAME} ip=${VM_IP} user=${VM_USER} (memory/cpu/disk from template)"
 
 [ -x "$PRLCTL" ] || die "prlctl not found at ${PRLCTL}. Install Parallels Desktop Pro."
 
@@ -89,21 +82,6 @@ step "Cloning template '${TEMPLATE_NAME}' (full clone — this can take a couple
 VM_UUID=$(prlctl_uuid_of "$VM_NAME")
 [ -n "$VM_UUID" ] || die "Could not read the new VM's UUID via prlctl list ${VM_NAME} -o uuid."
 ok "Clone created (uuid=${VM_UUID})"
-
-# --- Resize hardware ---
-
-step "Configuring memory / cpus / disk"
-"$PRLCTL" set "$VM_UUID" --memsize "$VM_MEMORY_MIB" >/dev/null
-"$PRLCTL" set "$VM_UUID" --cpus "$VM_CPUS" >/dev/null
-
-# Grow the primary disk if the requested size exceeds the template's. We
-# rely on Parallels' guest-tools-driven online resize to push the new
-# size into the partition + filesystem; if Tools aren't running or the
-# resize doesn't take, the in-guest verify step later in this script
-# warns but doesn't fail.
-"$PRLCTL" set "$VM_UUID" --device-set hdd0 --size "$VM_DISK_MB" >/dev/null 2>&1 \
-    || warn "could not resize hdd0 (template may already be ≥${VM_DISK_SIZE} GB)"
-ok "Hardware: ${VM_MEMORY_GB} GB RAM, ${VM_CPUS} vCPU, ${VM_DISK_SIZE} GB disk"
 
 # --- Start VM (template's seed user + injected SSH key get us in) ---
 

@@ -141,8 +141,10 @@ get_vm_ip() {
         # The IP column may contain comma-separated addresses or "-" when
         # Parallels Tools hasn't reported yet. Pick the first match on our
         # bridge subnet.
-        ip=$(awk -v sub="$BRIDGE_SUBNET" '
-            { gsub(/,/, " "); for (i = 1; i <= NF; i++) if ($i ~ "^" sub "\\.") { print $i; exit } }
+        # NOTE: variable is named `prefix`, not `sub` — `sub` is a built-in
+        # awk function and macOS's BSD awk rejects it as a variable name.
+        ip=$(awk -v prefix="$BRIDGE_SUBNET" '
+            { gsub(/,/, " "); for (i = 1; i <= NF; i++) if ($i ~ "^" prefix "\\.") { print $i; exit } }
         ' <<<"$raw")
         if [[ "$ip" =~ ^${BRIDGE_SUBNET//./\\.}\.[0-9]+$ ]]; then
             echo "$ip"; return 0

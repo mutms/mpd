@@ -220,29 +220,9 @@ else
         fi
     done
 
-    # Memory (GB)
-    VM_MEMORY_GB=""
-    while [ -z "$VM_MEMORY_GB" ]; do
-        read -r -p "    Memory in GB [12]: " inp
-        inp="${inp:-12}"
-        if [[ "$inp" =~ ^[0-9]+$ ]] && [ "$inp" -ge 2 ]; then
-            VM_MEMORY_GB="$inp"
-        else
-            echo "    Memory must be a whole number of GB >= 2."
-        fi
-    done
-
-    # Disk (GB)
-    VM_DISK_SIZE=""
-    while [ -z "$VM_DISK_SIZE" ]; do
-        read -r -p "    Disk size in GB [200]: " inp
-        inp="${inp:-200}"
-        if [[ "$inp" =~ ^[0-9]+$ ]] && [ "$inp" -ge 8 ]; then
-            VM_DISK_SIZE="$inp"
-        else
-            echo "    Disk size must be a whole number of GB >= 8."
-        fi
-    done
+    # Memory, CPU count, and disk size are inherited from the Parallels
+    # template ('mpd-template') as-is — adjust them on the template once
+    # rather than overriding per-clone here.
 
     # ── Host-side preparation: CA + upfront fenced sudo ─────────────────
 
@@ -311,7 +291,7 @@ else
     fi
 
     echo
-    echo "    Cloning VM: name=${VM_NAME}  IP=${VM_IP}  user=${VM_USER}  memory=${VM_MEMORY_GB}GB  disk=${VM_DISK_SIZE}GB"
+    echo "    Cloning VM: name=${VM_NAME}  IP=${VM_IP}  user=${VM_USER}  (memory/cpu/disk inherited from template)"
     echo
 
     # create-vm.sh writes the new VM's UUID to this file on success.
@@ -325,8 +305,6 @@ else
         --octet="$VM_OCTET" \
         --user="$VM_USER" \
         --ssh-pub-key="$SSH_KEY" \
-        --memory-gb="$VM_MEMORY_GB" \
-        --disk-gb="$VM_DISK_SIZE" \
         --host-ca-pem="$HOST_CA_PEM" \
         --host-ca-key="$HOST_CA_KEY"
 
