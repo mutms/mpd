@@ -279,6 +279,27 @@ ssh_cmd() {
     ssh -o StrictHostKeyChecking=no -o BatchMode=yes "${user}@${host}" "$@"
 }
 
+# Poll until TCP port 22 on $host accepts a connection. Doesn't auth —
+# just checks the listener is up. Used right after starting a freshly
+# cloned VM so we can run ssh-copy-id while the dev's pubkey isn't yet
+# in the guest's authorized_keys (so a real ssh login would 'Permission
+# denied (publickey)' before sshd has even fully started its auth path).
+wait_for_ssh_port() {
+    local host="$1" timeout="${2:-180}"
+    local elapsed=0
+    while [ $elapsed -lt $timeout ]; do
+        if nc -z -w 2 "$host" 22 >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 2
+        elapsed=$((elapsed + 2))
+        if [ $((elapsed % 30)) -eq 0 ]; then
+            echo "    Still waiting for sshd... (${elapsed}s / ${timeout}s)"
+        fi
+    done
+    return 1
+}
+
 # Wait for SSH to come up at host:port. Returns 0 on success, 1 on timeout.
 wait_for_ssh() {
     local host="$1" user="$2" timeout="${3:-300}"

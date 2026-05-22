@@ -100,26 +100,28 @@ DHCP_IP=$(get_vm_ip "$VM_UUID" 120) \
     || die "VM never reported an IP via Parallels Tools. Open Parallels Desktop to investigate."
 ok "Guest reported IP: ${DHCP_IP}"
 
-step "Waiting for SSH at ${DHCP_IP} (${VM_USER})"
-wait_for_ssh "$DHCP_IP" "$VM_USER" 180 \
-    || die "SSH not reachable at ${DHCP_IP}:22 within 180s."
-ok "SSH ready (${VM_USER}@${DHCP_IP})"
+step "Waiting for sshd to come up at ${DHCP_IP}"
+wait_for_ssh_port "$DHCP_IP" 180 \
+    || die "TCP/22 not reachable at ${DHCP_IP} within 180s."
+ok "sshd listening at ${DHCP_IP}:22"
 
-# --- Inject the dev's SSH key (template-only key gets us in once; this
-# ensures the dev's actual key is in authorized_keys for ongoing access).
-# Idempotent — appends only if absent.
+# --- Authorize the dev's SSH key via ssh-copy-id (one password prompt) ---
+# Freshly-cloned VMs only carry the template-builder's key (or no key at
+# all for this user). ssh-copy-id pushes our key with one interactive
+# password — every subsequent ssh / scp can use BatchMode=yes. Idempotent
+# on re-run: if the key is already there, ssh-copy-id no-ops without
+# prompting.
 
-step "Authorizing dev SSH key in the VM"
-SSH_PUB_KEY=$(cat "$SSH_KEY")
-ssh_cmd "$DHCP_IP" "$VM_USER" "export PUBKEY=$(printf '%q' "$SSH_PUB_KEY"); bash -se" <<'EOF'
-set -e
-mkdir -p "$HOME/.ssh"
-chmod 700 "$HOME/.ssh"
-touch "$HOME/.ssh/authorized_keys"
-chmod 600 "$HOME/.ssh/authorized_keys"
-grep -qxF "$PUBKEY" "$HOME/.ssh/authorized_keys" || echo "$PUBKEY" >> "$HOME/.ssh/authorized_keys"
-EOF
-ok "Dev SSH key authorized"
+step "Authorizing dev SSH key (interactive — you'll be prompted for the VM user's password)"
+SSH_PUB_KEY_PATH="$SSH_KEY"
+[ -f "$SSH_PUB_KEY_PATH" ] || die "SSH public key not found at ${SSH_PUB_KEY_PATH}."
+ssh-copy-id \
+    -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
+    -i "$SSH_PUB_KEY_PATH" \
+    "${VM_USER}@${DHCP_IP}" \
+    || die "ssh-copy-id failed. Check the VM user's password and that the user exists in the template."
+ok "Dev SSH key authorized (BatchMode SSH should now work)"
 
 # --- Rename hostname + pin static IP ---
 # After this, SSH on the DHCP IP dies. We continue on the static IP.
