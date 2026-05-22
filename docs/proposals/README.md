@@ -16,20 +16,16 @@ Difference from sibling docs:
 
 - [`macos-host-state-and-wireguard.md`](macos-host-state-and-wireguard.md) —
   Two intertwined architectural decisions for the macOS host:
-  three-directory state model (`conf/` / `~/.mpd-<product>/` / `~/.mpd/`),
-  and WireGuard-based networking that eliminates daily sudo. **Top
-  priority** — anchors `mpd-prl`'s networking story. mpd-desktop
-  alignment is deferred.
-- [`host-binary-parallels.md`](host-binary-parallels.md) — `mpd-prl`, a
-  macOS Swift binary replacing `setup/macos/`'s bash scripts. Primary
-  reference for the host-binary trio; specifies cross-cutting design
-  (verb surface, namespace tree, sudo-recipe UX, state-file layout).
-  Builds on the state-and-WG proposal above.
-- [`host-binary-kvm.md`](host-binary-kvm.md) — `mpd-kvm`, the
-  Linux+libvirt twin. Delegates cross-cutting design to the Parallels
-  proposal; specs only the libvirt-specific deltas.
-- [`host-binary-hyperv.md`](host-binary-hyperv.md) — `mpd-hpv`, the
-  Windows+Hyper-V twin. Runs **inside WSL2 Debian** as a Linux
-  binary and drives Windows-side Hyper-V via `powershell.exe`
-  interop — no native Swift-on-Windows toolchain needed. Most
-  speculative of the three (no current users).
+  three-directory state model (`conf/` / `~/.mpd-<product>/` /
+  `~/.mpd/`), and WireGuard-based networking that eliminates daily
+  sudo. **Top priority** — anchors `mpd-virt`'s networking story.
+  mpd-desktop alignment is deferred (drops multi-machine support,
+  adopts the same SSH alias / container hostname convention as
+  mpd-machine).
+- [`mpd-virt.md`](mpd-virt.md) — `mpd-virt`, a new host-side Swift
+  binary that replaces the bash under `setup/macos/lib/` (and the
+  planned-but-not-built bash twins for Linux/KVM and WSL/Hyper-V).
+  One binary name across platforms, per-backend code gated by
+  `#if os(...)`, build matrix split between the existing macOS
+  Makefile and a new `Makefile.linux`. macOS+Parallels is the only
+  mandatory backend; KVM and Hyper-V are speculative.

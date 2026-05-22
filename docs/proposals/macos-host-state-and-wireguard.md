@@ -6,7 +6,7 @@ the other:
 
 1. **A three-directory state model** on the macOS host with clearly
    named owners, lifecycles, and migration boundaries.
-2. **A WireGuard-based networking model** for both `mpd-prl` and
+2. **A WireGuard-based networking model** for both `mpd-virt` and
    `mpd-desktop`, with persistent identity in `~/Developer/mpd/conf/`
    and zero daily sudo on the Mac.
 
@@ -27,16 +27,16 @@ Together they give the macOS host an end state where:
 This proposal assumes a **fully clean macOS host** at the moment
 Phase A begins. Specifically:
 
-- **No existing mpd-prl VMs in Parallels.** mpd-prl doesn't exist
+- **No existing mpd-virt VMs in Parallels.** mpd-virt doesn't exist
   yet, so there can't be any.
 - **No existing Podman Desktop machines** under mpd-desktop. If the
   user has previously used mpd-desktop, the Podman Desktop machine
   is removed (`podman machine rm`) before Phase A begins.
-- **No `~/.mpd-machine/`**, **no `~/.mpd-desktop/`**, **no `~/.mpd/`**
+- **No `~/.mpd-virt/`**, **no `~/.mpd-desktop/`**, **no `~/.mpd/`**
   anywhere under the user's home. All three host-side state
   directories are wiped:
   ```
-  rm -rf ~/.mpd-machine ~/.mpd-desktop ~/.mpd
+  rm -rf ~/.mpd-virt ~/.mpd-desktop ~/.mpd
   ```
 - **No `~/Developer/mpd/conf/`** content from prior installs. The
   persistent identity dir is wiped too:
@@ -56,12 +56,12 @@ handling matters. Phase A begins on a host that has never seen mpd.
 
 ## Priority and rollout
 
-**`mpd-prl` (mpd-machine via Parallels) is the only mandatory target
+**`mpd-virt` (mpd-machine via Parallels) is the only mandatory target
 of this proposal.** Everything below is specified primarily for that
 binary's first implementation.
 
 mpd-desktop is **fully uninstalled** before Phase A begins (per
-the "Assumed starting state" section). During the mpd-prl rollout
+the "Assumed starting state" section). During the mpd-virt rollout
 it simply isn't present on the host; no state, no Podman Desktop
 machine, no `~/.mpd/`, no `~/.mpd-desktop/` (it doesn't exist
 yet), nothing in `conf/` from a prior install.
@@ -69,13 +69,13 @@ yet), nothing in `conf/` from a prior install.
 The "Implications for mpd-desktop" and "Refactor needed in
 mpd-desktop" sections describe the *later* alignment pass. When
 that lands, mpd-desktop gets re-set-up on a host that already has
-`conf/wireguard/mac.{private,public}` from mpd-prl; both products
+`conf/wireguard/mac.{private,public}` from mpd-virt; both products
 converge on one Mac identity automatically. No migration code, no
 ceremony — see "Migration" below.
 
 ## Non-goals
 
-- Migration from existing installs. No mpd-prl deployments exist yet
+- Migration from existing installs. No mpd-virt deployments exist yet
   to migrate. mpd-desktop's directory restructure (moving its
   host-side meta out of `~/.mpd/` into `~/.mpd-desktop/`) is a
   one-time breaking change that lands with this work — no
@@ -130,17 +130,17 @@ ceremony — see "Migration" below.
 │   ├── temp/
 │   └── platform.env
 
-~/.mpd-machine/                   ← mpd-prl bookkeeping (removed by `mpd-prl uninstall`)
-├── current.env                   # MPD_VM_UUID pointer
-└── <uuid>/
-    └── env                       # MPD_VM_UUID, NAME, IP, USER
+~/.mpd-virt/                   ← mpd-virt bookkeeping (removed by `mpd-virt uninstall`)
+├── current.env                   # MPD_VM_OCTET pointer
+└── <octet>/
+    └── env                       # MPD_VM_OCTET, NAME, IP, USER, UUID (diagnostic)
                                   # (future: per-VM logs, cache)
 
 ~/.mpd-desktop/                   ← mpd-desktop bookkeeping (new — see "Refactor" below)
-├── current.env                   # MPD_MACHINE_NAME pointer
-└── <machinename>/
-    └── env                       # MPD_MACHINE_NAME, podman state snapshot
+└── env                           # podman machine state snapshot
                                   # (future: per-machine data)
+                                  # Single machine only — see "Refactor" for the
+                                  # multi-machine drop.
 
 ~/.mpd/                           ← mpd-desktop runtime state (Mac filesystem)
 ├── machines/<name>/
@@ -168,32 +168,71 @@ different filesystems.
 | `<product> --setup` | Reads/writes `conf/` (idempotent). Creates `~/.mpd-<product>/` and `~/.mpd/` if missing. |
 | `<product> --uninstall` | Removes `~/.mpd-<product>/` and `~/.mpd/` (the latter only on whichever filesystem the runtime ran on). **Never** touches `conf/`. |
 | `rm -rf ~/Developer/mpd/conf/` | User's manual nuclear option. Resets identity completely; next `--setup` regenerates. |
-| Recreate a VM at the same `<octet>` | New env file under `~/.mpd-machine/<uuid>/`. Reuses `conf/wireguard/machine/<octet>/` keys — WG.app tunnel still works. |
-| Recreate Podman Desktop machine | New env file under `~/.mpd-desktop/<machinename>/`. Reuses `conf/wireguard/desktop/` keys. |
+| Recreate a VM at the same `<octet>` | `~/.mpd-virt/<octet>/env` is overwritten with the new VM's UUID + name snapshot (diagnostic only). Reuses `conf/wireguard/machine/<octet>/` keys — WG.app tunnel still works. |
+| Recreate Podman Desktop machine | Overwrites `~/.mpd-desktop/env` with new podman snapshot. Reuses `conf/wireguard/desktop/` keys. |
 
 ### Refactor needed in mpd-desktop (deferred — see "Priority and rollout")
 
 This section describes the eventual cleanup that aligns mpd-desktop
-with the three-directory model. **Not part of the initial mpd-prl
-rollout.** mpd-desktop continues to use its current mixed
-`~/.mpd/` layout until someone has time to do the alignment pass.
+with the three-directory model **and** with the naming/SSH conventions
+established for mpd-machine. **Not part of the initial mpd-virt
+rollout.** mpd-desktop continues to use its current mixed `~/.mpd/`
+layout until someone has time to do the alignment pass.
 
-Today mpd-desktop's host-side meta (which Podman machine is active,
-machine-name snapshot) lives mixed into `~/.mpd/state` and
-`~/.mpd/machines/<name>/`. When the alignment pass happens, that
-meta moves into the new `~/.mpd-desktop/`:
+The alignment pass is two concurrent simplifications:
+
+**1. Drop multi-machine support.** Today mpd-desktop tracks "which
+Podman machine is active" because in principle a developer could keep
+several around. In practice nobody does — a single Podman Desktop
+machine is enough, and the multi-machine plumbing is dead weight that
+complicates state, completion, and CLI surface. The single machine
+becomes `mpd-desktop` (literal name, not configurable). No
+`current.env`, no per-machinename subdir, no `--machine=<n>` flag.
+
+**2. Host meta moves out of runtime state.** Today mpd-desktop's
+host-side meta (which Podman machine is active, machine-name snapshot)
+lives mixed into `~/.mpd/state` and `~/.mpd/machines/<name>/`. When
+the alignment pass happens, that meta moves into the new
+`~/.mpd-desktop/`:
 
 | Today | After alignment |
 |---|---|
-| `~/.mpd/state` (current machine name + meta) | `~/.mpd-desktop/current.env` + `~/.mpd-desktop/<machinename>/env` |
-| `~/.mpd/machines/<name>/` (runtime + reconciliation cache, mixed) | `~/.mpd/machines/<name>/` keeps runtime cache only; host meta extracted to `~/.mpd-desktop/<machinename>/` |
+| `~/.mpd/state` (current machine name + meta) | `~/.mpd-desktop/env` |
+| `~/.mpd/machines/<name>/` (runtime + reconciliation cache, mixed) | `~/.mpd/machines/mpd-desktop/` (or just `~/.mpd/`) keeps runtime cache only; host meta extracted to `~/.mpd-desktop/env` |
 
-Concretely: `Mpd.Core.State.activeMachine()` (and any host-meta
-readers) would read from `~/.mpd-desktop/current.env`; runtime-cache
-code keeps reading from `~/.mpd/`. Inside an mpd-machine VM the same
-`Mpd.Core.State.activeMachine()` reads from a per-VM analogue (or
-just stays pinned to "mpd-machine" as today — the VM has no host-meta
-distinction to make).
+Concretely: `Mpd.Core.State.activeMachine()` collapses to a constant
+(`"mpd-desktop"`); host-meta readers read from `~/.mpd-desktop/env`;
+runtime-cache code keeps reading from `~/.mpd/`. Inside an mpd-machine
+VM the same `Mpd.Core.State.activeMachine()` returns `"mpd-machine"`
+analogously — both products have a single fixed machine identity from
+the code's perspective.
+
+**SSH config + hostname alignment.** As a parallel simplification,
+mpd-desktop adopts the same SSH-alias + container-hostname convention
+that mpd-machine gets via mpd-virt:
+
+- SSH aliases: `mpd-desktop` (the Podman Desktop machine itself) and
+  `mpd-desktop-php` / `mpd-desktop-node` / `mpd-desktop-util` (each
+  runtime, via `ProxyJump mpd-desktop`).
+- Container hostnames: `mpd-desktop-<runtime>` (e.g.
+  `mpd-desktop-php`) instead of today's `mpd-runtime-<rt>-<suffix>`.
+- DNS names (`<rt>.runtime.mpd.test`) unchanged — same separation as
+  in mpd-machine.
+
+End-state symmetry across both products:
+
+| | mpd-machine | mpd-desktop |
+|---|---|---|
+| VM/Podman machine SSH alias | `mpd-machine-<octet>` | `mpd-desktop` |
+| Runtime SSH alias | `mpd-machine-<octet>-<runtime>` | `mpd-desktop-<runtime>` |
+| Runtime container hostname | `mpd-machine-<octet>-<runtime>` | `mpd-desktop-<runtime>` |
+| Host bookkeeping dir | `~/.mpd-virt/<octet>/` | `~/.mpd-desktop/` |
+| Runtime state dir | `~/.mpd/` (in VM) | `~/.mpd/` (on Mac) |
+| WG identity (host) | `conf/wireguard/machine/<octet>/` | `conf/wireguard/desktop/` |
+
+mpd-machine carries an octet because there can be many VMs; mpd-desktop
+doesn't because there's only one Podman machine. Everything else lines
+up word-for-word.
 
 ## Part 2 — WireGuard architecture
 
@@ -211,7 +250,7 @@ utun (10.164.0.1)        ←──UDP─→  wg0  (10.164.0.2)
 ```
 
 **`10.164.0.0/30`** is the WG point-to-point tunnel subnet, same as
-mpd-desktop uses today. Reusing it for mpd-prl gives:
+mpd-desktop uses today. Reusing it for mpd-virt gives:
 
 - A single tunnel-end address scheme across both products. WireGuard.app
   shows all peers with consistent tunnel addressing.
@@ -228,9 +267,20 @@ via dnsmasq through the tunnel. **No more `/etc/resolver/mpd.test`
 file** — WireGuard.app owns DNS scope.
 
 **AllowedIPs** on the Mac peer: `10.164.0.0/30, 10.163.0.0/24`. The
-container subnet is reachable via the tunnel; the host route to
+full container subnet is reachable via the tunnel; the host route to
 `10.163.0.0/24` is now owned by the tunnel too. **No more
 `sudo route add` step** — WireGuard.app owns the route.
+
+**Two convergent paths to containers.** The SSH config block (see
+[`mpd-virt.md` §"SSH config block"](mpd-virt.md)) gives the user
+`ssh mpd-machine-<octet>-php` via ProxyJump through the VM's
+Parallels Shared static IP — that path works whether or not the WG
+tunnel is up. Meanwhile WG provides full IP-level reachability to
+`10.163.0.0/24` for everything else (browser HTTPS, ad-hoc TCP, port
+probes, direct-by-IP SSH if anyone prefers it). Both work
+simultaneously; no scope-narrowing needed. The redundancy is a
+feature — SSH stays usable while debugging WG, and WG stays useful
+for non-SSH traffic.
 
 ### Key management
 
@@ -323,7 +373,7 @@ time.
 User deletes mpd VM `mpd-machine-159` in Parallels, decides to recreate
 it from the template:
 
-1. `mpd-prl setup`, picks octet `159` again.
+1. `mpd-virt setup`, picks octet `159` again.
 2. Swift sees `~/Developer/mpd/conf/wireguard/machine/159/` exists →
    reuses the existing keypair + configs.
 3. Clones template, provisions, **scp's the existing `server.conf`**
@@ -349,7 +399,7 @@ template:
 
 ### Initial setup (the only place sudo appears)
 
-`mpd-prl setup` on a fresh Mac:
+`mpd-virt setup` on a fresh Mac:
 
 1. **One sudo prompt for the CA trust step** (`sudo security
    add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain
@@ -361,25 +411,32 @@ template:
 After that — including all VM clones, switches, recreations — zero
 sudo. The daily-no-sudo property holds for all subsequent activity.
 
-### Implications for mpd-prl
+### Implications for mpd-virt
 
-References [`host-binary-parallels.md`](host-binary-parallels.md).
+References [`mpd-virt.md`](mpd-virt.md).
 The host-side steps shrink:
 
-| `mpd-prl setup` step | Today's proposal | After this proposal |
+| `mpd-virt setup` step | Today's proposal | After this proposal |
 |---|---|---|
 | `sudo route add -net 10.163.0.0/24 <vm-ip>` | required | **gone** (WG handles it) |
 | `sudo tee /etc/resolver/mpd.test` | required | **gone** (WG handles it) |
 | `sudo security add-trusted-cert` (CA) | required (one-time) | unchanged |
 | Push `server.conf` to VM, enable `wg-quick@mpd0` | n/a | **new** (one-time per VM lifecycle) |
 | Import `client.conf` into WireGuard.app | n/a | **new** (one-time per VM lifecycle) |
+| Write SSH config block (VM + php/node/util via ProxyJump) | one entry (VM only) | **expanded** — VM + 3 runtime entries, all ProxyJumped through the VM (see mpd-virt.md §"SSH config block") |
 
-The `mpd-prl doctor` verb simplifies: instead of "check the host
+The `mpd-virt doctor` verb simplifies: instead of "check the host
 route + resolver + CA," it becomes "check the WG tunnel is up +
-reachable + sees `mpd.test`." Multi-VM detection (warn if more than
-one running) still has value because IP collisions matter; the
-tunnel-mutual-exclusion property doesn't save you from two VMs both
-trying to claim `10.211.55.155`.
+reachable + sees `mpd.test`," plus the multi-runner warning
+(still has value — IP collisions matter; tunnel mutual exclusion
+doesn't save two VMs from both trying to claim `10.211.55.155`).
+
+**SSH config block is independent of WG state.** Doctor re-asserts
+the block (idempotent rewrite) regardless of tunnel status; the
+block uses Parallels Shared IPs + ProxyJump, not the tunnel. WG
+remains the path for browser HTTPS + ad-hoc IP-level access to the
+container subnet; the SSH ProxyJump path is a parallel convenience
+that doesn't depend on WG being up.
 
 ### Implications for mpd-desktop (later)
 
@@ -392,11 +449,11 @@ happens (see "Priority and rollout"), it cleans up two things:
   bind-mounted in from the Mac side.
 - **WG keypair generation moves out of the container** into Swift
   (`MpdCore.WireGuard.Peer.loadOrGenerate`). Shared code with
-  mpd-prl. No more "find the WG container's pubkey" SSH/exec dance.
+  mpd-virt. No more "find the WG container's pubkey" SSH/exec dance.
 
 Net effect on mpd-desktop after alignment: same daily UX, less
-per-product code, key reuse with mpd-prl. **None of this work is
-gating mpd-prl's first ship.**
+per-product code, key reuse with mpd-virt. **None of this work is
+gating mpd-virt's first ship.**
 
 ### Implications for `MpdCore`
 
@@ -456,21 +513,21 @@ section above is what makes that possible: the macOS host begins
 empty and accumulates state forward from there. There's never an
 "old layout" to detect or convert.
 
-- **Phase A + B (mpd-prl ships):** `mpd-prl setup` generates the CA
+- **Phase A + B (mpd-virt ships):** `mpd-virt setup` generates the CA
   + `mac.{private,public}` + per-VM keypair fresh in `conf/` and
-  `~/.mpd-machine/`. mpd-desktop is uninstalled on the host; nothing
+  `~/.mpd-virt/`. mpd-desktop is uninstalled on the host; nothing
   about it exists to migrate.
 - **Phase C (mpd-desktop alignment, later):** `mpd --setup` runs
   on a host that already has `conf/wireguard/mac.{private,public}`
-  populated by mpd-prl. `Mpd.Core.WireGuard.Peer.loadOrGenerate(role: .desktop, …)`
+  populated by mpd-virt. `Mpd.Core.WireGuard.Peer.loadOrGenerate(role: .desktop, …)`
   **reuses the existing `mac.private`** — both products converge on
   one Mac identity automatically, no orchestration needed. The
   desktop role's own `private`/`public` keypair gets generated on
   first call. New `client.conf` for the desktop tunnel is handed
   to WireGuard.app. No conf-wiping ceremony, no re-provisioning of
-  existing mpd-prl VMs (the CA didn't change, mac identity didn't
+  existing mpd-virt VMs (the CA didn't change, mac identity didn't
   change). It's just "mpd-desktop gets set up alongside the
-  already-running mpd-prl."
+  already-running mpd-virt."
 
 The cleanliness of this story is the whole reason the starting-state
 assumption is worth enforcing. Any "what if X already exists" branch
@@ -483,19 +540,19 @@ checklist beyond the standard product setup flows.
 - **Should `mac.private` be backed up?** It's the user's Mac
   identity across all mpd peers. Losing it means every WG.app
   tunnel needs re-generating + re-importing (manageable but
-  annoying). Worth a `mpd-prl export-identity` / `import-identity`
+  annoying). Worth a `mpd-virt export-identity` / `import-identity`
   flow to bundle `conf/wireguard/mac.{private,public}` for off-Mac
   backup? Probably defer until someone wants it. Time Machine
   catches `conf/` by default if the user has it enabled.
 - **Should `<role>/private` be regeneratable on demand?** A
-  hypothetical `mpd-prl rotate-wireguard <octet>` verb would
+  hypothetical `mpd-virt rotate-wireguard <octet>` verb would
   generate a new Linux-side keypair, push it to the VM, rewrite
   `client.conf`, prompt the user to re-import. Not urgent.
 - **Inside the mpd-machine VM, does the in-VM `mpd --setup` need
   any awareness of the host's WireGuard?** Probably not — the VM
   doesn't care about the tunnel; it just hosts `wg-quick@mpd0` as a
   systemd service that's enabled by the host orchestrator's provisioning
-  step. The `mpd-prl setup` orchestrator handles the integration.
+  step. The `mpd-virt setup` orchestrator handles the integration.
 - **mpd-desktop's host-meta migration carries some risk** because
   the existing `~/.mpd/state` format is parsed by code that's about
   to move. Worth a small focused test pass against a populated
@@ -504,19 +561,20 @@ checklist beyond the standard product setup flows.
 ## Sequencing
 
 The implementation order anchored on the user-facing priority
-(mpd-prl first, mpd-desktop alignment later):
+(mpd-virt first, mpd-desktop alignment later):
 
 1. **`MpdCore.WireGuard` library code** (Swift Curve25519 keypair
    generation, `Peer.loadOrGenerate`, config rendering, tunnel-up
    detection). No host-state changes, no mpd-desktop touching.
    Self-contained Swift addition with unit tests.
-2. **`~/.mpd-machine/<uuid>/` subdir layout in mpd-prl's spec.**
-   Folds into [`host-binary-parallels.md`](host-binary-parallels.md)'s
-   state-files section — small refinement of today's flat
-   `<uuid>.env` shape into `<uuid>/env`. No data migration (mpd-prl
+2. **`~/.mpd-virt/<octet>/` subdir layout in mpd-virt's spec.**
+   Folds into [`mpd-virt.md`](mpd-virt.md)'s
+   state-files section — octet-keyed subdirs aligning with the
+   WG and SSH-config storage layouts. UUID kept in the env file
+   as diagnostic metadata only. No data migration (mpd-virt
    doesn't exist yet).
-3. **mpd-prl ships with WG-based networking from day one.** Per
-   [`host-binary-parallels.md`](host-binary-parallels.md) updated
+3. **mpd-virt ships with WG-based networking from day one.** Per
+   [`mpd-virt.md`](mpd-virt.md) updated
    to drop the `sudo route add` + `/etc/resolver/` steps and add
    the WG provisioning step instead.
 4. **Optional, much later: mpd-desktop alignment.** The
@@ -524,6 +582,6 @@ The implementation order anchored on the user-facing priority
    the `client.conf` re-import for existing users. Lands when
    convenient; doesn't gate anything.
 
-Net: steps 1–3 are the "mpd-prl first-class" path. Step 4 is the
-cleanup that the existence of mpd-prl makes worthwhile, but happens
+Net: steps 1–3 are the "mpd-virt first-class" path. Step 4 is the
+cleanup that the existence of mpd-virt makes worthwhile, but happens
 on its own timeline.

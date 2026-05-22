@@ -320,7 +320,7 @@ each cover a workflow the others can't:
   acceleration too. Parallels can't do either — its passthrough is
   limited to its own Direct3D shim, not the host Metal stack.
 
-The three caroot directories don't clash: mpd-prl and mpd-desktop
+The three caroot directories don't clash: mpd-virt and mpd-desktop
 share `~/Developer/mpd/conf/caroot/` on the macOS host; sandbox has
 its own self-contained one inside its own VM. No coordination
 needed.
