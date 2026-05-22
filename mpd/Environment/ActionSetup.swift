@@ -354,6 +354,104 @@ extension Mpd.Action.Setup {
         ok("mpd CA imported into ~/.pki/nssdb/ (restart Chromium-family browsers to apply).")
     }
 
+    // MARK: - WireGuard tunnel
+
+    private static let wgInVMConfPath  = "\(Mpd.confDir)/wireguard/mpd0.conf"
+    private static let wgSystemConfPath = "/etc/wireguard/mpd0.conf"
+    private static let wgService        = "wg-quick@mpd0.service"
+
+    /// Gated on `~/.mpd/conf/wireguard/mpd0.conf` (pushed in by mpd-virt at
+    /// provisioning time). If absent — sandbox case, or an mpd-machine VM
+    /// whose host hasn't pushed config yet — this step is a clean no-op.
+    ///
+    /// When present: apt-install `wireguard`, copy the conf to
+    /// `/etc/wireguard/mpd0.conf` (root:root, 0600), persist
+    /// `net.ipv4.ip_forward=1` via sysctl.d, and enable + start the
+    /// `wg-quick@mpd0` systemd unit. Re-run safely; the service is only
+    /// restarted when the conf file actually changed.
+    private static func configureWireGuardIfPresent() throws {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: wgInVMConfPath) else {
+            ok("No \(wgInVMConfPath) present — skipping WireGuard setup.")
+            return
+        }
+
+        try installPackages(["wireguard"], label: "wireguard")
+        try ensureIPForwardEnabled()
+        let changed = try installWireGuardConf()
+
+        if changed {
+            // First install OR conf was rewritten: enable + start (or restart).
+            // `systemctl enable --now` is idempotent for the enable side; the
+            // explicit restart picks up the new conf even if the service was
+            // already running.
+            guard Mpd.HostExec.run(
+                ["sudo", "systemctl", "enable", wgService]
+            ) == 0 else {
+                throw RuntimeError("Failed to enable \(wgService).")
+            }
+            guard Mpd.HostExec.run(
+                ["sudo", "systemctl", "restart", wgService]
+            ) == 0 else {
+                throw RuntimeError("Failed to (re)start \(wgService).")
+            }
+            ok("\(wgService) active (conf installed).")
+        } else {
+            // Conf unchanged — just make sure the service is up.
+            guard Mpd.HostExec.run(
+                ["sudo", "systemctl", "enable", "--now", wgService]
+            ) == 0 else {
+                throw RuntimeError("Failed to enable \(wgService).")
+            }
+            ok("\(wgService) already active (conf unchanged).")
+        }
+    }
+
+    /// Install the in-VM conf at `/etc/wireguard/mpd0.conf` (root:root, 0600).
+    /// Returns true if the destination changed (new file or content differs),
+    /// false if already up to date.
+    private static func installWireGuardConf() throws -> Bool {
+        // `cmp -s` exits 0 if identical, non-zero on any difference (incl.
+        // destination missing). Run via sudo because the destination is
+        // root-owned 0600 and our process can't read it otherwise.
+        let (cmpRC, _) = Mpd.HostExec.capture(
+            ["sudo", "cmp", "-s", wgInVMConfPath, wgSystemConfPath],
+            suppressStderr: true
+        )
+        if cmpRC == 0 { return false }
+        guard Mpd.HostExec.run([
+            "sudo", "install",
+            "-m", "0600", "-o", "root", "-g", "root",
+            wgInVMConfPath, wgSystemConfPath,
+        ]) == 0 else {
+            throw RuntimeError("Failed to install \(wgInVMConfPath) → \(wgSystemConfPath).")
+        }
+        return true
+    }
+
+    /// Persist `net.ipv4.ip_forward=1` via a sysctl.d drop-in. Required so
+    /// the VM kernel routes packets arriving on `wg0` (from the Mac) into
+    /// `podman1` and out to container IPs. Idempotent.
+    private static func ensureIPForwardEnabled() throws {
+        let dropInPath = "/etc/sysctl.d/99-mpd-wg.conf"
+        let desired = "# Written by mpd --setup. Forwarding required for WireGuard → podman1.\nnet.ipv4.ip_forward=1\n"
+        // Read what's there (sudo not needed for /etc/sysctl.d — world-readable).
+        let current = (try? String(contentsOfFile: dropInPath, encoding: .utf8)) ?? ""
+        if current != desired {
+            guard Mpd.HostExec.run([
+                "sudo", "bash", "-c",
+                "cat > \(dropInPath) <<'EOF'\n\(desired)EOF",
+            ]) == 0 else {
+                throw RuntimeError("Failed to write \(dropInPath).")
+            }
+        }
+        // Apply current settings. `sysctl --system` reloads every drop-in,
+        // including our new one, and is idempotent.
+        guard Mpd.HostExec.run(["sudo", "sysctl", "--system"]) == 0 else {
+            throw RuntimeError("sysctl --system failed.")
+        }
+    }
+
     static func preflight() throws {
         // Distro gate — fail fast on unsupported hosts before any apt work.
         // Debian Trixie across every platform.
@@ -527,6 +625,9 @@ extension Mpd.Action.Setup {
 
         step("DNS resolver for mpd.test")
         try Mpd.Integration.configureDNSResolver()
+
+        step("WireGuard tunnel")
+        try configureWireGuardIfPresent()
 
         step("Podman network")
         if Mpd.Podman.networkExists("mpd-internal") {

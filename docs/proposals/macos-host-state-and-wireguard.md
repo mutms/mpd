@@ -8,7 +8,7 @@ design depends on the other:
 1. **A two-directory state model** on the macOS host with clearly
    named owners, lifecycles, and migration boundaries.
 2. **A WireGuard-based networking model** with persistent identity
-   in `~/.mpd/conf/` and zero daily sudo on the Mac.
+   in `~/.mpd-virt/conf/` and zero daily sudo on the Mac.
 
 Together they give the macOS host an end state where:
 
@@ -32,63 +32,63 @@ Together they give the macOS host an end state where:
   Swift on the Mac and pushed to the VM — no negotiation, no shared
   secret over the wire beyond what SCP already gives us.
 
-## Part 1 — The two-directory state model
+## Part 1 — The one-directory state model on the host
 
 ### One sentence per owner
 
-- **`~/.mpd/conf/`** — identity. **The user owns it**; persistent
-  across every VM rebuild and every `mpd-virt uninstall`.
-- **`~/.mpd-virt/`** — orchestrator bookkeeping. **`mpd-virt` owns
-  it**; removed by `mpd-virt uninstall`.
+- **`~/.mpd-virt/`** — everything `mpd-virt` owns on the macOS host:
+  identity (`conf/`) + per-VM bookkeeping. **The user owns it.**
+  Identity material under `conf/` survives every `mpd-virt uninstall`.
+- **`~/.mpd/`** is never created on the host — that path is
+  exclusively the in-VM runtime state directory.
 
 ### Concrete directory layout (macOS host)
 
 ```
-~/.mpd/conf/                      ← identity (user owns; survives uninstall)
-├── caroot/
-│   ├── rootCA.pem
-│   └── rootCA-key.pem
-├── wireguard/
-│   ├── mac.private
-│   ├── mac.public
-│   └── machine/
-│       └── <octet>/
-│           ├── private
-│           ├── public
-│           ├── server.conf
-│           └── client.conf       # imported into WG.app as "mpd-machine-<octet>"
-├── service/
-└── platform.env
-
-~/.mpd-virt/                      ← mpd-virt bookkeeping (removed by `mpd-virt uninstall`)
-├── current.env                   # MPD_VM_OCTET pointer
-└── <octet>/
-    └── env                       # MPD_VM_OCTET, NAME, IP, USER, UUID (diagnostic)
-                                  # (future: per-VM logs, cache)
-```
-
-Inside any mpd-machine VM (separate filesystem):
-
-```
-~/.mpd/                           ← in-VM runtime state
-├── conf/                         ← in-VM identity (pushed in by mpd-virt at provision)
+~/.mpd-virt/                          ← single host dir
+├── conf/                             ← identity (survives uninstall)
 │   ├── caroot/
+│   │   ├── rootCA.pem
+│   │   └── rootCA-key.pem
+│   ├── wireguard/
+│   │   ├── mac.private
+│   │   ├── mac.public
+│   │   └── machine/
+│   │       └── <octet>/
+│   │           ├── private
+│   │           ├── public
+│   │           ├── server.conf
+│   │           └── client.conf       # imported into WG.app as "mpd-machine-<octet>"
+│   └── service/
+├── current.env                       # MPD_VM_OCTET pointer (orchestrator bookkeeping)
+└── <octet>/
+    └── env                           # MPD_VM_OCTET, NAME, IP, USER, UUID (diagnostic)
+                                      # (future: per-VM logs, cache)
+```
+
+Inside any mpd-machine VM (Linux filesystem):
+
+```
+~/.mpd/                               ← in-VM state dir
+├── conf/                             ← in-VM identity (pushed in by mpd-virt)
+│   ├── caroot/rootCA.pem             ← public cert only; no private key on VM
+│   ├── wireguard/mpd0.conf           ← wg-quick config the VM hosts (server side)
 │   ├── service/
 │   └── platform.env
-└── (runtime state — machines/, projects/, etc.)
+└── (runtime state — machines/, projects/, …)
 ```
 
-The two `~/.mpd/` directories never collide because they're on
-different filesystems.
+The `~/.mpd/` on the host is **not** present; the `~/.mpd/` inside the
+VM is on a different filesystem and only exists in the VM.
 
 ### Lifecycle rules
 
 | Action | What it touches |
 |---|---|
-| `mpd-virt setup` | Reads/writes `~/.mpd/conf/` (idempotent). Creates `~/.mpd-virt/` if missing. |
-| `mpd-virt uninstall` | Removes `~/.mpd-virt/` and host-side networking. **Never** touches `~/.mpd/conf/`. |
-| `rm -rf ~/.mpd/conf/` | User's manual nuclear option. Resets identity completely; next `mpd-virt setup` regenerates. |
-| Recreate a VM at the same `<octet>` | `~/.mpd-virt/<octet>/env` is overwritten with the new VM's UUID + name snapshot (diagnostic only). Reuses `~/.mpd/conf/wireguard/machine/<octet>/` keys — WG.app tunnel still works. |
+| `mpd-virt setup` | Reads/writes `~/.mpd-virt/conf/` (idempotent). Creates the per-VM `~/.mpd-virt/<octet>/` and `current.env` pointer. |
+| `mpd-virt uninstall` | Removes per-VM `~/.mpd-virt/<octet>/` and host-side networking. **Never** touches `~/.mpd-virt/conf/`. |
+| `rm -rf ~/.mpd-virt/conf/` | User's manual nuclear option. Resets identity completely; next `mpd-virt setup` regenerates. |
+| Recreate a VM at the same `<octet>` | `~/.mpd-virt/<octet>/env` is overwritten with the new VM's UUID + name snapshot. Reuses `~/.mpd-virt/conf/wireguard/machine/<octet>/` keys — WG.app tunnel still works. |
 
 ## Part 2 — WireGuard architecture
 
@@ -146,27 +146,50 @@ struct Keypair {
 
 `mac.{private,public}` is generated **once** the first time `mpd-virt`
 calls `Keypair.loadOrGenerate(...)` for the Mac identity. Persisted at
-`~/.mpd/conf/wireguard/mac.{private,public}`. Every subsequent invocation
+`~/.mpd-virt/conf/wireguard/mac.{private,public}`. Every subsequent invocation
 (a new VM at a different octet) reuses it.
 
 `machine/<octet>/{private,public,server.conf,client.conf}` is generated
 on first call per octet. Persisted at
-`~/.mpd/conf/wireguard/machine/<octet>/`. Every subsequent call reuses.
+`~/.mpd-virt/conf/wireguard/machine/<octet>/`. Every subsequent call reuses.
 
 ### Where private keys live (and don't)
 
-- **`mac.private`** lives at `~/.mpd/conf/wireguard/mac.private` on
+- **`mac.private`** lives at `~/.mpd-virt/conf/wireguard/mac.private` on
   the Mac. Mode `0600`. Never transits anywhere.
 - **`machine/<octet>/private`** (the VM's WG private key) lives at
-  `~/.mpd/conf/wireguard/machine/<octet>/private` on the Mac, AND is
-  pushed once into the VM during initial provisioning (via `scp` into
-  `/etc/wireguard/mpd0.conf`). Both copies persist.
+  `~/.mpd-virt/conf/wireguard/machine/<octet>/private` on the Mac. The
+  full `server.conf` (which embeds that private key inline) is pushed
+  into the VM by `mpd-virt` during provisioning as
+  `~/.mpd/conf/wireguard/mpd0.conf`. The in-VM `mpd --setup` then
+  installs it to `/etc/wireguard/mpd0.conf` (root-owned, mode 0600).
 
 The VM-side private key briefly transits the Mac orchestrator in memory
 during generation and on the wire (encrypted over SSH). That's a small
 concession relative to the convenience win: the same key can be
 re-pushed into a recreated VM without regenerating, so WireGuard.app
 configs stay valid across rebuilds.
+
+### In-VM contract for `mpd --setup`
+
+The split of responsibilities between mpd-virt (host) and mpd (in-VM):
+
+| | mpd-virt (host, separate repo) | mpd `--setup` (in-VM) |
+|---|---|---|
+| Generate WG keys | yes | no |
+| Render `server.conf` / `client.conf` | yes | no |
+| Push `server.conf` into the VM | yes (SCP to `~/.mpd/conf/wireguard/mpd0.conf`) | — |
+| Import `client.conf` into WireGuard.app | yes | — |
+| Install the `wireguard` apt package | — | yes (idempotent) |
+| Install conf to `/etc/wireguard/mpd0.conf` | — | yes (only if content differs) |
+| Persist `net.ipv4.ip_forward=1` | — | yes (sysctl.d drop-in) |
+| Enable + start `wg-quick@mpd0` | — | yes |
+| Skip the WG step when no conf is present | — | yes (sandbox case) |
+
+The in-VM step is **gated by the presence of `~/.mpd/conf/wireguard/mpd0.conf`**.
+If the file isn't there (e.g. sandbox VM, or an mpd-machine VM where mpd-virt
+hasn't pushed the config yet), the WG step is a clean no-op — `mpd --setup`
+prints "no wireguard config present, skipping" and moves on.
 
 ### Daily user flow (steady state)
 
@@ -186,15 +209,18 @@ User deletes VM `mpd-machine-159` in Parallels, decides to recreate it
 from the template:
 
 1. `mpd-virt setup`, picks octet `159` again.
-2. Swift sees `~/.mpd/conf/wireguard/machine/159/` exists → reuses the
+2. Swift sees `~/.mpd-virt/conf/wireguard/machine/159/` exists → reuses the
    existing keypair + configs.
 3. Clones template, provisions, **scp's the existing `server.conf`** into
-   the new VM at `/etc/wireguard/mpd0.conf`, enables `wg-quick@mpd0`.
+   the new VM as `~/.mpd/conf/wireguard/mpd0.conf`. The in-VM `mpd --setup`
+   then apt-installs `wireguard`, installs that file to
+   `/etc/wireguard/mpd0.conf` (mode 0600 root:root), and enables
+   `wg-quick@mpd0`.
 4. **WireGuard.app's existing `mpd-machine-159` tunnel is untouched.** No
    re-import needed. The new VM has the same WG identity as the one that
    was deleted.
 
-This is the whole point of persistent identity in `~/.mpd/conf/`. The
+This is the whole point of persistent identity in `~/.mpd-virt/conf/`. The
 VM is disposable; the WG keys are not.
 
 ### Switching between VMs
@@ -229,9 +255,9 @@ The model is "the Mac is the trust origin; the VM is disposable":
 
 | Asset | Lives on | Compromise impact |
 |---|---|---|
-| mpd CA private key | Mac (`~/.mpd/conf/caroot/`) | Can sign arbitrary `*.mpd.test` certs (name-constrained; limited blast radius) |
-| `mac.private` (WG) | Mac (`~/.mpd/conf/wireguard/`) | Can impersonate the Mac to any peer that trusts it |
-| `machine/<octet>/private` (WG) | Mac (`~/.mpd/conf/wireguard/`) + VM | Can impersonate that VM peer to the Mac. Briefly transits Mac in memory + over SSH during initial provisioning |
+| mpd CA private key | Mac (`~/.mpd-virt/conf/caroot/`) | Can sign arbitrary `*.mpd.test` certs (name-constrained; limited blast radius) |
+| `mac.private` (WG) | Mac (`~/.mpd-virt/conf/wireguard/`) | Can impersonate the Mac to any peer that trusts it |
+| `machine/<octet>/private` (WG) | Mac (`~/.mpd-virt/conf/wireguard/`) + VM | Can impersonate that VM peer to the Mac. Briefly transits Mac in memory + over SSH during initial provisioning |
 | SSH private key | Mac (`~/.ssh/`) | Root in any mpd-machine VM (dev user has passwordless sudo) |
 
 A Mac compromise gives you everything. The VM-side WG private key
@@ -248,7 +274,7 @@ private key is not on the VM (only the cert is), and SSH is one-way
 - **Should `mac.private` be backed up?** Losing it means every WG.app
   tunnel needs re-generating + re-importing. Worth a
   `mpd-virt export-identity` / `import-identity` flow? Probably defer.
-  Time Machine catches `~/.mpd/conf/` by default if the user has it
+  Time Machine catches `~/.mpd-virt/conf/` by default if the user has it
   enabled.
 - **Should `machine/<octet>/private` be regeneratable on demand?** A
   hypothetical `mpd-virt rotate-wireguard <octet>` verb would generate
