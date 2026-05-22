@@ -215,11 +215,17 @@ get_current_vm_uuid() {
     uuid=$(read_current_env_field "MPD_VM_UUID")
     if [ -n "$uuid" ]; then
         echo "$uuid"
-        return
+        return 0
     fi
     local ip
     ip=$(get_current_vm_route_ip)
-    [ -n "$ip" ] && get_uuid_by_ip "$ip"
+    if [ -n "$ip" ]; then
+        get_uuid_by_ip "$ip"
+    fi
+    # Always return 0: "no current VM" is a normal state on a fresh host,
+    # not an error. Returning the && chain's exit code would make
+    # `current_uuid=$(get_current_vm_uuid)` fatal under `set -e`.
+    return 0
 }
 
 # Read MPD_VM_USER from a UUID's env file; fallback to the host login.
