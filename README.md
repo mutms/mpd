@@ -17,7 +17,7 @@ Two modes, distinguished by where you sit and where `mpd` runs:
   AI-driven workloads. One command (`demo moodle v5.2.0`) gets you a
   fully-installed Moodle site for kicking the tires. Recommended
   starting point.
-- **`mpd-machine`** — automated headless VM driven from your host
+- **`mpd VM`** — automated headless VM driven from your host
   via the companion `mpd-virt` orchestrator (Parallels Desktop Pro on
   macOS is the primary target; KVM/Hyper-V are speculative). Your
   host browser visits `*.mpd.test` directly over WireGuard; your
@@ -49,12 +49,12 @@ configuration model.
   plus the SSH details to paste into Gateway. The Sandbox VM also
   ships VS Code pre-installed in its GNOME desktop. AI agents land
   in the same runtime.
-- **Sandbox VM** (`mpd-machine`) — snapshottable and disposable;
+- **Sandbox VM** (`mpd VM`) — snapshottable and disposable;
   revert to a known-good snapshot or rebuild from scratch when needed.
 
 ## Two modes
 
-|                      | **Sandbox VM**                                                                           | **`mpd-machine`**                                                   |
+|                      | **Sandbox VM**                                                                           | **`mpd VM`**                                                   |
 |----------------------|------------------------------------------------------------------------------------------|---------------------------------------------------------------------|
 | **Where `mpd` runs** | Inside the VM                                                                            | Inside a headless VM                                                |
 | **Where you sit**    | Inside the VM (full GNOME)                                                               | On your host (browser + SSH-into-VM)                                |
@@ -75,7 +75,7 @@ virt-manager, VMware…):
 
 1. Install Debian Trixie (13) with the GNOME desktop in your
    hypervisor of choice. When the installer asks for a hostname,
-   type **`mpd-machine-sandbox`**.
+   type **`mpd-sandbox`**.
 2. Take a hypervisor snapshot.
 3. Inside the VM, run (uses `wget` — `curl` isn't in Debian's default
    install):
@@ -84,7 +84,7 @@ virt-manager, VMware…):
 
 Open Firefox-ESR inside the VM and browse to https://mpd.test/.
 
-### 2. `mpd-machine` (host reaches into a Linux VM)
+### 2. `mpd VM` (host reaches into a Linux VM)
 
 Pick this when you want your laptop's own browser/IDE to resolve
 `*.mpd.test` directly — host gets a static route + DNS resolver +
@@ -100,10 +100,10 @@ CA trust automatically. Matched-host bootstrap per OS:
 
 **Sandbox VM**
 - Any hypervisor that boots Debian Trixie with the GNOME desktop. Set
-  the hostname to `mpd-machine-sandbox` during install and take a
+  the hostname to `mpd-sandbox` during install and take a
   snapshot before running the take-over script.
 
-**`mpd-machine`**
+**`mpd VM`**
 - A matched host: macOS + Parallels Desktop Pro (primary) — Linux/KVM
   and Windows/Hyper-V are speculative future targets.
 - The `mpd-virt` orchestrator binary on the host (separate repository)

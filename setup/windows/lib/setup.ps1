@@ -316,7 +316,7 @@ if ($vmRecord) {
 
 Write-Host ""
 Write-Host "=============================================" -ForegroundColor Green
-Write-Host "  Your mpd-machine is ready!"            -ForegroundColor Green
+Write-Host "  Your mpd-vm is ready!"            -ForegroundColor Green
 Write-Host "  Double-click the desktop icon to connect." -ForegroundColor Green
 Write-Host "=============================================" -ForegroundColor Green
 Write-Host ""

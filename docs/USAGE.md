@@ -1,6 +1,6 @@
-# mpd-machine — Usage
+# mpd VM — Usage
 
-Operational handbook for `mpd-machine`: bootstrap, first project,
+Operational handbook for `mpd VM`: bootstrap, first project,
 day-to-day.
 
 ## Bootstrap (one-time)
@@ -11,7 +11,7 @@ Pick the path that matches your host:
 - **macOS + Parallels Desktop Pro (automated)** —
   [`setup/macos/`](../../setup/macos/README.md).
   Double-click `setup.command`. Clones a one-time-built Parallels VM
-  template (`mpd-machine-template`) via `prlctl`, configures the clone
+  template (`mpd-template`) via `prlctl`, configures the clone
   over SSH, and applies macOS networking (route, resolver, CA).
   Requires Parallels Desktop Pro. `doctor.command` re-applies host
   networking when needed; `uninstall.command` tears everything down.
@@ -370,7 +370,7 @@ rm -rf ~/.mpd                    # blow away state + identity in the VM
 
 ## Reference
 
-- [README.md](README.md) — when to pick mpd-machine, picking a
+- [README.md](README.md) — when to pick mpd VM, picking a
   hypervisor, prerequisites
 - [NETWORKING.md](NETWORKING.md) — host ↔ VM ↔ container routing
 - [SECURITY.md](SECURITY.md) — trust boundaries

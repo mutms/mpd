@@ -15,7 +15,7 @@
 # print the runnable `sudo` commands and let the dev choose between
 # (a) running them in another terminal or (b) letting the script sudo.
 # Re-detect after the prompt; apply only what's still needed; drop creds.
-# CAs flow host → VM only — neither caroot/ nor ~/.mpd-machine/ca/ is ever
+# CAs flow host → VM only — neither caroot/ nor ~/.mpd-virt/ca/ is ever
 # populated from a VM source. If neither is populated, CA-related steps are
 # skipped (route and resolver still applied).
 #

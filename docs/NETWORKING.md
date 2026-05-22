@@ -1,4 +1,4 @@
-# Machine Networking (mpd-machine)
+# Machine Networking (mpd VM)
 
 How the host laptop reaches mpd's container subnet inside the VM.
 
@@ -15,7 +15,7 @@ Laptop (macOS — primary)
   |
   | WireGuard tunnel  (10.164.0.0/30 point-to-point)
   |
-VM (Debian Trixie)              hostname: mpd-machine-<octet>
+VM (Debian Trixie)              hostname: mpd-<octet>
   |
   Podman (rootful) bridge:  podman1  10.163.0.1/24
    |
@@ -35,7 +35,7 @@ the VM and reach containers via `podman1`.
 
 ## How the laptop reaches containers
 
-mpd-machine uses **WireGuard** between the laptop and the VM:
+mpd VM uses **WireGuard** between the laptop and the VM:
 
 - Tunnel point-to-point on `10.164.0.0/30` (Mac side `.1`, VM side `.2`).
 - `AllowedIPs` on the Mac peer includes `10.163.0.0/24` so the full
@@ -87,10 +87,10 @@ since the VM's address is reachable via the hypervisor's own network:
 
 ```
 # ~/.ssh/config:
-Host mpd-machine-<octet>-php
+Host mpd-<octet>-php
     HostName php.runtime.mpd.test
     User user
-    ProxyJump mpd-machine-<octet>
+    ProxyJump mpd-<octet>
 ```
 
 IDEs (PHPStorm Gateway, VS Code Remote-SSH) configure ProxyJump the same

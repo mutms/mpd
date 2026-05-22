@@ -1,7 +1,7 @@
 Windows + Hyper-V bootstrap
 ==========================
 
-Automation for mpd-machine on Windows using Hyper-V (free with
+Automation for mpd VM on Windows using Hyper-V (free with
 Windows 10/11 Pro and Enterprise). For a "live in the VM" graphical
 alternative on any hypervisor (including Hyper-V), see the sandbox
 platform at https://github.com/mutms/mpd/tree/main/setup/sandbox/README.md
@@ -54,7 +54,7 @@ The script:
      Any VM you connect to this switch (including custom ones) will use
      NAT through Windows for internet access.
 
-  2. Lists all existing mpd-machine-NN VMs. Shows which one is currently
+  2. Lists all existing mpd-NN VMs. Shows which one is currently
      active (detected from the persistent route to the container subnet).
 
   3. Asks for a VM number:
@@ -76,15 +76,15 @@ When creating a new VM, the script:
   7. Pre-warms the demo stack: builds the PHP runtime image and creates
      a postgres:latest DB container inside the VM so the first
      "demo moodle v5.2.0" doesn't pay the build/pull cost.
-  8. Creates helper scripts in %USERPROFILE%\mpd-machine\ and a desktop
-     shortcut "mpd-machine" for quick access.
+  8. Creates helper scripts in %USERPROFILE%\mpd VM\ and a desktop
+     shortcut "mpd VM" for quick access.
 
 The whole process takes 10-20 minutes depending on internet speed and
 your machine. You can leave it running unattended after the prompts.
 
 When setup finishes:
 
-  * An "mpd-machine" shortcut appears on your desktop. Double-click it to
+  * An "mpd VM" shortcut appears on your desktop. Double-click it to
     open a terminal connected to the VM.
 
   * https://mpd.test opens in your Windows browser and shows the mpd
@@ -127,10 +127,10 @@ Lists what will be removed, asks you to press Enter to proceed, then:
   2. Removes the persistent route to the container subnet.
   3. Removes the mpd CA certificate from the trusted root store.
   4. Removes the Hyper-V switch, NAT rule, and host IP.
-  5. Deletes %USERPROFILE%\mpd-machine\ (helper scripts, CA, current.env).
-  6. Removes the 'Host mpd-machine' entry from ~/.ssh/config.
-  7. Removes the "mpd-machine" desktop shortcut.
-  8. For each mpd-machine-NN VM, asks [y/N] whether to delete it.
+  5. Deletes %USERPROFILE%\mpd VM\ (helper scripts, CA, current.env).
+  6. Removes the 'Host mpd VM' entry from ~/.ssh/config.
+  7. Removes the "mpd VM" desktop shortcut.
+  8. For each mpd-NN VM, asks [y/N] whether to delete it.
      Pressing Enter (or N) keeps the VM. The default is to keep.
      Ctrl-C during the VM loop leaves host configuration already cleaned
      and the remaining VMs untouched.

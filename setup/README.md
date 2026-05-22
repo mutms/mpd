@@ -5,8 +5,8 @@ gets a VM (or, in the desktop case, a host) to the point where
 `mpd --setup` can run. From there, the mpd flow is identical
 regardless of which path you took.
 
-The brand for the VM-mode product is **mpd-machine**; this directory
-holds the scripts that get someone *into* an mpd-machine. (Canonical
+The brand for the VM-mode product is **mpd VM**; this directory
+holds the scripts that get someone *into* an mpd VM. (Canonical
 product / workflow documentation lives in
 [`docs/machine/README.md`](../docs/machine/README.md).)
 
@@ -16,9 +16,9 @@ If you're new and don't know which to pick — start with **sandbox**.
 
 | Platform | Path | What it gives you |
 |---|---|---|
-| **Sandbox** (any hypervisor — UTM, Parallels, Hyper-V, VirtualBox, VMware, virt-manager, …) | [`sandbox/`](sandbox/README.md) | Install Debian Trixie with the GNOME desktop in your hypervisor, set the hostname to `mpd-machine-sandbox`, snapshot, run `take-over-sandbox-vm.sh`. mpd lives entirely inside the VM; the host gets zero DNS/route/trust changes. The hypervisor owns VM lifecycle from its own GUI. |
-| **macOS + Parallels Desktop Pro** | [`macos/`](macos/README.md) | Double-click `setup.command`: clones a pre-built Parallels template (`mpd-machine-template`) via `prlctl`, configures the cloned VM over SSH, and applies macOS networking (route, DNS resolver, CA trust). Requires Parallels Desktop Pro and a one-time template build (see the README). `doctor.command` re-applies host networking (e.g. after a reboot); `uninstall.command` tears everything down. VM start / suspend / shutdown lives in Parallels' GUI. |
-| **Ubuntu + KVM** (Linux desktop) | [`linux/`](linux/README.md) | `bash setup.sh` from a terminal: preflight (KVM, libvirt-daemon-system + friends, libvirt group, libvirt default network, `/var/lib/mpd-machine/$USER/`) with the same `(a)` run-yourself / `(b)` press-Enter sudo recipe affordance as macos; libvirt-driven VM creation against the default `virbr0` network with cloud-init for static IP; host configuration (`ip route` + systemd-resolved drop-in + `update-ca-certificates` + Firefox policies + `~/.pki/nssdb`); pre-warm + `mpd-machine.desktop` launcher in GNOME Activities. Ubuntu 26.04 LTS only. |
+| **Sandbox** (any hypervisor — UTM, Parallels, Hyper-V, VirtualBox, VMware, virt-manager, …) | [`sandbox/`](sandbox/README.md) | Install Debian Trixie with the GNOME desktop in your hypervisor, set the hostname to `mpd-sandbox`, snapshot, run `take-over-sandbox-vm.sh`. mpd lives entirely inside the VM; the host gets zero DNS/route/trust changes. The hypervisor owns VM lifecycle from its own GUI. |
+| **macOS + Parallels Desktop Pro** | [`macos/`](macos/README.md) | Double-click `setup.command`: clones a pre-built Parallels template (`mpd-template`) via `prlctl`, configures the cloned VM over SSH, and applies macOS networking (route, DNS resolver, CA trust). Requires Parallels Desktop Pro and a one-time template build (see the README). `doctor.command` re-applies host networking (e.g. after a reboot); `uninstall.command` tears everything down. VM start / suspend / shutdown lives in Parallels' GUI. |
+| **Ubuntu + KVM** (Linux desktop) | [`linux/`](linux/README.md) | `bash setup.sh` from a terminal: preflight (KVM, libvirt-daemon-system + friends, libvirt group, libvirt default network, `/var/lib/mpd-virt/$USER/`) with the same `(a)` run-yourself / `(b)` press-Enter sudo recipe affordance as macos; libvirt-driven VM creation against the default `virbr0` network with cloud-init for static IP; host configuration (`ip route` + systemd-resolved drop-in + `update-ca-certificates` + Firefox policies + `~/.pki/nssdb`); pre-warm + `mpd VM.desktop` launcher in GNOME Activities. Ubuntu 26.04 LTS only. |
 | **Windows + Hyper-V** | [`windows/`](windows/README.txt) | PowerShell bootstrap: `setup.cmd` downloads the Debian cloud image, provisions a Hyper-V Generation 2 VM with cloud-init, builds `bin/mpd` inside the VM, and configures Windows networking (route, NRPT DNS, CA certificate). |
 
 **Sandbox** is the lowest-friction path: one bash script, runs inside
@@ -34,10 +34,10 @@ browser to resolve `*.mpd.test` directly.
   GCP, Azure) — none planned at the moment. The sandbox path on a
   cloud Debian instance with GNOME is the closest current option.
 - **WSL2** — not the right shape. WSL2 is a partial Linux environment
-  with surprising filesystem and networking semantics; mpd-machine
+  with surprising filesystem and networking semantics; mpd VM
   expects a real, isolated VM. On Windows, use Hyper-V.
 - **Docker Desktop / OrbStack as alternative backends** — `mpd-desktop`
-  uses Podman Desktop specifically; `mpd-machine` uses rootful Podman
+  uses Podman Desktop specifically; `mpd VM` uses rootful Podman
   inside a real VM. Other container backends aren't supported.
 
 ## Each platform directory is self-contained

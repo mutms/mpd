@@ -88,8 +88,7 @@ extension Mpd.Service.Portal {
         // machineDir at /mpd-state read-only, so the file is reachable inside
         // the container without a new bind mount. PHP reads it on every
         // request — refreshes pick up changes immediately.
-        //   • mpd-machine: VM hostname (cloud-init set this to mpd-machine-NN
-        //     on the cloud-init platforms; sandbox uses mpd-machine-sandbox).
+        //   • VM hostname: mpd-NNN for managed VMs, mpd-000 for sandbox.
         let displayName: String
         displayName = ProcessInfo.processInfo.hostName
         try? displayName.write(

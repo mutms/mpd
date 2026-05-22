@@ -90,7 +90,7 @@ layer to paper over the network. There's no debate about where the code
 "really" lives. The runtime is the workspace; the host is the thin
 coordination layer.
 
-That's why `mpd-machine` ships a fully headless VM. The dev never opens
+That's why `mpd VM` ships a fully headless VM. The dev never opens
 a UTM window to look at it. They open PHPStorm, point Gateway at
 `<vm-ip>`, and they're inside the runtime three seconds later. Same
 shape for the AI agent: open a terminal on your laptop, SSH into the
@@ -113,7 +113,7 @@ boundary are designed to limit, so that's where the agent goes:
   the runtime, with `/srv/projects/<project>/` to work in and the
   installed `composer`/`phpunit`/`node` on PATH — same files, same
   tools as your IDE.
-- **Inside the mpd-machine VM** — when the work is on **mpd itself**:
+- **Inside the mpd VM** — when the work is on **mpd itself**:
   editing the Swift sources under `~/Developer/mpd/`, rebuilding via
   `make install`, modifying asset scripts, debugging a runtime
   provisioning step. The VM is where mpd's source checkout and Swift
@@ -163,7 +163,7 @@ is open, and only via the agent's signing API — there's no way to
 extract the key. Close the SSH session, the auth goes away. Wipe or
 compromise the runtime, and your key is unaffected.
 
-This matters because mpd-machine is a sandbox you're meant to be able
+This matters because mpd VM is a sandbox you're meant to be able
 to throw away. The whole "you can let the AI agent run wild" pitch
 relies on the runtime *not* holding any secret that survives a wipe.
 
@@ -270,7 +270,7 @@ The two modes differ in where you sit and where `mpd` runs.
 **Sandbox VM** — full GNOME desktop inside the VM, and `mpd` runs
 there too. You install Debian Trixie with the GNOME desktop in your
 hypervisor of choice (UTM, Parallels, Hyper-V, VirtualBox,
-virt-manager, VMware…), set the hostname to `mpd-machine-sandbox`,
+virt-manager, VMware…), set the hostname to `mpd-sandbox`,
 take a snapshot, and run one bash script inside the VM. GNOME
 terminal runs `mpd`; GNOME Firefox-ESR sees `mpd.test`. The host is
 never touched. Lowest-friction entry, strongest isolation for
@@ -278,7 +278,7 @@ AI-driven workloads (the VM is the wall, the snapshot is the safety
 net), recommended starting point if you don't already know which
 mode to pick.
 
-**mpd-machine** — automated headless Debian Trixie VM; you stay on
+**mpd VM** — automated headless Debian Trixie VM; you stay on
 your host. The host-side `mpd-virt` orchestrator (separate repo)
 creates the VM, builds `mpd` inside it, and configures host-side
 WireGuard + CA trust so `https://mpd.test/` works in your laptop's
@@ -298,7 +298,7 @@ the other can't:
   no risk to your real work. It's also where mpd itself gets
   developed — editing the assets and Swift in a sandbox VM means
   you can break the daily setup without breaking your daily setup.
-- **mpd-machine via Parallels** is the *real Moodle work* slot.
+- **mpd VM via Parallels** is the *real Moodle work* slot.
   Daily-driver VM with persistent state, host browser at
   `https://mpd.test/`, IDE Remote-SSH into the runtime container.
   This is where actual plugin development happens.
@@ -374,7 +374,7 @@ moodle-docker or MDC and you've felt the friction of *the agent works in
 the runtime but my IDE works on the host and somehow the filesystem is
 a third place* — mpd resolves that. If you've felt the friction of *I
 can't let the agent do anything destructive because it would touch my
-host* — mpd-machine resolves that.
+host* — mpd VM resolves that.
 
 **Tomorrow:** Moodle-curious people who are not (yet) Moodle developers.
 A friend, a colleague, a junior, a domain expert who wants to try

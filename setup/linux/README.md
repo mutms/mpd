@@ -1,6 +1,6 @@
 # Ubuntu + KVM bootstrap
 
-Automation for `mpd-machine` on **Ubuntu 26.04 LTS** using
+Automation for `mpd VM` on **Ubuntu 26.04 LTS** using
 **libvirt + KVM**. For a "live in the VM" graphical alternative on
 any hypervisor, see the [sandbox platform](../sandbox/README.md).
 
@@ -66,7 +66,7 @@ Read-only checks:
   just listed in `/etc/group` — the script can't proceed if the
   group isn't effective yet).
 - libvirt's `default` network running + autostart.
-- VM-disk pool dir at `/var/lib/mpd-machine/$USER/` (root-owned
+- VM-disk pool dir at `/var/lib/mpd-virt/$USER/` (root-owned
   parent, user-owned child).
 
 Anything missing is reported in two buckets — "things only YOU can
@@ -90,7 +90,7 @@ twice for empty passphrase).
 
 ### 2. VM selection
 
-Lists every existing `mpd-machine-NN` libvirt domain (with state)
+Lists every existing `mpd-NN` libvirt domain (with state)
 and marks the currently-active one (detected from the persistent
 host route to the container subnet). Prompts for a VM number:
 
@@ -107,13 +107,13 @@ DNS resolver, system trust, Firefox policies, NSS DB), then runs
 the long unattended phase:
 
 1. Defines a libvirt storage pool at
-   `/var/lib/mpd-machine/$USER/disks/` (user-owned, libvirtd-readable).
+   `/var/lib/mpd-virt/$USER/disks/` (user-owned, libvirtd-readable).
 2. Downloads the Debian Trixie generic-cloud image (~250 MB,
    cached for reuse).
 3. Converts the raw image to qcow2 in the pool, resizes to your
    chosen size (sparse).
 4. Builds a cloud-init seed ISO (user, SSH key, static IP, hostname
-   `mpd-machine-NN`).
+   `mpd-NN`).
 5. Defines the VM via `virsh define` (KVM-accelerated, virtio
    disk/net, virtio-balloon for memory reclaim, virtio-rng).
 6. Boots, waits for SSH, waits for cloud-init to finish.
@@ -140,10 +140,10 @@ demo invocation.
 
 ### 5. State refresh
 
-Writes the SSH config block (`Host mpd-machine mpd-machine-NN`),
-records the active VM in `~/.mpd-machine/current.env`, and creates
-the desktop launcher (`~/.local/share/applications/mpd-machine.desktop`
-plus `~/Desktop/mpd-machine.desktop` if a Desktop dir exists, with
+Writes the SSH config block (`Host mpd VM mpd-NN`),
+records the active VM in `~/.mpd-virt/current.env`, and creates
+the desktop launcher (`~/.local/share/applications/mpd VM.desktop`
+plus `~/Desktop/mpd VM.desktop` if a Desktop dir exists, with
 `gio set ... metadata::trusted true` so GNOME doesn't ask before
 launching).
 
@@ -162,7 +162,7 @@ takes one of two short paths:
 ## `start.sh` / `stop.sh`
 
 `start.sh` — starts the VM that's currently configured (detected
-from the persistent route or `~/.mpd-machine/current.env`). If the
+from the persistent route or `~/.mpd-virt/current.env`). If the
 VM was suspended via `stop.sh`, libvirt's managedsave resumes it
 in seconds rather than booting fresh. Re-asserts the host route to
 the container subnet (the route doesn't survive a host reboot —
@@ -185,18 +185,18 @@ Asks for confirmation (`Type YES`), then runs in order:
    - `/usr/local/share/ca-certificates/mpd-test.crt` (and reloads
      the system trust bundle)
    - `/etc/firefox/policies/policies.json` + `mpd-rootCA.crt`
-3. Removes `~/.mpd-machine/` (state).
-4. Removes the `Host mpd-machine` block from `~/.ssh/config`.
+3. Removes `~/.mpd-virt/` (state).
+4. Removes the `Host mpd VM` block from `~/.ssh/config`.
 5. Removes the desktop launcher from
    `~/.local/share/applications/` and `~/Desktop/`.
-6. **Asks `Delete <name>? [y/N]` for each `mpd-machine-NN` VM** —
+6. **Asks `Delete <name>? [y/N]` for each `mpd-NN` VM** —
    default keeps. Only y'd VMs are stopped (`virsh destroy`) and
    deleted (`virsh undefine --remove-all-storage`). VM deletion is
    the last step on purpose: Ctrl-C during these prompts leaves the
    host fully cleaned up with the remaining VMs intact.
 
 If you delete every VM, the libvirt storage pool is also
-undefined. The user-owned directory `/var/lib/mpd-machine/$USER/`
+undefined. The user-owned directory `/var/lib/mpd-virt/$USER/`
 is left in place — `rm -rf` it yourself if you want a true reset.
 
 If you keep one or more VMs, host networking is gone — re-run
@@ -213,7 +213,7 @@ SSH into the VM before it's fully up — DHCP would give an unknown
 address that the script can't predict.
 
 The IP is recorded in `conf/platform.env` inside the VM
-(`MPD_VM_IP=...`) and in `~/.mpd-machine/<vmname>.env` on the host.
+(`MPD_VM_IP=...`) and in `~/.mpd-virt/<vmname>.env` on the host.
 
 The active VM is tracked via the persistent route: the kernel route
 to `10.163.0.0/24` (the container subnet) points at the VM's IP, so
@@ -233,7 +233,8 @@ To switch, run `setup.sh` and enter the other VM's number — the
 current VM is `managedsave`d and the chosen one resumes.
 
 mpd's internal "active machine" label always remains `mpd-machine`
-regardless of the chosen octet, so per-machine state lives at
+regardless of the chosen octet (kept as a stable state-file
+identifier), so per-machine state lives at
 `~/.mpd/machines/mpd-machine/` inside each VM independently.
 
 ## A GUI list of VMs (`virt-manager`)
@@ -249,13 +250,13 @@ sudo apt-get install -y virt-manager
 `virt-manager` connects to `qemu:///system` and shows every libvirt
 VM (including the mpd ones), with consoles, performance graphs,
 and snapshot management. Console access via `virsh console
-mpd-machine-NN` works without virt-manager too.
+mpd-NN` works without virt-manager too.
 
 ## File transfer (host ↔ VM)
 
 Two options:
 
-- **scp via the dev user** — `scp some.tar.gz mpd-machine-158:~/` for
+- **scp via the dev user** — `scp some.tar.gz mpd-158:~/` for
   ad-hoc transfers.
 - **scp/ssh via fileaccess** — preferred for project backups. The
   `mpd-service-fileaccess` container exposes `/srv/backups/` as an
@@ -270,16 +271,16 @@ If you lose the laptop's private SSH key and can no longer log
 into the VM:
 
 1. **Easiest**: rebuild the VM. `uninstall.sh` keeps your kept VMs
-   safe; just `virsh undefine --remove-all-storage mpd-machine-158`
+   safe; just `virsh undefine --remove-all-storage mpd-158`
    then re-run `setup.sh`. Local-only state in the VM is lost
    (project sources, DBs, generated CA, fileaccess host keys); git
    remotes and laptop-side notes survive.
 
 2. **Single-user-mode recovery via `virsh console`**:
    ```bash
-   virsh -c qemu:///system console mpd-machine-158
+   virsh -c qemu:///system console mpd-158
    ```
-   Reboot the VM (`virsh reboot mpd-machine-158` from another
+   Reboot the VM (`virsh reboot mpd-158` from another
    terminal). When the GRUB menu appears, press a key during the
    countdown to interrupt auto-boot. Highlight the default entry,
    press `e` to edit, append `init=/bin/bash` to the `linux ...`
@@ -295,7 +296,7 @@ into the VM:
    vi /home/<your-user>/.ssh/authorized_keys
    ```
    `sync` and reboot (`exec /sbin/init` or `virsh reset
-   mpd-machine-158`).
+   mpd-158`).
 
 ## Switching between VMs sharing an IP
 
@@ -306,7 +307,7 @@ independently:
 
 ```bash
 ssh-keygen -R 192.168.122.158
-ssh-keygen -R mpd-machine-158
+ssh-keygen -R mpd-158
 ```
 
 ## Shared CA story
@@ -317,7 +318,7 @@ and mirrors between them on every run:
 - `~/Developer/mpd/conf/caroot/{rootCA.pem,rootCA-key.pem}` — the
   canonical mpd location. Populated only when `~/Developer/mpd/conf/`
   already exists.
-- `~/.mpd-machine/ca/{rootCA.pem,rootCA-key.pem}` — the platform
+- `~/.mpd-virt/ca/{rootCA.pem,rootCA-key.pem}` — the platform
   copy. Always populated after the first `setup.sh` run.
 
 Wipe either side and the next `setup.sh` restores from the other.
@@ -325,7 +326,7 @@ Delete the cert from the system trust store (or `~/.pki/nssdb` for
 Chromium, or `/etc/firefox/policies/mpd-rootCA.crt` for Firefox)
 and the next `setup.sh` re-imports — no manual recovery dance.
 
-CAs flow host → VM only. Neither caroot nor `~/.mpd-machine/ca/` is
+CAs flow host → VM only. Neither caroot nor `~/.mpd-virt/ca/` is
 ever populated from a VM source. If somehow neither location is
 populated when you run the existing-VM `setup.sh` path (e.g. you
 imported a libvirt domain definition created on another host),
@@ -334,6 +335,6 @@ host networking is configured but CA import is skipped — copy a
 and re-run.
 
 `uninstall.sh` removes the System trust cert, the Firefox policy +
-cert, the NSS DB entry, and `~/.mpd-machine/` — but leaves
+cert, the NSS DB entry, and `~/.mpd-virt/` — but leaves
 `~/Developer/mpd/conf/caroot/` alone (mirrors mpd's own
 "persisted, not removed by --uninstall" convention).

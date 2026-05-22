@@ -67,7 +67,7 @@ command -v virsh >/dev/null 2>&1 \
 # --- Banner + confirmation ---
 
 echo
-echo "This will undo mpd-machine setup on this host."
+echo "This will undo mpd-vm setup on this host."
 echo
 echo "Host networking and trust to remove:"
 [ "$remove_route" = 1 ]    && echo "    - persistent route to ${CONTAINER_SUBNET_PREFIX}"
@@ -76,7 +76,7 @@ echo "Host networking and trust to remove:"
 [ "$remove_firefox" = 1 ]  && echo "    - Firefox policy + cert in ${FIREFOX_POLICIES_DIR}/"
 [ "$remove_nssdb" = 1 ]    && echo "    - mpd CA cert in ~/.pki/nssdb (Chromium)"
 echo "    - ${STATE_DIR}/"
-echo "    - 'Host mpd-machine' block from ~/.ssh/config"
+echo "    - 'Host mpd-vm' block from ~/.ssh/config"
 echo "    - desktop launcher (.desktop files in ~/.local/share/applications/ and ~/Desktop/)"
 echo
 

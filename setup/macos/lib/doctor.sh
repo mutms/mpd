@@ -5,9 +5,9 @@
 #
 # Output shape:
 #   Tracked mpd VMs (3):
-#       mpd-machine-155        running    configured  ip=10.211.55.155
+#       mpd-155        running    configured  ip=10.211.55.155
 #       moodle-experiment      stopped               ip=10.211.55.156
-#       mpd-machine-200        suspended             ip=10.211.55.200
+#       mpd-200        suspended             ip=10.211.55.200
 #
 #   …and then either a "fix it up" pass or a warning, depending on how
 #   many are currently running.

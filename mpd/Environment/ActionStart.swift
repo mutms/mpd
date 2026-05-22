@@ -1,5 +1,5 @@
-// mpd-machine command hooks
-// Linux runtime / mpd-machine start behavior.
+// mpd lifecycle command hooks
+// VM start behavior.
 
 import Foundation
 

@@ -1,5 +1,5 @@
-// mpd-machine command hooks
-// Linux mpd-machine restart — `sudo systemctl reboot` lets the VM's
+// mpd lifecycle command hooks
+// VM restart — `sudo systemctl reboot` lets the VM's
 // shutdown sequence drive the existing chain:
 //   poweroff → mpd.service ExecStop=mpd --stop → EventMpdPreStop hooks
 // On boot, mpd.service ExecStart=-mpd --start brings everything back

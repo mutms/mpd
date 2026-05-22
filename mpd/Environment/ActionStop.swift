@@ -1,5 +1,5 @@
-// mpd-machine command hooks
-// Linux runtime / mpd-machine stop behavior — powers off the VM.
+// mpd lifecycle command hooks
+// VM stop behavior — powers off the VM.
 
 import Foundation
 

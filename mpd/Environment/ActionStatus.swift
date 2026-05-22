@@ -1,5 +1,5 @@
-// mpd-machine command hooks
-// Linux runtime / mpd-machine status rendering.
+// mpd lifecycle command hooks
+// In-VM status rendering.
 
 import Foundation
 

@@ -7,7 +7,7 @@ Purpose: describe how `mpd` is structured, what is currently in scope, and where
 `mpd` is a single Linux binary that runs inside a Debian Trixie VM
 (under rootful Podman). Two user-facing modes share this binary:
 
-- `mpd-machine`: headless VM driven from the host by the separate
+- `mpd VM`: headless VM driven from the host by the separate
   `mpd-virt` orchestrator (own repo). Primary target.
 - `sandbox`: same Debian Trixie VM but with a GNOME desktop, set up
   in-VM via `setup/sandbox/take-over-sandbox-vm.sh`. Same `mpd` binary;
@@ -73,7 +73,7 @@ Any PR that adds command execution must answer:
 ### Sister rule: privilege model
 
 A second mandatory rule governs **how** shell code runs inside runtime
-containers, the mpd-machine VM, and fileaccess: scripts always run as
+containers, the mpd VM, and fileaccess: scripts always run as
 the dev user; `sudo` is for individual privileged commands; whole
 scripts are never wrapped in `sudo`; identity-switching to a non-root
 user (`sudo -u <user>`, `runuser`, `su - <user>`) is forbidden. Full
@@ -102,7 +102,7 @@ macOS). The pattern these scripts follow:
    terminated by an explicit `sudo -k` to invalidate the cached
    credential immediately.
 3. **No `sudo` outside the fence.** Discovery, reporting, and state
-   writes (`~/.mpd-machine/`, `~/.ssh/config`, `~/Desktop/`) all run
+   writes (`~/.mpd-virt/`, `~/.ssh/config`, `~/Desktop/`) all run
    as the user with no cached creds — a later bug cannot accidentally
    piggy-back on the elevated session.
 4. **EXIT trap as backstop.** `trap 'sudo -k' EXIT` ensures cached
@@ -113,7 +113,7 @@ macOS). The pattern these scripts follow:
    sees no password prompt at all.
 6. **Generate the CA on the host before VM creation, and only on
    the host.** `prepare_host_ca` in `lib/common.sh` keeps the host
-   CA at `~/.mpd-machine/ca/` (platform-owned; always present after
+   CA at `~/.mpd-virt/ca/` (platform-owned; always present after
    the first `setup.command` run).
 
    On a wipe, the next `setup.command` regenerates and re-imports
@@ -130,7 +130,7 @@ macOS). The pattern these scripts follow:
    `configure-client.sh` will not pull a CA off a VM and import it
    into the keychain — that would invert the trust direction by
    accepting a cert of unknown provenance from inside an SSH session.
-   On a Mac with `~/.mpd-machine/ca/` empty (e.g. an imported VM
+   On a Mac with `~/.mpd-virt/ca/` empty (e.g. an imported VM
    created elsewhere), `configure-client.sh` configures route + DNS
    but skips CA import; the user has to bring a host CA across
    themselves.
@@ -147,7 +147,7 @@ Reference implementations: `lib/setup.sh` (new-VM path: upfront fence,
 host-first CA), `lib/configure-client.sh` (existing-VM and `start.sh`
 warm path), and `lib/uninstall.sh` (teardown path).
 
-This rule applies to the two automated `mpd-machine` platforms whose
+This rule applies to the two automated `mpd VM` platforms whose
 bootstrap runs as the dev user on the host: **macos** and
 **linux**. The other platforms differ:
 
@@ -268,7 +268,7 @@ Contributor rule:
 homes and audiences.
 
 **Verbs** are run from outside the runtime by the `mpd` binary on the
-host (or inside the VM, on `mpd-machine`). They handle work that the
+host (or inside the VM, on `mpd VM`). They handle work that the
 runtime container can't do for itself — provisioning DB containers,
 attaching sidecars, writing project metadata, podman lifecycle. Surface:
 `mpd <verb> <project>`. Lifetime: one invocation per CLI call.
@@ -580,7 +580,7 @@ MPD_INSTANCE_SUFFIX=<-suffix>   # e.g. "-161"; empty for the unsuffixed instance
 ```
 
 `MPD_INSTANCE_SUFFIX` is the disambiguator for concurrent VMs. Auto-derived
-at `mpd --setup` from the VM hostname (`mpd-machine-<X>`), with the leading
+at `mpd --setup` from the VM hostname (`mpd-<X>`), with the leading
 dash included (or empty when there's no suffix). Used as the hostname suffix
 on runtime **pods** (`mpd-runtime-<rt>-<X>`), so SSH'ing into
 `<rt>.runtime.mpd.test` gives a bash prompt that makes the instance
@@ -596,8 +596,8 @@ and Platform can share the same file without clobbering each other.
 
 | Path                        | Writer                                                       | Values             | Behavior                                               |
 |-----------------------------|--------------------------------------------------------------|--------------------|--------------------------------------------------------|
-| `mpd-machine` via mpd-virt  | `mpd-virt` orchestrator (host, separate repo, over SSH)      | `machine`, `${IP}` | written before `mpd --setup` runs in the VM            |
-| `mpd-machine` via sandbox   | `setup/sandbox/lib/provision.sh`                             | `sandbox`, `""`    | written before `mpd --setup` runs inside the Debian VM |
+| `mpd VM` via mpd-virt  | `mpd-virt` orchestrator (host, separate repo, over SSH)      | `machine`, `${IP}` | written before `mpd --setup` runs in the VM            |
+| `mpd VM` via sandbox   | `setup/sandbox/lib/provision.sh`                             | `sandbox`, `""`    | written before `mpd --setup` runs inside the Debian VM |
 
 **Reader:** `Mpd.Core.Platform.load()` (Swift). Throws with a fix-it message
 when missing, pointing at the matching bootstrap script. The machine path

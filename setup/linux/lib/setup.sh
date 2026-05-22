@@ -1,5 +1,5 @@
 #!/bin/bash
-# setup.sh — Pre-flight + create/switch an mpd-machine VM (linux).
+# setup.sh — Pre-flight + create/switch an mpd-vm VM (linux).
 # Called by the entry shim at ../setup.sh.
 
 set -euo pipefail
@@ -76,7 +76,7 @@ if [ "$in_current_shell" = 0 ]; then
     fi
 fi
 
-# --- VM disk pool directory at /var/lib/mpd-machine/$USER ---
+# --- VM disk pool directory at /var/lib/mpd-virt/$USER ---
 # libvirtd accesses VM disks as the libvirt-qemu user; its apparmor profile
 # auto-allows libvirt-managed pool paths. Putting the pool in /var/lib keeps
 # $HOME's mode untouched and gives a multi-user-safe layout (root-owned
@@ -85,12 +85,12 @@ pool_parent_ok=0
 pool_user_dir_ok=0
 [ -d "$LIBVIRT_POOL_PARENT" ] && [ "$(stat -c %U "$LIBVIRT_POOL_PARENT" 2>/dev/null)" = "$USER" ] \
     && pool_user_dir_ok=1
-[ -d /var/lib/mpd-machine ] && pool_parent_ok=1
+[ -d /var/lib/mpd-virt ] && pool_parent_ok=1
 
 if [ "$pool_user_dir_ok" = 0 ]; then
     sudo_descriptions+=("Create VM disk pool directory at ${LIBVIRT_POOL_PARENT} (owned by ${USER})")
     if [ "$pool_parent_ok" = 0 ]; then
-        sudo_recipe+=("sudo install -d -m 0755 -o root -g root /var/lib/mpd-machine")
+        sudo_recipe+=("sudo install -d -m 0755 -o root -g root /var/lib/mpd-virt")
     fi
     sudo_recipe+=("sudo install -d -m 0755 -o ${USER} -g ${USER} ${LIBVIRT_POOL_PARENT}")
 fi
@@ -196,7 +196,7 @@ if [ ${#sudo_recipe[@]} -gt 0 ]; then
             sudo usermod -aG libvirt "$USER"
         fi
         if [ "$pool_user_dir_ok_now" = 0 ]; then
-            sudo install -d -m 0755 -o root  -g root  /var/lib/mpd-machine
+            sudo install -d -m 0755 -o root  -g root  /var/lib/mpd-virt
             sudo install -d -m 0755 -o "$USER" -g "$USER" "$LIBVIRT_POOL_PARENT"
         fi
         if command -v virsh >/dev/null 2>&1; then
@@ -360,8 +360,8 @@ if vm_exists "$VM_NAME"; then
 
     echo
     echo "============================================="
-    echo "  mpd-machine ready."
-    echo "  Activities → 'mpd-machine' (or 'ssh mpd-machine')"
+    echo "  mpd-vm ready."
+    echo "  Activities → 'mpd-vm' (or 'ssh mpd-vm')"
     echo "============================================="
     echo
     exit 0
@@ -545,7 +545,7 @@ ensure_desktop_shortcut
 
 echo
 echo "============================================="
-echo "  Your mpd-machine is ready!"
-echo "  Activities → 'mpd-machine' (or 'ssh mpd-machine')"
+echo "  Your mpd-vm is ready!"
+echo "  Activities → 'mpd-vm' (or 'ssh mpd-vm')"
 echo "============================================="
 echo

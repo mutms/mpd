@@ -1,6 +1,6 @@
-# mpd-machine
+# mpd VM
 
-`mpd-machine` is the **host-integrated** mode: a matched-host
+`mpd VM` is the **host-integrated** mode: a matched-host
 bootstrap script (UTM on macOS, libvirt/KVM on Ubuntu, Hyper-V on
 Windows) creates a Debian Trixie cloud-init VM, builds `mpd` inside
 it, and configures the host's static route + DNS resolver + CA trust
@@ -12,12 +12,12 @@ the VM.
 For the simpler "live entirely inside the VM, host stays untouched"
 flow, see the [Sandbox VM mode](../../setup/sandbox/README.md). For the full pitch (why a VM,
 why a sandbox, why SSH-everywhere), see [../VISION.md](../VISION.md).
-This page is the "what is mpd-machine, when do I pick it, how do I
+This page is the "what is mpd VM, when do I pick it, how do I
 get a VM" reference.
 
-## When to pick mpd-machine
+## When to pick mpd VM
 
-mpd-machine is the **daily-driver Moodle work** mode. Your host
+mpd VM is the **daily-driver Moodle work** mode. Your host
 browser visits `https://mpd.test/` directly, your IDE Remote-SSH's
 into the runtime container, your terminal SSH'es into the VM for the
 `mpd` CLI. The VM is persistent (not throwaway), so projects,
@@ -60,7 +60,7 @@ bootstrap is meant to run on the host you actually live on.
 
 ## Picking a bootstrap
 
-mpd-machine ships a matched-host bootstrap for each of the three
+mpd VM ships a matched-host bootstrap for each of the three
 supported hosts. End state of any path: a Debian Trixie VM with `mpd`
 built and reachable, plus host-side networking (route + DNS resolver
 + CA trust) configured automatically.

@@ -33,7 +33,7 @@ extension Mpd.Service.Dnsmasq {
     /// corporate DNS, on a home LAN the router, etc. — no hardcoded
     /// public DNS, no MPD_DNS_UPSTREAM env var.
     ///
-    /// - **mpd-machine**: every supported platform delivers a host with
+    /// - **In-VM**: setup expects the host to deliver
     ///   systemd-resolved active. `/etc/resolv.conf` is a stub symlink to
     ///   `127.0.0.53`; the real per-link upstreams live at
     ///   `/run/systemd/resolve/resolv.conf`.

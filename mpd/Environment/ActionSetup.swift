@@ -1,5 +1,5 @@
-// mpd-machine command hooks
-// Linux runtime / mpd-machine setup behavior.
+// mpd setup/lifecycle command hooks
+// In-VM setup behavior.
 
 import Foundation
 
@@ -57,7 +57,7 @@ extension Mpd.Action.Setup {
         return (id, codename)
     }
 
-    /// Hard gate: mpd-machine targets Debian Trixie across every
+    /// Hard gate: mpd targets Debian Trixie across every
     /// platform — cloud-init (macos, linux, windows) and
     /// sandbox alike. Other distros / releases are unsupported (package
     /// names, Swift availability, systemd unit layout, NetworkManager
@@ -65,18 +65,18 @@ extension Mpd.Action.Setup {
     private static func requireSupportedHost() throws {
         guard let os = readOSRelease() else {
             throw RuntimeError("""
-            Cannot read /etc/os-release. mpd-machine targets Debian Trixie.
+            Cannot read /etc/os-release. mpd targets Debian Trixie.
             """)
         }
         guard os.id == "debian" else {
             throw RuntimeError("""
-            mpd-machine targets Debian (got ID=\(os.id)).
+            mpd targets Debian (got ID=\(os.id)).
             Use a Debian Trixie VM and re-run mpd --setup.
             """)
         }
         guard os.codename == "trixie" else {
             throw RuntimeError("""
-            mpd-machine targets Debian Trixie (got VERSION_CODENAME=\(os.codename)).
+            mpd targets Debian Trixie (got VERSION_CODENAME=\(os.codename)).
             Package names, Swift toolchain, and systemd-resolved/NetworkManager
             defaults vary between releases — pin to Trixie or accept that
             you're off the supported path.
@@ -122,23 +122,21 @@ extension Mpd.Action.Setup {
         ok("podman-restart.service enabled (containers survive reboot).")
     }
 
-    /// Derive the instance suffix from the VM's OS hostname. The mpd-machine
-    /// bootstrap (create-vm.sh on the cloud-init platforms; the user's own
-    /// rename on sandbox) sets the hostname to either `mpd-machine`
-    /// (singleton), `mpd-machine-<X>` (concurrent variant on cloud-init
-    /// platforms), or `mpd-machine-sandbox` (sandbox); the suffix here is
-    /// `-<X>` / `-sandbox` (with the leading dash) or `""`. Used to
-    /// disambiguate runtime container hostnames so a developer SSH'd into
-    /// `php.runtime.mpd.test` sees `mpd-runtime-php-<X>` in their prompt.
-    private static func deriveInstanceSuffix() -> String {
+    /// Derive the 3-digit VM ID from the VM's OS hostname.
+    /// Managed VMs (set up by mpd-virt) are named `mpd-<NNN>` where NNN is
+    /// the static-IP octet in `[100, 254]`. The sandbox VM is named
+    /// `mpd-000`. Either way the ID is just the 3-digit fragment after
+    /// `mpd-`. Used as the prefix for every runtime container/pod hostname:
+    /// `mpd-<NNN>-php`, `mpd-<NNN>-node`, etc.
+    private static func deriveVmId() -> String {
         // Read /etc/hostname directly — `hostname` isn't on the HostExec
         // whitelist and the file is always present on Debian.
         let raw = (try? String(contentsOfFile: "/etc/hostname", encoding: .utf8)) ?? ""
         // Take the short name (first dot strips any FQDN form just in case).
         let h = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             .split(separator: ".").first.map(String.init) ?? ""
-        let prefix = "mpd-machine-"
-        return h.hasPrefix(prefix) ? "-" + String(h.dropFirst(prefix.count)) : ""
+        let prefix = "mpd-"
+        return h.hasPrefix(prefix) ? String(h.dropFirst(prefix.count)) : ""
     }
 
     /// Append a single conditional `PATH` line to the dev user's
@@ -146,7 +144,7 @@ extension Mpd.Action.Setup {
     /// on PATH in every bash session. Same shape as Debian's stock
     /// `~/.profile` block for `~/.local/bin`.
     ///
-    /// Single-user assumption: mpd-machine is a sandbox VM with one
+    /// Single-user assumption: mpd runs in a dedicated VM with one
     /// developer account, so user-scoped wiring is enough — no sudo, no
     /// /etc/profile.d (where ordering/file-existence-at-login bites IDE
     /// terminals that snapshot env before mpd --setup runs).
@@ -269,7 +267,7 @@ extension Mpd.Action.Setup {
             ok("VM-local key already present in ~/.ssh/.")
         } else {
             let host = ProcessInfo.processInfo.hostName
-            let comment = "mpd-machine \(host)"
+            let comment = "mpd VM \(host)"
             guard Mpd.HostExec.run([
                 "ssh-keygen", "-t", "ed25519", "-N", "", "-f", keyPath, "-C", comment, "-q",
             ]) == 0 else {
@@ -361,7 +359,7 @@ extension Mpd.Action.Setup {
     private static let wgService        = "wg-quick@mpd0.service"
 
     /// Gated on `~/.mpd/conf/wireguard/mpd0.conf` (pushed in by mpd-virt at
-    /// provisioning time). If absent — sandbox case, or an mpd-machine VM
+    /// provisioning time). If absent — sandbox case, or a managed VM
     /// whose host hasn't pushed config yet — this step is a clean no-op.
     ///
     /// When present: apt-install `wireguard`, copy the conf to
@@ -498,15 +496,14 @@ extension Mpd.Action.Setup {
         // what the VM IP is, so we print correct laptop-side recipes.
         step("Platform identity")
         let identity = try Mpd.Core.Platform.load()
-        // Auto-refresh the instance suffix from the VM's OS hostname on every
-        // setup run. User can hand-edit MPD_INSTANCE_SUFFIX in platform.env
-        // afterwards if they want a different label; the next --setup will
-        // overwrite it back to the auto-derived value.
-        let derivedSuffix = deriveInstanceSuffix()
-        if derivedSuffix != identity.instanceSuffix {
-            try Mpd.Core.Platform.updateInstanceSuffix(derivedSuffix)
+        // Auto-refresh the VM ID from the VM's OS hostname on every setup
+        // run. User can hand-edit MPD_VM_ID in platform.env afterwards;
+        // the next --setup overwrites it back to the auto-derived value.
+        let derivedVmId = deriveVmId()
+        if derivedVmId != identity.vmId {
+            try Mpd.Core.Platform.updateVmId(derivedVmId)
         }
-        ok("Platform: \(identity.platform.rawValue), VM IP: \(identity.vmIP.isEmpty ? "—" : identity.vmIP), suffix: \(derivedSuffix.isEmpty ? "—" : derivedSuffix)")
+        ok("Platform: \(identity.platform.rawValue), VM IP: \(identity.vmIP.isEmpty ? "—" : identity.vmIP), VM ID: \(derivedVmId.isEmpty ? "—" : derivedVmId)")
 
         // Step — VM-local SSH keypair. Without this, the VM has no private key
         // to offer when SSHing into runtimes from a local terminal (e.g. inside

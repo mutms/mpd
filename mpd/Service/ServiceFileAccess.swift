@@ -12,7 +12,7 @@
 //      Pubkey-only, single user (`$EXTUSER`), no sudo. Listens only on the
 //      internal podman network (no -p mapping), so the SSH endpoint is
 //      reachable solely via the
-//      laptop→VM static route (mpd-machine).
+//      laptop→VM tunnel.
 //
 // Mounts the data volume at `/srv` (no host overlay on either mode). Backup
 // artifacts written by runtime verbs land at `/srv/backups/` on the volume;

@@ -46,7 +46,7 @@ Operational flags include:
   by `--setup`. `--start` reconciles `current` toward `requested` (see
   "Resource lifecycle model" in `docs/HOOKS.md`); `--stop` fires
   `EventMpdPreStop` hooks for graceful DB shutdown, then powers off.
-- `--restart` — graceful stop + restart. On mpd-machine, runs
+- `--restart` — graceful stop + restart. On mpd VM, runs
   `sudo systemctl reboot` and lets the user-systemd `mpd.service` unit
   drive the chain (ExecStop=`mpd --stop` on shutdown, ExecStart=
   `mpd --start` on boot). User runs `mpd --start` afterward to restore projects.
@@ -72,9 +72,9 @@ host environment rather than provisioning one:
 `mpd --setup` validates the supported distro (Debian Trixie across every 
 platform), verifies `systemd-resolved` is active (a precondition the
 platform bootstrap is responsible for), and proceeds. The
-active-machine label is always pinned to `mpd-machine` regardless of
-the OS hostname (which may be `mpd-machine-<digits>` for concurrent
-cloud-init VMs or `mpd-machine-sandbox` for the sandbox platform).
+active-machine label is always pinned to `mpd VM` regardless of
+the OS hostname (which may be `mpd-<digits>` for concurrent
+cloud-init VMs or `mpd-sandbox` for the sandbox platform).
 
 ### Fallback rule
 

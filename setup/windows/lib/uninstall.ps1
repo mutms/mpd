@@ -14,8 +14,8 @@ Write-Host "  - Persistent route to the container subnet"
 Write-Host "  - NRPT rule for *.mpd.test"
 Write-Host "  - mpd CA certificate from the trusted root store"
 Write-Host "  - $MpdUserDir (helper scripts, CA, current.env)"
-Write-Host "  - 'Host mpd-machine' block from ~/.ssh/config"
-Write-Host "  - mpd-machine desktop shortcut"
+Write-Host "  - 'Host mpd-vm' block from ~/.ssh/config"
+Write-Host "  - mpd-vm desktop shortcut"
 if ($vms.Count -gt 0) {
     Write-Host ""
     Write-Host "Existing VMs (you will be asked about each one after host cleanup):"
@@ -111,7 +111,7 @@ if (Test-Path "$env:USERPROFILE\.ssh\config") {
 
 # ── Remove desktop shortcut ───────────────────────────────────────────────────
 
-$shortcut = Join-Path ([Environment]::GetFolderPath("Desktop")) "mpd-machine.lnk"
+$shortcut = Join-Path ([Environment]::GetFolderPath("Desktop")) "mpd-vm.lnk"
 if (Test-Path $shortcut) {
     Remove-Item $shortcut -Force
     Write-Host "Desktop shortcut removed."

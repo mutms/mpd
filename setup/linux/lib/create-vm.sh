@@ -1,5 +1,5 @@
 #!/bin/bash
-# create-vm.sh — Create a single Debian Trixie VM via libvirt for mpd-machine.
+# create-vm.sh — Create a single Debian Trixie VM via libvirt for mpd-vm.
 #
 # Called by lib/setup.sh after the user has selected octet/user/memory/disk.
 # Non-interactive (no prompts). Does not configure host networking — that's
@@ -66,7 +66,7 @@ POOL_DIR="$LIBVIRT_POOL_DIR"
 TEMP_DIR="${SCRIPT_DIR}/temp"
 mkdir -p "$TEMP_DIR"
 # Preflight has already created LIBVIRT_POOL_PARENT (root-owned parent
-# + user-owned subdir at /var/lib/mpd-machine/$USER); the pool's `disks/`
+# + user-owned subdir at /var/lib/mpd-virt/$USER); the pool's `disks/`
 # subdir is created by `virsh pool-build` further down.
 
 step "Creating VM: name=${VM_NAME} ip=${VM_IP} user=${VM_USER} memory=${VM_MEMORY_GB}GB disk=${VM_DISK_SIZE}GB mac=${VM_MAC}"
@@ -81,7 +81,7 @@ fi
 
 step "Ensuring libvirt storage pool '${POOL_NAME}' at ${POOL_DIR}"
 
-# Pool target lives under /var/lib/mpd-machine/$USER/disks. The user-owned
+# Pool target lives under /var/lib/mpd-virt/$USER/disks. The user-owned
 # parent ($LIBVIRT_POOL_PARENT) was created by the preflight sudo recipe.
 # We mkdir the `disks/` subdir ourselves rather than via `virsh pool-build`
 # — libvirtd would execute pool-build as root, leaving the dir owned by
@@ -377,19 +377,21 @@ ok "Repository ready"
 
 # --- Platform identity ---
 
-step "Writing platform identity to conf/platform.env"
-ssh_cmd "$VM_IP" "$VM_USER" "export VM_IP=$(printf '%q' "$VM_IP"); bash -se" <<'EOF'
+step "Writing platform identity to ~/.mpd/conf/platform.env"
+VM_ID=$(printf '%03d' "$VM_OCTET")
+ssh_cmd "$VM_IP" "$VM_USER" \
+    "export VM_IP=$(printf '%q' "$VM_IP") VM_ID=$(printf '%q' "$VM_ID"); bash -se" <<'EOF'
 set -e
-mkdir -p "$HOME/Developer/mpd/conf"
-cat > "$HOME/Developer/mpd/conf/platform.env" <<PLATFORM_EOF
+mkdir -p "$HOME/.mpd/conf"
+cat > "$HOME/.mpd/conf/platform.env" <<PLATFORM_EOF
 # mpd platform identity — written by linux/lib/create-vm.sh.
-# Lives under conf/ so it survives \`mpd --uninstall\`.
-MPD_PLATFORM=linux
-MPD_CLIENT_OS=debian
+# Lives under ~/.mpd/conf/ (persistent identity dir for the in-VM mpd binary).
+MPD_PLATFORM=managed
 MPD_VM_IP=${VM_IP}
+MPD_VM_ID=${VM_ID}
 PLATFORM_EOF
-chmod 0644 "$HOME/Developer/mpd/conf/platform.env"
-echo "    Wrote $HOME/Developer/mpd/conf/platform.env"
+chmod 0644 "$HOME/.mpd/conf/platform.env"
+echo "    Wrote $HOME/.mpd/conf/platform.env"
 EOF
 ok "Platform identity recorded"
 
@@ -475,11 +477,11 @@ ok "~/.local/bin on PATH"
 
 step "Uploading host CA into VM (mpd will reuse it)"
 ssh_cmd "$VM_IP" "$VM_USER" \
-    "mkdir -p ~/Developer/mpd/conf/caroot && chmod 700 ~/Developer/mpd/conf/caroot"
+    "mkdir -p ~/.mpd/conf/caroot && chmod 700 ~/.mpd/conf/caroot"
 scp -q -o StrictHostKeyChecking=no -o BatchMode=yes \
     "$ARG_HOST_CA_PEM" "$ARG_HOST_CA_KEY" \
-    "${VM_USER}@${VM_IP}:Developer/mpd/conf/caroot/"
-ssh_cmd "$VM_IP" "$VM_USER" "chmod 600 ~/Developer/mpd/conf/caroot/rootCA*.pem"
+    "${VM_USER}@${VM_IP}:.mpd/conf/caroot/"
+ssh_cmd "$VM_IP" "$VM_USER" "chmod 600 ~/.mpd/conf/caroot/rootCA*.pem"
 ok "Host CA uploaded"
 
 step "Running 'mpd --setup' (CA, podman network, services)"

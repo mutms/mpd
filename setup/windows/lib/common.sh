@@ -77,7 +77,7 @@ EOF
 
 generate_seed_iso() {
     local iso_path="$1" octet="$2" vm_user="$3" ssh_pub_key="$4"
-    local vm_name="mpd-machine-${octet}"
+    local vm_name="mpd-${octet}"
     local vm_ip="10.164.0.${octet}"
     local tmp_dir
     tmp_dir=$(mktemp -d)

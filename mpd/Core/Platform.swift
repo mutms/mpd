@@ -1,35 +1,38 @@
 // mpd — Mpd.Core.Platform namespace
 // Reads/writes ~/.mpd/conf/platform.env — the in-VM identity file that
 // records which kind of mpd setup this is:
-//   MPD_PLATFORM=machine | sandbox
-//   MPD_VM_IP=<ip>                  (empty for sandbox)
-//   MPD_INSTANCE_SUFFIX=<-suffix>   (e.g. "-161"; empty for the unsuffixed
-//                                    instance — used for hostname
-//                                    disambiguation when running concurrent
-//                                    VMs)
+//   MPD_PLATFORM=managed | sandbox
+//   MPD_VM_IP=<ip>           (empty for sandbox; for managed it's the
+//                              VM's static IP, e.g. 10.211.55.159)
+//   MPD_VM_ID=<NNN>          3-digit VM identifier used everywhere:
+//                              "100"-"254" for managed VMs (static-IP octet),
+//                              "000" for the sandbox VM (DHCP — no fixed IP).
+//                              Pod/container/hostname all build from this:
+//                              `mpd-<NNN>` is the VM, `mpd-<NNN>-<runtime>`
+//                              is each runtime inside it.
 //
 // Writers:
-//   - mpd-machine via the host-side `mpd-virt` orchestrator (separate repo):
+//   - managed VM via the host-side `mpd-virt` orchestrator (separate repo):
 //     writes the file over SSH before `mpd --setup` runs in the VM.
 //   - sandbox via setup/sandbox/lib/provision.sh: writes the file with
-//     platform=sandbox before `mpd --setup` runs inside the Debian VM.
+//     MPD_PLATFORM=sandbox / MPD_VM_ID=sandbox before `mpd --setup` runs.
 //
 // Reader: mpd's setup actions and helpers that need to know the platform
-// or the VM IP at run-time. Lives under ~/.mpd/conf/ (persistent identity).
+// or the VM ID at run-time. Lives under ~/.mpd/conf/ (persistent identity).
 
 import Foundation
 
 extension Mpd.Core.Platform {
 
     enum PlatformKind: String {
-        case machine = "machine"
+        case managed = "managed"
         case sandbox = "sandbox"
     }
 
     struct Identity {
         let platform: PlatformKind
         let vmIP: String
-        let instanceSuffix: String  // e.g. "-161", or "" — leading dash included
+        let vmId: String   // 3-digit: "100"-"254" for managed, "000" for sandbox
     }
 
     /// Path to ~/.mpd/conf/platform.env.
@@ -45,19 +48,19 @@ extension Mpd.Core.Platform {
                 "Missing \(path).\n" +
                 "Run the matching bootstrap first:\n" +
                 "  • sandbox VM:  setup/sandbox/take-over-sandbox-vm.sh\n" +
-                "  • mpd-machine: the host-side `mpd-virt` orchestrator")
+                "  • managed VM:  the host-side `mpd-virt` orchestrator")
         }
 
         let raw = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
         let kv = parseKV(raw)
 
         guard let platformRaw = kv["MPD_PLATFORM"], let platform = PlatformKind(rawValue: platformRaw) else {
-            throw RuntimeError("\(path): MPD_PLATFORM missing or invalid (expected: machine, sandbox).")
+            throw RuntimeError("\(path): MPD_PLATFORM missing or invalid (expected: managed, sandbox).")
         }
         let vmIP = kv["MPD_VM_IP"] ?? ""
-        let instanceSuffix = kv["MPD_INSTANCE_SUFFIX"] ?? ""
+        let vmId = kv["MPD_VM_ID"] ?? ""
 
-        return Identity(platform: platform, vmIP: vmIP, instanceSuffix: instanceSuffix)
+        return Identity(platform: platform, vmIP: vmIP, vmId: vmId)
     }
 
     /// Keys this writer manages. Other `MPD_*` keys (e.g. `MPD_NETWORK_*` set
@@ -65,14 +68,13 @@ extension Mpd.Core.Platform {
     /// bootstrap scripts and Platform can share the same file without
     /// clobbering each other.
     private static let managedKeys: Set<String> = [
-        "MPD_PLATFORM", "MPD_VM_IP", "MPD_INSTANCE_SUFFIX",
+        "MPD_PLATFORM", "MPD_VM_IP", "MPD_VM_ID",
     ]
 
-    /// Write the identity file. Used by
-    /// `updateInstanceSuffix`. Idempotent — overwrites the managed keys with
-    /// the supplied values; preserves any other keys (e.g. `MPD_NETWORK_*`)
-    /// that bootstrap scripts may have written.
-    static func write(platform: PlatformKind, vmIP: String, instanceSuffix: String) throws {
+    /// Write the identity file. Idempotent — overwrites the managed keys
+    /// with the supplied values; preserves any other keys (e.g.
+    /// `MPD_NETWORK_*`) that bootstrap scripts may have written.
+    static func write(platform: PlatformKind, vmIP: String, vmId: String) throws {
         let fm = FileManager.default
         try fm.createDirectory(atPath: Mpd.confDir, withIntermediateDirectories: true)
 
@@ -93,14 +95,13 @@ extension Mpd.Core.Platform {
 
         var body = """
             # mpd platform identity — written by setup, read at runtime.
-            # Lives under conf/.
+            # Lives under ~/.mpd/conf/.
             MPD_PLATFORM=\(platform.rawValue)
             MPD_VM_IP=\(vmIP)
-            # Disambiguates concurrent VMs/machines. Auto-derived from the
-            # host name mpd-machine-<X> at --setup; edit
-            # to override. Used as the hostname suffix on runtime containers,
-            # e.g. mpd-runtime-php\(instanceSuffix.isEmpty ? "" : "<suffix>").
-            MPD_INSTANCE_SUFFIX=\(instanceSuffix)
+            # 3-digit VM identifier used in pod/container/hostname names.
+            # Auto-derived from the VM hostname (mpd-<NNN>) at --setup; edit
+            # to override. Runtime containers are named mpd-<NNN>-<runtime>.
+            MPD_VM_ID=\(vmId)
 
             """
         if !preserved.isEmpty {
@@ -112,20 +113,20 @@ extension Mpd.Core.Platform {
         try body.write(toFile: path, atomically: true, encoding: .utf8)
     }
 
-    /// Bootstrap helper: write the file with the known
-    /// if absent, leave any existing file untouched.
+    /// Bootstrap helper: write the file if absent; leave any existing file
+    /// untouched.
     static func ensureWritten(platform: PlatformKind, vmIP: String,
-                              instanceSuffix: String) throws {
+                              vmId: String) throws {
         if FileManager.default.fileExists(atPath: path) { return }
-        try write(platform: platform, vmIP: vmIP, instanceSuffix: instanceSuffix)
+        try write(platform: platform, vmIP: vmIP, vmId: vmId)
     }
 
-    /// Update only the instance suffix in an existing platform.env. Used by
-    /// `mpd --setup` to refresh the suffix on every run (auto-derived from
-    /// the host name at setup time, but the user can override by hand-editing).
-    static func updateInstanceSuffix(_ suffix: String) throws {
+    /// Update only the VM ID in an existing platform.env. Used by
+    /// `mpd --setup` to refresh the ID on every run (auto-derived from the
+    /// VM hostname; the user can override by hand-editing the file).
+    static func updateVmId(_ vmId: String) throws {
         let identity = try load()
-        try write(platform: identity.platform, vmIP: identity.vmIP, instanceSuffix: suffix)
+        try write(platform: identity.platform, vmIP: identity.vmIP, vmId: vmId)
     }
 
     private static func parseKV(_ text: String) -> [String: String] {

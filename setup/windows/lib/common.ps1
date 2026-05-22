@@ -8,12 +8,12 @@ $GwIp           = "10.164.0.1"
 $PrefixLen      = 24
 $ContainerSubnet = "10.163.0.0/24"
 $DnsmasqIp      = "10.163.0.3"
-$VmNamePrefix   = "mpd-machine-"
+$VmNamePrefix   = "mpd-"
 $CloudBase      = "https://cloud.debian.org/images/cloud/trixie/20260501-2465"
 $CloudFile      = "debian-13-genericcloud-amd64-20260501-2465.tar.xz"
 $CacheDir       = Join-Path $env:LOCALAPPDATA "mpd\cache"
 $TempDir        = Join-Path $env:TEMP "mpd-vm-build"
-$MpdUserDir     = Join-Path $env:USERPROFILE "mpd-machine"
+$MpdUserDir     = Join-Path $env:USERPROFILE ".mpd-virt"
 
 # ── Output helpers ────────────────────────────────────────────────────────────
 
@@ -24,8 +24,8 @@ function Write-Info { param([string]$Text) Write-Host "    $Text" }
 # ── VM helpers ────────────────────────────────────────────────────────────────
 
 function Get-MpdVMs {
-    # Only match the numeric-suffix flavor (mpd-machine-158 etc.).
-    # mpd-machine-sandbox and other non-numeric suffixes belong to other
+    # Only match the numeric-suffix flavor (mpd-158 etc.).
+    # mpd-sandbox and other non-numeric suffixes belong to other
     # platforms (sandbox) and must not be enumerated here.
     Get-VM -Name "$VmNamePrefix*" -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -match "^$VmNamePrefix\d+$" } |
@@ -184,14 +184,14 @@ function Wait-ForSsh {
 
 # ── SSH config + current-VM state ─────────────────────────────────────────────
 
-# Managed `Host mpd-machine ...` block in ~/.ssh/config is bracketed with
+# Managed `Host mpd-vm ...` block in ~/.ssh/config is bracketed with
 # explicit start/end markers so re-runs are idempotent (the previous comment-
-# only delimiter form leaked the `Host mpd-machine` line on every switch).
+# only delimiter form leaked the `Host mpd-vm` line on every switch).
 
-$SshBlockStart = "# >>> mpd-machine (managed by windows) >>>"
-$SshBlockEnd   = "# <<< mpd-machine <<<"
+$SshBlockStart = "# >>> mpd-vm (managed by windows) >>>"
+$SshBlockEnd   = "# <<< mpd-vm <<<"
 
-# Strip any existing mpd-machine block (new marker form OR legacy formats
+# Strip any existing mpd-vm block (new marker form OR legacy formats
 # left over from earlier setup runs). Returns kept lines as a List[string].
 function Strip-MpdSshConfigBlock {
     param([string]$Path)
@@ -203,10 +203,10 @@ function Strip-MpdSshConfigBlock {
         if ($line -eq $SshBlockStart)              { $inMarker = $true; continue }
         if ($inMarker -and $line -eq $SshBlockEnd) { $inMarker = $false; continue }
         if ($inMarker)                             { continue }
-        # Legacy `# mpd-machine (...)` standalone comment — drop.
-        if ($line -match "^# mpd-machine\b")       { continue }
-        # Legacy `Host mpd-machine ...` block — drop start + indented body.
-        if ($line -match "^Host\s+mpd-machine\b")  { $inHostBlock = $true; continue }
+        # Legacy `# mpd-vm (...)` standalone comment — drop.
+        if ($line -match "^# mpd-vm\b")       { continue }
+        # Legacy `Host mpd-vm ...` block — drop start + indented body.
+        if ($line -match "^Host\s+mpd-vm\b")  { $inHostBlock = $true; continue }
         if ($inHostBlock) {
             if ($line -match "^\s+")               { continue }
             $inHostBlock = $false
@@ -229,7 +229,7 @@ function Set-MpdSshConfig {
 
     $newLines = @(
         $SshBlockStart,
-        "Host mpd-machine $VmName",
+        "Host mpd-vm $VmName",
         "    HostName $VmIp",
         "    User $VmUser",
         "    StrictHostKeyChecking no",
@@ -241,7 +241,7 @@ function Set-MpdSshConfig {
         $all = $newLines
     }
     [System.IO.File]::WriteAllLines($path, $all, [System.Text.UTF8Encoding]::new($false))
-    Write-Ok "SSH config: 'ssh mpd-machine' -> $VmIp ($VmUser)"
+    Write-Ok "SSH config: 'ssh mpd-vm' -> $VmIp ($VmUser)"
 }
 
 function Remove-MpdSshConfig {
@@ -264,9 +264,9 @@ function Write-MpdCurrentEnv {
     # Current pointer -- overwritten on every create/switch/reverify.
     [System.IO.File]::WriteAllText((Join-Path $MpdUserDir "current.env"), $content, $utf8)
 
-    $sshCmd = Join-Path $MpdUserDir "mpd-machine.cmd"
+    $sshCmd = Join-Path $MpdUserDir "mpd.cmd"
     if (-not (Test-Path $sshCmd)) {
-        [System.IO.File]::WriteAllText($sshCmd, "@echo off`r`nssh mpd-machine`r`n", $utf8)
+        [System.IO.File]::WriteAllText($sshCmd, "@echo off`r`nssh mpd-vm`r`n", $utf8)
     }
     Write-Ok "current.env updated ($VmName at $VmIp)"
 }

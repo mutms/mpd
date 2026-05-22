@@ -16,7 +16,7 @@ the user sits and where `mpd` runs:
   the VM. User installs Debian Trixie desktop in any hypervisor,
   snapshots, runs `setup/sandbox/take-over-sandbox-vm.sh` inside the
   VM. Host stays untouched.
-- **mpd-machine** — automated headless Debian Trixie VM driven by a
+- **mpd VM** — automated headless Debian Trixie VM driven by a
   matched-host bootstrap (Parallels Desktop Pro on macOS — primary;
   libvirt/KVM on Ubuntu and Hyper-V on Windows are speculative).
   User stays on their host: host browser visits `*.mpd.test` directly
@@ -27,7 +27,7 @@ the user sits and where `mpd` runs:
 macOS-host orchestrator (`mpd-virt`) that drives Parallels lives in a
 separate repository.
 
-**Implementation note:** sandbox and mpd-machine share the same
+**Implementation note:** sandbox and mpd VM share the same
 `mpd/Environment/` code path; sandbox is `PlatformKind.sandbox` and
 from the user's perspective is a distinct mode, but the codebase
 treats it as a Machine-flavored variant.
@@ -57,7 +57,7 @@ The Swift binary lives under `mpd/`. Each subdirectory is a `Mpd.<X>` namespace:
 - `mpd/main.swift` — CLI entry, ArgumentParser dispatch
 
 Runtime/project-type behavior + service container assets live under `assets/`:
-- `assets/machine/` — VM-level assets deployed to the mpd-machine VM itself
+- `assets/machine/` — VM-level assets deployed to the mpd VM itself
   (e.g. `motd` — installed to `/etc/motd` by provisioning scripts)
 - `assets/runtimes/<runtime>/...` — runtime definitions, project types, tools
 - `assets/services/<n>/...` — always-on infra services
@@ -80,10 +80,10 @@ across docs.
 - `docs/HOOKS.md` — typed `Event` lifecycle hooks: events, audiences, asset-side `hooks/<event>.d/` scripts
 - `docs/VISION.md` — product vision (origin lineage + design principles)
 - `docs/ROADMAP.md` — committed near-term work
-- `docs/proposals/` — uncommitted design proposals (spec-level detail
-  so a future contributor can implement without re-deriving). See
-  `docs/proposals/README.md` for the index.
-- `docs/MACHINE.md` — what mpd-machine is, status, scope
+- *(Architecture proposals for the host-side `mpd-virt` orchestrator
+  live in the separate `mpd-virt-macos-prl` repo under
+  `docs/proposals/`.)*
+- `docs/MACHINE.md` — what mpd VM is, status, scope
 - `docs/USAGE.md` — machine workflow
 - `docs/NETWORKING.md` — networking model (WireGuard via mpd-virt)
 - `docs/SECURITY.md` — security model
@@ -102,12 +102,12 @@ request via Podman or environment APIs. Full rule + review checklist in
 
 ## Mandatory privilege rule
 
-Applies to runtime containers, the mpd-machine VM, and the fileaccess
+Applies to runtime containers, the mpd VM, and the fileaccess
 service — anywhere mpd ships shell code for a host with a dev user
 plus passwordless sudo.
 
 1. **Scripts run as the dev user.** Every shell asset under
-   `assets/` and `mpd-machine/` is invoked as the dev user. The
+   `assets/` and `mpd-virt/` is invoked as the dev user. The
    orchestrator (Swift's `podman exec -u <user>`, host-side ssh, etc.)
    is responsible for setting that identity at exec time. Scripts do
    not change identity themselves.
@@ -370,7 +370,7 @@ not found." Internal sudo on specific operations is the right shape.
   - `check-hostexec-boundary` — fails if `Process(...)` appears
     outside `mpd/Environment/{Desktop,Machine}/HostExec.swift`.
   - `check-mpdenv-source-boundary` — fails if any shell asset under
-    `assets/` or `mpd-machine/` raw-`source`s an `mpd*.env` file
+    `assets/` or `mpd-virt/` raw-`source`s an `mpd*.env` file
     (everything must go through `source-mpd-env.sh`'s whitelist parser).
 - skim affected docs for stale path / link references when moving or
   renaming files.

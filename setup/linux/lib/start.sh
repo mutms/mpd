@@ -1,6 +1,6 @@
 #!/bin/bash
 # start.sh — start the current mpd VM. Detects current VM from the
-# persistent route or ~/.mpd-machine/current.env.
+# persistent route or ~/.mpd-virt/current.env.
 #
 # Order is intentional: if the route is missing (host reboot, link flap),
 # ask for sudo BEFORE waiting on the VM to come up — the user enters

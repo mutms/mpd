@@ -21,7 +21,7 @@
 
 set -euo pipefail
 
-REQUIRED_HOSTNAME="mpd-machine-sandbox"
+REQUIRED_HOSTNAME="mpd-000"
 REPO_URL="https://github.com/mutms/mpd.git"
 REPO_DIR="$HOME/Developer/mpd"
 SUDOERS_FILE="/etc/sudoers.d/mpd-${USER}"
@@ -30,7 +30,7 @@ PROVISION_SCRIPT="${REPO_DIR}/setup/sandbox/lib/provision.sh"
 
 # --- Hostname gate ------------------------------------------------------
 # Primary safety mechanism: the act of renaming a VM to
-# 'mpd-machine-sandbox' is the deliberate consent that you intend this VM
+# 'mpd-000' is the deliberate consent that you intend this VM
 # to be sacrificed to mpd's sandbox configuration. Stronger than a typed
 # confirmation word — renaming is conscious work, not a reflex keypress.
 current_hostname="$(hostname)"
@@ -87,7 +87,7 @@ and reconfigures the host:
   * network stack switched to systemd-resolved fed by NetworkManager
     (a NetworkManager drop-in is written, systemd-resolved is
     apt-installed, /etc/resolv.conf becomes the resolved stub symlink,
-    and NetworkManager is restarted). mpd-machine requires resolved
+    and NetworkManager is restarted). mpd-vm requires resolved
     as the DNS sink; on a brand-new install the NM→resolved DNS push
     occasionally needs a single reboot to take effect, in which case
     the script aborts cleanly and asks you to reboot and re-run.

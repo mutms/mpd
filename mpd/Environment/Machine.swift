@@ -5,7 +5,7 @@ import Foundation
 
 extension Mpd {
     static var label: String {
-        return "mpd-machine (Dedicated linux VM)"
+        return "mpd VM (Debian Trixie)"
     }
 
     static func fileFingerprint(_ path: String) -> String {

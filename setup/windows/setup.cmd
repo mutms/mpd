@@ -6,7 +6,7 @@ net session >nul 2>&1
 if %errorLevel% == 0 goto :elevated
 
 echo.
-echo  mpd-machine setup
+echo  mpd-vm setup
 echo  =================
 echo.
 echo  This script will:
@@ -15,7 +15,7 @@ echo    2. Install Linux tools in WSL: openssl, genisoimage, qemu-utils
 echo    3. Install Windows Terminal via winget ^(if not already present^)
 echo    4. Generate a local CA certificate for browser-trusted HTTPS
 echo    5. Create or reuse the 'mpd' Hyper-V internal network switch
-echo    6. Create a new mpd-machine VM -- or switch/re-verify an existing one
+echo    6. Create a new mpd-vm VM -- or switch/re-verify an existing one
 echo    7. Configure Windows networking: route, DNS, CA trust store
 echo.
 echo  Administrator access is required.

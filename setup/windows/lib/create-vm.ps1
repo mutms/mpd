@@ -163,19 +163,20 @@ Write-Ok "Repository cloned"
 
 Write-Step "Writing platform identity"
 
+$VmId = "{0:D3}" -f $VmOctet
 Send-SshScript -User $VmUser -RemoteHost $VmIp -Script @"
 set -e
-mkdir -p "`$HOME/Developer/mpd/conf"
-cat > "`$HOME/Developer/mpd/conf/platform.env" <<'PLATFORM_EOF'
+mkdir -p "`$HOME/.mpd/conf"
+cat > "`$HOME/.mpd/conf/platform.env" <<'PLATFORM_EOF'
 # mpd platform identity - written by windows/lib/create-vm.ps1.
-MPD_PLATFORM=windows
-MPD_CLIENT_OS=windows
+MPD_PLATFORM=managed
 MPD_VM_IP=$VmIp
+MPD_VM_ID=$VmId
 MPD_NETWORK_MODE=static
 MPD_NETWORK_PREFIX=$PrefixLen
 MPD_NETWORK_GATEWAY=$GwIp
 PLATFORM_EOF
-chmod 0644 "`$HOME/Developer/mpd/conf/platform.env"
+chmod 0644 "`$HOME/.mpd/conf/platform.env"
 "@
 Write-Ok "Platform identity recorded"
 
@@ -185,10 +186,10 @@ Write-Step "Uploading host CA to VM"
 
 $CaPem = Join-Path $MpdUserDir "ca\rootCA.pem"
 $CaKey = Join-Path $MpdUserDir "ca\rootCA-key.pem"
-Invoke-Ssh -User $VmUser -RemoteHost $VmIp -Command "mkdir -p ~/Developer/mpd/conf/caroot"
-& scp -o StrictHostKeyChecking=no -o BatchMode=yes $CaPem "${VmUser}@${VmIp}:~/Developer/mpd/conf/caroot/rootCA.pem"
+Invoke-Ssh -User $VmUser -RemoteHost $VmIp -Command "mkdir -p ~/.mpd/conf/caroot"
+& scp -o StrictHostKeyChecking=no -o BatchMode=yes $CaPem "${VmUser}@${VmIp}:~/.mpd/conf/caroot/rootCA.pem"
 if ($LASTEXITCODE -ne 0) { throw "scp of CA cert failed." }
-& scp -o StrictHostKeyChecking=no -o BatchMode=yes $CaKey "${VmUser}@${VmIp}:~/Developer/mpd/conf/caroot/rootCA-key.pem"
+& scp -o StrictHostKeyChecking=no -o BatchMode=yes $CaKey "${VmUser}@${VmIp}:~/.mpd/conf/caroot/rootCA-key.pem"
 if ($LASTEXITCODE -ne 0) { throw "scp of CA key failed." }
 Write-Ok "Host CA uploaded (mpd --setup will reuse it)"
 
@@ -275,15 +276,15 @@ sudo cp "`$HOME/Developer/mpd/assets/machine/motd" /etc/motd
 "@
 Write-Ok "Login banner set"
 
-# ── 15. Helper scripts in %USERPROFILE%\mpd-machine\ ─────────────────────────
+# ── 15. Helper scripts in %USERPROFILE%\.mpd-virt\ ─────────────────────────
 
 Write-Step "Creating helper scripts in $MpdUserDir"
 
 New-Item -ItemType Directory -Force -Path $MpdUserDir | Out-Null
 $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 
-[System.IO.File]::WriteAllText((Join-Path $MpdUserDir "mpd-machine.cmd"),
-    "@echo off`r`nssh mpd-machine`r`n", $utf8NoBom)
+[System.IO.File]::WriteAllText((Join-Path $MpdUserDir "mpd.cmd"),
+    "@echo off`r`nssh mpd-vm`r`n", $utf8NoBom)
 
 [System.IO.File]::WriteAllText((Join-Path $MpdUserDir "start-vm.ps1"), @"
 #Requires -RunAsAdministrator
@@ -304,9 +305,9 @@ Write-Ok "Helper scripts created"
 Write-Step "Creating desktop shortcut"
 
 $WshShell     = New-Object -ComObject WScript.Shell
-$ShortcutPath = Join-Path ([Environment]::GetFolderPath("Desktop")) "mpd-machine.lnk"
+$ShortcutPath = Join-Path ([Environment]::GetFolderPath("Desktop")) "mpd-vm.lnk"
 $Shortcut     = $WshShell.CreateShortcut($ShortcutPath)
-$sshMpdCmd    = Join-Path $MpdUserDir "mpd-machine.cmd"
+$sshMpdCmd    = Join-Path $MpdUserDir "mpd.cmd"
 
 $wt = Get-Command wt.exe -ErrorAction SilentlyContinue
 if ($wt) {
@@ -316,9 +317,9 @@ if ($wt) {
     $Shortcut.TargetPath = "cmd.exe"
     $Shortcut.Arguments  = "/k `"$sshMpdCmd`""
 }
-$Shortcut.Description = "SSH into the current mpd-machine"
+$Shortcut.Description = "SSH into the current mpd-vm"
 $Shortcut.Save()
-Write-Ok "Desktop shortcut: 'mpd-machine'"
+Write-Ok "Desktop shortcut: 'mpd-vm'"
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 

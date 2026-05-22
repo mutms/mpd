@@ -4,7 +4,7 @@ Index for the `mpd` documentation tree. New here? Start with the top-level
 [`../README.md`](../README.md) for the pitch and the mode picker, then
 come back here once you've decided which mode to install.
 
-Two modes — Sandbox VM, **mpd-machine**. Same CLI, same
+Two modes — Sandbox VM, **mpd VM**. Same CLI, same
 URLs, switch without relearning.
 
 ## Reading order
@@ -22,7 +22,7 @@ If you're installing mpd for the first time:
 [`VISION.md`](VISION.md) covers the origin and design principles.
 
 On macOS the three modes settle into two distinct workflows:
-sandbox for experiments and Linux testing, mpd-machine via Parallels
+sandbox for experiments and Linux testing, mpd VM via Parallels
 for daily-driver Moodle work. [`VISION.md`](VISION.md)
 §"How the two modes settle into daily roles" has the full framing.
 
@@ -37,7 +37,7 @@ safety net.
 - [`../setup/sandbox/README.md`](../setup/sandbox/README.md) — install,
   prerequisites (hostname rename), revert.
 
-## Mode 2 — mpd-machine (daily-driver Moodle work; host browser + SSH into headless VM)
+## Mode 2 — mpd VM (daily-driver Moodle work; host browser + SSH into headless VM)
 
 Automated headless Debian Trixie VM. The matched-host bootstrap
 creates the VM, builds `mpd`, and configures host-side networking +
@@ -46,7 +46,7 @@ terminal SSH'es into the VM to run the `mpd` CLI; your IDE
 (PHPStorm Gateway / VSCode Remote-SSH) SSH'es one hop further into
 the runtime container inside the VM.
 
-- [`machine/README.md`](machine/README.md) — what mpd-machine is, when to pick it, picking a hypervisor
+- [`machine/README.md`](machine/README.md) — what mpd VM is, when to pick it, picking a hypervisor
 - [`machine/USAGE.md`](machine/USAGE.md) — bootstrap, setup, first project, day-to-day (universal handbook)
 - [`machine/NETWORKING.md`](machine/NETWORKING.md) — host ↔ VM ↔ container routing model, per-OS laptop recipes
 - [`machine/SECURITY.md`](machine/SECURITY.md) — trust boundaries

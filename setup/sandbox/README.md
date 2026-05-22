@@ -1,4 +1,4 @@
-# mpd-machine — sandbox platform
+# mpd VM — sandbox platform
 
 Graphical sandbox: install Debian Trixie (13) with the GNOME desktop in
 any hypervisor (UTM / Parallels / Hyper-V / VirtualBox / virt-manager /
@@ -21,7 +21,7 @@ stop / configure`).
 - **First-time evaluation.** Newcomers who want to see mpd work
   without touching their host. The "host stays untouched" promise
   is strict: zero DNS, route, or keychain changes outside the VM.
-- **Hosts where mpd-machine's matched-host bootstrap doesn't apply.**
+- **Hosts where mpd VM's matched-host bootstrap doesn't apply.**
   Fedora, Arch, NixOS, cloud VMs, ARM Linux desktops — anywhere a
   hypervisor can boot Debian Trixie. mpd's flow inside the VM is
   identical regardless of how you got there.
@@ -46,12 +46,12 @@ for the full split.
   → "Debian desktop environment" + "GNOME"). The desktop is required —
   sandbox is the "live inside the VM" mode and needs Firefox, a
   terminal, and the GNOME launcher integration.
-- Hostname **`mpd-machine-sandbox`**. Easiest is to type that name into
+- Hostname **`mpd-sandbox`**. Easiest is to type that name into
   the hostname field during the Debian installer. If you already
   installed with a different hostname, rename now:
   ```bash
-  sudo hostnamectl set-hostname mpd-machine-sandbox
-  sudo sed -i 's/^127\.0\.1\.1.*/127.0.1.1\tmpd-machine-sandbox/' /etc/hosts
+  sudo hostnamectl set-hostname mpd-sandbox
+  sudo sed -i 's/^127\.0\.1\.1.*/127.0.1.1\tmpd-sandbox/' /etc/hosts
   # log out / log back in so your shell prompt picks up the new name
   ```
   The hostname is the safety gate — `take-over-sandbox-vm.sh` refuses
@@ -98,7 +98,7 @@ works: `bash <(curl -sSL <url>)`.
 
 ## What it does
 
-1. Hostname gate — must be `mpd-machine-sandbox`.
+1. Hostname gate — must be `mpd-sandbox`.
 2. OS gate — must be Debian Trixie (13).
 3. Disclaimer + Enter-to-proceed.
 4. Enables passwordless sudo (one-time password prompt for the install).
@@ -107,7 +107,7 @@ works: `bash <(curl -sSL <url>)`.
 7. Standardizes the network stack: writes
    `/etc/NetworkManager/conf.d/10-mpd-dns.conf` with
    `dns=systemd-resolved`, apt-installs `systemd-resolved` +
-   `libnss-resolve`, and restarts NetworkManager. mpd-machine expects
+   `libnss-resolve`, and restarts NetworkManager. mpd VM expects
    systemd-resolved as the host DNS sink across every supported
    install profile.
 8. Adds Microsoft's apt repo and installs **VS Code** so the in-VM
@@ -179,5 +179,5 @@ and the system CA trust intact.
 ## Day-to-day
 
 Once setup completes, mpd commands work identically to other
-mpd-machine platforms — see
+mpd VM platforms — see
 [`docs/machine/USAGE.md`](../../docs/machine/USAGE.md).

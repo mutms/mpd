@@ -1,5 +1,5 @@
 #!/bin/bash
-# setup.sh — Create a new mpd-machine VM in Parallels Desktop Pro or
+# setup.sh — Create a new mpd-vm VM in Parallels Desktop Pro or
 # switch the active VM. Called by setup.command.
 
 set -euo pipefail
@@ -54,7 +54,7 @@ ok "SSH key: $SSH_KEY"
 
 step "VM selection"
 
-# Tracked VMs come from ~/.mpd-machine/<uuid>.env files; get_mpd_vms
+# Tracked VMs come from ~/.mpd-virt/<uuid>.env files; get_mpd_vms
 # resolves the current friendly name + state from prlctl. Lines look
 # like "<uuid>\t<name>\t<state>".
 current_uuid=$(get_current_vm_uuid)
@@ -364,7 +364,7 @@ ensure_desktop_shortcut
 echo
 echo "============================================="
 echo "  Your mpd VM (${VM_NAME}) is ready!"
-echo "  Double-click ~/Desktop/mpd-machine.command"
+echo "  Double-click ~/Desktop/mpd-vm.command"
 echo "  to connect, or run: ssh ${VM_NAME}"
 echo "============================================="
 echo

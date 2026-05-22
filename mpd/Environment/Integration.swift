@@ -1,4 +1,4 @@
-// mpd-machine host integration implementation
+// In-VM host integration helpers
 // Machine host integration for machine workflow (native Podman,
 // Cert generation, CA trust, DNS guidance).
 
@@ -14,7 +14,7 @@ extension Mpd.Integration {
         return (rc == 0 && !out.isEmpty) ? out : "127.0.0.1"
     }
 
-    /// Verify the host is in the standardized network state mpd-machine
+    /// Verify the host is in the standardized network state mpd
     /// expects: systemd-resolved active, fed by some link manager (NM or
     /// systemd-networkd). The platform bootstrap scripts (macos/
     /// linux/windows; `sandbox/lib/provision.sh` for sandbox)
@@ -23,7 +23,7 @@ extension Mpd.Integration {
     static func requireSystemdResolvedActive() throws {
         guard systemctlIsActive("systemd-resolved.service") else {
             throw RuntimeError("""
-            systemd-resolved is not active. mpd-machine standardizes on
+            systemd-resolved is not active. mpd VM standardizes on
             systemd-resolved as the host DNS sink on every supported
             install profile.
 

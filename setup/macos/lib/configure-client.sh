@@ -1,5 +1,5 @@
 #!/bin/bash
-# configure-client.sh — Configure macOS networking to reach an mpd-machine VM.
+# configure-client.sh — Configure macOS networking to reach an mpd-vm VM.
 # Idempotent: safe to run multiple times.
 #
 # Steps:
@@ -9,8 +9,8 @@
 #      inside the VM.
 #   3. Import the mpd CA certificate into /Library/Keychains/System.keychain
 #      so browsers trust *.mpd.test HTTPS without warnings. CA source: the
-#      local cache at ~/Developer/mpd/conf/caroot/rootCA.pem if present
-#      (shared with mpd-desktop and macos), otherwise ~/.mpd-machine/ca/.
+#      local cache at ~/.mpd-virt/conf/caroot/rootCA.pem if present
+#      (shared with mpd-desktop and macos), otherwise ~/.mpd-virt/ca/.
 #
 # Privilege model: inspect current state without sudo first, print a
 # runnable recipe for any work needed, let the dev choose between running
@@ -55,7 +55,7 @@ trap cleanup EXIT
 resolver_path="/etc/resolver/${DNS_DOMAIN}"
 desired_resolver="nameserver ${DNSMASQ_IP}"
 
-CAROOT_DIR="${HOME}/Developer/mpd/conf/caroot"
+CAROOT_DIR="${HOME}/.mpd-virt/conf/caroot"
 CAROOT_PEM="${CAROOT_DIR}/rootCA.pem"
 CAROOT_KEY="${CAROOT_DIR}/rootCA-key.pem"
 PLATFORM_CAROOT="${STATE_DIR}/ca"
@@ -74,7 +74,7 @@ elif [ -f "$CAROOT_PEM" ] && [ -f "$CAROOT_KEY" ]; then
     fi
 elif [ -f "$PLATFORM_PEM" ] && [ -f "$PLATFORM_KEY" ]; then
     cert_source="$PLATFORM_PEM"
-    if [ -d "${HOME}/Developer/mpd/conf" ] \
+    if [ -d "${HOME}/.mpd-virt/conf" ] \
        && { [ ! -f "$CAROOT_PEM" ] || [ ! -f "$CAROOT_KEY" ]; }; then
         copy_ca_files "$PLATFORM_PEM" "$PLATFORM_KEY" "$CAROOT_DIR"
     fi

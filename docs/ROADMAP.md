@@ -71,7 +71,7 @@ Real possibilities, not committed work.
 
 - **Newbie-onboarding docs** — for Moodle-curious folks who don't
   already know what a plugin is.
-- **AI-driven demo provisioning** — agent running inside mpd-machine's
+- **AI-driven demo provisioning** — agent running inside mpd VM's
   Gnome desktop drives Firefox through Moodle's first-time install
   wizard, installs a set of plugins, populates the site with sample
   course content and activity data, hands you a fully-populated demo

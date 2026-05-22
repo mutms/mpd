@@ -1,9 +1,10 @@
 // mpd — Mpd.Runtime namespace
 //
 // A runtime is a Podman *pod* hosting one main container (the "runtime
-// container", `mpd-runtime-<n>-main`) plus N attached sidecars (Caddy
+// container", `mpd-<vmid>-<n>-main`) plus N attached sidecars (Caddy
 // frontdoor + on-demand mailpit / selenium / valkey — see Sidecars.swift).
-// The pod is named `mpd-runtime-<n>`. All members share the pod's
+// The pod is named `mpd-<vmid>-<n>` — same as the SSH alias the user
+// types from the Mac (`ssh mpd-159-php`). All members share the pod's
 // network namespace.
 //
 // Runtime names must match an `assets/runtimes/<name>/` directory:
@@ -61,13 +62,23 @@ extension Mpd.Runtime {
 
     // MARK: - Container naming & discovery
 
-    /// Convert a runtime short name to its main container name.
-    /// e.g. "php" → "mpd-runtime-php-main"
-    static func containerName(_ name: String) -> String { "mpd-runtime-\(name)-main" }
+    /// VM ID fragment used as the prefix for every pod/container/hostname.
+    /// "100"–"254" for managed VMs, "000" for sandbox. Resolved from
+    /// platform.env once per process. Empty if platform.env is missing —
+    /// in that case container names will look obviously broken
+    /// (`mpd--php`), which is the right signal.
+    static let vmId: String = {
+        (try? Mpd.Core.Platform.load().vmId) ?? ""
+    }()
 
-    /// Convert a runtime short name to its Podman pod name.
-    /// e.g. "php" → "mpd-runtime-php"
-    static func runtimePodName(_ name: String) -> String { "mpd-runtime-\(name)" }
+    /// Convert a runtime short name to its main container name.
+    /// e.g. on VM "159" with runtime "php" → "mpd-159-php-main".
+    static func containerName(_ name: String) -> String { "mpd-\(vmId)-\(name)-main" }
+
+    /// Convert a runtime short name to its Podman pod name (also the pod's
+    /// hostname, since pod members share the UTS namespace).
+    /// e.g. on VM "159" with runtime "php" → "mpd-159-php".
+    static func runtimePodName(_ name: String) -> String { "mpd-\(vmId)-\(name)" }
 
     /// Returns all runtime main containers (excludes DB, service).
     static func allContainers() -> [PsItem] {
@@ -220,14 +231,13 @@ extension Mpd.Runtime {
         // where `--dns 10.163.0.3` (dnsmasq) is set on `mpd-internal`. All
         // containers attached to the network use that for resolution; no
         // per-pod or per-container `--dns` needed.
-        // Pod hostname includes the instance suffix from platform.env
-        // (e.g. "-foo" on mpd-machine-foo; empty on the unsuffixed instance),
-        // so bash's default `\h` prompt makes the host instance unambiguous
-        // when SSH'd in. Set on the pod (not the container) because pod
-        // members share the UTS namespace. DNS (`<n>.runtime.mpd.test`) is
+        // Pod hostname is `mpd-<NNN>-<runtime>` — same as the pod name and
+        // the SSH alias the user types from the Mac (`ssh mpd-159-php`),
+        // so bash's default `\h` prompt makes the VM unambiguous when
+        // SSH'd in. Set on the pod (not the container) because pod members
+        // share the UTS namespace. DNS (`<runtime>.runtime.mpd.test`) is
         // unaffected — it resolves by IP via dnsmasq.
-        let suffix = (try? Mpd.Core.Platform.load().instanceSuffix) ?? ""
-        let runtimeHostname = "mpd-runtime-\(name)\(suffix)"
+        let runtimeHostname = runtimePodName(name)
 
         guard Mpd.Podman.podCreate([
             "--name", runtimePodName(name),
@@ -407,7 +417,7 @@ extension Mpd.Runtime {
         // Pre-warm every DB any project on this runtime might need —
         // running or stopped — so subsequent `mpd start <project>` calls
         // never have to wait for a cold-start. Daily dev machines have
-        // ~3 DBs total; release-test machines (separate mpd-machine, by
+        // ~3 DBs total; release-test environments (separate VM, by
         // convention) carry many DB versions. See docs/HOOKS.md
         // §"Resource lifecycle model".
         ensureProjectDatabases(runtimeName: name)

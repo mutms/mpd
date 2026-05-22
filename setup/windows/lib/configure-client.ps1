@@ -1,12 +1,12 @@
 #Requires -RunAsAdministrator
-# configure-client.ps1 -- configure Windows networking for an mpd-machine VM.
+# configure-client.ps1 -- configure Windows networking for an mpd-vm VM.
 # Idempotent: safe to run multiple times.
 #
 # What it does:
 #   1. Adds a persistent route so Windows reaches the container subnet (10.163.0.0/24)
 #      through the VM.
 #   2. Adds an NRPT rule so Windows resolves *.mpd.test via dnsmasq inside the VM.
-#   3. Imports the mpd CA certificate from %USERPROFILE%\mpd-machine\ca\ (generated
+#   3. Imports the mpd CA certificate from %USERPROFILE%\.mpd-virt\ca\ (generated
 #      by setup.cmd via WSL openssl) into the Windows trusted root store.
 #
 # Called automatically by setup.cmd after VM creation or when switching VMs.
@@ -23,7 +23,7 @@ $ContainerPrefix  = "10.163.0.0/24"
 $ContainerMask    = "255.255.255.0"
 $DnsmasqIp        = "10.163.0.3"
 $NrptNamespace    = ".mpd.test"
-$MpdUserDir       = Join-Path $env:USERPROFILE "mpd-machine"
+$MpdUserDir       = Join-Path $env:USERPROFILE ".mpd-virt"
 $CaPemPath        = Join-Path $MpdUserDir "ca\rootCA.pem"
 
 function Write-Step { param([string]$Text) Write-Host "`n==> $Text" }
@@ -101,7 +101,7 @@ try {
 
     # Record the thumbprint so uninstall.ps1 can remove this exact cert
     # without scanning the keychain by subject string.
-    $mpdUserDir = Join-Path $env:USERPROFILE "mpd-machine"
+    $mpdUserDir = Join-Path $env:USERPROFILE ".mpd-virt"
     $caSha1Path = Join-Path $mpdUserDir "ca.sha1"
     New-Item -ItemType Directory -Force -Path $mpdUserDir | Out-Null
     Set-Content -Path $caSha1Path -Value $thumbprint -Encoding UTF8 -NoNewline

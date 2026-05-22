@@ -42,13 +42,13 @@ detect_host_targets() {
     [ -f "/etc/resolver/${DNS_DOMAIN}" ] && remove_resolver=1
 
     # CA preservation: if the canonical on-disk CA at
-    # ~/Developer/mpd/conf/caroot/ still exists, leave the keychain trust
-    # alone — mpd-desktop and any future mpd-machine setup still depend on
-    # it. The disposable mirror (~/.mpd-machine/) is removed below either
+    # ~/.mpd-virt/conf/caroot/ still exists, leave the keychain trust
+    # alone — mpd-desktop and any future mpd-vm setup still depend on
+    # it. The disposable mirror (~/.mpd-virt/) is removed below either
     # way; only the keychain trust is the question here.
-    local caroot_pem="${HOME}/Developer/mpd/conf/caroot/rootCA.pem"
+    local caroot_pem="${HOME}/.mpd-virt/conf/caroot/rootCA.pem"
     if [ -f "$caroot_pem" ]; then
-        ca_preserved_caroot="${HOME}/Developer/mpd/conf/caroot"
+        ca_preserved_caroot="${HOME}/.mpd-virt/conf/caroot"
         return
     fi
 
@@ -84,14 +84,14 @@ detect_host_targets
 # --- Banner + confirmation ---
 
 echo
-echo "This will undo mpd-machine setup on this Mac."
+echo "This will undo mpd-vm setup on this Mac."
 echo
 echo "Host networking and state to remove:"
 [ "$remove_route" = 1 ]      && echo "    - persistent route to ${CONTAINER_SUBNET_PREFIX}"
 [ "$remove_resolver" = 1 ]   && echo "    - /etc/resolver/${DNS_DOMAIN}"
 [ ${#ca_targets[@]} -gt 0 ]  && echo "    - mpd CA certificate(s) from System keychain (${#ca_targets[@]})"
 echo "    - ${STATE_DIR}"
-echo "    - mpd-machine block from ~/.ssh/config"
+echo "    - mpd-vm block from ~/.ssh/config"
 echo "    - ${DESKTOP_SHORTCUT}"
 if [ -n "$ca_preserved_caroot" ]; then
     echo

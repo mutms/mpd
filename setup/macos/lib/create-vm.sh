@@ -242,18 +242,20 @@ ok "Repository ready"
 
 # --- Platform identity ---
 
-step "Writing platform identity to conf/platform.env"
-ssh_cmd "$VM_IP" "$VM_USER" "export VM_IP=$(printf '%q' "$VM_IP"); bash -se" <<'EOF'
+step "Writing platform identity to ~/.mpd/conf/platform.env"
+VM_ID=$(printf '%03d' "$VM_OCTET")
+ssh_cmd "$VM_IP" "$VM_USER" \
+    "export VM_IP=$(printf '%q' "$VM_IP") VM_ID=$(printf '%q' "$VM_ID"); bash -se" <<'EOF'
 set -e
-mkdir -p "$HOME/Developer/mpd/conf"
-cat > "$HOME/Developer/mpd/conf/platform.env" <<PLATFORM_EOF
+mkdir -p "$HOME/.mpd/conf"
+cat > "$HOME/.mpd/conf/platform.env" <<PLATFORM_EOF
 # mpd platform identity — written by macos/lib/create-vm.sh.
-# Lives under conf/ so it survives \`mpd --uninstall\`.
-MPD_PLATFORM=macos
-MPD_CLIENT_OS=macos
+# Lives under ~/.mpd/conf/ (persistent identity dir for the in-VM mpd binary).
+MPD_PLATFORM=managed
 MPD_VM_IP=${VM_IP}
+MPD_VM_ID=${VM_ID}
 PLATFORM_EOF
-chmod 0644 "$HOME/Developer/mpd/conf/platform.env"
+chmod 0644 "$HOME/.mpd/conf/platform.env"
 EOF
 ok "Platform identity recorded"
 
@@ -294,11 +296,11 @@ ok "mpd built and installed"
 
 step "Uploading host CA into VM"
 ssh_cmd "$VM_IP" "$VM_USER" \
-    "mkdir -p ~/Developer/mpd/conf/caroot && chmod 700 ~/Developer/mpd/conf/caroot"
+    "mkdir -p ~/.mpd/conf/caroot && chmod 700 ~/.mpd/conf/caroot"
 scp -q -o StrictHostKeyChecking=no -o BatchMode=yes \
     "$ARG_HOST_CA_PEM" "$ARG_HOST_CA_KEY" \
-    "${VM_USER}@${VM_IP}:Developer/mpd/conf/caroot/"
-ssh_cmd "$VM_IP" "$VM_USER" "chmod 600 ~/Developer/mpd/conf/caroot/rootCA*.pem"
+    "${VM_USER}@${VM_IP}:.mpd/conf/caroot/"
+ssh_cmd "$VM_IP" "$VM_USER" "chmod 600 ~/.mpd/conf/caroot/rootCA*.pem"
 ok "Host CA uploaded"
 
 # --- mpd --setup ---

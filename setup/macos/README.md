@@ -1,6 +1,6 @@
 # macOS + Parallels Desktop Pro bootstrap
 
-Automation for `mpd-machine` on macOS using **Parallels Desktop Pro**.
+Automation for `mpd VM` on macOS using **Parallels Desktop Pro**.
 For a "live in the VM" graphical alternative on any hypervisor
 (including Parallels), see the
 [sandbox platform](https://github.com/mutms/mpd/tree/main/setup/sandbox/README.md).
@@ -40,7 +40,7 @@ enough on its own.
   at `/usr/local/bin/prlctl`).
 - An SSH key. `setup.command` will offer to generate one at
   `~/.ssh/id_ed25519` if missing.
-- A prepared Parallels VM template named `mpd-machine-template` — see
+- A prepared Parallels VM template named `mpd-template` — see
   "VM template preparation" below.
 
 `setup.command` may ask for your sudo password — but only if it actually
@@ -66,7 +66,7 @@ You build the template once, then `setup.command` clones it on demand.
    VMs take static IPs from `.100+`, so they never collide with DHCP
    guests.
 2. **Install Debian Trixie (13)** in a new Parallels VM using:
-   - Hostname **`mpd-machine-base`**.
+   - Hostname **`mpd-base`**.
    - Software selection: Debian desktop environment, GNOME, SSH server,
      standard system utilities.
 3. **Install Parallels Tools** in the VM. The graphical "Actions →
@@ -78,14 +78,14 @@ You build the template once, then `setup.command` clones it on demand.
    bash /media/cdrom/installer/install-cli.sh -i
    ```
 4. **Run the mpd sandbox take-over** inside that VM so it lands in the
-   sandbox-ready shape. (Hostname must be `mpd-machine-sandbox` for the
+   sandbox-ready shape. (Hostname must be `mpd-sandbox` for the
    take-over's gate — rename, run the take-over, rename back to
-   `mpd-machine-base` if you want.) This installs the runtime stack,
+   `mpd-base` if you want.) This installs the runtime stack,
    builds `bin/mpd`, sets up the network stack, and ensures
    `authorized_keys` exists. See
    [setup/sandbox/README.md](../sandbox/README.md).
 5. **Convert the VM to a template** in Parallels: File → Convert to
-   Template. Name it `mpd-machine-template`.
+   Template. Name it `mpd-template`.
 
 After step 5 the template is reusable indefinitely. Rebuild it only
 when you want a fresh base image (newer Debian point release, etc.).
@@ -95,7 +95,7 @@ when you want a fresh base image (newer Debian point release, etc.).
 Double-click `setup.command`. macOS opens Terminal and the script walks
 you through:
 
-1. Lists all existing `mpd-machine-NN` VMs in Parallels and marks the
+1. Lists all existing `mpd-NN` VMs in Parallels and marks the
    currently-active one (detected from the persistent route to the
    container subnet).
 2. Asks for a VM number (`100–254`, since Parallels Shared DHCP owns
@@ -111,15 +111,15 @@ the long unattended phase:
 1. Prepares the mpd CA on the host — reuses
    `~/Developer/mpd/conf/caroot/{rootCA.pem,rootCA-key.pem}` if
    populated (shared with mpd-desktop and macos), or
-   `~/.mpd-machine/ca/` as a fallback, otherwise generates fresh.
+   `~/.mpd-virt/ca/` as a fallback, otherwise generates fresh.
 2. Prints the exact commands it would run as root and lets you choose:
    copy/paste them into another terminal, or press Enter to let the
    script sudo for you. Either path ends at the same state.
 3. Adds the route to `10.163.0.0/24`, writes `/etc/resolver/mpd.test`,
    imports the mpd CA into the System keychain, and drops cached sudo
    creds.
-4. **Clones the template** via `prlctl clone mpd-machine-template
-   --name mpd-machine-NN` (full clone — independent of the template's
+4. **Clones the template** via `prlctl clone mpd-template
+   --name mpd-NN` (full clone — independent of the template's
    future lifecycle).
 5. Sets memory, CPU, and disk size on the clone.
 6. Starts the VM, discovers the DHCP-assigned IP via Parallels Tools,
@@ -131,10 +131,10 @@ the long unattended phase:
    authorized, disables IPv6, pulls the repo to latest, rebuilds
    `bin/mpd`, uploads the host CA, runs `mpd --setup`.
 9. **Pre-warms the demo stack** (PHP runtime + `postgres:latest`).
-10. Adds a `Host mpd-machine-NN` block to `~/.ssh/config` (so
-    `ssh mpd-machine-155` works) and writes
-    `~/Desktop/mpd-machine.command`, which reads
-    `~/.mpd-machine/current.env` at click time and SSHes to whichever
+10. Adds a `Host mpd-NN` block to `~/.ssh/config` (so
+    `ssh mpd-155` works) and writes
+    `~/Desktop/mpd VM.command`, which reads
+    `~/.mpd-virt/current.env` at click time and SSHes to whichever
     VM is currently active. The block uses platform-agnostic markers
     — macos and macos share it, so switching between them
     just replaces the previous platform's entries cleanly.
@@ -145,7 +145,7 @@ script holds no sudo creds; you can leave it running unattended.
 
 When setup finishes:
 
-- A `mpd-machine.command` shortcut appears on your desktop. Double-click
+- A `mpd VM.command` shortcut appears on your desktop. Double-click
   it to open a Terminal session connected to the VM.
 - `https://mpd.test` opens in Safari without HTTPS warnings.
 - The shell greets you with a short welcome and a hint to run
@@ -190,13 +190,13 @@ Asks for confirmation (`Type YES`), then runs in order:
 
    **CA preservation:** if `~/Developer/mpd/conf/caroot/rootCA.pem`
    still exists on disk, the keychain trust is **kept** (mpd-desktop
-   and any future mpd-machine setup still depend on it). Delete that
+   and any future mpd VM setup still depend on it). Delete that
    directory first if you want a true reset, then re-run `uninstall`.
-2. Deletes `~/.mpd-machine/` (helper state — including the disposable
-   CA mirror at `~/.mpd-machine/ca/`).
-3. Removes the mpd-machine block from `~/.ssh/config`.
-4. Removes `~/Desktop/mpd-machine.command`.
-5. Asks `Delete <name>? [y/N]` for each `mpd-machine-NN` VM — default
+2. Deletes `~/.mpd-virt/` (helper state — including the disposable
+   CA mirror at `~/.mpd-virt/ca/`).
+3. Removes the mpd VM block from `~/.ssh/config`.
+4. Removes `~/Desktop/mpd VM.command`.
+5. Asks `Delete <name>? [y/N]` for each `mpd-NN` VM — default
    is keep. Only y'd VMs are stopped and deleted via `prlctl delete`.
    VM deletion is the last step on purpose: Ctrl-C during these
    prompts leaves the host fully cleaned up with the remaining VMs
@@ -206,7 +206,7 @@ If you keep one or more VMs, host networking is still gone — re-run
 `setup.command` and pick a kept VM's number to restore the route,
 resolver, and (if needed) CA trust for it.
 
-## Shared CA across mpd-desktop and mpd-machine VMs
+## Shared CA across mpd-desktop and mpd VMs
 
 `setup.command` keeps a single host CA alive in two real-file locations
 and mirrors between them on every run:
@@ -214,12 +214,12 @@ and mirrors between them on every run:
 - `~/Developer/mpd/conf/caroot/{rootCA.pem,rootCA-key.pem}` — the
   canonical mpd location, shared with mpd-desktop **and** macos.
   Populated whenever `~/Developer/mpd/conf/` exists.
-- `~/.mpd-machine/ca/{rootCA.pem,rootCA-key.pem}` — the disposable
+- `~/.mpd-virt/ca/{rootCA.pem,rootCA-key.pem}` — the disposable
   platform mirror. Always populated on any Mac that has run
   `setup.command` at least once. Deleted on uninstall.
 
 Net effect: one CA per Mac, trusted once in the System keychain, shared
-across mpd-desktop and every mpd-machine VM you create on this host.
+across mpd-desktop and every mpd VM you create on this host.
 
 If both copies somehow diverge, `~/Developer/mpd/conf/caroot/` wins as
 the canonical source and the platform copy is overwritten, with a
@@ -236,7 +236,7 @@ the host route + DNS resolver target a known address. mpd VMs are
 constrained to `.100+` because Parallels Shared DHCP owns `.1–.99`.
 
 The static IP is recorded in the VM at `~/Developer/mpd/conf/platform.env`
-(`MPD_VM_IP=…`) and on the macOS host at `~/.mpd-machine/<vmname>.env`.
+(`MPD_VM_IP=…`) and on the macOS host at `~/.mpd-virt/<vmname>.env`.
 
 The active VM is tracked via the persistent route: `10.163.0.0/24`
 (the container subnet) routes to the active VM's IP.

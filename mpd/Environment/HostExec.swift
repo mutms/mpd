@@ -1,4 +1,4 @@
-// mpd-machine host command execution adapter
+// In-VM host command execution adapter
 
 import Foundation
 

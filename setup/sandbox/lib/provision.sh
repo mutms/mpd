@@ -1,8 +1,8 @@
 #!/bin/bash
-# provision.sh — sandbox mpd-machine setup, run after take-over-sandbox-vm.sh.
+# provision.sh — sandbox mpd-vm setup, run after take-over-sandbox-vm.sh.
 #
 # Assumes:
-#   - hostname is mpd-machine-sandbox
+#   - hostname is mpd-sandbox
 #   - passwordless sudo is configured for the current user
 #   - the mpd repo is cloned at ~/Developer/mpd/
 #
@@ -67,9 +67,9 @@ fi
 
 # --- Standardize the network stack: systemd-resolved fed by NetworkManager
 # Debian Trixie with GNOME desktop ships with NetworkManager writing
-# /etc/resolv.conf directly; systemd-resolved is not installed. mpd-machine
+# /etc/resolv.conf directly; systemd-resolved is not installed. mpd-vm
 # expects systemd-resolved active (mpd/Environment/Machine/MachineIntegration
-# .requireSystemdResolvedActive). The other mpd-machine platforms get there
+# .requireSystemdResolvedActive). The other mpd-vm platforms get there
 # via cloud-init; sandbox does it here.
 #
 # Order is important to avoid a broken-DNS window:
@@ -205,7 +205,7 @@ ok "/usr/local/bin/mpd → ${REPO_DIR}/bin/mpd"
 
 # --- Write platform.env -------------------------------------------------
 step "Platform identity"
-conf_dir="${REPO_DIR}/conf"
+conf_dir="${HOME}/.mpd/conf"
 platform_env="${conf_dir}/platform.env"
 mkdir -p "$conf_dir"
 if [ -f "$platform_env" ] && grep -q '^MPD_PLATFORM=sandbox$' "$platform_env"; then
@@ -213,10 +213,10 @@ if [ -f "$platform_env" ] && grep -q '^MPD_PLATFORM=sandbox$' "$platform_env"; t
 else
     cat > "$platform_env" <<EOF
 # mpd platform identity — written by sandbox/lib/provision.sh.
-# Lives under conf/ so it survives 'mpd --uninstall'.
+# Lives under ~/.mpd/conf/ (persistent identity dir for the in-VM mpd binary).
 MPD_PLATFORM=sandbox
 MPD_VM_IP=
-MPD_INSTANCE_SUFFIX=
+MPD_VM_ID=000
 EOF
     chmod 0644 "$platform_env"
     ok "Wrote ${platform_env}"
