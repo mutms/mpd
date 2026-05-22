@@ -4,36 +4,6 @@
 import Foundation
 
 extension Mpd.Action.Setup {
-    /// Packages mpd installs at setup time. Runtime essentials, podman + its
-    /// DNS plugin (aardvark-dns — without it `--dns` flags on networks are
-    /// silently dropped), and a generous diagnostics set (the VM is a
-    /// sandbox you can wipe and rebuild, so size isn't a concern;
-    /// DNS-class debugging routinely needs all of these).
-    ///
-    /// Notably absent: `systemd-resolved` and `network-manager`. The host's
-    /// network stack (link manager + DNS sink) is standardized to
-    /// systemd-networkd or NetworkManager + systemd-resolved by the
-    /// platform bootstrap (cloud-init for macos/linux/windows;
-    /// `sandbox/lib/provision.sh` for sandbox). By the time `mpd --setup`
-    /// runs, systemd-resolved is already active. mpd touches it through a
-    /// single drop-in for `*.mpd.test`; nothing else.
-    private static let aptPackages: [String] = [
-        // runtime
-        // `catatonit` is a Recommends of podman (init binary used as the pause
-        // process in pods); --no-install-recommends drops it, so pod creation
-        // fails with "finding pause binary" without an explicit install.
-        "podman", "catatonit", "aardvark-dns", "nftables", "sudo", "openssl",
-        "bash", "coreutils", "git", "iputils-ping", "ca-certificates",
-        "systemd", "iproute2", "jq",
-        // diagnostics
-        // bind9-dnsutils (dig/nslookup/host). `dnsutils` is a virtual
-        // package on Trixie — dpkg-query against the virtual name always
-        // reports not-installed, so we'd reinstall every setup. Use the
-        // real package name to make the idempotent check work.
-        "bind9-dnsutils", "traceroute", "tcpdump", "lsof", "curl",
-        "less", "vim-tiny", "psmisc",
-    ]
-
     /// Parse /etc/os-release. Returns (id, codename), or nil if the file is
     /// unreadable / malformed. Bash-key=value format with optional quotes.
     private static func readOSRelease() -> (id: String, codename: String)? {
@@ -84,42 +54,29 @@ extension Mpd.Action.Setup {
         }
     }
 
-    /// Install (or re-assert) the given apt package set. Idempotent:
-    /// apt-get install on already-satisfied packages is a fast no-op. We do
-    /// `apt-get update` only when at least one package is actually missing,
-    /// so the common "re-run mpd --setup on a healthy VM" path stays quick.
-    ///
-    /// No prompt: passwordless sudo is a hard provisioning gate, and prompting
-    /// on every re-run is friction without payoff.
-    private static func installPackages(_ packages: [String], label: String) throws {
-        let missing = packages.filter { !dpkgPackageInstalled($0) }
-        if missing.isEmpty {
-            ok("\(label) already installed.")
-            return
+    /// Assert that `bootstrap/run-all.sh` has run. Looks for representative
+    /// binaries the bootstrap apt phase installs (`30-install-software.sh`).
+    /// On a fresh VM where bootstrap hasn't run, the error points the user at
+    /// the right next step. Cheap — just stat'ing a handful of paths.
+    private static func requireBootstrapCompleted() throws {
+        let representativeBinaries: [(name: String, path: String)] = [
+            ("podman",   "/usr/bin/podman"),
+            ("nft",      "/usr/sbin/nft"),
+            ("jq",       "/usr/bin/jq"),
+            ("dig",      "/usr/bin/dig"),
+        ]
+        let fm = FileManager.default
+        let missing = representativeBinaries
+            .filter { !fm.isExecutableFile(atPath: $0.path) }
+            .map { $0.name }
+        guard missing.isEmpty else {
+            throw RuntimeError("""
+                Bootstrap incomplete — missing: \(missing.joined(separator: ", ")).
+                Run the bootstrap layer first:
+                    bash ~/Developer/mpd/bootstrap/run-all.sh <NNN>
+                (<NNN> = 000 for sandbox, 100..254 for managed VMs)
+                """)
         }
-        print("Installing \(label): \(missing.joined(separator: ", "))")
-        guard Mpd.HostExec.run(["sudo", "apt-get", "update"]) == 0 else {
-            throw RuntimeError("apt-get update failed.")
-        }
-        guard Mpd.HostExec.run(
-            ["sudo", "apt-get", "install", "-y", "--no-install-recommends"] + packages
-        ) == 0 else {
-            throw RuntimeError("Failed to install \(label).")
-        }
-        ok("\(label) installed.")
-    }
-
-    /// Enable podman-restart.service so `--restart=always` containers get
-    /// started back up at boot. Without this unit, the restart policy holds
-    /// for crash recovery only — a host reboot stops every container and
-    /// nothing brings them back. `systemctl enable --now` is idempotent.
-    private static func enablePodmanRestart() throws {
-        guard Mpd.HostExec.run(
-            ["sudo", "systemctl", "enable", "--now", "podman-restart.service"]
-        ) == 0 else {
-            throw RuntimeError("Failed to enable podman-restart.service.")
-        }
-        ok("podman-restart.service enabled (containers survive reboot).")
     }
 
     /// Derive the 3-digit VM ID from the VM's OS hostname.
@@ -137,71 +94,6 @@ extension Mpd.Action.Setup {
             .split(separator: ".").first.map(String.init) ?? ""
         let prefix = "mpd-"
         return h.hasPrefix(prefix) ? String(h.dropFirst(prefix.count)) : ""
-    }
-
-    /// Append a single conditional `PATH` line to the dev user's
-    /// `~/.bashrc` so `bin/machine/` tools (demo, claude-install, …) are
-    /// on PATH in every bash session. Same shape as Debian's stock
-    /// `~/.profile` block for `~/.local/bin`.
-    ///
-    /// Single-user assumption: mpd runs in a dedicated VM with one
-    /// developer account, so user-scoped wiring is enough — no sudo, no
-    /// /etc/profile.d (where ordering/file-existence-at-login bites IDE
-    /// terminals that snapshot env before mpd --setup runs).
-    ///
-    /// Idempotent: the marker comment is the dedupe key. Re-runs no-op.
-    /// Also strips the legacy provision.sh snippet that sourced
-    /// /etc/profile.d/mpd-machine.sh, then `sudo rm`s the drop-in.
-    private static func installMachineBinPath() throws {
-        let bashrc = "\(NSHomeDirectory())/.bashrc"
-        let marker = "# mpd-machine: bin/machine on PATH"
-        let snippet = """
-
-        \(marker)
-        if [ -d "$HOME/Developer/mpd/bin/machine" ] ; then
-            PATH="$HOME/Developer/mpd/bin/machine:$PATH"
-        fi
-
-        """
-
-        var contents = (try? String(contentsOfFile: bashrc, encoding: .utf8)) ?? ""
-        let original = contents
-        contents = stripLegacyBashrcSnippet(contents)
-        if !contents.contains(marker) {
-            if !contents.isEmpty && !contents.hasSuffix("\n") { contents += "\n" }
-            contents += snippet
-        }
-        if contents != original {
-            do {
-                try contents.write(toFile: bashrc, atomically: true, encoding: .utf8)
-            } catch {
-                throw RuntimeError("Failed to write \(bashrc): \(error.localizedDescription)")
-            }
-        }
-
-        // Clean up the legacy /etc/profile.d drop-in for upgraders.
-        // Best-effort (file may be absent or sudo may be unavailable).
-        _ = Mpd.HostExec.run(
-            ["sudo", "rm", "-f", "/etc/profile.d/mpd-machine.sh"])
-
-        ok("~/.bashrc — adds bin/machine/ to PATH (run `source ~/.bashrc` to update the current shell).")
-    }
-
-    /// Strip the older provision.sh-installed bashrc snippet that sourced
-    /// /etc/profile.d/mpd-machine.sh. Removes the marker comment plus the
-    /// next line. No-op when absent.
-    private static func stripLegacyBashrcSnippet(_ text: String) -> String {
-        let legacy = "# mpd-machine: pick up /etc/profile.d/mpd-machine.sh for non-login shells"
-        guard text.contains(legacy) else { return text }
-        let lines = text.components(separatedBy: "\n")
-        var out: [String] = []
-        var skipNext = false
-        for line in lines {
-            if skipNext { skipNext = false; continue }
-            if line == legacy { skipNext = true; continue }
-            out.append(line)
-        }
-        return out.joined(separator: "\n")
     }
 
     /// Install assets/machine/motd as /etc/motd and disable Debian's
@@ -225,16 +117,6 @@ extension Mpd.Action.Setup {
             throw RuntimeError("Failed to install /etc/motd from \(source).")
         }
         ok("/etc/motd installed from assets/machine/motd")
-    }
-
-    /// Ask dpkg whether a package is in 'install ok installed' state. Cheap
-    /// (local DB lookup, no network) and accurate enough to gate apt-get
-    /// invocation.
-    private static func dpkgPackageInstalled(_ pkg: String) -> Bool {
-        let (rc, out) = Mpd.HostExec.capture(
-            ["dpkg-query", "-W", "-f=${Status}", pkg],
-            suppressStderr: true)
-        return rc == 0 && out.contains("install ok installed")
     }
 
     /// Generate ~/.ssh/id_ed25519 if no id_*.pub already exists, then make
@@ -352,124 +234,21 @@ extension Mpd.Action.Setup {
         ok("mpd CA imported into ~/.pki/nssdb/ (restart Chromium-family browsers to apply).")
     }
 
-    // MARK: - WireGuard tunnel
-
-    private static let wgInVMConfPath  = "\(Mpd.confDir)/wireguard/mpd0.conf"
-    private static let wgSystemConfPath = "/etc/wireguard/mpd0.conf"
-    private static let wgService        = "wg-quick@mpd0.service"
-
-    /// Gated on `~/.mpd/conf/wireguard/mpd0.conf` (pushed in by mpd-virt at
-    /// provisioning time). If absent — sandbox case, or a managed VM
-    /// whose host hasn't pushed config yet — this step is a clean no-op.
-    ///
-    /// When present: apt-install `wireguard`, copy the conf to
-    /// `/etc/wireguard/mpd0.conf` (root:root, 0600), persist
-    /// `net.ipv4.ip_forward=1` via sysctl.d, and enable + start the
-    /// `wg-quick@mpd0` systemd unit. Re-run safely; the service is only
-    /// restarted when the conf file actually changed.
-    private static func configureWireGuardIfPresent() throws {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: wgInVMConfPath) else {
-            ok("No \(wgInVMConfPath) present — skipping WireGuard setup.")
-            return
-        }
-
-        try installPackages(["wireguard"], label: "wireguard")
-        try ensureIPForwardEnabled()
-        let changed = try installWireGuardConf()
-
-        if changed {
-            // First install OR conf was rewritten: enable + start (or restart).
-            // `systemctl enable --now` is idempotent for the enable side; the
-            // explicit restart picks up the new conf even if the service was
-            // already running.
-            guard Mpd.HostExec.run(
-                ["sudo", "systemctl", "enable", wgService]
-            ) == 0 else {
-                throw RuntimeError("Failed to enable \(wgService).")
-            }
-            guard Mpd.HostExec.run(
-                ["sudo", "systemctl", "restart", wgService]
-            ) == 0 else {
-                throw RuntimeError("Failed to (re)start \(wgService).")
-            }
-            ok("\(wgService) active (conf installed).")
-        } else {
-            // Conf unchanged — just make sure the service is up.
-            guard Mpd.HostExec.run(
-                ["sudo", "systemctl", "enable", "--now", wgService]
-            ) == 0 else {
-                throw RuntimeError("Failed to enable \(wgService).")
-            }
-            ok("\(wgService) already active (conf unchanged).")
-        }
-    }
-
-    /// Install the in-VM conf at `/etc/wireguard/mpd0.conf` (root:root, 0600).
-    /// Returns true if the destination changed (new file or content differs),
-    /// false if already up to date.
-    private static func installWireGuardConf() throws -> Bool {
-        // `cmp -s` exits 0 if identical, non-zero on any difference (incl.
-        // destination missing). Run via sudo because the destination is
-        // root-owned 0600 and our process can't read it otherwise.
-        let (cmpRC, _) = Mpd.HostExec.capture(
-            ["sudo", "cmp", "-s", wgInVMConfPath, wgSystemConfPath],
-            suppressStderr: true
-        )
-        if cmpRC == 0 { return false }
-        guard Mpd.HostExec.run([
-            "sudo", "install",
-            "-m", "0600", "-o", "root", "-g", "root",
-            wgInVMConfPath, wgSystemConfPath,
-        ]) == 0 else {
-            throw RuntimeError("Failed to install \(wgInVMConfPath) → \(wgSystemConfPath).")
-        }
-        return true
-    }
-
-    /// Persist `net.ipv4.ip_forward=1` via a sysctl.d drop-in. Required so
-    /// the VM kernel routes packets arriving on `wg0` (from the Mac) into
-    /// `podman1` and out to container IPs. Idempotent.
-    private static func ensureIPForwardEnabled() throws {
-        let dropInPath = "/etc/sysctl.d/99-mpd-wg.conf"
-        let desired = "# Written by mpd --setup. Forwarding required for WireGuard → podman1.\nnet.ipv4.ip_forward=1\n"
-        // Read what's there (sudo not needed for /etc/sysctl.d — world-readable).
-        let current = (try? String(contentsOfFile: dropInPath, encoding: .utf8)) ?? ""
-        if current != desired {
-            guard Mpd.HostExec.run([
-                "sudo", "bash", "-c",
-                "cat > \(dropInPath) <<'EOF'\n\(desired)EOF",
-            ]) == 0 else {
-                throw RuntimeError("Failed to write \(dropInPath).")
-            }
-        }
-        // Apply current settings. `sysctl --system` reloads every drop-in,
-        // including our new one, and is idempotent.
-        guard Mpd.HostExec.run(["sudo", "sysctl", "--system"]) == 0 else {
-            throw RuntimeError("sysctl --system failed.")
-        }
-    }
 
     static func preflight() throws {
-        // Distro gate — fail fast on unsupported hosts before any apt work.
-        // Debian Trixie across every platform.
+        // Distro gate — Debian Trixie across every platform.
         try requireSupportedHost()
 
+        // Bootstrap pre-condition: apt packages, network stack, mpd build,
+        // podman-restart.service, sysctl tweaks, ~/.bashrc PATH — all done
+        // by `bootstrap/run-all.sh` before `mpd --setup` ever runs. Verify
+        // representative binaries exist; bail with a fix-it message if not.
+        try requireBootstrapCompleted()
+
         // Verify the host's network stack is in the standardized state
-        // (systemd-resolved active, fed by either NetworkManager or
-        // systemd-networkd). cloud-init (macos/linux/windows)
-        // and `sandbox/lib/provision.sh` (sandbox) are both responsible
-        // for putting the system here; mpd --setup just verifies and
-        // bails with a hint if not.
+        // (systemd-resolved active, fed by NetworkManager). bootstrap/20
+        // is responsible for putting the system here.
         try Mpd.Integration.requireSystemdResolvedActive()
-
-        // Single apt phase: runtime essentials + diagnostics + aardvark-dns.
-        try installPackages(aptPackages, label: "mpd packages")
-
-        // podman-restart.service is what drives `--restart=always` containers
-        // back up after a host reboot — without it the policy is silently
-        // ineffective. `enable --now` is idempotent.
-        try enablePodmanRestart()
 
         // The VM itself is the machine; pin the state name accordingly.
         var status = Mpd.Core.State.readStatus()
@@ -623,9 +402,6 @@ extension Mpd.Action.Setup {
         step("DNS resolver for mpd.test")
         try Mpd.Integration.configureDNSResolver()
 
-        step("WireGuard tunnel")
-        try configureWireGuardIfPresent()
-
         step("Podman network")
         if Mpd.Podman.networkExists("mpd-internal") {
             ok("Network 'mpd-internal' already exists (\(Mpd.internalSubnet)).")
@@ -695,9 +471,6 @@ extension Mpd.Action.Setup {
 
         step("Shell completion for mpd")
         Mpd.Core.Assets.installCompletion()
-
-        step("Adding bin/machine/ to login PATH")
-        try installMachineBinPath()
 
         step("Installing login banner (motd)")
         try installLoginBanner()

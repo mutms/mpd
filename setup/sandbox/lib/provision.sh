@@ -1,173 +1,46 @@
 #!/bin/bash
-# provision.sh — sandbox mpd-vm setup, run after take-over-sandbox-vm.sh.
+# provision.sh — sandbox-side finalization, called by take-over-sandbox-vm.sh.
 #
-# Assumes:
-#   - hostname is mpd-sandbox
-#   - passwordless sudo is configured for the current user
-#   - the mpd repo is cloned at ~/Developer/mpd/
+# By this point the take-over script has:
+#   - validated the hostname (mpd-sandbox or mpd-000) and the Debian Trixie OS
+#   - enabled passwordless sudo for the dev user
+#   - apt-installed git
+#   - cloned mpd at ~/Developer/mpd
 #
-# All three are set up by the entry script (../take-over-sandbox-vm.sh). Direct
-# re-invocation is supported (idempotent) for iterating after a failure.
+# This script:
+#   1. Runs the shared bootstrap (apt packages, network stack, mpd build,
+#      hostname → mpd-000, platform.env). Idempotent; safe to re-run.
+#   2. Adds sandbox-specific tooling (VS Code).
+#   3. Runs `mpd --setup` to bring up podman networks, services, CA, etc.
+#   4. Pre-warms a PHP runtime + postgres so the first `demo moodle` is fast.
+#   5. Drops a GNOME desktop launcher.
+#
+# Everything in step 1 is shared with mpd-virt's managed-VM create flow.
+# Steps 2–5 are sandbox-only (GNOME, in-VM IDE).
 
 set -euo pipefail
 
 REPO_DIR="$HOME/Developer/mpd"
 
-# --- Output helpers (matching linux/lib/common.sh style) ---
 step() { printf '\n==> %s\n' "$*"; }
 ok()   { printf '    ok: %s\n' "$*"; }
 warn() { printf '    warn: %s\n' "$*"; }
 die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
-# --- Light preflight ----------------------------------------------------
+# --- Light preflight ---------------------------------------------------
+[ -d "${REPO_DIR}/.git" ] || die "Repo not cloned at ${REPO_DIR}. Run take-over-sandbox-vm.sh first."
+sudo -n true 2>/dev/null  || die "Passwordless sudo not configured. Run take-over-sandbox-vm.sh first."
 
-step "Preflight"
-
-if [ ! -r /etc/os-release ]; then
-    die "/etc/os-release missing — cannot verify OS."
-fi
-# shellcheck disable=SC1091
-. /etc/os-release
-if [ "${ID:-}" != "debian" ] || [ "${VERSION_CODENAME:-}" != "trixie" ]; then
-    die "This script targets Debian Trixie (13). Detected: ${ID:-unknown}/${VERSION_CODENAME:-unknown}."
-fi
-ok "Debian Trixie"
-
-if ! sudo -n true 2>/dev/null; then
-    die "Passwordless sudo not configured. Run take-over-sandbox-vm.sh first."
-fi
-ok "Passwordless sudo"
-
-if [ ! -d "${REPO_DIR}/.git" ]; then
-    die "Repo not cloned at ${REPO_DIR}. Run take-over-sandbox-vm.sh first."
-fi
-ok "Repo at ${REPO_DIR}"
-
-# --- Apt-install build dependencies ------------------------------------
-# Done BEFORE the network-stack switch below, so apt's name resolution is
-# still served by NetworkManager directly (the simple, known-good path).
-# podman is installed by `mpd --setup`.
-step "Build dependencies"
-required_pkgs=(
-    build-essential pkg-config make swiftlang
-    libnss3-tools qemu-guest-agent
-)
-missing_pkgs=()
-for pkg in "${required_pkgs[@]}"; do
-    dpkg -s "$pkg" >/dev/null 2>&1 || missing_pkgs+=("$pkg")
-done
-if [ ${#missing_pkgs[@]} -gt 0 ]; then
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get update -qq
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        "${missing_pkgs[@]}"
-    ok "Installed: ${missing_pkgs[*]}"
-else
-    ok "All required packages already installed"
-fi
-
-# --- Standardize the network stack: systemd-resolved fed by NetworkManager
-# Debian Trixie with GNOME desktop ships with NetworkManager writing
-# /etc/resolv.conf directly; systemd-resolved is not installed. mpd-vm
-# expects systemd-resolved active (mpd/Environment/Machine/MachineIntegration
-# .requireSystemdResolvedActive). The other mpd-vm platforms get there
-# via cloud-init; sandbox does it here.
-#
-# Order is important to avoid a broken-DNS window:
-#   1. Write NM drop-in declaring `dns=systemd-resolved` (no effect yet).
-#   2. apt-install systemd-resolved — postinst enables+starts the service
-#      and turns /etc/resolv.conf into a stub symlink to 127.0.0.53.
-#   3. Restart NetworkManager so it reads the drop-in and pushes upstream
-#      DNS (from DHCP / the active connection) into systemd-resolved via
-#      D-Bus instead of writing /etc/resolv.conf.
-# libnss-resolve makes glibc NSS go through resolved (so getent/curl use
-# the stub even without /etc/resolv.conf). It's a Recommends of
-# systemd-resolved but we're using --no-install-recommends, so request it.
-step "Network stack — systemd-resolved fed by NetworkManager"
-nm_conf_dir=/etc/NetworkManager/conf.d
-nm_drop_in=${nm_conf_dir}/10-mpd-dns.conf
-nm_drop_in_body=$'[main]\ndns=systemd-resolved\n'
-if [ ! -f "$nm_drop_in" ] || [ "$(sudo cat "$nm_drop_in" 2>/dev/null || true)" != "$nm_drop_in_body" ]; then
-    sudo install -d -m 755 "$nm_conf_dir"
-    printf '%s' "$nm_drop_in_body" | sudo install -m 644 /dev/stdin "$nm_drop_in"
-    ok "Wrote ${nm_drop_in}"
-else
-    ok "${nm_drop_in} already in place"
-fi
-
-if ! dpkg -s systemd-resolved >/dev/null 2>&1 || ! dpkg -s libnss-resolve >/dev/null 2>&1; then
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        systemd-resolved libnss-resolve
-    ok "Installed: systemd-resolved + libnss-resolve"
-else
-    ok "systemd-resolved + libnss-resolve already installed"
-fi
-
-# Postinst usually enables+starts systemd-resolved on its own; make it
-# explicit so re-runs converge even if the unit was disabled by hand.
-sudo systemctl enable --now systemd-resolved >/dev/null 2>&1 || true
-if ! systemctl is-active --quiet systemd-resolved; then
-    die "systemd-resolved did not come up after install — investigate with: systemctl status systemd-resolved"
-fi
-ok "systemd-resolved active"
-
-# Restart NM so the dns=systemd-resolved drop-in takes effect. On the
-# Trixie GNOME default, NM keeps the active connection up across restart
-# (continue-active behavior), so any in-VM terminal or SSH session stays
-# connected.
-sudo systemctl restart NetworkManager
-
-# Restart resolved AFTER NM is up. NM's "continue-active" restart does
-# NOT reliably re-push DNS into resolved when the dns plugin has just
-# flipped from `default` to `systemd-resolved` — resolved sits with no
-# upstream nameserver and every lookup fails ("Temporary failure in
-# name resolution"). `nmcli device reapply` does not fix it either
-# (tested). What does: restarting resolved forces a fresh D-Bus name
-# acquisition on `org.freedesktop.resolve1`; NM's resolved-watcher
-# fires on that event and pushes DNS over D-Bus. Brief 1s pause so
-# NM finishes settling before resolved bounces.
-sleep 1
-sudo systemctl restart systemd-resolved
-
-ok_dns=0
-for _ in $(seq 1 30); do
-    if getent hosts deb.debian.org >/dev/null 2>&1; then
-        ok_dns=1
-        break
-    fi
-    sleep 1
-done
-if [ "$ok_dns" -eq 1 ]; then
-    ok "DNS resolves through systemd-resolved (deb.debian.org)"
-else
-    cat >&2 <<'EOF'
-
-============================================================
-DNS via systemd-resolved did not come up within 30 seconds
-after restarting NetworkManager + systemd-resolved.
-
-Manual recovery (idempotent):
-
-    sudo systemctl restart systemd-resolved
-    getent hosts deb.debian.org   # should succeed
-
-Then re-run take-over-sandbox-vm.sh — it's idempotent and picks
-up where it left off (build deps and systemd-resolved are
-already installed; the remaining steps are mpd build,
-mpd --setup, pre-warm, and the GNOME launchers).
-
-Inspect: resolvectl status;
-         nmcli -t -f IP4.DNS device show;
-         journalctl -u NetworkManager -u systemd-resolved -b \
-             --no-pager | tail -50
-============================================================
-EOF
-    die "Aborting — see message above."
-fi
+# --- Shared bootstrap -------------------------------------------------
+# Heavy lifting: sudoers no-op (already set), networking + hostname
+# rename to mpd-000, apt package set, podman-restart, mpd build,
+# ~/.bashrc PATH wiring, platform.env.
+step "Running bootstrap (apt, networking, build)"
+bash "${REPO_DIR}/bootstrap/run-all.sh" 0
 
 # --- VS Code (Microsoft official apt repo) -----------------------------
-# Gives the sandbox an in-VM IDE so the GNOME desktop story is complete:
-# terminal + browser + IDE, all running inside the VM, no SSH hop to the
-# host. Idempotent — re-runs are no-ops.
+# Sandbox-specific: gives the in-VM GNOME desktop an IDE so the story is
+# complete (terminal + browser + IDE, all inside the VM, no host hop).
 step "VS Code"
 if command -v code >/dev/null 2>&1; then
     ok "VS Code already installed ($(code --version | head -n1))"
@@ -186,47 +59,11 @@ else
     ok "Installed: VS Code"
 fi
 
-# --- Build mpd ----------------------------------------------------------
-step "Building mpd"
-if ! command -v swift >/dev/null 2>&1; then
-    die "swift not on PATH after apt install. Check: dpkg -l swiftlang"
-fi
-ok "$(swift --version | head -n1)"
-
-cd "$REPO_DIR"
-make install
-[ -x "${REPO_DIR}/bin/mpd" ] || die "Expected ${REPO_DIR}/bin/mpd after 'make install'."
-ok "Built ${REPO_DIR}/bin/mpd"
-
-# --- Symlink onto PATH --------------------------------------------------
-step "Installing /usr/local/bin/mpd"
-sudo ln -sf "${REPO_DIR}/bin/mpd" /usr/local/bin/mpd
-ok "/usr/local/bin/mpd → ${REPO_DIR}/bin/mpd"
-
-# --- Write platform.env -------------------------------------------------
-step "Platform identity"
-conf_dir="${HOME}/.mpd/conf"
-platform_env="${conf_dir}/platform.env"
-mkdir -p "$conf_dir"
-if [ -f "$platform_env" ] && grep -q '^MPD_PLATFORM=sandbox$' "$platform_env"; then
-    ok "${platform_env} already configured for sandbox"
-else
-    cat > "$platform_env" <<EOF
-# mpd platform identity — written by sandbox/lib/provision.sh.
-# Lives under ~/.mpd/conf/ (persistent identity dir for the in-VM mpd binary).
-MPD_PLATFORM=sandbox
-MPD_VM_IP=
-MPD_VM_ID=000
-EOF
-    chmod 0644 "$platform_env"
-    ok "Wrote ${platform_env}"
-fi
-
-# --- mpd --setup --------------------------------------------------------
+# --- mpd --setup -------------------------------------------------------
 step "Running 'mpd --setup'"
 mpd --setup
 
-# --- Pre-warm (best-effort, mirrors linux symmetry) ---------------
+# --- Pre-warm (best-effort) -------------------------------------------
 step "Pre-warming demo runtime + database (best-effort)"
 if mpd --runtime-create=php; then
     ok "PHP runtime built"
@@ -240,10 +77,9 @@ else
 fi
 
 # --- GNOME desktop launcher --------------------------------------------
-# Drops a .desktop file so the user can find mpd in GNOME Activities and
-# (if Desktop icons are enabled) on the desktop itself. Launches the
-# interactive TUI in the user's default terminal — Terminal=true keeps
-# this portable across GNOME (ptyxis), KDE (konsole), XFCE (xfce4-terminal).
+# .desktop file so the user can find mpd in GNOME Activities and (if
+# Desktop icons are enabled) on the desktop itself. Terminal=true keeps
+# the launcher portable across GNOME (ptyxis), KDE (konsole), XFCE.
 step "GNOME desktop launcher"
 apps_dir="$HOME/.local/share/applications"
 apps_shortcut="${apps_dir}/mpd.desktop"
@@ -303,12 +139,6 @@ then connect to user@php.runtime.mpd.test (or whichever runtime
 holds your project) and open /srv/projects/<your-project>/. The
 runtime container lives in this same VM, so the connection is
 local — no host↔VM hop.
-
-'mpd --setup' added bin/machine/ to your PATH via ~/.bashrc. Any new
-shell (GNOME Terminal tab, SSH session, IDE terminal) picks it up
-automatically. For THIS shell, refresh now with:
-
-    source ~/.bashrc
 
 Create a Moodle project:
 

@@ -33,7 +33,13 @@ extension Mpd.ShutdownUnit {
     /// shutdown even if start hit a transient issue at boot. Worst case:
     /// the user runs `mpd --start` themselves; the graceful-shutdown
     /// path is never lost.
-    static let unitContent = """
+    ///
+    /// The mpd binary path is the dev user's actual home + the canonical
+    /// in-repo location. Hardcoded (not via systemd's `%h` specifier) so
+    /// `cat ~/.config/systemd/user/mpd.service` shows the real path — far
+    /// easier to debug when something goes wrong.
+    private static func renderUnit(mpdBin: String) -> String {
+        """
         [Unit]
         Description=mpd lifecycle (start on boot, graceful stop on shutdown)
         DefaultDependencies=no
@@ -42,19 +48,22 @@ extension Mpd.ShutdownUnit {
         [Service]
         Type=oneshot
         RemainAfterExit=yes
-        ExecStart=-/usr/local/bin/mpd --start
-        ExecStop=/usr/local/bin/mpd --stop
+        ExecStart=-\(mpdBin) --start
+        ExecStop=\(mpdBin) --stop
         TimeoutStartSec=300
         TimeoutStopSec=180
 
         [Install]
         WantedBy=default.target
         """
+    }
 
     /// Install + enable the unit and turn linger on for the dev user.
     /// Idempotent — overwrites the unit and re-enables on every call.
     static func install() throws {
         let user = Mpd.detectUserAndUID().user
+        let mpdBin = "\(Mpd.homeDir)/Developer/mpd/bin/mpd"
+        let unitContent = renderUnit(mpdBin: mpdBin)
         let fm = FileManager.default
 
         try fm.createDirectory(atPath: unitDir, withIntermediateDirectories: true)

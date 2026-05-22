@@ -19,8 +19,6 @@ extension Mpd.HostExec {
         "update-ca-certificates": "/usr/sbin/update-ca-certificates",
         "systemctl": "/usr/bin/systemctl",
         "ip": "/usr/sbin/ip",
-        "apt-get": "/usr/bin/apt-get",
-        "dpkg-query": "/usr/bin/dpkg-query",
         "ssh-keygen": "/usr/bin/ssh-keygen",
         "certutil": "/usr/bin/certutil",
     ]

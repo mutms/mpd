@@ -36,7 +36,7 @@ Pick the path that matches your host:
   DNS/route/trust changes.
 
 End state of either path: a VM where `mpd` is on `PATH`, your laptop
-SSH key is in `~/.ssh/authorized_keys`, and `~/Developer/mpd/conf/platform.env`
+SSH key is in `~/.ssh/authorized_keys`, and `~/.mpd/conf/platform.env`
 is set.
 
 ## `mpd --setup`
@@ -49,17 +49,16 @@ mpd --setup
 
 Idempotent — safe to re-run any time. Walks you through:
 
-- generating the local CA at `~/Developer/mpd/conf/caroot/`
+- generating the local CA at `~/.mpd/conf/caroot/`
 - installing the CA into the VM's system trust store + Firefox + NSS DB
-- configuring `systemd-resolved` to resolve `*.mpd.test` via dnsmasq
 - creating the Podman network and data volume
 - bringing up the always-on infra services (dnsmasq, portal, Adminer,
   fileaccess) inside the VM
-- adding `~/Developer/mpd/bin/machine/` to PATH via a conditional
-  block appended to `~/.bashrc` (mirrors Debian's stock
-  `~/.local/bin` pattern) so VM-side helpers like `claude-install`
-  are reachable from any new shell
 - a final DNS sanity check
+
+(VM-side apt installs, network stack setup, hostname/IP canonicalization,
+`mpd` build, and `~/Developer/mpd/bin/` on PATH all happen earlier in
+`bootstrap/run-all.sh` and don't re-run here.)
 
 Host-side trust + WireGuard setup lives in the separate `mpd-virt`
 orchestrator (own repo); see its README for the host-side flow.

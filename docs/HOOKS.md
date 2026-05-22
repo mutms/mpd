@@ -289,8 +289,8 @@ Before=shutdown.target reboot.target halt.target suspend.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=-/usr/local/bin/mpd --start
-ExecStop=/usr/local/bin/mpd --stop
+ExecStart=-/home/<user>/Developer/mpd/bin/mpd --start
+ExecStop=/home/<user>/Developer/mpd/bin/mpd --stop
 TimeoutStartSec=300
 TimeoutStopSec=180
 

@@ -159,28 +159,7 @@ git clone $MpdRepo "`$HOME/Developer/mpd"
 "@
 Write-Ok "Repository cloned"
 
-# ── 9. Write platform identity ────────────────────────────────────────────────
-
-Write-Step "Writing platform identity"
-
-$VmId = "{0:D3}" -f $VmOctet
-Send-SshScript -User $VmUser -RemoteHost $VmIp -Script @"
-set -e
-mkdir -p "`$HOME/.mpd/conf"
-cat > "`$HOME/.mpd/conf/platform.env" <<'PLATFORM_EOF'
-# mpd platform identity - written by windows/lib/create-vm.ps1.
-MPD_PLATFORM=managed
-MPD_VM_IP=$VmIp
-MPD_VM_ID=$VmId
-MPD_NETWORK_MODE=static
-MPD_NETWORK_PREFIX=$PrefixLen
-MPD_NETWORK_GATEWAY=$GwIp
-PLATFORM_EOF
-chmod 0644 "`$HOME/.mpd/conf/platform.env"
-"@
-Write-Ok "Platform identity recorded"
-
-# ── 10. Upload host CA to VM ─────────────────────────────────────────────────
+# ── 9. Upload host CA to VM ─────────────────────────────────────────────────
 
 Write-Step "Uploading host CA to VM"
 
@@ -230,33 +209,12 @@ fi
 "@
 Write-Ok "Swap ready"
 
-Write-Step "Installing build prerequisites (swiftlang + dependencies)"
-
-Send-SshScript -User $VmUser -RemoteHost $VmIp -Script @"
-set -e
-sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -qq
-sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
-    build-essential pkg-config make swiftlang
-if ! command -v swift >/dev/null 2>&1; then
-    echo "Swift not on PATH after install" >&2; exit 1
-fi
-"@
-Write-Ok "Packages installed"
-
-Write-Step "Building mpd binary"
-
-Send-SshScript -User $VmUser -RemoteHost $VmIp -Script @"
-set -e
-mkdir -p "`$HOME/.local/bin"
-marker='# mpd: ~/.local/bin on PATH'
-if ! grep -qF "`$marker" "`$HOME/.bashrc" 2>/dev/null; then
-    printf '\n%s\n[ -d "`$HOME/.local/bin" ] && PATH="`$HOME/.local/bin:`$PATH"\n' "`$marker" >> "`$HOME/.bashrc"
-fi
-cd "`$HOME/Developer/mpd"
-make install
-sudo ln -sf "`$HOME/Developer/mpd/bin/mpd" /usr/local/bin/mpd
-"@
-Write-Ok "mpd built and installed"
+# Bootstrap (apt packages, network, hostname, build, platform.env). Shared
+# with the sandbox + macos flow. Idempotent.
+Write-Step "Running bootstrap in VM (bash bootstrap/run-all.sh $VmOctet)"
+Invoke-Ssh -User $VmUser -RemoteHost $VmIp `
+    -Command "bash `$HOME/Developer/mpd/bootstrap/run-all.sh $VmOctet"
+Write-Ok "Bootstrap complete"
 
 # ── 13. Run mpd --setup ───────────────────────────────────────────────────────
 

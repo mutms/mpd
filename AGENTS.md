@@ -81,7 +81,7 @@ across docs.
 - `docs/VISION.md` — product vision (origin lineage + design principles)
 - `docs/ROADMAP.md` — committed near-term work
 - *(Architecture proposals for the host-side `mpd-virt` orchestrator
-  live in the separate `mpd-virt-macos-prl` repo under
+  live in the separate `mpd-virt-macos` repo under
   `docs/proposals/`.)*
 - `docs/MACHINE.md` — what mpd VM is, status, scope
 - `docs/USAGE.md` — machine workflow

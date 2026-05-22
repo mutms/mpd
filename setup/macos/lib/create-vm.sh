@@ -200,24 +200,7 @@ wait_for_ssh "$VM_IP" "$VM_USER" 120 \
     || die "VM did not come back at ${VM_IP} within 120s."
 ok "SSH ready (${VM_USER}@${VM_IP})"
 
-# --- Disable IPv6 (mpd is IPv4-only; matches macos's cloud-init step) ---
-
-step "Disabling IPv6 inside the guest"
-ssh_cmd "$VM_IP" "$VM_USER" 'bash -se' <<'EOF'
-set -e
-sudo tee /etc/sysctl.d/99-mpd-disable-ipv6.conf >/dev/null <<SYSCTL
-# mpd: keep all traffic on IPv4. The host route to the container subnet
-# and the host's DNS resolver drop-in for *.mpd.test are IPv4-only, so
-# IPv6 paths would bypass mpd's traffic shaping.
-net.ipv6.conf.all.disable_ipv6 = 1
-net.ipv6.conf.default.disable_ipv6 = 1
-net.ipv6.conf.lo.disable_ipv6 = 1
-SYSCTL
-sudo sysctl --load=/etc/sysctl.d/99-mpd-disable-ipv6.conf >/dev/null
-EOF
-ok "IPv6 disabled"
-
-# --- Ensure repo is up to date (template ships with mpd cloned + built) ---
+# --- Ensure repo is cloned (template usually ships with it) ---
 
 step "Updating mpd repository in VM"
 ssh_cmd "$VM_IP" "$VM_USER" "export MPD_REPO=$(printf '%q' "$MPD_REPO"); bash -se" <<'EOF'
@@ -227,39 +210,33 @@ if [ ! -d "$HOME/Developer/mpd/.git" ]; then
     sudo apt-get -o Acquire::Retries=3 update -qq
     sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends git ca-certificates
     if ! ssh-keygen -F github.com >/dev/null 2>&1; then
-        mkdir -p "$HOME/.ssh"
-        chmod 700 "$HOME/.ssh"
+        mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"
         ssh-keyscan github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
         chmod 600 "$HOME/.ssh/known_hosts"
     fi
     git clone "$MPD_REPO" "$HOME/Developer/mpd"
 else
     git -C "$HOME/Developer/mpd" pull --ff-only 2>&1 | sed 's/^/    /' \
-        || { echo "ERROR: git pull --ff-only failed; resolve in ~/Developer/mpd and re-run." >&2; exit 1; }
+        || { echo "ERROR: git pull --ff-only failed in ~/Developer/mpd; resolve and re-run." >&2; exit 1; }
 fi
 EOF
 ok "Repository ready"
 
-# --- Platform identity ---
+# --- Bootstrap (apt packages, network, hostname, build, platform.env) ---
+#
+# Single source of truth shared with the sandbox flow and any future
+# mpd-virt-* repos. Re-runs are idempotent; the heavy lifting (apt
+# installs, network stack switch, mpd build) only fires on the first
+# template-clone. Hostname becomes mpd-<NNN>, static IP is pinned to
+# Parallels Shared <subnet>.<NNN>.
 
-step "Writing platform identity to ~/.mpd/conf/platform.env"
-VM_ID=$(printf '%03d' "$VM_OCTET")
-ssh_cmd "$VM_IP" "$VM_USER" \
-    "export VM_IP=$(printf '%q' "$VM_IP") VM_ID=$(printf '%q' "$VM_ID"); bash -se" <<'EOF'
-set -e
-mkdir -p "$HOME/.mpd/conf"
-cat > "$HOME/.mpd/conf/platform.env" <<PLATFORM_EOF
-# mpd platform identity — written by macos/lib/create-vm.sh.
-# Lives under ~/.mpd/conf/ (persistent identity dir for the in-VM mpd binary).
-MPD_PLATFORM=managed
-MPD_VM_IP=${VM_IP}
-MPD_VM_ID=${VM_ID}
-PLATFORM_EOF
-chmod 0644 "$HOME/.mpd/conf/platform.env"
-EOF
-ok "Platform identity recorded"
+step "Running bootstrap in VM (bash bootstrap/run-all.sh ${VM_OCTET})"
+ssh_cmd "$VM_IP" "$VM_USER" "bash \$HOME/Developer/mpd/bootstrap/run-all.sh $(printf '%q' "$VM_OCTET")"
+ok "Bootstrap complete"
 
-# --- Swap (only if absent — template may already have one) ---
+# --- Swap (Parallels-specific — 4 GB swap if none present) ---
+# Not handled by bootstrap: it's per-hypervisor policy (sandbox VMs let
+# the user manage swap, managed VMs in Parallels Shared get 4 GB).
 
 step "Ensuring swap file (4 GB)"
 ssh_cmd "$VM_IP" "$VM_USER" 'bash -se' <<'EOF'
@@ -275,22 +252,6 @@ if ! swapon --show | grep -q .; then
 fi
 EOF
 ok "Swap ready"
-
-# --- Build mpd (template likely has swiftlang already; idempotent) ---
-
-step "Building mpd"
-ssh_cmd "$VM_IP" "$VM_USER" 'bash -se' <<'EOF'
-set -e
-if ! command -v swift >/dev/null 2>&1 || ! dpkg -s build-essential >/dev/null 2>&1; then
-    sudo apt-get -o Acquire::Retries=3 update -qq
-    sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
-        build-essential pkg-config make swiftlang
-fi
-cd "$HOME/Developer/mpd"
-make install
-sudo ln -sf "$HOME/Developer/mpd/bin/mpd" /usr/local/bin/mpd
-EOF
-ok "mpd built and installed"
 
 # --- Upload host CA into VM so mpd --setup reuses it ---
 

@@ -375,26 +375,6 @@ echo "    Repository cloned to $HOME/Developer/mpd"
 EOF
 ok "Repository ready"
 
-# --- Platform identity ---
-
-step "Writing platform identity to ~/.mpd/conf/platform.env"
-VM_ID=$(printf '%03d' "$VM_OCTET")
-ssh_cmd "$VM_IP" "$VM_USER" \
-    "export VM_IP=$(printf '%q' "$VM_IP") VM_ID=$(printf '%q' "$VM_ID"); bash -se" <<'EOF'
-set -e
-mkdir -p "$HOME/.mpd/conf"
-cat > "$HOME/.mpd/conf/platform.env" <<PLATFORM_EOF
-# mpd platform identity — written by linux/lib/create-vm.sh.
-# Lives under ~/.mpd/conf/ (persistent identity dir for the in-VM mpd binary).
-MPD_PLATFORM=managed
-MPD_VM_IP=${VM_IP}
-MPD_VM_ID=${VM_ID}
-PLATFORM_EOF
-chmod 0644 "$HOME/.mpd/conf/platform.env"
-echo "    Wrote $HOME/.mpd/conf/platform.env"
-EOF
-ok "Platform identity recorded"
-
 # --- Detach cloud-init CD ---
 
 step "Detaching cloud-init CD"
@@ -440,40 +420,15 @@ fi
 EOF
 ok "Swap ready"
 
-step "Installing required packages to build mpd binary"
-ssh_cmd "$VM_IP" "$VM_USER" 'bash -se' <<'EOF'
-set -e
-sudo apt-get -o Acquire::Retries=3 update
-sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
-    build-essential pkg-config make swiftlang
-if ! command -v swift >/dev/null 2>&1; then
-    echo "Swift install did not expose 'swift' on PATH" >&2
-    exit 1
-fi
-EOF
-ok "Required packages installed"
+# --- Bootstrap (apt packages, network, hostname, build, platform.env) ---
+#
+# Single source of truth shared with the sandbox flow and any future
+# mpd-virt-* repos. Idempotent on re-runs. Pins static IP to
+# <subnet>.<VM_OCTET> and renames hostname to mpd-<NNN>.
 
-step "Building and installing mpd"
-ssh_cmd "$VM_IP" "$VM_USER" 'bash -se' <<'EOF'
-cd "$HOME/Developer/mpd"
-make install
-sudo ln -sf "$HOME/Developer/mpd/bin/mpd" /usr/local/bin/mpd
-EOF
-ok "mpd built and installed"
-
-step "Ensuring ~/.local/bin on PATH"
-ssh_cmd "$VM_IP" "$VM_USER" 'bash -se' <<'EOF'
-mkdir -p "$HOME/.local/bin"
-marker='# mpd: ~/.local/bin on PATH for user-installed CLIs'
-if ! grep -qF "$marker" "$HOME/.bashrc" 2>/dev/null; then
-    cat >> "$HOME/.bashrc" <<'BASHRC_EOF'
-
-# mpd: ~/.local/bin on PATH for user-installed CLIs
-[ -d "$HOME/.local/bin" ] && PATH="$HOME/.local/bin:$PATH"
-BASHRC_EOF
-fi
-EOF
-ok "~/.local/bin on PATH"
+step "Running bootstrap in VM (bash bootstrap/run-all.sh ${VM_OCTET})"
+ssh_cmd "$VM_IP" "$VM_USER" "bash \$HOME/Developer/mpd/bootstrap/run-all.sh $(printf '%q' "$VM_OCTET")"
+ok "Bootstrap complete"
 
 step "Uploading host CA into VM (mpd will reuse it)"
 ssh_cmd "$VM_IP" "$VM_USER" \

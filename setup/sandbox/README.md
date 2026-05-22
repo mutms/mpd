@@ -112,7 +112,7 @@ works: `bash <(curl -sSL <url>)`.
    install profile.
 8. Adds Microsoft's apt repo and installs **VS Code** so the in-VM
    IDE story works without leaving the desktop.
-9. `make install` of mpd; symlinks `/usr/local/bin/mpd`.
+9. `make install` of mpd; bin/ is added to PATH via ~/.bashrc.
 10. Writes `~/Developer/mpd/conf/platform.env` with `MPD_PLATFORM=sandbox`.
 11. `mpd --setup` — generates the CA, installs system trust + Firefox
     policies + `~/.pki/nssdb` import, brings up podman + dnsmasq + portal

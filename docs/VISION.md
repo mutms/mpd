@@ -318,7 +318,7 @@ again — for four reasons that hit harder than I expected:
 - **Native compiled binary, single file.** `make install` produces
   `bin/mpd` and that's it. No runtime to install on the VM, no
   language version manager, no virtualenv. The systemd unit just
-  references `/usr/local/bin/mpd`.
+  references the binary by absolute path under the dev user's home.
 - **Same source on both sides.** The Swift compiler runs on macOS and
   Linux; Foundation works on both. The platform split is a single
   `#if os(macOS)` / `#if os(Linux)` on a handful of files under
