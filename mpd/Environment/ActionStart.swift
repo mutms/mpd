@@ -3,8 +3,7 @@
 
 import Foundation
 
-#if os(Linux)
-extension Mpd.Environment.Action.Start {
+extension Mpd.Action.Start {
     static func preflight(in command: GlobalCommand, machineName _: String) throws {
         _ = command
         try CommandPreflight.check(commandName: "mpd --start", requiredNames: [
@@ -40,7 +39,7 @@ extension Mpd.Environment.Action.Start {
 
         // Verify DNS resolution health.
         step("DNS resolution")
-        Mpd.Environment.Integration.verifyDNS()
+        Mpd.Integration.verifyDNS()
 
         // Restore runtimes that had running projects before the last shutdown.
         let runtimesToRestore = Set(
@@ -73,4 +72,3 @@ extension Mpd.Environment.Action.Start {
         """)
     }
 }
-#endif

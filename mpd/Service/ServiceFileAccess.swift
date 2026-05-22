@@ -11,7 +11,7 @@
 //   2. ssh / scp / sftp — for ad-hoc file access from the dev's laptop.
 //      Pubkey-only, single user (`$EXTUSER`), no sudo. Listens only on the
 //      internal podman network (no -p mapping), so the SSH endpoint is
-//      reachable solely via the WireGuard tunnel (mpd-desktop) or the
+//      reachable solely via the
 //      laptop→VM static route (mpd-machine).
 //
 // Mounts the data volume at `/srv` (no host overlay on either mode). Backup
@@ -22,7 +22,6 @@
 // Authorized keys are sourced from `$HOME/.ssh/authorized_keys` on machine
 // (cloud-init populated it with the dev's laptop pubkey). Bind-mounted
 // read-only into the container so a laptop ssh works out of the box.
-// Desktop SSH wiring is future work.
 
 import Foundation
 
@@ -54,22 +53,19 @@ extension Mpd.Service.FileAccess {
     ]
 
     /// Mount args. The data volume is always at /srv (so `/srv/backups/` is a
-    /// volume subdirectory, identical on Desktop and Machine). On Linux we
-    /// additionally bind in the host's authorized_keys read-only so SSH works
-    /// on first boot.
+    /// volume subdirectory). The VM user's `authorized_keys` is bind-mounted
+    /// read-only so SSH into fileaccess works on first boot.
     private static func mountArgs(extuser: String, hostHome: String) -> [String] {
         var args: [String] = [
             "-v", "\(Mpd.dataVolume):/srv",
             "-v", "\(Mpd.Core.State.fileAccessHostKeysDir):/etc/ssh/keys",
         ]
-#if os(Linux)
         if !extuser.isEmpty, !hostHome.isEmpty {
             args += [
                 "-v",
                 "\(hostHome)/.ssh/authorized_keys:/home/\(extuser)/.ssh/authorized_keys:ro",
             ]
         }
-#endif
         return args
     }
 
@@ -100,7 +96,7 @@ extension Mpd.Service.FileAccess {
 
         Mpd.Podman.removeIfOutdated(containerName, labels: [revisionLabel: revision])
 
-        let identity = Mpd.Environment.detectUserAndUID()
+        let identity = Mpd.detectUserAndUID()
         let hostHome = ProcessInfo.processInfo.environment["HOME"] ?? ""
 
         if !Mpd.Podman.exists(containerName) {
@@ -160,8 +156,7 @@ extension Mpd.Service.FileAccess {
         ok("fileaccess running.")
     }
 
-    /// Stop the fileaccess container (called by --stop on desktop; machine
-    /// powers off the whole VM so this isn't reached there).
+    /// Stop the fileaccess container (not used).
     static func stop() throws {
         guard Mpd.Podman.exists(containerName) else { return }
         guard Mpd.Podman.running(containerName) else { return }

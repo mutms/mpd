@@ -33,22 +33,11 @@ extension Mpd.Service.Dnsmasq {
     /// corporate DNS, on a home LAN the router, etc. — no hardcoded
     /// public DNS, no MPD_DNS_UPSTREAM env var.
     ///
-    /// Per-platform because the Podman machine VM (mpd-desktop) and the
-    /// Trixie sandbox VM (mpd-machine) use different link managers:
-    ///
-    /// - **mpd-desktop**: Podman machine is FCOS with NetworkManager and
-    ///   no systemd-resolved. `/etc/resolv.conf` is the real file written
-    ///   by NM, pointing at gvproxy (`192.168.127.1`), which forwards to
-    ///   the macOS host's upstream resolvers.
     /// - **mpd-machine**: every supported platform delivers a host with
     ///   systemd-resolved active. `/etc/resolv.conf` is a stub symlink to
     ///   `127.0.0.53`; the real per-link upstreams live at
     ///   `/run/systemd/resolve/resolv.conf`.
-    #if os(macOS)
-    private static let hostResolvConfPath = "/etc/resolv.conf"
-    #else
     private static let hostResolvConfPath = "/run/systemd/resolve/resolv.conf"
-    #endif
 
     // Label keys
     private static let revisionLabel       = "mpd.service.revision"
@@ -61,7 +50,7 @@ extension Mpd.Service.Dnsmasq {
         let fm = FileManager.default
 
         // Remove outdated container (version or CA fingerprint mismatch → rebuild)
-        let caFP = Mpd.Environment.fileFingerprint("\(Mpd.Environment.confCARootDir)/rootCA.pem")
+        let caFP = Mpd.fileFingerprint("\(Mpd.confCARootDir)/rootCA.pem")
 
         Mpd.Podman.removeIfOutdated(containerName, labels: [
             revisionLabel: revision,
@@ -69,7 +58,7 @@ extension Mpd.Service.Dnsmasq {
         ])
 
         step("Service: dnsmasq DNS resolver")
-        
+
         let assetsDir = try Mpd.Core.Assets.path()
         let dnsmasqConf = "\(assetsDir)/services/dnsmasq/dnsmasq.conf"
         let dnsmasqDir = Mpd.Core.State.dnsmasqDir

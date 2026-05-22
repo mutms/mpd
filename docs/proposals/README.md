@@ -16,12 +16,9 @@ Difference from sibling docs:
 
 - [`macos-host-state-and-wireguard.md`](macos-host-state-and-wireguard.md) —
   Two intertwined architectural decisions for the macOS host:
-  three-directory state model (`conf/` / `~/.mpd-<product>/` /
-  `~/.mpd/`), and WireGuard-based networking that eliminates daily
-  sudo. **Top priority** — anchors `mpd-virt`'s networking story.
-  mpd-desktop alignment is deferred (drops multi-machine support,
-  adopts the same SSH alias / container hostname convention as
-  mpd-machine).
+  state model (`~/.mpd/conf/` + `~/.mpd-virt/`) and WireGuard-based
+  networking that eliminates daily sudo. Anchors `mpd-virt`'s
+  networking story.
 - [`mpd-virt.md`](mpd-virt.md) — `mpd-virt`, a new host-side Swift
   binary that replaces the bash under `setup/macos/lib/` (and the
   planned-but-not-built bash twins for Linux/KVM and WSL/Hyper-V).

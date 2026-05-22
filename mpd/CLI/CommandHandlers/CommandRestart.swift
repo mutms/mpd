@@ -6,6 +6,6 @@ import Foundation
 extension GlobalCommand {
     func handleRestart() throws {
         print("\n\u{001B}[1mmpd --restart\u{001B}[0m\n")
-        try Mpd.Environment.Action.Restart.execute()
+        try Mpd.Action.Restart.execute()
     }
 }

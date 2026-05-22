@@ -8,8 +8,7 @@
 
 import Foundation
 
-#if os(Linux)
-extension Mpd.Environment.Action.Restart {
+extension Mpd.Action.Restart {
     static func execute() throws {
         let status = Mpd.Core.State.readStatus()
         guard !status.activeMachine.isEmpty else {
@@ -30,10 +29,9 @@ extension Mpd.Environment.Action.Restart {
             return
         }
 
-        let rc = Mpd.Environment.HostExec.run(["sudo", "systemctl", "reboot"])
+        let rc = Mpd.HostExec.run(["sudo", "systemctl", "reboot"])
         if rc != 0 {
             throw RuntimeError("Failed to reboot VM (sudo systemctl reboot returned \(rc)).")
         }
     }
 }
-#endif

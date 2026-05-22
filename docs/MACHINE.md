@@ -10,9 +10,7 @@ an IDE, a browser, an AI agent, a terminal — and SSH-or-https into
 the VM.
 
 For the simpler "live entirely inside the VM, host stays untouched"
-flow, see the [Sandbox VM mode](../../setup/sandbox/README.md). For
-the macOS-native flow without a hypervisor of your own, see
-[mpd-desktop](../desktop/README.md). For the full pitch (why a VM,
+flow, see the [Sandbox VM mode](../../setup/sandbox/README.md). For the full pitch (why a VM,
 why a sandbox, why SSH-everywhere), see [../VISION.md](../VISION.md).
 This page is the "what is mpd-machine, when do I pick it, how do I
 get a VM" reference.
@@ -42,10 +40,6 @@ Pick this mode if any of these apply:
 If your host isn't one of the matched-host targets (you're on Fedora,
 or any other Linux flavor, or you'd rather work inside the VM
 window), pick [Sandbox VM](../../setup/sandbox/README.md) instead.
-
-For *native-macOS AI/GPU experiments* (Metal, MLX, Core ML), prefer
-[mpd-desktop](../desktop/README.md) — same mpd infrastructure but
-the `mpd` binary runs natively on macOS so the host GPU is in scope.
 
 ## Where mpd's invasive changes live — inside the VM
 
@@ -102,41 +96,27 @@ lifecycle, SSH workflow), see [USAGE.md](USAGE.md).
 ## Setup info and client artifacts
 
 - `mpd --setup` is idempotent and can be re-run any time.
-- `mpd --setup-info` prints the platform identity plus a pointer to
-  the platform's bootstrap README (where the host-side trust + route +
-  resolver setup actually lives). Pipeable from your laptop:
-  `ssh user@vm "mpd --setup-info" > SETUP.txt`.
 - Project backups travel via fileaccess:
   `scp fileaccess.service.mpd.test:/srv/backups/<file>`. (Backup verbs
   themselves are on the [roadmap](../ROADMAP.md); today the runtime
   writes to `/srv/backups/`, you pull off via fileaccess.)
-- Private keys are never printed to terminal output.
-  `~/Developer/mpd/conf/` is canonical secret storage.
+- Private keys are never printed to terminal output. `~/.mpd/conf/`
+  (in the VM) is the canonical secret storage.
 
 ## Operational constraints
 
 - No prebuilt binaries are stored in git; `mpd` is built in-VM.
-- VM IP is recorded in `~/Developer/mpd/conf/platform.env` (set by
-  the bootstrap script; the macOS+Parallels bootstrap prompts for
-  the last IP octet on the Parallels Shared network with default
-  `155`, see [`setup/macos/README.md`](../../setup/macos/README.md#why-the-vm-ip-is-pinned)).
-- Laptop-side route + DNS resolver + CA trust are configured
-  automatically by every matched-host setup script
-  (macOS+Parallels `setup.command`, Ubuntu+KVM `setup.sh`,
-  Windows+Hyper-V `setup.cmd`). No manual host-side commands required.
+- Host-side host networking (WireGuard tunnel, CA trust) is set up by
+  the separate `mpd-virt` orchestrator (own repo) on the macOS host
+  before `mpd --setup` runs inside the VM.
 
 ## Directory model (in the VM)
 
 - `~/Developer/mpd/bin/` — compiled `mpd`
-- `~/Developer/mpd/conf/` — persistent CA + service cert material
+- `~/.mpd/conf/` — persistent CA + service cert material
   (`caroot/`, `service/`) + `platform.env`
-- `~/.mpd/` — runtime state/cache only (recreated by `mpd --setup`,
-  removed by `mpd --uninstall`)
-
-`conf/wireguard/` is **not** used on machine mode; if a legacy
-WG-based mpd-machine version was previously installed,
-`mpd --uninstall` cleans up the directory and disables the legacy
-`wg-quick@wg0.service` if present.
+- `~/.mpd/` (other subdirs) — runtime state/cache (recreated by
+  `mpd --setup`)
 
 For full directory-contract detail (including data-volume layout under
 `/srv/`), see [`../ARCHITECTURE.md` §4](../ARCHITECTURE.md#4-repository-directory-contract).

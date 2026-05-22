@@ -1,48 +1,40 @@
 // mpd — Mpd.Core.Platform namespace
-// Reads/writes ~/Developer/mpd/conf/platform.env — the host-side identity file
-// that records *which* kind of mpd setup this is and where it lives:
-//   MPD_PLATFORM=desktop | macos | linux | windows | sandbox
-//   MPD_VM_IP=<ip>           (empty for desktop and sandbox)
+// Reads/writes ~/.mpd/conf/platform.env — the in-VM identity file that
+// records which kind of mpd setup this is:
+//   MPD_PLATFORM=machine | sandbox
+//   MPD_VM_IP=<ip>                  (empty for sandbox)
 //   MPD_INSTANCE_SUFFIX=<-suffix>   (e.g. "-161"; empty for the unsuffixed
-//                                    instance — used for hostname disambiguation
-//                                    when running concurrent VMs / machines)
+//                                    instance — used for hostname
+//                                    disambiguation when running concurrent
+//                                    VMs)
 //
 // Writers:
-//   - mpd-desktop: Mpd.Core.Platform.ensureWritten(...) at the start of setup,
-//     bootstraps the file on first run with platform=desktop, vm_ip="".
-//   - mpd-machine via macos/create-vm.sh: writes the file via SSH before
-//     `mpd --setup` runs in the VM (Parallels template).
-//   - mpd-machine via linux/lib/create-vm.sh: same, via SSH.
-//   - mpd-machine via windows: same, via WinRM.
-//   - mpd-machine via sandbox/lib/provision.sh: writes the file with
+//   - mpd-machine via the host-side `mpd-virt` orchestrator (separate repo):
+//     writes the file over SSH before `mpd --setup` runs in the VM.
+//   - sandbox via setup/sandbox/lib/provision.sh: writes the file with
 //     platform=sandbox before `mpd --setup` runs inside the Debian VM.
 //
 // Reader: mpd's setup actions and helpers that need to know the platform
-// or the VM IP at run-time. Lives under conf/ so it survives
-// `mpd --uninstall` (which wipes ~/.mpd/ but leaves ~/Developer/mpd/conf/
-// alone).
+// or the VM IP at run-time. Lives under ~/.mpd/conf/ (persistent identity).
 
 import Foundation
 
 extension Mpd.Core.Platform {
 
     enum PlatformKind: String {
-        case desktop = "desktop"
-        case macos   = "macos"
-        case linux   = "linux"
-        case windows = "windows"
+        case machine = "machine"
         case sandbox = "sandbox"
     }
 
     struct Identity {
         let platform: PlatformKind
-        let vmIP: String          // empty for desktop and sandbox
+        let vmIP: String
         let instanceSuffix: String  // e.g. "-161", or "" — leading dash included
     }
 
-    /// Path to ~/Developer/mpd/conf/platform.env.
+    /// Path to ~/.mpd/conf/platform.env.
     static var path: String {
-        "\(Mpd.Environment.confDir)/platform.env"
+        "\(Mpd.confDir)/platform.env"
     }
 
     /// Load the identity file; throws with a fix-it message if missing.
@@ -51,19 +43,16 @@ extension Mpd.Core.Platform {
         guard fm.fileExists(atPath: path) else {
             throw RuntimeError(
                 "Missing \(path).\n" +
-                "Run the matching bootstrap script first:\n" +
-                "  • sandbox VM: setup/sandbox/take-over-sandbox-vm.sh\n" +
-                "  • macOS:      setup/macos/setup.command\n" +
-                "  • Linux:      setup/linux/setup.sh\n" +
-                "  • Windows:    setup/windows/setup.cmd\n" +
-                "  • desktop:    re-run `mpd --setup` (will write the file).")
+                "Run the matching bootstrap first:\n" +
+                "  • sandbox VM:  setup/sandbox/take-over-sandbox-vm.sh\n" +
+                "  • mpd-machine: the host-side `mpd-virt` orchestrator")
         }
 
         let raw = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
         let kv = parseKV(raw)
 
         guard let platformRaw = kv["MPD_PLATFORM"], let platform = PlatformKind(rawValue: platformRaw) else {
-            throw RuntimeError("\(path): MPD_PLATFORM missing or invalid (expected: desktop, macos, linux, windows, sandbox).")
+            throw RuntimeError("\(path): MPD_PLATFORM missing or invalid (expected: machine, sandbox).")
         }
         let vmIP = kv["MPD_VM_IP"] ?? ""
         let instanceSuffix = kv["MPD_INSTANCE_SUFFIX"] ?? ""
@@ -79,13 +68,13 @@ extension Mpd.Core.Platform {
         "MPD_PLATFORM", "MPD_VM_IP", "MPD_INSTANCE_SUFFIX",
     ]
 
-    /// Write the identity file. Used by mpd-desktop's setup bootstrap and by
+    /// Write the identity file. Used by
     /// `updateInstanceSuffix`. Idempotent — overwrites the managed keys with
     /// the supplied values; preserves any other keys (e.g. `MPD_NETWORK_*`)
     /// that bootstrap scripts may have written.
     static func write(platform: PlatformKind, vmIP: String, instanceSuffix: String) throws {
         let fm = FileManager.default
-        try fm.createDirectory(atPath: Mpd.Environment.confDir, withIntermediateDirectories: true)
+        try fm.createDirectory(atPath: Mpd.confDir, withIntermediateDirectories: true)
 
         // Collect non-managed keys from the existing file, in original order.
         var preserved: [(key: String, value: String)] = []
@@ -104,11 +93,11 @@ extension Mpd.Core.Platform {
 
         var body = """
             # mpd platform identity — written by setup, read at runtime.
-            # Lives under conf/ so it survives `mpd --uninstall`.
+            # Lives under conf/.
             MPD_PLATFORM=\(platform.rawValue)
             MPD_VM_IP=\(vmIP)
             # Disambiguates concurrent VMs/machines. Auto-derived from the
-            # host name (mpd-machine-<X> or mpd-desktop-<X>) at --setup; edit
+            # host name mpd-machine-<X> at --setup; edit
             # to override. Used as the hostname suffix on runtime containers,
             # e.g. mpd-runtime-php\(instanceSuffix.isEmpty ? "" : "<suffix>").
             MPD_INSTANCE_SUFFIX=\(instanceSuffix)
@@ -123,8 +112,8 @@ extension Mpd.Core.Platform {
         try body.write(toFile: path, atomically: true, encoding: .utf8)
     }
 
-    /// Bootstrap helper for mpd-desktop's setup: write the file with the known
-    /// desktop values if absent, leave any existing file untouched.
+    /// Bootstrap helper: write the file with the known
+    /// if absent, leave any existing file untouched.
     static func ensureWritten(platform: PlatformKind, vmIP: String,
                               instanceSuffix: String) throws {
         if FileManager.default.fileExists(atPath: path) { return }

@@ -4,8 +4,7 @@ Index for the `mpd` documentation tree. New here? Start with the top-level
 [`../README.md`](../README.md) for the pitch and the mode picker, then
 come back here once you've decided which mode to install.
 
-Three modes — Sandbox VM, **mpd-machine** (host-integrated cloud-init
-VM), **mpd-desktop** (native Podman Desktop on macOS). Same CLI, same
+Two modes — Sandbox VM, **mpd-machine**. Same CLI, same
 URLs, switch without relearning.
 
 ## Reading order
@@ -22,12 +21,10 @@ If you're installing mpd for the first time:
 
 [`VISION.md`](VISION.md) covers the origin and design principles.
 
-On macOS the three modes settle into three distinct workflows:
+On macOS the three modes settle into two distinct workflows:
 sandbox for experiments and Linux testing, mpd-machine via Parallels
-for daily-driver Moodle work, mpd-desktop as the native-GPU AI
-playground. Linux and Windows hosts get the first two; the
-AI-playground role is macOS-only. [`VISION.md`](VISION.md)
-§"How the three modes settle into daily roles" has the full framing.
+for daily-driver Moodle work. [`VISION.md`](VISION.md)
+§"How the two modes settle into daily roles" has the full framing.
 
 ## Mode 1 — Sandbox VM (experiments + Linux testing; "live inside the VM")
 
@@ -58,23 +55,6 @@ the runtime container inside the VM.
   - [`../setup/linux/README.md`](../setup/linux/README.md) — libvirt/KVM on Ubuntu
   - [`../setup/windows/README.txt`](../setup/windows/README.txt) — Hyper-V on Windows
 
-## Mode 3 — mpd-desktop (native macOS, AI/GPU playground; native binary + WG tunnel)
-
-`mpd` is a native macOS binary you run directly in your local
-Terminal — no SSH hop. macOS browser sees `*.mpd.test` via a
-WireGuard tunnel; Podman Desktop manages the Linux container machine
-in the background. No hypervisor to drive yourself. Apple Silicon
-GPU is in scope both ways: native-macOS code (Metal, MLX, Core ML,
-native `llama.cpp`, …) hits the host GPU directly, *and* Podman
-Desktop's Apple Silicon backend (libkrun + Virtualization.framework)
-passes the host GPU into the Linux container machine so container
-workloads get acceleration too.
-
-- [`desktop/README.md`](desktop/README.md) — what mpd-desktop is, when to pick it, prerequisites
-- [`desktop/USAGE.md`](desktop/USAGE.md) — install, setup, first project, day-to-day
-- [`desktop/NETWORKING.md`](desktop/NETWORKING.md) — gvproxy / WireGuard / dnsmasq design
-- [`desktop/SECURITY.md`](desktop/SECURITY.md) — trust boundaries
-
 ## Vision and direction
 
 - [`VISION.md`](VISION.md) — *Why mpd* — origin lineage, design principles, what working with mpd feels like
@@ -90,10 +70,8 @@ workloads get acceleration too.
 
 - `~/Developer/mpd/bin/` — local built binary output
 - `~/Developer/mpd/conf/` — persistent local trust/network material
-  (`caroot/`, `service/`, `temp/`, `platform.env`; plus `wireguard/`
-  on mpd-desktop)
-- `~/.mpd/` — runtime state and cache (recreated by `mpd --setup`,
-  removed by `mpd --uninstall`)
+  (`caroot/`, `service/`, `temp/`, `platform.env`)
+- `~/.mpd/` — runtime state and cache (recreated by `mpd --setup`)
 
 Project backups live inside the data volume at `/srv/backups/` and are
 pulled off via fileaccess SSH/scp before wiping. Full contract:

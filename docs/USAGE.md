@@ -1,13 +1,7 @@
 # mpd-machine — Usage
 
 Operational handbook for `mpd-machine`: bootstrap, first project,
-day-to-day. Same shape and same CLI as
-[`../desktop/USAGE.md`](../desktop/USAGE.md) — only the host
-integration differs.
-
-For the "what is mpd-machine, when do I pick it" framing, see
-[README.md](README.md). For the long-form pitch and design rationale,
-see [../VISION.md](../VISION.md).
+day-to-day.
 
 ## Bootstrap (one-time)
 
@@ -67,9 +61,8 @@ Idempotent — safe to re-run any time. Walks you through:
   are reachable from any new shell
 - a final DNS sanity check
 
-Run `mpd --setup-info` any time to print the platform identity plus a
-pointer to the platform's bootstrap README (where the host-side trust
-+ route + resolver setup actually lives, when there is one).
+Host-side trust + WireGuard setup lives in the separate `mpd-virt`
+orchestrator (own repo); see its README for the host-side flow.
 
 ## Hooking up your laptop (laptop-driven platforms only)
 
@@ -273,13 +266,11 @@ care about.
 ```bash
 mpd                              # interactive TUI
 mpd --status                     # text status of services + projects
-mpd --setup-info                 # reprint laptop-side recipe
 
 mpd --start                      # reconcile current → requested (start runtimes/projects with state=running)
 mpd --stop                       # graceful DB shutdown via EventMpdPreStop, then sudo systemctl poweroff
 mpd --restart                    # graceful stop, then sudo systemctl reboot; mpd auto-starts on boot
 mpd --check-hooks                # cross-reference asset hook dirs against the Event catalogue
-mpd --uninstall                  # remove ~/.mpd state, keep conf/
 
 mpd list                         # list all projects (default)
 mpd list runtimes                # list runtime containers
@@ -368,20 +359,14 @@ A few flavors, increasing severity:
 mpd --runtime-delete php         # nuke a runtime, keep projects + DBs
                                  # (the data volume keeps /srv/projects, /srv/dbs)
 
-mpd --uninstall                  # stops mpd, removes ~/.mpd state
-                                 # keeps ~/Developer/mpd/conf/ (CA, certs)
-
-# Full reset, in the VM:
-mpd --uninstall && rm -rf ~/Developer/mpd/conf/
+# Manual in-VM reset (no --uninstall verb on mpd):
+rm -rf ~/.mpd                    # blow away state + identity in the VM
 
 # Nuke the VM itself: hypervisor's VM-delete operation (or, for sandbox,
 # revert to your pre-take-over snapshot), then re-bootstrap from any
-# setup/<name>/.
+# setup/<name>/. On macOS hosts: `mpd-virt uninstall <octet>` (separate
+# orchestrator binary, own repo) handles the host side cleanly.
 ```
-
-`conf/` survives `--uninstall` by design — same CA tomorrow means same
-cert trust tomorrow. Wipe the VM only when you genuinely want to start
-from a blank disk.
 
 ## Reference
 

@@ -41,7 +41,7 @@ extension Mpd.Service.Portal {
         step("Service: portal at https://mpd.test")
 
         // Remove outdated container (version, CA fingerprint, or machine mismatch → rebuild)
-        let caFP = Mpd.Environment.fileFingerprint("\(Mpd.Environment.confCARootDir)/rootCA.pem")
+        let caFP = Mpd.fileFingerprint("\(Mpd.confCARootDir)/rootCA.pem")
         let machineName = Mpd.Core.State.activeMachine()
         Mpd.Podman.removeIfOutdated(containerName, labels: [
             revisionLabel: revision,
@@ -51,8 +51,8 @@ extension Mpd.Service.Portal {
 
         let assetsDir = try Mpd.Core.Assets.path()
         let machineDir = Mpd.Core.State.machineDir()
-        let serviceCert = "\(Mpd.Environment.confServiceDir)/cert.pem"
-        let serviceKey = "\(Mpd.Environment.confServiceDir)/key.pem"
+        let serviceCert = "\(Mpd.confServiceDir)/cert.pem"
+        let serviceKey = "\(Mpd.confServiceDir)/key.pem"
 
         let portalDir = "\(assetsDir)/services/portal"
         let portalWWW = "\(portalDir)/www"
@@ -90,13 +90,8 @@ extension Mpd.Service.Portal {
         // request — refreshes pick up changes immediately.
         //   • mpd-machine: VM hostname (cloud-init set this to mpd-machine-NN
         //     on the cloud-init platforms; sandbox uses mpd-machine-sandbox).
-        //   • mpd-desktop: machineName (mpd-desktop[-suffix] from State).
         let displayName: String
-        if let identity = try? Mpd.Core.Platform.load(), identity.platform == .desktop {
-            displayName = machineName
-        } else {
-            displayName = ProcessInfo.processInfo.hostName
-        }
+        displayName = ProcessInfo.processInfo.hostName
         try? displayName.write(
             toFile: "\(portalStateDir)/display-name.txt",
             atomically: true,
@@ -240,12 +235,12 @@ extension Mpd.Service.Portal {
             let keyPath = "\(certDir)/key.pem"
 
             if mustRegenerateAllCerts || !fm.fileExists(atPath: certPath) || !fm.fileExists(atPath: keyPath) {
-                try Mpd.Environment.Certificate.generateCert(
+                try Mpd.Certificate.generateCert(
                     sans: [service.dns],
                     certPath: certPath,
                     keyPath: keyPath,
-                    caKeyPath: "\(Mpd.Environment.confCARootDir)/rootCA-key.pem",
-                    caCertPath: "\(Mpd.Environment.confCARootDir)/rootCA.pem",
+                    caKeyPath: "\(Mpd.confCARootDir)/rootCA-key.pem",
+                    caCertPath: "\(Mpd.confCARootDir)/rootCA.pem",
                     certsDir: certOpsDir
                 )
                 changed = true

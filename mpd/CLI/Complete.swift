@@ -76,8 +76,6 @@ extension Mpd.Completion {
         "--setup",
         "--start",
         "--stop",
-        "--uninstall",
-        "--setup-info",
         "--runtime-create",
         "--runtime-start",
         "--runtime-stop",

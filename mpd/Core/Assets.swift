@@ -10,7 +10,7 @@ extension Mpd.Core.Assets {
 
     /// Resolve the assets directory in the source checkout.
     static func path() throws -> String {
-        let p = Mpd.Environment.assetsDir
+        let p = Mpd.assetsDir
         guard FileManager.default.fileExists(atPath: "\(p)/runtime-base") else {
             throw RuntimeError("Assets not found at \(p) — clone mpd to ~/Developer/mpd.")
         }
@@ -36,7 +36,7 @@ extension Mpd.Core.Assets {
     // MARK: - zsh
 
     private static func installZshCompletion() {
-        let homeDir = Mpd.Environment.homeDir
+        let homeDir = Mpd.homeDir
         let completionsDir = "\(homeDir)/.zsh/completions"
         let completionFile = "\(completionsDir)/_mpd"
         let zshrcPath = "\(homeDir)/.zshrc"
@@ -81,7 +81,7 @@ extension Mpd.Core.Assets {
     // MARK: - bash
 
     private static func installBashCompletion() {
-        let homeDir = Mpd.Environment.homeDir
+        let homeDir = Mpd.homeDir
         let dropDir = "\(homeDir)/.bash_completion.d"
         let dropFile = "\(dropDir)/mpd"
         let bashrcPath = "\(homeDir)/.bashrc"
@@ -105,7 +105,7 @@ extension Mpd.Core.Assets {
         ok("bash completion installed at ~/.bash_completion.d/mpd")
 
         // Source the drop-in from .bashrc once. Sentinel comment makes the
-        // block idempotent and easy to remove on uninstall.
+        // block idempotent.
         let sentinel = "# mpd completions (added by mpd --setup)"
         let currentBashrc = (try? String(contentsOfFile: bashrcPath, encoding: .utf8)) ?? ""
         if !currentBashrc.contains(sentinel) {

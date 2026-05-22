@@ -8,7 +8,7 @@ Remote-SSH) and find PHP, Composer, Node, and your AI agent (Claude Code,
 Codex, Cursor, Aider) waiting for you there. Project dependencies
 and the AI itself stay confined to the runtime.
 
-Three modes, distinguished by where you sit and where `mpd` runs:
+Two modes, distinguished by where you sit and where `mpd` runs:
 
 - **Sandbox VM** — full GNOME desktop inside the VM. GNOME terminal
   runs `mpd`, GNOME Firefox visits `mpd.test`, GNOME-launched VS Code
@@ -17,20 +17,16 @@ Three modes, distinguished by where you sit and where `mpd` runs:
   AI-driven workloads. One command (`demo moodle v5.2.0`) gets you a
   fully-installed Moodle site for kicking the tires. Recommended
   starting point.
-- **`mpd-machine`** — automated headless VM. You stay on your host
-  (macOS / Ubuntu / Windows): your host browser visits `*.mpd.test`
-  directly (via the route + DNS the bootstrap configured); your host
-  terminal SSH'es into the VM to run the `mpd` CLI; your IDE
+- **`mpd-machine`** — automated headless VM driven from your host
+  via the companion `mpd-virt` orchestrator (Parallels Desktop Pro on
+  macOS is the primary target; KVM/Hyper-V are speculative). Your
+  host browser visits `*.mpd.test` directly over WireGuard; your
+  host terminal SSH'es into the VM to run the `mpd` CLI; your IDE
   (PHPStorm Gateway / VSCode Remote-SSH) SSH'es one hop further
   into the runtime container inside the VM.
-- **`mpd-desktop`** — `mpd` is a native macOS binary you run in your
-  local Terminal — no SSH hop to a VM. macOS browser sees `*.mpd.test`
-  via a local WireGuard tunnel; Podman Desktop manages the Linux
-  container machine in the background; your IDE SSH'es straight
-  into the runtime container.
 
 Same CLI surface, same `*.mpd.test` URLs, same per-project
-configuration model. Switch between modes without relearning.
+configuration model.
 
 ## What you get
 
@@ -56,16 +52,16 @@ configuration model. Switch between modes without relearning.
 - **Sandbox VM** (`mpd-machine`) — snapshottable and disposable;
   revert to a known-good snapshot or rebuild from scratch when needed.
 
-## Three modes
+## Two modes
 
-|                      | **Sandbox VM**                                                                           | **`mpd-machine`**                                                   | **`mpd-desktop`**                                         |
-|----------------------|------------------------------------------------------------------------------------------|---------------------------------------------------------------------|-----------------------------------------------------------|
-| **Where `mpd` runs** | Inside the VM                                                                            | Inside a headless VM                                                | Natively on macOS                                         |
-| **Where you sit**    | Inside the VM (full GNOME)                                                               | On your host (browser + SSH-into-VM)                                | On your host (Terminal + browser)                         |
-| **Host OS**          | Any (UTM, Parallels, Hyper-V, VirtualBox, virt-manager, VMware…)                         | macOS, Ubuntu, Windows                                              | macOS only                                                |
-| **Bootstrap**        | Install Debian Trixie + GNOME, snapshot, run one script in the VM                        | `setup.command` / `setup.sh` / `setup.cmd`                          | Install Podman Desktop + WireGuard, `mpd --setup`         |
-| **Network**          | Internal to the VM (host untouched)                                                      | Plain L3 route + DNS resolver on host                               | gvproxy + WireGuard tunnel                                |
-| **Best for**         | Experiments + Linux testing; throwaway VM with snapshot/revert as the safety net         | Daily-driver work — laptop browser/IDE see `*.mpd.test` directly    | AI/GPU playground — Apple Silicon GPU is in scope for both native macOS code (Metal/MLX/Core ML) and Podman Desktop containers (via libkrun + Virtualization.framework) |
+|                      | **Sandbox VM**                                                                           | **`mpd-machine`**                                                   |
+|----------------------|------------------------------------------------------------------------------------------|---------------------------------------------------------------------|
+| **Where `mpd` runs** | Inside the VM                                                                            | Inside a headless VM                                                |
+| **Where you sit**    | Inside the VM (full GNOME)                                                               | On your host (browser + SSH-into-VM)                                |
+| **Host OS**          | Any (UTM, Parallels, Hyper-V, VirtualBox, virt-manager, VMware…)                         | macOS (primary) — Linux/Windows speculative                         |
+| **Bootstrap**        | Install Debian Trixie + GNOME, snapshot, run one script in the VM                        | `mpd-virt setup` (separate orchestrator binary on the host)         |
+| **Network**          | Internal to the VM (host untouched)                                                      | WireGuard tunnel host↔VM                                            |
+| **Best for**         | Experiments + Linux testing; throwaway VM with snapshot/revert as the safety net         | Daily-driver work — host browser/IDE see `*.mpd.test` directly      |
 
 Same CLI surface, same `*.mpd.test` URLs, same per-project configuration
 model.
@@ -100,12 +96,6 @@ CA trust automatically. Matched-host bootstrap per OS:
 | Ubuntu (libvirt/KVM)          | [setup/linux/README.md](setup/linux/README.md)           |
 | Windows (Hyper-V)             | [setup/windows/README.txt](setup/windows/README.txt) |
 
-### 3. `mpd-desktop` (native Podman Desktop on macOS)
-
-For macOS users already invested in Podman Desktop, or who'd rather
-not manage a hypervisor explicitly: see
-[docs/desktop/USAGE.md](docs/desktop/USAGE.md).
-
 ## Prerequisites at a glance
 
 **Sandbox VM**
@@ -114,34 +104,23 @@ not manage a hypervisor explicitly: see
   snapshot before running the take-over script.
 
 **`mpd-machine`**
-- A matched host: macOS+UTM, Ubuntu+KVM, or Windows+Hyper-V.
-- The platform's setup script (`setup.command` / `setup.sh` /
-  `setup.cmd`) does VM creation + cloud-init + repo clone + build +
-  host-side networking (route, DNS resolver, CA trust) in one shot.
-- Host changes are scoped (a route to the container subnet, a DNS
-  resolver drop-in for `*.mpd.test`, mpd's local CA in the trust
-  store) and reversible via the matching `uninstall` script —
-  designed to coexist with normal daily-driver use. The Debian
-  Trixie VM is the part dedicated to mpd; wipe-and-rebuild lives
-  there.
-
-**`mpd-desktop`**
-- macOS on Apple Silicon
-- [Podman Desktop](https://podman-desktop.io/) with a rootful machine
-- [WireGuard for macOS](https://apps.apple.com/app/wireguard/id1451685025)
-- Xcode command-line tools (for building `bin/mpd`)
+- A matched host: macOS + Parallels Desktop Pro (primary) — Linux/KVM
+  and Windows/Hyper-V are speculative future targets.
+- The `mpd-virt` orchestrator binary on the host (separate repository)
+  does VM creation + cloud-init + repo clone + build + host-side
+  networking (WireGuard, CA trust) in one shot.
+- Host changes are scoped (WireGuard tunnel to the container subnet,
+  mpd's local CA in the trust store) and reversible via
+  `mpd-virt uninstall`.
 
 ## Repository layout
 
 - `bin/` — local built binaries (`bin/mpd`)
-- `conf/` — persistent local trust/network material (CA, service certs,
-  WireGuard keys on mpd-desktop, `platform.env`)
 - `mpd/` — Swift control-plane sources
 - `assets/` — runtime/service/sidecar definitions and shell scripts
 - `setup/` — bootstrap scripts (sandbox + matched-host platforms)
 - `docs/` — full documentation tree
-- `~/.mpd/` — runtime state and cache (recreated by `mpd --setup`,
-  removed by `mpd --uninstall`)
+- `~/.mpd/` — runtime state and cache (recreated by `mpd --setup`)
 
 ## Documentation
 

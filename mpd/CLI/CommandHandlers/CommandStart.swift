@@ -5,6 +5,6 @@ import Foundation
 
 extension GlobalCommand {
     func handleStart() throws {
-        try Mpd.Environment.Action.Start.execute()
+        try Mpd.Action.Start.execute()
     }
 }

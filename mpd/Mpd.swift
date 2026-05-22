@@ -2,6 +2,11 @@
 // Open this file to see the full API surface.
 // Each nested enum is implemented in the matching .swift file via extension.
 //
+//   Mpd.Action.{Setup,Start,Stop,Restart,Status}  lifecycle verbs        → Environment/Action*.swift
+//   Mpd.Certificate.*       CA + cert generation  → Environment/Certificate.swift
+//   Mpd.HostExec.*          Process() gateway     → Environment/HostExec.swift
+//   Mpd.Integration.*       DNS / resolver checks → Environment/Integration.swift
+//   Mpd.ShutdownUnit.*      systemd unit installer→ Environment/ShutdownUnit.swift
 //   Mpd.Runtime.*           runtime lifecycle     → Runtime/Runtime.swift
 //   Mpd.Project.*           project actions       → Runtime/Project.swift
 //   Mpd.Runtime.DB.*        DB containers         → Runtime/DB.swift
@@ -9,10 +14,16 @@
 //   Mpd.Core.Assets.*       path resolution       → Core/Assets.swift
 //   Mpd.Core.DataVolume.*   volume operations     → Core/DataVolume.swift
 //   Mpd.Core.State.*        global/machine state  → Core/CoreState.swift
+//   Mpd.Core.Platform.*     platform.env reader   → Core/Platform.swift
 //   Mpd.Podman.*            Podman CLI layer      → Util/Podman.swift
 //
+//   Top-level helpers on Mpd directly (Environment.swift + Machine.swift):
+//     paths               homeDir, mpdDir, dotMpdDir, confDir, confCARootDir,
+//                         confServiceDir, confTempDir, assetsDir, binDir
+//     identity            label, fileFingerprint, detectUserAndUID,
+//                         authorizedPublicKeys
+//
 //   Services (each owns its container lifecycle):
-//   Mpd.Service.WireGuard.*  WireGuard gateway    → Service/ServiceWireGuard.swift  (mpd-desktop only)
 //   Mpd.Service.Dnsmasq.*    DNS resolver         → Service/ServiceDnsmasq.swift
 //   Mpd.Service.Portal.*     status dashboard     → Service/ServicePortal.swift
 //   Mpd.Service.Adminer.*    DB management UI     → Service/ServiceAdminer.swift
@@ -36,7 +47,6 @@ enum Mpd {
     /// the handful of services + DBs + runtimes mpd actually creates.
     /// Address layout (all 10.163.0.x):
     ///   .1            gateway (Podman bridge)
-    ///   .2            wireguard (mpd-desktop only)
     ///   .3            dnsmasq
     ///   .4            portal
     ///   .5            fileaccess (volume tool — `podman exec` target)
@@ -46,27 +56,23 @@ enum Mpd {
     ///   .100+         runtimes (php=.100, node=.101, util=.102) — see each
     ///                 runtime's configuration.json
     /// Post-Phase 9, only true infra services remain in the global registry:
-    /// `dnsmasq`, `portal`, `adminer`, `fileaccess`, plus (mpd-desktop only)
-    /// `wireguard`. Mailpit/selenium/valkey are per-runtime sidecars now.
+    /// `dnsmasq`, `portal`, `adminer`, `fileaccess`.
+    /// Mailpit/selenium/valkey are per-runtime sidecars now.
     static let internalSubnet = "10.163.0.0/24"
 
     // MARK: - Namespaces
 
-    enum Environment {
-        enum Action {
-            enum Setup {}
-            enum Start {}
-            enum Stop {}
-            enum Restart {}
-            enum Uninstall {}
-            enum Status {}
-        }
-        enum Integration {}
-        enum PodmanMachine {}
-        enum Certificate {}
-        enum HostExec {}
-        enum WireGuardHost {}
+    enum Action {
+        enum Setup {}
+        enum Start {}
+        enum Stop {}
+        enum Restart {}
+        enum Status {}
     }
+    enum Integration {}
+    enum Certificate {}
+    enum HostExec {}
+    enum ShutdownUnit {}
     enum Runtime {
         enum DB {}
         enum State {}
@@ -86,7 +92,6 @@ enum Mpd {
 
     // Services — each file owns its container's full lifecycle.
     enum Service {
-        enum WireGuard {}
         enum Dnsmasq {}
         enum Portal {}
         enum Adminer {}
@@ -190,7 +195,6 @@ enum Mpd {
     }
 
     static let services: [ServiceDescriptor] = [
-        Service.WireGuard.descriptor,
         Service.Dnsmasq.descriptor,
         Service.Portal.descriptor,
         Service.Adminer.descriptor,

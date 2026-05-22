@@ -3,8 +3,7 @@
 
 import Foundation
 
-#if os(Linux)
-extension Mpd.Environment.Action.Stop {
+extension Mpd.Action.Stop {
     static func execute() throws {
         let status = Mpd.Core.State.readStatus()
         guard !status.activeMachine.isEmpty else {
@@ -40,10 +39,9 @@ extension Mpd.Environment.Action.Stop {
         // systemd will SIGTERM podman services (rootful containers get graceful
         // shutdown via the podman.service unit). Passwordless sudo is set up
         // by the platform bootstrap script so this doesn't prompt.
-        let rc = Mpd.Environment.HostExec.run(["sudo", "systemctl", "poweroff"])
+        let rc = Mpd.HostExec.run(["sudo", "systemctl", "poweroff"])
         if rc != 0 {
             throw RuntimeError("Failed to power off VM (sudo systemctl poweroff returned \(rc)).")
         }
     }
 }
-#endif

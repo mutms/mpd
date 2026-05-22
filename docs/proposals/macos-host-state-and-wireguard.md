@@ -1,161 +1,81 @@
 # Proposal: macOS host state model + WireGuard architecture
 
-Two intertwined architectural decisions for the macOS host side of
-mpd. They're proposed together because each one's design depends on
-the other:
+Two intertwined architectural decisions for the `mpd-virt-macos`
+binary (lives in a separate repo) that drives mpd-machine VMs on
+Parallels Desktop Pro. They're proposed together because each one's
+design depends on the other:
 
-1. **A three-directory state model** on the macOS host with clearly
+1. **A two-directory state model** on the macOS host with clearly
    named owners, lifecycles, and migration boundaries.
-2. **A WireGuard-based networking model** for both `mpd-virt` and
-   `mpd-desktop`, with persistent identity in `~/Developer/mpd/conf/`
-   and zero daily sudo on the Mac.
+2. **A WireGuard-based networking model** with persistent identity
+   in `~/.mpd/conf/` and zero daily sudo on the Mac.
 
 Together they give the macOS host an end state where:
 
-- Identity (CA, WG keys) is one persistent place, survives every
-  uninstall and every VM rebuild.
-- Each product's host-side bookkeeping is in its own clearly-named
-  directory.
-- After initial setup, daily use of mpd needs no sudo and no
+- Identity (CA, WG keys) is one persistent place, survives every VM
+  rebuild.
+- Bookkeeping is in one clearly-named directory, separate from
+  identity.
+- After initial setup, daily use needs no sudo and no
   `/etc/resolver/` files: WireGuard.app owns route + DNS, the user
   toggles the tunnel.
-- Recreating a VM or a Podman Desktop machine never requires re-importing
-  WireGuard configs.
-
-## Assumed starting state
-
-This proposal assumes a **fully clean macOS host** at the moment
-Phase A begins. Specifically:
-
-- **No existing mpd-virt VMs in Parallels.** mpd-virt doesn't exist
-  yet, so there can't be any.
-- **No existing Podman Desktop machines** under mpd-desktop. If the
-  user has previously used mpd-desktop, the Podman Desktop machine
-  is removed (`podman machine rm`) before Phase A begins.
-- **No `~/.mpd-virt/`**, **no `~/.mpd-desktop/`**, **no `~/.mpd/`**
-  anywhere under the user's home. All three host-side state
-  directories are wiped:
-  ```
-  rm -rf ~/.mpd-virt ~/.mpd-desktop ~/.mpd
-  ```
-- **No `~/Developer/mpd/conf/`** content from prior installs. The
-  persistent identity dir is wiped too:
-  ```
-  rm -rf ~/Developer/mpd/conf
-  ```
-- WireGuard.app's tunnel list is **emptied** of any prior mpd
-  tunnels (mpd-desktop's old tunnel, in particular). Open WG.app
-  and delete any tunnel whose name starts with `mpd-`.
-- The System Keychain has any prior `mpd.test local development CA`
-  removed via Keychain Access (or the `security delete-certificate`
-  recipe from today's bash `uninstall.sh`).
-
-With that clean slate, no detection logic is needed for old-layout
-state, no migration code is written, and no two-identities-coexist
-handling matters. Phase A begins on a host that has never seen mpd.
-
-## Priority and rollout
-
-**`mpd-virt` (mpd-machine via Parallels) is the only mandatory target
-of this proposal.** Everything below is specified primarily for that
-binary's first implementation.
-
-mpd-desktop is **fully uninstalled** before Phase A begins (per
-the "Assumed starting state" section). During the mpd-virt rollout
-it simply isn't present on the host; no state, no Podman Desktop
-machine, no `~/.mpd/`, no `~/.mpd-desktop/` (it doesn't exist
-yet), nothing in `conf/` from a prior install.
-
-The "Implications for mpd-desktop" and "Refactor needed in
-mpd-desktop" sections describe the *later* alignment pass. When
-that lands, mpd-desktop gets re-set-up on a host that already has
-`conf/wireguard/mac.{private,public}` from mpd-virt; both products
-converge on one Mac identity automatically. No migration code, no
-ceremony — see "Migration" below.
+- Recreating a VM never requires re-importing WireGuard configs.
 
 ## Non-goals
 
-- Migration from existing installs. No mpd-virt deployments exist yet
-  to migrate. mpd-desktop's directory restructure (moving its
-  host-side meta out of `~/.mpd/` into `~/.mpd-desktop/`) is a
-  one-time breaking change that lands with this work — no
-  back-compat shims.
 - Linux/Windows host equivalents. The state-dir model has plausible
   analogues there but they're out of scope for this proposal.
 - Cross-Mac sync of the WG identity. Each Mac is its own
   `mac.private`; multi-Mac users have multiple peers in their VM
   configs.
-- WireGuard config exchange protocol (peer discovery, etc.). All
-  configs are written by Swift on the Mac and pushed to the Linux
-  side — no negotiation, no shared secret over the wire beyond what
-  SCP already gives us.
+- WireGuard config exchange protocol. All configs are written by
+  Swift on the Mac and pushed to the VM — no negotiation, no shared
+  secret over the wire beyond what SCP already gives us.
 
-## Part 1 — The three-directory state model
+## Part 1 — The two-directory state model
 
 ### One sentence per owner
 
-- **`~/Developer/mpd/conf/`** — identity. **The user owns it**;
-  persistent across every uninstall.
-- **`~/.mpd-<product>/`** — product orchestrator's bookkeeping.
-  **The product owns it**; removed by `<product> --uninstall`.
-- **`~/.mpd/`** — runtime state. **The runtime owns it**; lives
-  wherever the runtime physically runs (Mac filesystem for
-  mpd-desktop; inside the VM for mpd-machine). Removed by the
-  product's `--uninstall` that runs on the same filesystem.
+- **`~/.mpd/conf/`** — identity. **The user owns it**; persistent
+  across every VM rebuild and every `mpd-virt uninstall`.
+- **`~/.mpd-virt/`** — orchestrator bookkeeping. **`mpd-virt` owns
+  it**; removed by `mpd-virt uninstall`.
 
-### Concrete directory layout (macOS host, both products coexisting)
+### Concrete directory layout (macOS host)
 
 ```
-~/Developer/mpd/                  # source + persistent identity
-├── bin/                          # built binaries
-├── conf/                         ← identity (user owns; survives uninstall)
-│   ├── caroot/
-│   │   ├── rootCA.pem
-│   │   └── rootCA-key.pem
-│   ├── wireguard/                ← see Part 2
-│   │   ├── mac.private
-│   │   ├── mac.public
-│   │   ├── desktop/
-│   │   │   ├── private
-│   │   │   ├── public
-│   │   │   ├── server.conf
-│   │   │   └── client.conf       # imported into WG.app as "mpd-desktop"
-│   │   └── machine/
-│   │       └── <octet>/
-│   │           ├── private
-│   │           ├── public
-│   │           ├── server.conf
-│   │           └── client.conf   # imported into WG.app as "mpd-machine-<octet>"
-│   ├── service/
-│   ├── temp/
-│   └── platform.env
+~/.mpd/conf/                      ← identity (user owns; survives uninstall)
+├── caroot/
+│   ├── rootCA.pem
+│   └── rootCA-key.pem
+├── wireguard/
+│   ├── mac.private
+│   ├── mac.public
+│   └── machine/
+│       └── <octet>/
+│           ├── private
+│           ├── public
+│           ├── server.conf
+│           └── client.conf       # imported into WG.app as "mpd-machine-<octet>"
+├── service/
+└── platform.env
 
-~/.mpd-virt/                   ← mpd-virt bookkeeping (removed by `mpd-virt uninstall`)
+~/.mpd-virt/                      ← mpd-virt bookkeeping (removed by `mpd-virt uninstall`)
 ├── current.env                   # MPD_VM_OCTET pointer
 └── <octet>/
     └── env                       # MPD_VM_OCTET, NAME, IP, USER, UUID (diagnostic)
                                   # (future: per-VM logs, cache)
-
-~/.mpd-desktop/                   ← mpd-desktop bookkeeping (new — see "Refactor" below)
-└── env                           # podman machine state snapshot
-                                  # (future: per-machine data)
-                                  # Single machine only — see "Refactor" for the
-                                  # multi-machine drop.
-
-~/.mpd/                           ← mpd-desktop runtime state (Mac filesystem)
-├── machines/<name>/
-│   ├── runtime cache
-│   └── sidecar reconciliation
-└── (other runtime state)
 ```
 
-And inside any mpd-machine VM:
+Inside any mpd-machine VM (separate filesystem):
 
 ```
-~/.mpd/                           ← mpd-machine runtime state (VM filesystem)
-├── machines/mpd-machine/
-│   └── (same shape as mpd-desktop's ~/.mpd/)
-└── (other runtime state)
+~/.mpd/                           ← in-VM runtime state
+├── conf/                         ← in-VM identity (pushed in by mpd-virt at provision)
+│   ├── caroot/
+│   ├── service/
+│   └── platform.env
+└── (runtime state — machines/, projects/, etc.)
 ```
 
 The two `~/.mpd/` directories never collide because they're on
@@ -165,82 +85,18 @@ different filesystems.
 
 | Action | What it touches |
 |---|---|
-| `<product> --setup` | Reads/writes `conf/` (idempotent). Creates `~/.mpd-<product>/` and `~/.mpd/` if missing. |
-| `<product> --uninstall` | Removes `~/.mpd-<product>/` and `~/.mpd/` (the latter only on whichever filesystem the runtime ran on). **Never** touches `conf/`. |
-| `rm -rf ~/Developer/mpd/conf/` | User's manual nuclear option. Resets identity completely; next `--setup` regenerates. |
-| Recreate a VM at the same `<octet>` | `~/.mpd-virt/<octet>/env` is overwritten with the new VM's UUID + name snapshot (diagnostic only). Reuses `conf/wireguard/machine/<octet>/` keys — WG.app tunnel still works. |
-| Recreate Podman Desktop machine | Overwrites `~/.mpd-desktop/env` with new podman snapshot. Reuses `conf/wireguard/desktop/` keys. |
-
-### Refactor needed in mpd-desktop (deferred — see "Priority and rollout")
-
-This section describes the eventual cleanup that aligns mpd-desktop
-with the three-directory model **and** with the naming/SSH conventions
-established for mpd-machine. **Not part of the initial mpd-virt
-rollout.** mpd-desktop continues to use its current mixed `~/.mpd/`
-layout until someone has time to do the alignment pass.
-
-The alignment pass is two concurrent simplifications:
-
-**1. Drop multi-machine support.** Today mpd-desktop tracks "which
-Podman machine is active" because in principle a developer could keep
-several around. In practice nobody does — a single Podman Desktop
-machine is enough, and the multi-machine plumbing is dead weight that
-complicates state, completion, and CLI surface. The single machine
-becomes `mpd-desktop` (literal name, not configurable). No
-`current.env`, no per-machinename subdir, no `--machine=<n>` flag.
-
-**2. Host meta moves out of runtime state.** Today mpd-desktop's
-host-side meta (which Podman machine is active, machine-name snapshot)
-lives mixed into `~/.mpd/state` and `~/.mpd/machines/<name>/`. When
-the alignment pass happens, that meta moves into the new
-`~/.mpd-desktop/`:
-
-| Today | After alignment |
-|---|---|
-| `~/.mpd/state` (current machine name + meta) | `~/.mpd-desktop/env` |
-| `~/.mpd/machines/<name>/` (runtime + reconciliation cache, mixed) | `~/.mpd/machines/mpd-desktop/` (or just `~/.mpd/`) keeps runtime cache only; host meta extracted to `~/.mpd-desktop/env` |
-
-Concretely: `Mpd.Core.State.activeMachine()` collapses to a constant
-(`"mpd-desktop"`); host-meta readers read from `~/.mpd-desktop/env`;
-runtime-cache code keeps reading from `~/.mpd/`. Inside an mpd-machine
-VM the same `Mpd.Core.State.activeMachine()` returns `"mpd-machine"`
-analogously — both products have a single fixed machine identity from
-the code's perspective.
-
-**SSH config + hostname alignment.** As a parallel simplification,
-mpd-desktop adopts the same SSH-alias + container-hostname convention
-that mpd-machine gets via mpd-virt:
-
-- SSH aliases: `mpd-desktop` (the Podman Desktop machine itself) and
-  `mpd-desktop-php` / `mpd-desktop-node` / `mpd-desktop-util` (each
-  runtime, via `ProxyJump mpd-desktop`).
-- Container hostnames: `mpd-desktop-<runtime>` (e.g.
-  `mpd-desktop-php`) instead of today's `mpd-runtime-<rt>-<suffix>`.
-- DNS names (`<rt>.runtime.mpd.test`) unchanged — same separation as
-  in mpd-machine.
-
-End-state symmetry across both products:
-
-| | mpd-machine | mpd-desktop |
-|---|---|---|
-| VM/Podman machine SSH alias | `mpd-machine-<octet>` | `mpd-desktop` |
-| Runtime SSH alias | `mpd-machine-<octet>-<runtime>` | `mpd-desktop-<runtime>` |
-| Runtime container hostname | `mpd-machine-<octet>-<runtime>` | `mpd-desktop-<runtime>` |
-| Host bookkeeping dir | `~/.mpd-virt/<octet>/` | `~/.mpd-desktop/` |
-| Runtime state dir | `~/.mpd/` (in VM) | `~/.mpd/` (on Mac) |
-| WG identity (host) | `conf/wireguard/machine/<octet>/` | `conf/wireguard/desktop/` |
-
-mpd-machine carries an octet because there can be many VMs; mpd-desktop
-doesn't because there's only one Podman machine. Everything else lines
-up word-for-word.
+| `mpd-virt setup` | Reads/writes `~/.mpd/conf/` (idempotent). Creates `~/.mpd-virt/` if missing. |
+| `mpd-virt uninstall` | Removes `~/.mpd-virt/` and host-side networking. **Never** touches `~/.mpd/conf/`. |
+| `rm -rf ~/.mpd/conf/` | User's manual nuclear option. Resets identity completely; next `mpd-virt setup` regenerates. |
+| Recreate a VM at the same `<octet>` | `~/.mpd-virt/<octet>/env` is overwritten with the new VM's UUID + name snapshot (diagnostic only). Reuses `~/.mpd/conf/wireguard/machine/<octet>/` keys — WG.app tunnel still works. |
 
 ## Part 2 — WireGuard architecture
 
 ### Tunnel addressing
 
 ```
-Mac (WireGuard.app)               Linux end (mpd-desktop's WG container OR mpd-machine's VM)
-────────────────────              ────────────────────────────────────────────────────────
+Mac (WireGuard.app)               VM (Debian Trixie)
+────────────────────              ────────────────────
 utun (10.164.0.1)        ←──UDP─→  wg0  (10.164.0.2)
                                     │
                                     │ AllowedIPs route forward to:
@@ -249,142 +105,97 @@ utun (10.164.0.1)        ←──UDP─→  wg0  (10.164.0.2)
                               dnsmasq @ 10.163.0.3
 ```
 
-**`10.164.0.0/30`** is the WG point-to-point tunnel subnet, same as
-mpd-desktop uses today. Reusing it for mpd-virt gives:
+**`10.164.0.0/30`** is the WG point-to-point tunnel subnet.
 
-- A single tunnel-end address scheme across both products. WireGuard.app
-  shows all peers with consistent tunnel addressing.
-- Free mutual exclusion: both tunnels claim `10.164.0.1` on the Mac
-  end, so WireGuard.app deactivates the previous when you activate
-  the next. Matches the "only one active mpd VM/machine at a time"
-  constraint we'd want anyway.
-
-**DNS** via the tunnel: each `client.conf` includes
-`DNS = 10.163.0.3, mpd.test` (and `MatchDomains = mpd.test` if you
-want to scope strictly to that suffix rather than route all DNS
-through the tunnel). When the tunnel is up, `*.mpd.test` resolves
-via dnsmasq through the tunnel. **No more `/etc/resolver/mpd.test`
-file** — WireGuard.app owns DNS scope.
+**DNS** via the tunnel: each `client.conf` includes `DNS = 10.163.0.3,
+mpd.test`. When the tunnel is up, `*.mpd.test` resolves via dnsmasq
+through the tunnel. **No `/etc/resolver/mpd.test` file** — WireGuard.app
+owns DNS scope.
 
 **AllowedIPs** on the Mac peer: `10.164.0.0/30, 10.163.0.0/24`. The
 full container subnet is reachable via the tunnel; the host route to
-`10.163.0.0/24` is now owned by the tunnel too. **No more
-`sudo route add` step** — WireGuard.app owns the route.
+`10.163.0.0/24` is owned by the tunnel. **No `sudo route add` step** —
+WireGuard.app owns the route.
 
 **Two convergent paths to containers.** The SSH config block (see
 [`mpd-virt.md` §"SSH config block"](mpd-virt.md)) gives the user
-`ssh mpd-machine-<octet>-php` via ProxyJump through the VM's
-Parallels Shared static IP — that path works whether or not the WG
-tunnel is up. Meanwhile WG provides full IP-level reachability to
-`10.163.0.0/24` for everything else (browser HTTPS, ad-hoc TCP, port
-probes, direct-by-IP SSH if anyone prefers it). Both work
-simultaneously; no scope-narrowing needed. The redundancy is a
-feature — SSH stays usable while debugging WG, and WG stays useful
-for non-SSH traffic.
+`ssh mpd-machine-<octet>-php` via ProxyJump through the VM's Parallels
+Shared static IP — that path works whether or not the WG tunnel is up.
+Meanwhile WG provides full IP-level reachability to `10.163.0.0/24` for
+everything else (browser HTTPS, ad-hoc TCP, port probes). Both work
+simultaneously.
 
 ### Key management
 
-All keypairs generated in Swift on the Mac via
-`CryptoKit.Curve25519.KeyAgreement.PrivateKey` (Curve25519 is exactly
-what WireGuard uses for static keys). One Swift module owns it:
+All keypairs generated in Swift on the Mac via swift-crypto's
+`Curve25519.KeyAgreement.PrivateKey`. The code lives in the `mpd-virt`
+executable.
 
 ```swift
-// MpdCore.WireGuard
+// MpdVirt.WireGuard
 struct Keypair {
-    let privateKey: String     // base64-encoded
-    let publicKey: String      // base64-encoded
+    let privateKey: String  // base64 of 32 raw bytes
+    let publicKey: String   // base64 of 32 raw bytes
 
     static func generate() -> Keypair
-    static func load(from dir: URL) throws -> Keypair?    // nil if missing
-    func save(to dir: URL) throws                          // writes private+public files mode 0600/0644
-}
-
-enum Role {
-    case desktop
-    case machine(octet: Int)
-}
-
-struct Peer {
-    let role: Role
-    let mac: Keypair                   // shared identity across all peers
-    let linux: Keypair                 // per-peer
-    let endpoint: String               // host:port of the Linux side
-    let serverTunnelIP: String         // 10.164.0.2
-    let clientTunnelIP: String         // 10.164.0.1
-    let allowedIPsFromMac: [String]    // [10.164.0.0/30, 10.163.0.0/24]
-    let dns: String                    // 10.163.0.3
-    let dnsMatchDomains: [String]      // [mpd.test]
-
-    /// Loads existing keys + endpoint config from `~/Developer/mpd/conf/wireguard/`,
-    /// generating fresh on the first call. Idempotent.
-    static func loadOrGenerate(role: Role, endpoint: String) throws -> Peer
-
-    func renderServerConf() -> String     // → /etc/wireguard/mpd0.conf inside the Linux side
-    func renderClientConf() -> String     // → imported into WireGuard.app on the Mac
-
-    /// Tunnel address of the corresponding `Mpd.Service.Dnsmasq.ip` (10.163.0.3)
-    /// is the same across both products — the constant lives in `MpdCore`.
+    static func load(from dir: URL) throws -> Keypair?
+    func save(to dir: URL) throws
+    static func loadOrGenerate(at dir: URL) throws -> Keypair
 }
 ```
 
-`mac.{private,public}` is generated **once** the first time any
-product calls `Peer.loadOrGenerate(...)`. Persisted at
-`~/Developer/mpd/conf/wireguard/mac.{private,public}`. Every subsequent
-call (whether for desktop or for a new mpd-machine VM) reuses it.
+`mac.{private,public}` is generated **once** the first time `mpd-virt`
+calls `Keypair.loadOrGenerate(...)` for the Mac identity. Persisted at
+`~/.mpd/conf/wireguard/mac.{private,public}`. Every subsequent invocation
+(a new VM at a different octet) reuses it.
 
-`<role>/{private,public,server.conf,client.conf}` is generated on
-first call per role. Persisted at
-`~/Developer/mpd/conf/wireguard/<role>/`. Every subsequent call reuses.
+`machine/<octet>/{private,public,server.conf,client.conf}` is generated
+on first call per octet. Persisted at
+`~/.mpd/conf/wireguard/machine/<octet>/`. Every subsequent call reuses.
 
 ### Where private keys live (and don't)
 
-- **`mac.private`** lives at `~/Developer/mpd/conf/wireguard/mac.private`
-  on the Mac. Mode `0600`. Never transits anywhere.
-- **`<role>/private`** lives at
-  `~/Developer/mpd/conf/wireguard/<role>/private` on the Mac. Mode
-  `0600`. Is pushed once into the Linux side during initial
-  provisioning (via `scp` into VM, or `podman cp` / bind-mount into
-  the WG container). Both copies of the file persist.
+- **`mac.private`** lives at `~/.mpd/conf/wireguard/mac.private` on
+  the Mac. Mode `0600`. Never transits anywhere.
+- **`machine/<octet>/private`** (the VM's WG private key) lives at
+  `~/.mpd/conf/wireguard/machine/<octet>/private` on the Mac, AND is
+  pushed once into the VM during initial provisioning (via `scp` into
+  `/etc/wireguard/mpd0.conf`). Both copies persist.
 
-The Linux-side private key does briefly transit the Mac orchestrator
-in memory during generation, and on the wire (encrypted over SSH /
-within Podman Desktop's local socket). That's a small concession
-relative to the convenience win: the same key can be re-pushed into
-a recreated VM/container without regenerating, so WireGuard.app
-configs stay valid across rebuilds. The security trade-off is
-explicitly fine — see "Threat model" below.
+The VM-side private key briefly transits the Mac orchestrator in memory
+during generation and on the wire (encrypted over SSH). That's a small
+concession relative to the convenience win: the same key can be
+re-pushed into a recreated VM without regenerating, so WireGuard.app
+configs stay valid across rebuilds.
 
 ### Daily user flow (steady state)
 
 1. Host reboots. Parallels auto-resumes the active mpd-machine VM
-   (Parallels' default), OR mpd-desktop's Podman Desktop machine
-   auto-starts on user login if configured.
+   (Parallels' default).
 2. User opens WireGuard.app, toggles the active tunnel on.
    **No password prompt** (WireGuard.app's system extension was
    authorized at install time).
-3. `https://mpd.test/` resolves. SSH to the VM works. `mpd` (in-VM
-   or native) is reachable.
+3. `https://mpd.test/` resolves. SSH to the VM works. `mpd` (in the
+   VM) is reachable via SSH.
 
-That's it. **Zero sudo in the daily loop.** All sudo is at setup
-time.
+**Zero sudo in the daily loop.** All sudo is at setup time.
 
 ### Recreation flow
 
-User deletes mpd VM `mpd-machine-159` in Parallels, decides to recreate
-it from the template:
+User deletes VM `mpd-machine-159` in Parallels, decides to recreate it
+from the template:
 
 1. `mpd-virt setup`, picks octet `159` again.
-2. Swift sees `~/Developer/mpd/conf/wireguard/machine/159/` exists →
-   reuses the existing keypair + configs.
-3. Clones template, provisions, **scp's the existing `server.conf`**
-   into the new VM at `/etc/wireguard/mpd0.conf`, enables
-   `wg-quick@mpd0`.
-4. **WireGuard.app's existing `mpd-machine-159` tunnel is untouched.**
-   No re-import needed. The new VM has the same WG identity as the
-   one that was deleted.
+2. Swift sees `~/.mpd/conf/wireguard/machine/159/` exists → reuses the
+   existing keypair + configs.
+3. Clones template, provisions, **scp's the existing `server.conf`** into
+   the new VM at `/etc/wireguard/mpd0.conf`, enables `wg-quick@mpd0`.
+4. **WireGuard.app's existing `mpd-machine-159` tunnel is untouched.** No
+   re-import needed. The new VM has the same WG identity as the one that
+   was deleted.
 
-This is the whole point of persistent identity in `conf/`. The VM is
-disposable; the WG keys are not.
+This is the whole point of persistent identity in `~/.mpd/conf/`. The
+VM is disposable; the WG keys are not.
 
 ### Switching between VMs
 
@@ -401,187 +212,49 @@ template:
 
 `mpd-virt setup` on a fresh Mac:
 
-1. **One sudo prompt for the CA trust step** (`sudo security
-   add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain
-   <caroot/rootCA.pem>`). One time, never again.
-2. **One-time admin auth for WireGuard.app's system extension**
-   (macOS native flow, happens at first install of WireGuard.app
-   when the user installed it from the App Store). Not mpd's problem.
+1. **One sudo prompt for the CA trust step**
+   (`sudo security add-trusted-cert -d -r trustRoot -k
+   /Library/Keychains/System.keychain <caroot/rootCA.pem>`). One time,
+   never again.
+2. **One-time admin auth for WireGuard.app's system extension** (macOS
+   native flow, happens at first install of WireGuard.app from the App
+   Store). Not mpd-virt's problem.
 
-After that — including all VM clones, switches, recreations — zero
-sudo. The daily-no-sudo property holds for all subsequent activity.
-
-### Implications for mpd-virt
-
-References [`mpd-virt.md`](mpd-virt.md).
-The host-side steps shrink:
-
-| `mpd-virt setup` step | Today's proposal | After this proposal |
-|---|---|---|
-| `sudo route add -net 10.163.0.0/24 <vm-ip>` | required | **gone** (WG handles it) |
-| `sudo tee /etc/resolver/mpd.test` | required | **gone** (WG handles it) |
-| `sudo security add-trusted-cert` (CA) | required (one-time) | unchanged |
-| Push `server.conf` to VM, enable `wg-quick@mpd0` | n/a | **new** (one-time per VM lifecycle) |
-| Import `client.conf` into WireGuard.app | n/a | **new** (one-time per VM lifecycle) |
-| Write SSH config block (VM + php/node/util via ProxyJump) | one entry (VM only) | **expanded** — VM + 3 runtime entries, all ProxyJumped through the VM (see mpd-virt.md §"SSH config block") |
-
-The `mpd-virt doctor` verb simplifies: instead of "check the host
-route + resolver + CA," it becomes "check the WG tunnel is up +
-reachable + sees `mpd.test`," plus the multi-runner warning
-(still has value — IP collisions matter; tunnel mutual exclusion
-doesn't save two VMs from both trying to claim `10.211.55.155`).
-
-**SSH config block is independent of WG state.** Doctor re-asserts
-the block (idempotent rewrite) regardless of tunnel status; the
-block uses Parallels Shared IPs + ProxyJump, not the tunnel. WG
-remains the path for browser HTTPS + ad-hoc IP-level access to the
-container subnet; the SSH ProxyJump path is a parallel convenience
-that doesn't depend on WG being up.
-
-### Implications for mpd-desktop (later)
-
-mpd-desktop already uses WireGuard. When the future alignment pass
-happens (see "Priority and rollout"), it cleans up two things:
-
-- **WG container becomes thinner.** Its current first-run logic
-  (`wg genkey` inside the container, then exposed somehow) goes
-  away. The container just runs `wg-quick@mpd0` with a config
-  bind-mounted in from the Mac side.
-- **WG keypair generation moves out of the container** into Swift
-  (`MpdCore.WireGuard.Peer.loadOrGenerate`). Shared code with
-  mpd-virt. No more "find the WG container's pubkey" SSH/exec dance.
-
-Net effect on mpd-desktop after alignment: same daily UX, less
-per-product code, key reuse with mpd-virt. **None of this work is
-gating mpd-virt's first ship.**
-
-### Implications for `MpdCore`
-
-The library target adds:
-
-```
-MpdCore  (Swift module)
-└── Mpd.Core
-    ├── Platform        # (existing)
-    ├── State           # (existing)
-    ├── Assets          # (existing)
-    ├── Identity        # (existing)
-    ├── Certificate     # CA generation (existing, promoted from Mpd.Environment.Certificate)
-    └── WireGuard       # NEW: Keypair, Peer, loadOrGenerate, conf rendering, tunnel detection
-```
-
-`Mpd.Core.WireGuard.Peer.loadOrGenerate(role: .machine(octet: 159), …)`
-is the entry point both products use. Same function, two callers,
-same persistent layout in `conf/wireguard/`.
-
-The tunnel-up detection logic currently in
-`mpd/Environment/Desktop/DesktopIntegration.swift:109` (the
-`utun with 10.164.0.1 in ifconfig` predicate) moves into
-`Mpd.Core.WireGuard.isTunnelActive()`. Both products consume it.
+After that — including all VM clones, switches, recreations — **zero
+sudo**. The daily-no-sudo property holds for all subsequent activity.
 
 ## Threat model
 
-The model is "the Mac is the trust origin; the Linux side is
-disposable":
+The model is "the Mac is the trust origin; the VM is disposable":
 
 | Asset | Lives on | Compromise impact |
 |---|---|---|
-| mpd CA private key | Mac (`conf/caroot/`) | Can sign arbitrary `*.mpd.test` certs (name-constrained; limited blast radius) |
-| `mac.private` (WG) | Mac (`conf/wireguard/`) | Can impersonate the Mac to any peer that trusts it |
-| `<role>/private` (WG) | Mac (`conf/wireguard/`) + Linux side | Can impersonate that peer to the Mac. Briefly transits Mac in memory + over SSH/podman during initial provisioning |
+| mpd CA private key | Mac (`~/.mpd/conf/caroot/`) | Can sign arbitrary `*.mpd.test` certs (name-constrained; limited blast radius) |
+| `mac.private` (WG) | Mac (`~/.mpd/conf/wireguard/`) | Can impersonate the Mac to any peer that trusts it |
+| `machine/<octet>/private` (WG) | Mac (`~/.mpd/conf/wireguard/`) + VM | Can impersonate that VM peer to the Mac. Briefly transits Mac in memory + over SSH during initial provisioning |
 | SSH private key | Mac (`~/.ssh/`) | Root in any mpd-machine VM (dev user has passwordless sudo) |
 
 A Mac compromise gives you everything. The VM-side WG private key
 sitting on the Mac doesn't enlarge that — the SSH key already
-implies VM root. The persistence-on-Mac decision is the right
-trade-off for the convenience win.
+implies VM root.
 
 A *VM* compromise (e.g. via a malicious project) does not climb back
 to the Mac: the Mac-side WG private key is not on the VM, the CA
-private key is not on the VM (only the cert is), and SSH is
-one-way (VM doesn't have keys to access the Mac).
-
-The Linux-side WG private key sitting in
-`~/Developer/mpd/conf/wireguard/<role>/private` is in the same trust
-class as the CA private key. Both are at mode `0600` and live in the
-same protected dir; standard macOS filesystem permissions apply.
-
-## Migration
-
-**No migration code is written.** The "Assumed starting state"
-section above is what makes that possible: the macOS host begins
-empty and accumulates state forward from there. There's never an
-"old layout" to detect or convert.
-
-- **Phase A + B (mpd-virt ships):** `mpd-virt setup` generates the CA
-  + `mac.{private,public}` + per-VM keypair fresh in `conf/` and
-  `~/.mpd-virt/`. mpd-desktop is uninstalled on the host; nothing
-  about it exists to migrate.
-- **Phase C (mpd-desktop alignment, later):** `mpd --setup` runs
-  on a host that already has `conf/wireguard/mac.{private,public}`
-  populated by mpd-virt. `Mpd.Core.WireGuard.Peer.loadOrGenerate(role: .desktop, …)`
-  **reuses the existing `mac.private`** — both products converge on
-  one Mac identity automatically, no orchestration needed. The
-  desktop role's own `private`/`public` keypair gets generated on
-  first call. New `client.conf` for the desktop tunnel is handed
-  to WireGuard.app. No conf-wiping ceremony, no re-provisioning of
-  existing mpd-virt VMs (the CA didn't change, mac identity didn't
-  change). It's just "mpd-desktop gets set up alongside the
-  already-running mpd-virt."
-
-The cleanliness of this story is the whole reason the starting-state
-assumption is worth enforcing. Any "what if X already exists" branch
-is replaced with "starting state assumes X doesn't exist." No
-detection logic, no two-identities transitions, no operational
-checklist beyond the standard product setup flows.
+private key is not on the VM (only the cert is), and SSH is one-way
+(VM doesn't have keys to access the Mac).
 
 ## Open questions
 
-- **Should `mac.private` be backed up?** It's the user's Mac
-  identity across all mpd peers. Losing it means every WG.app
-  tunnel needs re-generating + re-importing (manageable but
-  annoying). Worth a `mpd-virt export-identity` / `import-identity`
-  flow to bundle `conf/wireguard/mac.{private,public}` for off-Mac
-  backup? Probably defer until someone wants it. Time Machine
-  catches `conf/` by default if the user has it enabled.
-- **Should `<role>/private` be regeneratable on demand?** A
-  hypothetical `mpd-virt rotate-wireguard <octet>` verb would
-  generate a new Linux-side keypair, push it to the VM, rewrite
-  `client.conf`, prompt the user to re-import. Not urgent.
-- **Inside the mpd-machine VM, does the in-VM `mpd --setup` need
-  any awareness of the host's WireGuard?** Probably not — the VM
-  doesn't care about the tunnel; it just hosts `wg-quick@mpd0` as a
-  systemd service that's enabled by the host orchestrator's provisioning
-  step. The `mpd-virt setup` orchestrator handles the integration.
-- **mpd-desktop's host-meta migration carries some risk** because
-  the existing `~/.mpd/state` format is parsed by code that's about
-  to move. Worth a small focused test pass against a populated
-  `~/.mpd/` before this lands.
-
-## Sequencing
-
-The implementation order anchored on the user-facing priority
-(mpd-virt first, mpd-desktop alignment later):
-
-1. **`MpdCore.WireGuard` library code** (Swift Curve25519 keypair
-   generation, `Peer.loadOrGenerate`, config rendering, tunnel-up
-   detection). No host-state changes, no mpd-desktop touching.
-   Self-contained Swift addition with unit tests.
-2. **`~/.mpd-virt/<octet>/` subdir layout in mpd-virt's spec.**
-   Folds into [`mpd-virt.md`](mpd-virt.md)'s
-   state-files section — octet-keyed subdirs aligning with the
-   WG and SSH-config storage layouts. UUID kept in the env file
-   as diagnostic metadata only. No data migration (mpd-virt
-   doesn't exist yet).
-3. **mpd-virt ships with WG-based networking from day one.** Per
-   [`mpd-virt.md`](mpd-virt.md) updated
-   to drop the `sudo route add` + `/etc/resolver/` steps and add
-   the WG provisioning step instead.
-4. **Optional, much later: mpd-desktop alignment.** The
-   `~/.mpd-desktop/` directory rename, the WG container thin-out,
-   the `client.conf` re-import for existing users. Lands when
-   convenient; doesn't gate anything.
-
-Net: steps 1–3 are the "mpd-virt first-class" path. Step 4 is the
-cleanup that the existence of mpd-virt makes worthwhile, but happens
-on its own timeline.
+- **Should `mac.private` be backed up?** Losing it means every WG.app
+  tunnel needs re-generating + re-importing. Worth a
+  `mpd-virt export-identity` / `import-identity` flow? Probably defer.
+  Time Machine catches `~/.mpd/conf/` by default if the user has it
+  enabled.
+- **Should `machine/<octet>/private` be regeneratable on demand?** A
+  hypothetical `mpd-virt rotate-wireguard <octet>` verb would generate
+  a new VM-side keypair, push it to the VM, rewrite `client.conf`,
+  prompt the user to re-import. Not urgent.
+- **Inside the mpd-machine VM, does the in-VM `mpd --setup` need any
+  awareness of the host's WireGuard?** Probably not — the VM doesn't
+  care about the tunnel; it just hosts `wg-quick@mpd0` as a systemd
+  service that's enabled by mpd-virt's provisioning step.

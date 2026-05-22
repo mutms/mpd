@@ -4,18 +4,27 @@ Purpose: describe how `mpd` is structured, what is currently in scope, and where
 
 ## 1) Modes and Release Scope
 
-`mpd` has two execution modes:
+`mpd` is a single Linux binary that runs inside a Debian Trixie VM
+(under rootful Podman). Two user-facing modes share this binary:
 
-- `mpd-desktop`: native macOS mode using Podman Desktop and local service/runtime orchestration.
-- `mpd-machine`: dedicated virtual-machine workflow.
+- `mpd-machine`: headless VM driven from the host by the separate
+  `mpd-virt` orchestrator (own repo). Primary target.
+- `sandbox`: same Debian Trixie VM but with a GNOME desktop, set up
+  in-VM via `setup/sandbox/take-over-sandbox-vm.sh`. Same `mpd` binary;
+  the host stays untouched.
 
 Current scope:
 
-- Both `mpd-desktop` and `mpd-machine` ship as supported execution modes.
-- The Swift control plane is at parity across modes — setup, lifecycle (`--setup/--start/--stop/--uninstall`, `--status`, `mpd list`), runtime/project orchestration, and per-runtime sidecar reconciliation work the same way on both.
-- Mode-specific surfaces are limited to host integration: `mpd-desktop` runs on top of Podman Desktop with a WireGuard bootstrap; `mpd-machine` runs under rootful Podman in a dedicated Debian Trixie VM with plain L3 routing from the laptop.
-- The `mpd-machine/` directory additionally holds bootstrap scripts and platform-specific setup logic (`platforms/macos/`, `platforms/linux/`, `platforms/windows/`, `platforms/sandbox/`) that grow into setup packages/installers.
-- Outstanding work is project-type coverage under `assets/runtimes/<runtime>/project_types/` — shared by both modes — not control-plane functionality.
+- The Swift control plane is the same for both modes — setup,
+  lifecycle (`--setup/--start/--stop/--restart`, `--status`,
+  `mpd list`), runtime/project orchestration, per-runtime sidecar
+  reconciliation.
+- The mode distinction is recorded in `~/.mpd/conf/platform.env` as
+  `MPD_PLATFORM=machine|sandbox` and used by paths/messages that need
+  to differ slightly.
+- Outstanding work is project-type coverage under
+  `assets/runtimes/<runtime>/project_types/` — not control-plane
+  functionality.
 
 ## 2) Core Execution Model
 
@@ -24,7 +33,7 @@ High-level CLI flow:
 1. CLI entry parses args and routes command type.
 2. Preflight validates environment constraints.
 3. Command dispatch selects project/runtime/service/global action.
-4. Environment-specific orchestration executes (`desktop` or `machine` path).
+4. Environment orchestration executes.
 5. Persisted state is updated through state-owner APIs.
 
 Control-plane lifecycle commands:
@@ -32,7 +41,7 @@ Control-plane lifecycle commands:
 - `--setup`
 - `--start`
 - `--stop`
-- `--uninstall`
+- `--restart`
 
 These should remain stable even as implementation details evolve.
 
@@ -40,7 +49,7 @@ These should remain stable even as implementation details evolve.
 
 This is a required architecture rule.
 
-- Direct host OS command execution is allowed only in `Environment/Desktop/*` and `Environment/Machine/*`.
+- Direct host OS command execution is allowed only in `mpd/Environment/HostExec.swift`.
 - All other layers (`CLI`, `Runtime`, `Service`, `Core`) must not execute host commands directly.
 - Cross-layer container/runtime operations must go through `Mpd.Podman.*` only.
 
@@ -50,20 +59,16 @@ Allowed exception:
 
 ### Binaries ownership rules
 
-`Mpd.Environment.Binaries` defines context-specific host binaries and is split by execution context.
-
-- Desktop-only host tools belong to `Environment/Desktop` usage paths.
-- Machine-only host tools belong to `Environment/Machine` usage paths.
-- Shared binary definitions are allowed only when semantics are identical in both contexts.
+`Mpd.Environment.Binaries` defines host binaries used inside the VM.
 - Non-environment layers must not introduce new host-binary calls; they request environment or Podman actions.
 
 ### Review/enforcement checklist
 
 Any PR that adds command execution must answer:
 
-1. Is this host command in an `Environment/*` file?
-2. If not, can it be routed through `Mpd.Podman` or moved into `Environment/*`?
-3. Is binary resolution sourced from `Mpd.Environment.Binaries` for the correct context?
+1. Is this host command in `mpd/Environment/HostExec.swift`?
+2. If not, can it be routed through `Mpd.Podman` or moved into `Environment/`?
+3. Is binary resolution sourced from `Mpd.Environment.Binaries`?
 
 ### Sister rule: privilege model
 
@@ -107,37 +112,28 @@ macOS). The pattern these scripts follow:
    re-run where route, resolver, and CA are already correct, the user
    sees no password prompt at all.
 6. **Generate the CA on the host before VM creation, and only on
-   the host.** `prepare_host_ca` in `lib/common.sh` keeps a single
-   host CA alive across two real-file locations and mirrors between
-   them every time it runs:
-   - `~/Developer/mpd/conf/caroot/` — canonical mpd location, shared
-     with mpd-desktop. Populated only when `~/Developer/mpd/conf/`
-     already exists.
-   - `~/.mpd-machine/ca/` — platform-owned. Always present after the
-     first `setup.command` run.
+   the host.** `prepare_host_ca` in `lib/common.sh` keeps the host
+   CA at `~/.mpd-machine/ca/` (platform-owned; always present after
+   the first `setup.command` run).
 
-   On a wipe of either side, the next `setup.command` restores it
-   from the surviving copy and re-imports into the System keychain.
-   Generation uses the bash twin of `Mpd.Environment.Certificate.generateCA`
-   (`mpd/Environment/Certificate.swift`); the two generators must
-   stay in sync. The CA is then uploaded into the VM, where mpd's
-   reuse check (`MachineActionSetup.swift:331`) picks it up. Route,
-   resolver, **and** CA-trust collapse into a single upfront fenced
-   block, after which the long unattended VM-creation phase runs
-   holding no sudo creds.
+   On a wipe, the next `setup.command` regenerates and re-imports
+   into the System keychain. Generation uses the bash twin of
+   `Mpd.Certificate.generateCA` (`mpd/Environment/Certificate.swift`);
+   the two generators must stay in sync. The CA is then uploaded into
+   the VM, where mpd's reuse check (`mpd/Environment/ActionSetup.swift`)
+   picks it up. Route, resolver, **and** CA-trust collapse into a
+   single upfront fenced block, after which the long unattended
+   VM-creation phase runs holding no sudo creds.
 
    **Boundary rule:** CAs flow host → VM only. The macOS keychain
    only ever trusts certificates the host generated itself.
    `configure-client.sh` will not pull a CA off a VM and import it
    into the keychain — that would invert the trust direction by
    accepting a cert of unknown provenance from inside an SSH session.
-   On a Mac with neither caroot/ nor `~/.mpd-machine/ca/` populated
-   (e.g. an imported VM created elsewhere), `configure-client.sh`
-   configures route + DNS but skips CA import; the user has to bring
-   a host CA across themselves. mpd-desktop's `DesktopActionSetup`
-   does the symmetric thing — it adopts from `~/.mpd-machine/ca/`
-   when caroot/ is missing, so a Mac running both modes converges on
-   one CA after a wipe of either side.
+   On a Mac with `~/.mpd-machine/ca/` empty (e.g. an imported VM
+   created elsewhere), `configure-client.sh` configures route + DNS
+   but skips CA import; the user has to bring a host CA across
+   themselves.
 7. **Optional dev override.** Before the fenced block opens,
    `print_sudo_recipe` in `lib/common.sh` lists the exact runnable
    commands and lets the dev choose to run them in another terminal
@@ -177,22 +173,22 @@ Fixed source checkout path: `~/Developer/mpd`
 Directory ownership split:
 
 - `bin/` — local built binaries (`bin/mpd`); executable path checks depend on this.
-- `conf/` — persistent local trust/network material:
+- `~/.mpd/conf/` — persistent local trust/network material:
   - `caroot/` — root CA keypair/fingerprint
-  - `wireguard/` — WireGuard keys and tunnel config (mpd-desktop only; mpd-machine reaches containers via plain routing)
   - `service/` — service TLS cert/key (`mpd.test`)
   - `temp/` — short-lived cert operation files
-  - `platform.env` — host platform identity (see §9)
-- `~/.mpd/` — state/cache only (machine metadata, runtime/project state, transient runtime files)
+  - `platform.env` — platform identity (see §9)
+- `~/.mpd/` (other subdirs) — state/cache (machine metadata, runtime/project state, transient runtime files)
 
 Project backups live inside the data volume at `/srv/backups/`, not on the
 host filesystem (see §10).
 
-Uninstall contract (desktop):
+Cleanup contract:
 
-- `mpd --uninstall` removes `~/.mpd/` state only.
-- `~/Developer/mpd/conf/` is intentionally preserved.
-- manual user cleanup may remove `~/Developer/mpd/` when desired.
+- The in-VM `mpd` has no `--uninstall` verb; the VM itself is the
+  unit of removal (drop it via `mpd-virt` on the host).
+- Manual cleanup of the VM's `~/.mpd/` is just `rm -rf` — state and
+  cache are designed to be safe to remove and rebuild.
 
 ## 5) State Model and Mutation Points
 
@@ -572,25 +568,25 @@ DB container).
 
 ## 9) Platform identity: conf/platform.env
 
-`mpd` records the host context — which kind of setup this is, what the
-laptop's OS is, and where the VM lives — in `~/Developer/mpd/conf/platform.env`.
-Sibling to `caroot/`, `service/`, `wireguard/`. Lives under `conf/` so it
-**survives `mpd --uninstall`** (which wipes `~/.mpd/`).
+`mpd` records the mode context — machine vs sandbox — in
+`~/.mpd/conf/platform.env`, sibling to `caroot/` and `service/`. Lives
+under `~/.mpd/conf/` so it's part of the persistent identity that
+survives runtime-state wipes.
 
 ```
-MPD_PLATFORM=desktop | macos | linux | windows | sandbox
-MPD_VM_IP=<ip>                  # empty for desktop and sandbox
+MPD_PLATFORM=machine | sandbox
+MPD_VM_IP=<ip>                  # empty for sandbox
 MPD_INSTANCE_SUFFIX=<-suffix>   # e.g. "-161"; empty for the unsuffixed instance
 ```
 
-`MPD_INSTANCE_SUFFIX` is the disambiguator for concurrent VMs / Podman
-machines. Auto-derived at `mpd --setup` from the host name (`mpd-machine-<X>`
-on the VM, or `mpd-desktop-<X>` on macOS), with the leading dash included
-(or empty when there's no suffix). Used as the hostname suffix on runtime
-**pods** (`mpd-runtime-<rt>-<X>`), so SSH'ing into `<rt>.runtime.mpd.test`
-gives a bash prompt that makes the instance unambiguous. DNS names are
-unaffected — they still resolve by IP via dnsmasq. Hand-edit to override;
-the next `mpd --setup` will overwrite back to the auto-derived value.
+`MPD_INSTANCE_SUFFIX` is the disambiguator for concurrent VMs. Auto-derived
+at `mpd --setup` from the VM hostname (`mpd-machine-<X>`), with the leading
+dash included (or empty when there's no suffix). Used as the hostname suffix
+on runtime **pods** (`mpd-runtime-<rt>-<X>`), so SSH'ing into
+`<rt>.runtime.mpd.test` gives a bash prompt that makes the instance
+unambiguous. DNS names are unaffected — they still resolve by IP via
+dnsmasq. Hand-edit to override; the next `mpd --setup` will overwrite back
+to the auto-derived value.
 
 `Platform.write` preserves any other `MPD_*` keys it doesn't manage
 (e.g. `MPD_NETWORK_*` written by a bootstrap script) so bootstrap scripts
@@ -598,23 +594,20 @@ and Platform can share the same file without clobbering each other.
 
 **Writers:**
 
-| Path                              | Writer                                                           | Values                      | Behavior                                               |
-|-----------------------------------|------------------------------------------------------------------|-----------------------------|--------------------------------------------------------|
-| `mpd-desktop`                     | `Mpd.Core.Platform.ensureWritten(...)` from `DesktopActionSetup` | `desktop`, `""`             | bootstrap on first `mpd --setup`; no prompt            |
-| `mpd-machine` via Parallels       | `setup/macos/lib/create-vm.sh` (over SSH, template clone)    | `macos`, `${VM_IP}`     | written before `mpd --setup` runs in the VM            |
-| `mpd-machine` via Ubuntu+KVM      | `setup/linux/lib/create-vm.sh` (over SSH)                   | `linux`, `${VM_IP}`    | written before `mpd --setup` runs in the VM            |
-| `mpd-machine` via Windows/Hyper-V | `setup/windows/lib/create-vm.ps1` (over SSH)              | `windows`, `${VmIp}` | written before `mpd --setup` runs in the VM            |
-| `mpd-machine` via sandbox         | `setup/sandbox/lib/provision.sh`                                 | `sandbox`, `""`             | written before `mpd --setup` runs inside the Debian VM |
+| Path                        | Writer                                                       | Values             | Behavior                                               |
+|-----------------------------|--------------------------------------------------------------|--------------------|--------------------------------------------------------|
+| `mpd-machine` via mpd-virt  | `mpd-virt` orchestrator (host, separate repo, over SSH)      | `machine`, `${IP}` | written before `mpd --setup` runs in the VM            |
+| `mpd-machine` via sandbox   | `setup/sandbox/lib/provision.sh`                             | `sandbox`, `""`    | written before `mpd --setup` runs inside the Debian VM |
 
 **Reader:** `Mpd.Core.Platform.load()` (Swift). Throws with a fix-it message
-when missing, pointing at the matching bootstrap script. The cloud-init
-platforms record the laptop's VM IP so client recipes can be regenerated
-on demand; sandbox has no laptop side, so its `MPD_VM_IP` stays empty.
+when missing, pointing at the matching bootstrap script. The machine path
+records the VM's IP so the in-VM mpd can verify network identity; sandbox
+has no host side, so its `MPD_VM_IP` stays empty.
 
-**Why under `conf/` and not `~/.mpd/`:** the platform identity is part of
-the persistent host setup — the same answers should apply across multiple
-`mpd --setup` / `mpd --uninstall` cycles. `~/.mpd/` is state cache; `conf/`
-is durable config (CA, certs, etc.).
+**Why under `~/.mpd/conf/`:** the platform identity is part of the
+persistent setup — the same answers should apply across rebuilds.
+`~/.mpd/` (excluding `conf/`) is state cache; `~/.mpd/conf/` is
+durable config (CA, certs, etc.).
 
 ## 10) Backup persistence
 
@@ -646,37 +639,24 @@ Read/write contract:
 Wipe contract:
 
 - `podman volume rm mpd-data-volume` (or anything that wipes the Podman
-  machine VM on Desktop, or the whole VM on Machine) deletes
-  `/srv/backups/` along with everything else on the volume.
+  whole VM) deletes `/srv/backups/` along with everything else on the volume.
 - Before wiping, pull anything you want to keep via fileaccess.
 - This is intentional: fileaccess is the single transit point, so there's
   exactly one place to remember.
 
-Cross-mode symmetry:
-
-- Identical behavior on `mpd-desktop` and `mpd-machine` — same path, same
-  write semantics, same exit point. No `#if os(...)` branches in the
-  mount layout.
-- No reliance on Podman Desktop's `$HOME` auto-mount or VM-host filesystem
-  routing. The data volume is the single source of truth; fileaccess SSH
-  is the single transport.
-
 ## 11) Networking, DNS, and TLS (Summary)
 
-`mpd-desktop`:
+- Laptop ↔ VM transport is WireGuard (configured by the host-side
+  `mpd-virt` orchestrator, separate repo). The tunnel's `AllowedIPs`
+  on the Mac peer includes the full container subnet `10.163.0.0/24`,
+  so containers are directly reachable while the tunnel is up.
+- dnsmasq inside the VM serves `*.mpd.test`; the WireGuard tunnel
+  config sets `DNS = 10.163.0.3` so the Mac resolves `*.mpd.test`
+  through dnsmasq while the tunnel is up.
+- All TLS certs (per-project, per-runtime, services) are signed by
+  the local `mpd` CA generated on the host and pushed into the VM.
 
-- Uses WireGuard bootstrap to reach internal container network.
-- Uses dnsmasq for `*.mpd.test` development DNS behavior.
-- Uses project/service certificates signed by local `mpd` CA.
-
-`mpd-machine` (current phase):
-
-- VM-first networking model. The laptop reaches containers via a plain static
-  route to `10.163.0.0/24` through the VM — no WireGuard tunnel.
-- User-provided VM IP; per-OS laptop client recipes (route + DNS resolver +
-  optional CA trust) are printed by `mpd --setup`.
-
-Always-on infra services (both modes, except where noted):
+Always-on infra services:
 
 - `dnsmasq` — DNS for `*.mpd.test`
 - `portal` — read-only status site at `https://mpd.test/`
@@ -684,7 +664,6 @@ Always-on infra services (both modes, except where noted):
 - `fileaccess` — `podman exec` target for volume tool ops, plus pubkey-only
   ssh/scp at `fileaccess.service.mpd.test`, the single transit point for
   project backups (`/srv/backups/` is a data-volume subdirectory)
-- `wireguard` — mpd-desktop only
 
 Per-runtime sidecars (attached to the runtime pod, not global):
 

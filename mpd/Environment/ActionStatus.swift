@@ -1,12 +1,11 @@
-// mpd-desktop command hooks
-// Desktop-only status rendering.
+// mpd-machine command hooks
+// Linux runtime / mpd-machine status rendering.
 
 import Foundation
 
-#if os(macOS)
-extension Mpd.Environment.Action.Status {
+extension Mpd.Action.Status {
     static func execute() throws {
-        guard FileManager.default.fileExists(atPath: Mpd.Environment.dotMpdDir) else {
+        guard FileManager.default.fileExists(atPath: Mpd.dotMpdDir) else {
             print("""
                 mpd is not set up on this machine.
 
@@ -19,13 +18,8 @@ extension Mpd.Environment.Action.Status {
 
         print("mpd  —  Moodle Plugin Development Environment\n")
 
-        if let machineLine = Mpd.Environment.PodmanMachine.statusMachineLine() {
-            print(machineLine)
-        }
-
         let cache = Mpd.Runtime.State.loadProjects()
         let runtimes = Mpd.Runtime.allContainers()
-        let machineRunning = Mpd.Environment.PodmanMachine.hostEngineRunning()
 
         var projectsByRuntime: [String: [RegisteredProjectRecord]] = [:]
         for p in cache.projects {
@@ -37,8 +31,7 @@ extension Mpd.Environment.Action.Status {
             let item = runtimes.first { $0.Labels?["mpd.name"] == n }
             let running = item?.State == "running"
             let status = running ? "running" : "stopped"
-            let sshPart = machineRunning ? "  ssh \(n).runtime.mpd.test" : ""
-            print("\n\(n)  \(status)\(sshPart)")
+            print("\n\(n)  \(status)  ssh \(n).runtime.mpd.test")
 
             let projs = (projectsByRuntime[n] ?? []).sorted(by: { $0.name < $1.name })
             for p in projs {
@@ -60,19 +53,16 @@ extension Mpd.Environment.Action.Status {
             }
         }
 
-        if machineRunning {
-            let knownNames = Set(cache.projects.map { $0.name })
-            let unregistered = Mpd.Environment.PodmanMachine.unregisteredProjectDirectories(knownNames: knownNames)
-            if !unregistered.isEmpty {
-                print("\nUnregistered project directories:")
-                for name in unregistered {
-                    print("  \(name.padding(toLength: 24, withPad: " ", startingAt: 0))" +
-                          "→ mpd \(name) create")
-                }
+        let knownNames = Set(cache.projects.map { $0.name })
+        let unregistered = Mpd.Runtime.unregisteredProjectDirectories(knownNames: knownNames)
+        if !unregistered.isEmpty {
+            print("\nUnregistered project directories:")
+            for name in unregistered {
+                print("  \(name.padding(toLength: 24, withPad: " ", startingAt: 0))" +
+                      "→ mpd \(name) create")
             }
         }
 
         print("\n  mpd --help                full flag reference")
     }
 }
-#endif

@@ -1,6 +1,6 @@
 // mpd — GlobalCommand handle* methods (pure CLI dispatch layer)
 // Each handler delegates to the owning Mpd.* namespace — no business logic here.
-// Setup/start/stop/uninstall command handlers live in CLI/CommandHandlers/Command*.swift.
+// Setup/start/stop command handlers live in CLI/CommandHandlers/Command*.swift.
 
 import Foundation
 
@@ -38,7 +38,7 @@ extension GlobalCommand {
 extension GlobalCommand {
 
     private func syncDatabaseStateCache() {
-        Mpd.Environment.PodmanMachine.rebuildDatabaseStateCache(quiet: true)
+        Mpd.Runtime.DB.rebuildStateCache(quiet: true)
         try? Mpd.Service.Dnsmasq.ensureReadyForServiceResolution()
     }
 

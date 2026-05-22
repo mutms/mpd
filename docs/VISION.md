@@ -59,8 +59,8 @@ follows the same rule: it's a Swift binary plus a small set of shell
 scripts. Swift specifically because it's already on every Mac via the
 Xcode command-line tools (no extra compiler to install) and because a
 typed, memory-safe language is preferable to bash for the bits that
-have to be reliable. `mpd --uninstall` removes mpd's state without
-leaving you with a Mac that needs untangling.
+have to be reliable. Removing mpd is `mpd-virt uninstall` (on the
+host) plus deleting the VM — your Mac comes out untangled.
 
 **2. Speed, automatic DNS, automatic HTTPS.**
 
@@ -259,14 +259,13 @@ Mid-afternoon: `mpd --runtime-delete php`, then `mpd --runtime-create
 php` again. Keep going. The runtime container is rebuildable; the data
 volume keeps the projects and the DB.
 
-Evening: `mpd --uninstall`. Mac is clean again. Nothing leftover except
-`~/Developer/mpd/conf/` (the local CA, which you keep so tomorrow's
-HTTPS still works without re-trusting). When you come back,
-`mpd --setup` and you're 90 seconds from the same state.
+Evening: shut the VM down (`mpd-virt stop` from the host, or just
+suspend it). Tomorrow you toggle the WireGuard tunnel, start the VM,
+and you're 90 seconds from the same state.
 
-## Three modes
+## Two modes
 
-The three modes differ in where you sit and where `mpd` runs.
+The two modes differ in where you sit and where `mpd` runs.
 
 **Sandbox VM** — full GNOME desktop inside the VM, and `mpd` runs
 there too. You install Debian Trixie with the GNOME desktop in your
@@ -280,61 +279,31 @@ net), recommended starting point if you don't already know which
 mode to pick.
 
 **mpd-machine** — automated headless Debian Trixie VM; you stay on
-your host. The matched-host bootstrap (`setup.command` on macOS+UTM,
-`setup.sh` on Ubuntu+KVM, `setup.cmd` on Windows+Hyper-V) creates
-the VM with cloud-init, builds `mpd`, and configures the host's
-route + DNS + CA trust so `https://mpd.test/` works in your laptop's
-own browser. Your host browser visits `*.mpd.test` directly; your
-host terminal SSH'es into the VM to run the `mpd` CLI; your IDE
-(PHPStorm Gateway / VSCode Remote-SSH) SSH'es one hop further into
-the runtime container inside the VM. The VM has no GUI of its own.
+your host. The host-side `mpd-virt` orchestrator (separate repo)
+creates the VM, builds `mpd` inside it, and configures host-side
+WireGuard + CA trust so `https://mpd.test/` works in your laptop's
+own browser. Your host browser visits `*.mpd.test` directly via the
+WireGuard tunnel; your host terminal SSH'es into the VM to run the
+`mpd` CLI; your IDE (PHPStorm Gateway / VSCode Remote-SSH) SSH'es
+one hop further into the runtime container inside the VM. The VM
+has no GUI of its own.
 
-**mpd-desktop** — `mpd` is a native macOS binary you run directly in
-your local Terminal — no SSH hop. macOS browser sees `*.mpd.test`
-via a local WireGuard tunnel; Podman Desktop manages a Linux
-container machine in the background. Pick this if you're already
-invested in Podman Desktop or prefer not to drive a hypervisor
-yourself.
+### How the two modes settle into daily roles
 
-### How the three modes settle into daily roles on macOS
-
-On Apple Silicon the three modes aren't really competitors — they
-each cover a workflow the others can't:
+The two modes aren't really competitors — they each cover a workflow
+the other can't:
 
 - **Sandbox** is the *experiments and Linux-testing* slot.
   Throwaway Debian, snapshot-and-revert before anything destructive,
   no risk to your real work. It's also where mpd itself gets
-  developed — editing the macOS-side scripts and Swift in a sandbox
-  VM means you can break the daily setup without breaking your
-  daily setup.
+  developed — editing the assets and Swift in a sandbox VM means
+  you can break the daily setup without breaking your daily setup.
 - **mpd-machine via Parallels** is the *real Moodle work* slot.
   Daily-driver VM with persistent state, host browser at
   `https://mpd.test/`, IDE Remote-SSH into the runtime container.
   This is where actual plugin development happens.
-- **mpd-desktop** is the *AI playground* slot. Two reasons:
-  the `mpd` binary itself runs native on macOS, so anything outside
-  containers (Metal, MLX, Core ML, native `llama.cpp`, …) gets
-  full host access; *and* Podman Desktop's Apple Silicon backend
-  (libkrun + Apple's Virtualization.framework) passes the host GPU
-  into the Linux container machine, so container workloads get GPU
-  acceleration too. Parallels can't do either — its passthrough is
-  limited to its own Direct3D shim, not the host Metal stack.
 
-The three caroot directories don't clash: mpd-virt and mpd-desktop
-share `~/Developer/mpd/conf/caroot/` on the macOS host; sandbox has
-its own self-contained one inside its own VM. No coordination
-needed.
-
-### Linux and Windows hosts
-
-Linux+KVM and Windows+Hyper-V hosts get **two** of the three modes
-(sandbox + mpd-machine). The AI-playground role doesn't carry over
-— mpd-desktop is macOS-only because it leans on Podman Desktop and
-native Apple Silicon GPU access. On a Linux/Windows host, AI
-experiments either run inside a sandbox VM (CPU-only or with
-hypervisor-mediated GPU passthrough) or outside mpd entirely.
-
-All three modes share the same `mpd.env` configuration model, the
+Both modes share the same `mpd.env` configuration model, the
 same `https://<project>.mpd.test/` URLs, the same SSH-into-runtime
 pattern. You can switch between them without re-learning.
 

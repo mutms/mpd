@@ -326,4 +326,36 @@ extension Mpd.Runtime.DB {
         }
         guard rc == 0 else { throw RuntimeError("Failed to drop database '\(dbName)'.") }
     }
+
+    // MARK: - State cache rebuild
+
+    /// Walk live DB containers and rewrite the registered-databases state file.
+    /// Called whenever DB containers come/go so `<db>.db.mpd.test` resolution
+    /// and other consumers see a current view.
+    static func rebuildStateCache(quiet: Bool = false) {
+        let containers = Mpd.Podman.ps(filter: "label=mpd.type=db")
+        let entries: [DatabaseStateEntry] = containers.compactMap { item in
+            let databaseId = item.Labels?["mpd.name"] ?? ""
+            let engine = item.Labels?["mpd.db.engine"] ?? ""
+            let version = item.Labels?["mpd.db.version"] ?? ""
+            guard !databaseId.isEmpty, !engine.isEmpty, !version.isEmpty else { return nil }
+            let containerName = item.Names.first ?? "mpd-db-\(databaseId)"
+            let status = item.State == "running" ? "running" : "stopped"
+            return DatabaseStateEntry(
+                databaseId: databaseId,
+                engine: engine,
+                version: version,
+                containerName: containerName,
+                status: status
+            )
+        }
+        let sorted = entries.sorted { $0.databaseId < $1.databaseId }
+        Mpd.Runtime.State.saveDatabases(RegisteredDatabases(databases: sorted))
+        guard !quiet else { return }
+        if sorted.isEmpty {
+            ok("No databases found.")
+        } else {
+            ok("Database cache rebuilt (\(sorted.count) database(s) found).")
+        }
+    }
 }

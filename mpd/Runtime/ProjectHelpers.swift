@@ -43,7 +43,7 @@ extension Mpd.Project {
 
     /// Effective project user inside runtime containers.
     static func projectExecUser() -> String {
-        Mpd.Environment.detectUserAndUID().user
+        Mpd.detectUserAndUID().user
     }
 
     static func projectExecOptions() -> [String] {
@@ -247,10 +247,10 @@ extension Mpd.Project {
         )
         if rc == 0 { return }
 
-        let certsDir = Mpd.Environment.confTempDir
-        let caKey = "\(Mpd.Environment.confCARootDir)/rootCA-key.pem"
-        let caCert = "\(Mpd.Environment.confCARootDir)/rootCA.pem"
-        let tmpDir = Mpd.Environment.confTempDir
+        let certsDir = Mpd.confTempDir
+        let caKey = "\(Mpd.confCARootDir)/rootCA-key.pem"
+        let caCert = "\(Mpd.confCARootDir)/rootCA.pem"
+        let tmpDir = Mpd.confTempDir
         let certPath = "\(tmpDir)/mpd-\(project)-cert.pem"
         let keyPath = "\(tmpDir)/mpd-\(project)-key.pem"
         defer {
@@ -259,7 +259,7 @@ extension Mpd.Project {
         }
 
         step("Generating TLS certificate for \(sans.joined(separator: ", "))")
-        try Mpd.Environment.Certificate.generateCert(
+        try Mpd.Certificate.generateCert(
             sans: sans,
             certPath: certPath,
             keyPath: keyPath,

@@ -325,7 +325,8 @@ User unit, not system unit, because the privilege rule (see
 `AGENTS.md`) forbids identity switching. mpd binary runs as the dev
 user; user units run as that user automatically.
 
-`mpd --uninstall` reverses both the unit install and the linger enable.
+Manual cleanup (or VM removal) reverses both the unit install and the
+linger enable.
 
 ## Limitations
 

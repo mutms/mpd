@@ -1,9 +1,8 @@
 // mpd-machine host command execution adapter
 
-#if !os(macOS)
 import Foundation
 
-extension Mpd.Environment.HostExec {
+extension Mpd.HostExec {
     private static let binaryPaths: [String: String] = [
         "podman": "/usr/bin/podman",
         "sudo": "/usr/bin/sudo",
@@ -65,7 +64,7 @@ extension Mpd.Environment.HostExec {
         let p = Process()
 
         if useSudo {
-            let sudoPath = Mpd.Environment.HostExec.require("sudo")
+            let sudoPath = Mpd.HostExec.require("sudo")
             p.executableURL = URL(fileURLWithPath: sudoPath)
             p.arguments = ["-n", resolvedCommand] + Array(args.dropFirst())
         } else {
@@ -109,7 +108,7 @@ extension Mpd.Environment.HostExec {
 
         let p = Process()
         if useSudo {
-            let sudoPath = Mpd.Environment.HostExec.require("sudo")
+            let sudoPath = Mpd.HostExec.require("sudo")
             p.executableURL = URL(fileURLWithPath: sudoPath)
             p.arguments = ["-n", resolvedCommand] + Array(args.dropFirst())
         } else {
@@ -139,4 +138,3 @@ extension Mpd.Environment.HostExec {
         )
     }
 }
-#endif

@@ -49,7 +49,7 @@ extension Mpd.Hooks {
     // MARK: - State file (revision tracking)
 
     private static var stateFilePath: String {
-        "\(Mpd.Environment.dotMpdDir)/hooks-state.json"
+        "\(Mpd.dotMpdDir)/hooks-state.json"
     }
 
     private struct State: Codable {
@@ -64,7 +64,7 @@ extension Mpd.Hooks {
     }
 
     private static func writeState(_ state: State) {
-        let dir = Mpd.Environment.dotMpdDir
+        let dir = Mpd.dotMpdDir
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         guard let data = try? JSONEncoder().encode(state) else { return }
         try? data.write(to: URL(fileURLWithPath: stateFilePath))

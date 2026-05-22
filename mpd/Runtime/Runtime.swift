@@ -194,7 +194,7 @@ extension Mpd.Runtime {
         }
 
         let assets     = try Mpd.Core.Assets.path()
-        let detectedIdentity = Mpd.Environment.detectUserAndUID()
+        let detectedIdentity = Mpd.detectUserAndUID()
         let user = detectedIdentity.user
         let uid = detectedIdentity.uid
 
@@ -216,7 +216,7 @@ extension Mpd.Runtime {
         step("Creating runtime '\(name)'")
 
         // Create runtime pod. DNS is configured at the network level — see
-        // `Mpd.Podman.networkCreate` in DesktopActionSetup / MachineActionSetup,
+        // `Mpd.Podman.networkCreate` in ActionSetup,
         // where `--dns 10.163.0.3` (dnsmasq) is set on `mpd-internal`. All
         // containers attached to the network use that for resolution; no
         // per-pod or per-container `--dns` needed.
@@ -287,7 +287,7 @@ extension Mpd.Runtime {
         else { throw RuntimeError("Runtime '\(name)' build failed.") }
 
         // Install CA cert into runtime trust store
-        let caPath = "\(Mpd.Environment.confCARootDir)/rootCA.pem"
+        let caPath = "\(Mpd.confCARootDir)/rootCA.pem"
         if fm.fileExists(atPath: caPath) {
             let cpOk = Mpd.Podman.cp(from: caPath,
                                      to: "\(cName):/usr/local/share/ca-certificates/mpd-local.crt") == 0
@@ -354,7 +354,7 @@ extension Mpd.Runtime {
         // for sshd to send its banner; the banner check rejects garbage.
         let probeScript = "exec 3<>/dev/tcp/\(ip)/22 2>/dev/null && IFS= read -t 2 -u 3 banner && [[ \"$banner\" == SSH-* ]]"
         let probe: () -> Bool = {
-            Mpd.Environment.HostExec.capture(
+            Mpd.HostExec.capture(
                 ["bash", "-c", probeScript],
                 suppressStderr: true
             ).0 == 0
@@ -485,7 +485,7 @@ extension Mpd.Runtime {
             let projectList = projects.map { $0.name }.joined(separator: ", ")
             print("Runtime '\(name)' has projects: \(projectList)")
         }
-        let user = Mpd.Environment.detectUserAndUID().user
+        let user = Mpd.detectUserAndUID().user
         print("Warning: /home/\(user)/ contents inside the runtime will be lost.")
         print("(IDE settings, shell history, manually installed CLIs in ~/.local/bin)")
         print("Preserved (via /srv/personal/): known_hosts, mpd-user.env")
@@ -596,7 +596,7 @@ extension Mpd.Runtime {
 
         // Reinstall CA into running runtime trust stores so `curl https://*.mpd.test`
         // from inside containers continues to validate cleanly.
-        let caPath = "\(Mpd.Environment.confCARootDir)/rootCA.pem"
+        let caPath = "\(Mpd.confCARootDir)/rootCA.pem"
         let runtimes = allContainers().compactMap { $0.Labels?["mpd.name"] }.filter { !$0.isEmpty }
         for name in runtimes {
             let cName = containerName(name)
@@ -614,9 +614,9 @@ extension Mpd.Runtime {
     private static func installSSHKey(cName: String, home: String, user: String) throws {
         let fm = FileManager.default
 
-        let lines = Mpd.Environment.authorizedPublicKeys(home: home)
+        let lines = Mpd.authorizedPublicKeys(home: home)
         guard !lines.isEmpty else {
-            throw RuntimeError("No SSH public keys found for runtime authorization on \(Mpd.Environment.label).")
+            throw RuntimeError("No SSH public keys found for runtime authorization on \(Mpd.label).")
         }
         let keys = lines.joined(separator: "\n") + "\n"
 
@@ -635,4 +635,47 @@ extension Mpd.Runtime {
         else { throw RuntimeError("Failed to install SSH keys.") }
     }
 
+    // MARK: - State cache rebuild
+
+    /// Walk live runtime containers, prune stale cache entries, and persist the
+    /// current view. Counterpart to `Mpd.Runtime.DB.rebuildStateCache`.
+    static func rebuildStateCache(quiet: Bool = false) {
+        let containers = allContainers()
+
+        let discoveredNames = Set(containers.compactMap { $0.Labels?["mpd.name"] }.filter { !$0.isEmpty })
+        let cachedNames = Set(Mpd.Runtime.State.listRuntimeStateEntries().map { $0.name })
+        for stale in cachedNames.subtracting(discoveredNames) {
+            Mpd.Runtime.State.deleteRuntimeStateEntry(stale)
+        }
+
+        for item in containers {
+            let n       = item.Labels?["mpd.name"]    ?? ""; guard !n.isEmpty else { continue }
+            let runtime = item.Labels?["mpd.runtime"] ?? n
+            let ip      = item.Labels?["mpd.ip"]      ?? Mpd.Podman.containerIP(item.Names.first ?? "")
+            let status  = item.State == "running" ? "running" : "stopped"
+            let meta    = RuntimeStateEntry(name: n, runtime: runtime, ip: ip, requested: status)
+            Mpd.Runtime.State.saveRuntimeStateEntry(meta)
+        }
+        guard !quiet else { return }
+        if containers.isEmpty {
+            ok("No runtimes found.")
+        } else {
+            ok("Runtime cache rebuilt (\(containers.count) runtime(s) found).")
+        }
+    }
+
+    /// Project directories present in the data volume but missing from the
+    /// registered-projects cache. Reads `/srv/projects/` from inside the
+    /// fileaccess service container; returns sorted names not in `knownNames`.
+    static func unregisteredProjectDirectories(knownNames: Set<String>) -> [String] {
+        let (_, dirsOut) = Mpd.Podman.volumeToolOutput(
+            readOnly: true,
+            command: ["bash", "-c", "ls -1 /srv/projects/ 2>/dev/null || true"],
+            suppressStderr: true
+        )
+        return dirsOut.split(separator: "\n")
+            .map(String.init)
+            .filter { !$0.isEmpty && !knownNames.contains($0) }
+            .sorted()
+    }
 }

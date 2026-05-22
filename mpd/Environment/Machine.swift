@@ -1,10 +1,9 @@
 // mpd — compile-time environment context helpers
 // Single source for host/runtime path and tooling conventions.
 
-#if !os(macOS)
 import Foundation
 
-extension Mpd.Environment {
+extension Mpd {
     static var label: String {
         return "mpd-machine (Dedicated linux VM)"
     }
@@ -12,17 +11,17 @@ extension Mpd.Environment {
     static func fileFingerprint(_ path: String) -> String {
         guard FileManager.default.fileExists(atPath: path) else { return "" }
 
-        let (rc, out) = Mpd.Environment.HostExec.capture(["sha256sum", path], suppressStderr: true)
+        let (rc, out) = Mpd.HostExec.capture(["sha256sum", path], suppressStderr: true)
         guard rc == 0 else { return "" }
         guard let hex = out.split(separator: " ").first, !hex.isEmpty else { return "" }
         return String(hex.prefix(16))
     }
-        
+
     static func detectUserAndUID() -> (user: String, uid: String) {
-        let user = Mpd.Environment.HostExec.capture(["whoami"], suppressStderr: true)
+        let user = Mpd.HostExec.capture(["whoami"], suppressStderr: true)
             .1
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let uid = Mpd.Environment.HostExec.capture(["id", "-u"], suppressStderr: true)
+        let uid = Mpd.HostExec.capture(["id", "-u"], suppressStderr: true)
             .1
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return (user, uid)
@@ -67,4 +66,3 @@ extension Mpd.Environment {
         return lines
     }
 }
-#endif

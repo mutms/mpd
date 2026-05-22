@@ -28,16 +28,12 @@ binary itself.
    used by every backend.
 4. **ArgumentParser-driven tab completion** for verbs and dynamic VM
    names, same shape `mpd` already uses for project names.
-5. **Number-to-clipboard sudo-recipe UX** (the affordance invented in
-   mpd-desktop's setup) — numbered list of required `sudo` commands,
-   digit copies the line via the platform's clipboard tool.
+5. **Number-to-clipboard sudo-recipe UX** — numbered list of required
+   `sudo` commands, digit copies the line via the platform's clipboard
+   tool.
 
 ## Non-goals
 
-- Replacing `mpd-desktop` (the macOS-native Podman Desktop + WireGuard
-  binary). It stays as its own product with its own roadmap. See the
-  companion state-and-wireguard proposal for the deferred alignment
-  story.
 - Replacing the in-VM `mpd` binary. Linux Swift build of `mpd` is
   unchanged.
 - A `.app` bundle / Dock icon. CLI binary only. Native macOS UI is a

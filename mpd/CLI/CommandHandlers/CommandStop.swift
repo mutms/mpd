@@ -5,6 +5,6 @@ import Foundation
 
 extension GlobalCommand {
     func handleStop() throws {
-        try Mpd.Environment.Action.Stop.execute()
+        try Mpd.Action.Stop.execute()
     }
 }

@@ -2,20 +2,15 @@
 
 Purpose: define expected CLI behavior for `mpd` operations.
 
-Status note:
-- this contract applies to both `mpd-desktop` and `mpd-machine` — the CLI surface is identical across modes.
-
 Out of scope:
-- lifecycle UX details (`--setup/--start/--stop/--uninstall`) beyond routing notes
+- lifecycle UX details (`--setup/--start/--stop`) beyond routing notes
 - deep architecture internals outside this behavioral contract (see `ARCHITECTURE.md`)
 
 ## Directory contract
 
 CLI behavior assumes fixed paths:
 
-- `~/Developer/mpd/bin/` for built executable usage
-- `~/Developer/mpd/conf/` for persistent CA + service cert material (plus WireGuard keys on mpd-desktop)
-- `~/.mpd/` for state/cache only
+- `~/.mpd/` for state/cache and configuration
 
 Project backups live inside the data volume at `/srv/backups/`, accessed
 from the laptop via fileaccess SSH/scp; see
@@ -50,20 +45,15 @@ Operational flags include:
 - `--start` / `--stop` — daily on/off; act on the active host adopted
   by `--setup`. `--start` reconciles `current` toward `requested` (see
   "Resource lifecycle model" in `docs/HOOKS.md`); `--stop` fires
-  `EventMpdPreStop` hooks for graceful DB shutdown, then powers off
-  (machine) or stops the Podman machine (desktop).
+  `EventMpdPreStop` hooks for graceful DB shutdown, then powers off.
 - `--restart` — graceful stop + restart. On mpd-machine, runs
   `sudo systemctl reboot` and lets the user-systemd `mpd.service` unit
   drive the chain (ExecStop=`mpd --stop` on shutdown, ExecStart=
-  `mpd --start` on boot). On mpd-desktop, fires hooks then bounces the
-  Podman machine; user runs `mpd --start` afterward to restore projects.
+  `mpd --start` on boot). User runs `mpd --start` afterward to restore projects.
 - `--check-hooks` — cross-reference `assets/.../hooks/<event>.d/`
   directories against the Swift `Event` catalogue and print warnings
   for orphans, removed audiences, and revision bumps. Also runs at the
   end of `mpd --setup`.
-- `--uninstall` — partial teardown; preserves `~/Developer/mpd/conf/`.
-- `--setup-info` — print the laptop-side setup recipe (plain text,
-  pipeable from the laptop via `ssh user@vm "mpd --setup-info" > SETUP.txt`)
 - runtime mutators: `--runtime-create`, `--runtime-start`, `--runtime-stop`, `--runtime-delete`, `--runtime`
 - db mutators: `--db-create`, `--db-start`, `--db-stop`, `--db-delete`
 
@@ -79,28 +69,12 @@ Setup/start/stop paths perform their own environment-specific checks where neede
 `--setup` is mode-aware and takes no argument. It adopts the existing
 host environment rather than provisioning one:
 
-- **mpd-desktop** (macOS): the dev creates and starts a Podman machine
-  named `mpd-desktop` (or `mpd-desktop-<suffix>` for concurrent variants;
-  suffix is lowercase alphanumeric) in Podman Desktop. `mpd --setup`
-  enumerates running Podman machines, requires exactly one matching the
-  regex `^mpd-desktop(-[a-z0-9]+)?$`, and persists it as the active
-  machine for `--start`/`--stop` to target. If no machine is running,
-  more than one is running, or the running one isn't an mpd-desktop
-  machine, `--setup` errors with a hint.
-- **mpd-machine** (Linux VM): the VM itself is the host. `mpd --setup`
-  validates the supported distro (Debian Trixie across every
-  platform), verifies `systemd-resolved` is active (a precondition the
-  platform bootstrap is responsible for), and proceeds. The
-  active-machine label is always pinned to `mpd-machine` regardless of
-  the OS hostname (which may be `mpd-machine-<digits>` for concurrent
-  cloud-init VMs or `mpd-machine-sandbox` for the sandbox platform).
-
-Adoption tiers (mpd-desktop): if the running machine is the persisted
-active one, `--setup` re-runs silently. If it's a different machine
-that mpd has previously set up, the switch is silent. A brand-new
-machine name prompts for confirmation before adoption. `--start` and
-`--stop` always target the persisted active machine — manual machine
-switching is by re-running `--setup` against the desired one.
+`mpd --setup` validates the supported distro (Debian Trixie across every 
+platform), verifies `systemd-resolved` is active (a precondition the
+platform bootstrap is responsible for), and proceeds. The
+active-machine label is always pinned to `mpd-machine` regardless of
+the OS hostname (which may be `mpd-machine-<digits>` for concurrent
+cloud-init VMs or `mpd-machine-sandbox` for the sandbox platform).
 
 ### Fallback rule
 
@@ -175,7 +149,7 @@ asset-shipped-verb mechanism: project-type-specific operations
 (`cache-purge`, `cron`, `upgrade`, `install` on Moodle; `rebuild`,
 `upgrade` on Astro) live as project-type **tools** inside the runtime
 container, on PATH after you SSH in. See the `mdl-*` / `astro-*`
-tables in `docs/{desktop,machine}/USAGE.md` for the full set, and
+tables in `docs/USAGE.md` for the full set, and
 [`ARCHITECTURE.md` §7](ARCHITECTURE.md#7-verbs-and-tools) for the
 verb-vs-tool contract.
 

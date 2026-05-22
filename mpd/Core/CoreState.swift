@@ -7,7 +7,7 @@ import Foundation
 // MARK: - Mpd.Core.State
 
 extension Mpd.Core.State {
-    static var statusPath: String { "\(Mpd.Environment.dotMpdDir)/.status.json" }
+    static var statusPath: String { "\(Mpd.dotMpdDir)/.status.json" }
 
     /// dnsmasq.d directory for the active machine. Source of truth on the
     /// host; mirrored into the data volume at `/srv/state/dnsmasq.d/` by
@@ -51,7 +51,7 @@ extension Mpd.Core.State {
         let fm = FileManager.default
 
         // 1. mpd-user.env → /srv/personal/mpd-user.env
-        let envHost = "\(Mpd.Environment.dotMpdDir)/mpd-user.env"
+        let envHost = "\(Mpd.dotMpdDir)/mpd-user.env"
         if fm.fileExists(atPath: envHost) {
             let envVolDst = "\(fa):/srv/personal/mpd-user.env"
             guard Mpd.Podman.cp(from: envHost, to: envVolDst) == 0 else {
@@ -105,7 +105,7 @@ extension Mpd.Core.State {
     /// All per-machine files (config, projects, runtimes, dnsmasq.d, Assets) live here.
     static func machineDir(_ machine: String? = nil) -> String {
         let name = machine ?? activeMachine()
-        return "\(Mpd.Environment.dotMpdDir)/machines/\(name)"
+        return "\(Mpd.dotMpdDir)/machines/\(name)"
     }
 
     static var configPath: String { "\(machineDir())/config.json" }

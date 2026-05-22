@@ -130,7 +130,7 @@ extension Mpd.Project {
 
             // Refresh dnsmasq's databases.conf so `<db>.db.mpd.test` resolves
             // from inside runtime containers.
-            Mpd.Environment.PodmanMachine.rebuildDatabaseStateCache(quiet: true)
+            Mpd.Runtime.DB.rebuildStateCache(quiet: true)
             try? Mpd.Service.Dnsmasq.ensureReadyForServiceResolution()
         } else {
             // No DB this project — clear any previous DB state on the entry.

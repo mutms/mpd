@@ -55,14 +55,14 @@ private func normalizeEntryArgs(_ args: [String]) -> [String] {
 private func enforceNonRootExecution() {
     if geteuid() == 0 {
         errPrint("mpd must run as a regular user, not as root.")
-        errPrint("Current execution environment: \(Mpd.Environment.label)")
+        errPrint("Current execution environment: \(Mpd.label)")
         errPrint("Re-run without sudo.")
         exit(1)
     }
 }
 
 private func enforceExpectedExecutableLocation() {
-    let expected = Mpd.Environment.expectedExecutablePath
+    let expected = Mpd.expectedExecutablePath
     let expectedPath = URL(fileURLWithPath: expected)
         .standardizedFileURL
         .resolvingSymlinksInPath()
@@ -70,13 +70,13 @@ private func enforceExpectedExecutableLocation() {
     let fm = FileManager.default
 
     // Beginner-friendly preflight: ensure the fixed source checkout exists.
-    if !fm.fileExists(atPath: Mpd.Environment.mpdDir) {
+    if !fm.fileExists(atPath: Mpd.mpdDir) {
         errPrint("mpd source checkout not found at expected path:")
-        errPrint("  \(Mpd.Environment.mpdDir)")
+        errPrint("  \(Mpd.mpdDir)")
         errPrint("Clone it there and build first:")
-        errPrint("  git clone https://github.com/mutms/mpd.git \(Mpd.Environment.mpdDir)")
-        errPrint("  \(Mpd.Environment.recommendedBuildCommand)")
-        errPrint("  \(Mpd.Environment.pathExportHint)")
+        errPrint("  git clone https://github.com/mutms/mpd.git \(Mpd.mpdDir)")
+        errPrint("  \(Mpd.recommendedBuildCommand)")
+        errPrint("  \(Mpd.pathExportHint)")
         exit(1)
     }
 
@@ -91,8 +91,8 @@ private func enforceExpectedExecutableLocation() {
         errPrint("Expected: \(expectedPath)")
         errPrint("Actual: \(actualPath)")
         errPrint("Build and run from the source checkout:")
-        errPrint("  \(Mpd.Environment.recommendedBuildCommand)")
-        errPrint("  \(Mpd.Environment.pathExportHint)")
+        errPrint("  \(Mpd.recommendedBuildCommand)")
+        errPrint("  \(Mpd.pathExportHint)")
         errPrint("Do not copy the mpd binary elsewhere; always run the built binary from bin/.")
         exit(1)
     }
@@ -121,9 +121,9 @@ struct GlobalCommand: ParsableCommand {
         subcommands: [ProjectSubcommand.self, ListSubcommand.self]
         )
 
-    // Setup / start / uninstall
+    // Setup / start
     @Flag(name: .customLong("setup"),
-          help: "Idempotent setup. Safe to run repeatedly. Adopts the running mpd-desktop[-suffix] Podman machine on macOS, or the current VM on Linux.")
+          help: "Idempotent setup. Safe to run repeatedly. Adopts the current VM.")
     var setup: Bool = false
     @Flag(name: .customLong("start"),
           help: "Daily start: start services and verify tunnel + DNS. No provisioning.")
@@ -132,14 +132,8 @@ struct GlobalCommand: ParsableCommand {
           help: "Graceful stop: mark running projects as stopped, then run environment-specific stop.")
     var stop: Bool = false
     @Flag(name: .customLong("restart"),
-          help: "Restart: machine reboots the VM (graceful DB shutdown via systemd unit, mpd auto-starts on boot); desktop bounces the Podman machine.")
+          help: "Restart: machine reboots the VM (graceful DB shutdown via systemd unit, mpd auto-starts on boot).")
     var restart: Bool = false
-    @Flag(name: .customLong("uninstall"),
-          help: "Partial teardown: stop mpd, remove ~/.mpd/ state, keep ~/Developer/mpd/conf (CA + service certs; plus WireGuard on mpd-desktop), then print manual cleanup steps.")
-    var uninstall: Bool = false
-    @Flag(name: .customLong("setup-info"),
-          help: "Print platform setup info (plain text). On mpd-desktop this is the laptop-side WireGuard / DNS / CA recipe; on mpd-machine it's a pointer to the platform's bootstrap README. Pipeable: `mpd --setup-info > SETUP.txt`.")
-    var setupInfo: Bool = false
 
     // (Listing is now a verb: `mpd list [projects|runtimes|services|dbs]`. See ListSubcommand below.)
 
@@ -193,8 +187,6 @@ struct GlobalCommand: ParsableCommand {
         if start             { try handleStart();            return }
         if stop              { try handleStop();             return }
         if restart           { try handleRestart();          return }
-        if uninstall         { try handleUninstall();        return }
-        if setupInfo         { try handleSetupInfo();        return }
 
         if let n = runtimeCreate  { try handleRuntimeCreate(n);  return }
         if let n = runtimeStart   { try handleRuntimeStart(n);   return }
@@ -243,7 +235,7 @@ struct ListSubcommand: ParsableCommand {
         case "dbs", "db", "databases", "database":
             // Same prep the old --db-list flag did, since DB containers may
             // appear/disappear between mpd invocations.
-            Mpd.Environment.PodmanMachine.rebuildDatabaseStateCache(quiet: true)
+            Mpd.Runtime.DB.rebuildStateCache(quiet: true)
             try? Mpd.Service.Dnsmasq.ensureReadyForServiceResolution()
             Mpd.showDbList()
         default:

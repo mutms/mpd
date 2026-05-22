@@ -9,34 +9,34 @@ the same instructions.
 
 `mpd` (Moodle Plugin Development) is a local development environment for
 Moodle plugin work, built around reproducible runtime containers, local DNS,
-and HTTPS endpoints. It has three user-facing modes, distinguished by where
+and HTTPS endpoints. It has two user-facing modes, distinguished by where
 the user sits and where `mpd` runs:
 
 - **Sandbox VM** — full GNOME desktop *inside* the VM, `mpd` runs in
-  the VM. User installs Ubuntu 26.04 desktop in any hypervisor,
+  the VM. User installs Debian Trixie desktop in any hypervisor,
   snapshots, runs `setup/sandbox/take-over-sandbox-vm.sh` inside the
   VM. Host stays untouched.
 - **mpd-machine** — automated headless Debian Trixie VM driven by a
-  matched-host bootstrap (UTM on macOS, libvirt/KVM on Ubuntu,
-  Hyper-V on Windows). User stays on their host: host browser visits
-  `*.mpd.test` directly via a static route + DNS resolver + CA trust;
-  host terminal SSHes into the VM to use the `mpd` CLI.
-- **mpd-desktop** — `mpd` is a native macOS binary in the user's
-  local Terminal (no SSH). Podman Desktop manages a Linux container
-  machine in the background; macOS reaches the containers via a
-  WireGuard tunnel.
+  matched-host bootstrap (Parallels Desktop Pro on macOS — primary;
+  libvirt/KVM on Ubuntu and Hyper-V on Windows are speculative).
+  User stays on their host: host browser visits `*.mpd.test` directly
+  via WireGuard + CA trust; host terminal SSHes into the VM to use the
+  `mpd` CLI.
 
-**Implementation note:** internally there are two code paths —
-`mpd/Environment/Desktop/` (mpd-desktop) and `mpd/Environment/Machine/`
-(both mpd-machine and the sandbox flavor). Sandbox is `PlatformKind.sandbox`
-under the Machine code path; from the user's perspective it's a distinct
-mode, from the codebase's perspective it shares Machine plumbing.
+`mpd` itself is a single Linux binary that runs **inside the VM**. The
+macOS-host orchestrator (`mpd-virt`) that drives Parallels lives in a
+separate repository.
+
+**Implementation note:** sandbox and mpd-machine share the same
+`mpd/Environment/` code path; sandbox is `PlatformKind.sandbox` and
+from the user's perspective is a distinct mode, but the codebase
+treats it as a Machine-flavored variant.
 
 Read `README.md` first for the user-facing overview.
 
 ## Fixed source checkout path
 
-- Required path for desktop contributor workflow: `~/Developer/mpd`.
+- Required path inside the VM: `~/Developer/mpd`.
 - Runtime path checks are strict — `mpd` enforces it. Do not propose alternate
   source locations.
 
@@ -46,11 +46,11 @@ The Swift binary lives under `mpd/`. Each subdirectory is a `Mpd.<X>` namespace:
 
 - `mpd/CLI/` — command handlers, status rendering, completion (`Mpd.Completion`)
 - `mpd/Core/` — assets path, state files, persistent identity
-- `mpd/Environment/Desktop/` — macOS + Podman Desktop integration
-- `mpd/Environment/Machine/` — Linux VM integration
+- `mpd/Environment/` — Linux VM integration (host exec, lifecycle actions,
+  certificate handling)
 - `mpd/Runtime/` — runtime/project orchestration, sidecar reconciliation
 - `mpd/Service/` — always-on infra services (dnsmasq, portal, adminer,
-  fileaccess; wireguard on desktop only)
+  fileaccess)
 - `mpd/TUI/` — interactive terminal UI
 - `mpd/Util/` — Podman shell-out gateway (`Mpd.Podman.*`) and other utilities
 - `mpd/Mpd.swift` — namespace root (open this file to see the full API surface)
@@ -83,29 +83,22 @@ across docs.
 - `docs/proposals/` — uncommitted design proposals (spec-level detail
   so a future contributor can implement without re-deriving). See
   `docs/proposals/README.md` for the index.
-- `docs/desktop/README.md` — what mpd-desktop is, release scope
-- `docs/desktop/USAGE.md` — desktop workflows
-- `docs/desktop/NETWORKING.md` — desktop networking model (WireGuard)
-- `docs/desktop/SECURITY.md` — desktop security model
-- `docs/machine/README.md` — what mpd-machine is, status, scope
-- `docs/machine/USAGE.md` — machine workflow
-- `docs/machine/NETWORKING.md` — machine networking (static route, no WG)
-- `docs/machine/SECURITY.md` — machine security model
+- `docs/MACHINE.md` — what mpd-machine is, status, scope
+- `docs/USAGE.md` — machine workflow
+- `docs/NETWORKING.md` — networking model (WireGuard via mpd-virt)
+- `docs/SECURITY.md` — security model
 - `setup/macos/README.md` — Parallels Desktop Pro on macOS automation
 - `setup/linux/README.md` — Ubuntu host + libvirt/KVM automation
 - `setup/windows/README.txt` — Windows host + Hyper-V automation
-- `setup/sandbox/README.md` — graphical "live in the VM" Ubuntu sandbox
-
-There is no `docs/machine/platform/*` tree — earlier drafts imagined per-OS
-platform docs, but per-OS detail lives inline in NETWORKING.md instead.
+- `setup/sandbox/README.md` — graphical "live in the VM" Debian sandbox
 
 ## Mandatory architecture rule
 
 `Mpd.Podman` is the single shared gateway for container operations. Direct
-host-OS command execution is allowed only inside `mpd/Environment/Desktop/`
-and `mpd/Environment/Machine/`. Other layers (CLI, Runtime, Service, Core)
-must not shell out directly — they request via Podman or environment APIs.
-Full rule + review checklist in `docs/ARCHITECTURE.md` §"Mandatory Constraint".
+host-OS command execution is allowed only inside `mpd/Environment/HostExec.swift`.
+Other layers (CLI, Runtime, Service, Core) must not shell out directly — they
+request via Podman or environment APIs. Full rule + review checklist in
+`docs/ARCHITECTURE.md` §"Mandatory Constraint".
 
 ## Mandatory privilege rule
 
@@ -217,8 +210,7 @@ To add a new verb:
 - Update `mpd/CLI/Complete.swift` for shell completion (verb name +
   any flag suggestions in `verbArgCandidates`).
 - Update `docs/CLI_BEHAVIOR.md` and the `Day-to-day commands` section
-  in `docs/desktop/USAGE.md` / `docs/machine/USAGE.md` if it belongs
-  in the daily surface.
+  in `docs/USAGE.md` if it belongs in the daily surface.
 
 Global flags (`mpd --foo`) live in `mpd/main.swift` (the
 `GlobalCommand` ParsableCommand) plus a handler under
@@ -365,8 +357,7 @@ not found." Internal sudo on specific operations is the right shape.
 
 - The tool itself (executable, `chmod +x`).
 - If the tool deserves dev-facing mention: add a one-line entry under
-  "Tools available inside the runtime" in `docs/desktop/USAGE.md` and
-  `docs/machine/USAGE.md`.
+  "Tools available inside the runtime" in `docs/USAGE.md`.
 - If it replaces an existing verb (verb→tool migration): delete the
   obsolete verb files and update any host-side callers that referenced
   the verb by name.
@@ -384,11 +375,9 @@ not found." Internal sudo on specific operations is the right shape.
 - skim affected docs for stale path / link references when moving or
   renaming files.
 
-**Desktop non-destructive checks** (rerun freely — all idempotent):
-- `mpd --setup`, `mpd --start`, `mpd --stop`, `mpd --uninstall`
-
-**Machine throw-away-VM smoke checks:**
-- fresh VM via `setup/macos/setup.command` (or `bash setup/macos/lib/setup.sh`)
+**Throw-away-VM smoke checks** (rerun freely — all idempotent):
+- fresh VM via `setup/sandbox/take-over-sandbox-vm.sh` (or the
+  matched-host bootstrap once `mpd-virt` lands)
 - `mpd --setup`, `mpd --start`, `mpd --status`
 - optional: `mpd create/start/stop <project>` end-to-end including HTTPS hit
-- `mpd --stop`, `mpd --uninstall --yes`
+- `mpd --stop`
