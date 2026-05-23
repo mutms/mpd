@@ -149,6 +149,8 @@ ok "Repository cloned"
 # After this, SSH on the DHCP IP dies (the VM's interface flips to its
 # new static IP). Wait for SSH on the new IP afterward.
 step "Bootstrap 30: networking (hostname → ${VM_NAME}, static IP → ${VM_IP})"
+echo "    (If this SSH session looks frozen after \"applying static IP …\", hit Ctrl-C once —"
+echo "     the old TCP session is dead but SSH can't tell; the next step will reconnect.)"
 ssh_cmd "$DHCP_IP" "$VM_USER" \
     "bash /opt/mpd/bootstrap/30-networking.sh $(printf '%q' "$VM_OCTET")" \
     || warn "bootstrap/30 ssh ended (expected — IP just changed)"

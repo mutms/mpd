@@ -160,16 +160,27 @@ if [ "${OCTET}" -ge 100 ]; then
        && [ "$(nmcli -t -f ipv4.method connection show "${conn}" | cut -d: -f2)" = "manual" ]; then
         ok "static IP ${new_ip} already pinned on ${iface}"
     else
+        # Point DNS at the gateway. In every NAT-style hypervisor network
+        # we ship for (Parallels Shared, libvirt default, Hyper-V Default
+        # Switch, VirtualBox NAT) the gateway runs a DNS proxy back to
+        # the host resolver. Leaving ipv4.dns empty here makes NM push
+        # zero upstream DNS into systemd-resolved when the connection
+        # comes back up — `apt-get update` then fails with "Temporary
+        # failure resolving" in bootstrap/40.
         sudo nmcli connection modify "${conn}" \
             ipv4.method   manual \
             ipv4.addresses "${new_ip}/${prefix}" \
             ipv4.gateway   "${gateway}" \
-            ipv4.dns       "" \
+            ipv4.dns       "${gateway}" \
             ipv4.ignore-auto-dns yes
         # `nmcli connection up` will renegotiate; the SSH session via the
         # OLD IP will drop. The orchestrator (mpd-virt) is expected to
-        # reconnect at the new IP.
-        warn "applying static IP ${new_ip} — SSH may drop, reconnect at the new IP"
+        # reconnect at the new IP. The OLD SSH session here on the host
+        # may not notice the dead TCP for a long time (no keepalive) —
+        # if it hangs, hit Ctrl-C ONCE and the orchestrator will resume
+        # at the new IP.
+        warn "applying static IP ${new_ip} — SSH will drop"
+        warn "if this hangs after a few seconds, hit Ctrl-C ONCE to continue"
         sudo nmcli connection up "${conn}" >/dev/null
         ok "static IP set: ${new_ip}/${prefix} gw ${gateway} on ${iface}"
     fi

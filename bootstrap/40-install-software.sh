@@ -16,6 +16,34 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 . "${SCRIPT_DIR}/00-common.sh"
 
+# --- DNS sanity check ---------------------------------------------------
+# bootstrap/30 just changed the network. If DNS is broken — e.g. the
+# nmcli connection up swap left systemd-resolved with stale or empty
+# upstream — apt-get update below will fail with "Temporary failure
+# resolving". Probe once, try to recover by restarting NM + resolved,
+# then die loud if it still doesn't work.
+
+step "DNS reachability"
+if getent hosts deb.debian.org >/dev/null 2>&1; then
+    ok "DNS works (deb.debian.org resolves)"
+else
+    warn "DNS not working — restarting NetworkManager + systemd-resolved"
+    sudo systemctl restart NetworkManager
+    sleep 1
+    sudo systemctl restart systemd-resolved
+    dns_ok=0
+    for _ in $(seq 1 30); do
+        if getent hosts deb.debian.org >/dev/null 2>&1; then
+            dns_ok=1
+            break
+        fi
+        sleep 1
+    done
+    [ "${dns_ok}" = 1 ] \
+        || die "DNS still broken after restart. Inspect: resolvectl status; nmcli connection show"
+    ok "DNS recovered after restart"
+fi
+
 step "Installing software via apt"
 
 # --- Package set --------------------------------------------------------
