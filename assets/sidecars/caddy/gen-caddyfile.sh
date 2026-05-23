@@ -11,7 +11,7 @@
 set -euo pipefail
 
 META_DIR="${META_DIR:-/srv/meta}"
-HEADER_PATH="${HEADER_PATH:-/opt/mpd/templates/header.caddyfile}"
+HEADER_PATH="${HEADER_PATH:-/opt/sidecar/templates/header.caddyfile}"
 
 if ! command -v jq >/dev/null 2>&1; then
     echo "[mpd-caddy] jq is required by gen-caddyfile.sh — abort." >&2

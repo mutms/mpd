@@ -8,7 +8,7 @@ CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
 META_DIR="${META_DIR:-/srv/meta}"
 
 regenerate() {
-    /opt/mpd/gen-caddyfile.sh > "${CADDYFILE}.new"
+    /opt/sidecar/gen-caddyfile.sh > "${CADDYFILE}.new"
     if ! caddy validate --config "${CADDYFILE}.new" --adapter caddyfile >/dev/null 2>&1; then
         echo "[mpd-caddy] generated Caddyfile failed validation; not reloading" >&2
         echo "--- generated Caddyfile (rejected) ---" >&2

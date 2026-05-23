@@ -11,13 +11,17 @@ FROM docker.io/caddy:2-alpine
 # Both are tiny on Alpine.
 RUN apk add --no-cache bash inotify-tools jq
 
-COPY templates/ /opt/mpd/templates/
-COPY gen-caddyfile.sh /opt/mpd/gen-caddyfile.sh
-COPY entry.sh /opt/mpd/entry.sh
-RUN chmod +x /opt/mpd/gen-caddyfile.sh /opt/mpd/entry.sh
+# Sidecar's own files live under /opt/sidecar/, NOT /opt/mpd/ — the
+# runtime bind-mounts the VM-host's /opt/mpd git checkout over /opt/mpd
+# (Mpd.VM.optMountRO), which would shadow anything we put there and
+# make ENTRYPOINT fail with "executable file not found".
+COPY templates/ /opt/sidecar/templates/
+COPY gen-caddyfile.sh /opt/sidecar/gen-caddyfile.sh
+COPY entry.sh /opt/sidecar/entry.sh
+RUN chmod +x /opt/sidecar/gen-caddyfile.sh /opt/sidecar/entry.sh
 
 # Caddy runs as root for port binding (443) and reading
 # /srv/meta/<project>/key.pem (mode 0600 root-owned). The actual file-touching
 # backends (PHP-FPM, node dev servers) run in sibling pod containers as
 # $EXTUSER per Phase 7.5.
-ENTRYPOINT ["/opt/mpd/entry.sh"]
+ENTRYPOINT ["/opt/sidecar/entry.sh"]
