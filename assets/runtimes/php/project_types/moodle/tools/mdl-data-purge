@@ -21,7 +21,7 @@
 set -uo pipefail
 # Note: NOT `set -e` — purge tolerates partial failures by design.
 
-source /mnt/assets/runtimes/php/project_types/moodle/scripts/mpd-env.sh
+source /opt/mpd/assets/runtimes/php/project_types/moodle/scripts/mpd-env.sh
 
 SKIP_CONFIRM=0
 for arg in "$@"; do

@@ -60,6 +60,16 @@ private func runtimeListColorStatusLabel(_ status: String, width: Int) -> String
 
 extension Mpd.Runtime {
 
+    // MARK: - Name validation
+
+    /// Runtime identifier rule. Lowercase ASCII letter followed by
+    /// letters/digits, min length 2. Runtime names appear in
+    /// container/pod name patterns (`mpd-<vmId>-<n>-main`), where
+    /// dashes would break parsing — so no dashes allowed.
+    static func isValidName(_ name: String) -> Bool {
+        name.wholeMatch(of: #/[a-z][a-z0-9]+/#) != nil
+    }
+
     // MARK: - Container naming & discovery
 
     /// VM ID fragment used as the prefix for every pod/container/hostname.
@@ -68,7 +78,7 @@ extension Mpd.Runtime {
     /// in that case container names will look obviously broken
     /// (`mpd--php`), which is the right signal.
     static let vmId: String = {
-        (try? Mpd.Core.Platform.load().vmId) ?? ""
+        (try? Mpd.VM.Platform.load().vmId) ?? ""
     }()
 
     /// Convert a runtime short name to its main container name.
@@ -187,7 +197,7 @@ extension Mpd.Runtime {
         let fm   = FileManager.default
         let home = fm.homeDirectoryForCurrentUser.path
 
-        guard Mpd.Core.isValidIdentifier(name) else {
+        guard Mpd.Runtime.isValidName(name) else {
             throw RuntimeError(
                 "'\(name)' is not a valid runtime name. " +
                 "Use lowercase letters and digits only, starting with a letter, minimum 2 characters.")
@@ -204,8 +214,8 @@ extension Mpd.Runtime {
             throw RuntimeError("Runtime '\(name)' already exists.")
         }
 
-        let assets     = try Mpd.Core.Assets.path()
-        let detectedIdentity = Mpd.detectUserAndUID()
+        let assets     = try Mpd.VM.assetsPath()
+        let detectedIdentity = Mpd.VM.detectUserAndUID()
         let user = detectedIdentity.user
         let uid = detectedIdentity.uid
 
@@ -252,15 +262,13 @@ extension Mpd.Runtime {
         // subdirectory of the data volume — backup tools write there, and the
         // dev exits via fileaccess SSH/scp before wiping the volume. No host
         // overlay; see ARCHITECTURE.md §10.
-        // mpd-user.env is read by runtime tools at `/srv/personal/mpd-user.env`.
-        // The file lives natively in the data volume (synced from the host
-        // copy by `Mpd.Core.State.syncBindMountFiles()` on --setup/--start),
-        // so the runtime sees it via the `/srv` volume mount below — no
-        // separate single-file bind-mount needed.
+        // mpd-vm.env is read by runtime tools at `/var/lib/mpd/env/mpd-vm.env`.
+        // Directory-mounted RO via Mpd.VM.envMountRO so vim/nano atomic-rename
+        // writes on the host propagate inside the container.
         let runArgs: [String] = [
             "-d", "--name", cName, "--pod", runtimePodName(name),
             "--systemd", "always",
-            "-v", "\(assets):/mnt/assets:ro",
+        ] + Mpd.VM.optMountRO + Mpd.VM.envMountRO + Mpd.VM.skelMountRO + [
             "-v", "\(Mpd.dataVolume):/srv",
             "--label", "mpd.managed=true",
             "--label", "mpd.name=\(name)",
@@ -286,18 +294,18 @@ extension Mpd.Runtime {
         // lay out /srv. Phase 2 (dev user): build the specific runtime on top.
         step("Bootstrapping runtime base")
         guard Mpd.Podman.exec(cName, ["bash",
-                     "/mnt/assets/runtime-base/bootstrap.sh",
+                     "/opt/mpd/assets/runtime-base/bootstrap.sh",
                      name, user, uid]) == 0
         else { throw RuntimeError("Runtime '\(name)' base bootstrap failed.") }
 
         step("Building '\(name)' runtime")
         guard Mpd.Podman.exec(cName, options: ["-u", user], ["bash",
-                     "/mnt/assets/runtimes/\(name)/build.sh",
+                     "/opt/mpd/assets/runtimes/\(name)/build.sh",
                      name]) == 0
         else { throw RuntimeError("Runtime '\(name)' build failed.") }
 
         // Install CA cert into runtime trust store
-        let caPath = "\(Mpd.confCARootDir)/rootCA.pem"
+        let caPath = "\(Mpd.VM.confCARootDir)/rootCA.pem"
         if fm.fileExists(atPath: caPath) {
             let cpOk = Mpd.Podman.cp(from: caPath,
                                      to: "\(cName):/usr/local/share/ca-certificates/mpd-local.crt") == 0
@@ -309,16 +317,15 @@ extension Mpd.Runtime {
         step("Installing SSH public key")
         try installSSHKey(cName: cName, home: home, user: user)
 
-        // mpd-user.env is bind-mounted RO at runtime container creation (above);
-        // no copy step needed. bootstrap.sh symlinks the bind-mount target
-        // into the user's home for source-mpd-env.sh.
+        // mpd-vm.env is bind-mounted RO at /var/lib/mpd/env/mpd-vm.env;
+        // source-mpd-env.sh reads it from that absolute path. No symlink,
+        // no copy.
 
         // dnsmasq
         step("Writing dnsmasq conf.d entry")
         let confContent = "address=/\(name).runtime.mpd.test/\(runtimeIP)\n"
-        try confContent.write(toFile: "\(Mpd.Core.State.dnsmasqDir)/\(name).conf",
+        try confContent.write(toFile: "\(Mpd.VM.dnsmasqDir)/\(name).conf",
                               atomically: true, encoding: .utf8)
-        try? Mpd.Core.State.syncBindMountFiles()
         Mpd.Podman.restart(Mpd.Service.Dnsmasq.containerName)
         Mpd.Service.Dnsmasq.waitUntilReady()
 
@@ -364,7 +371,7 @@ extension Mpd.Runtime {
         // for sshd to send its banner; the banner check rejects garbage.
         let probeScript = "exec 3<>/dev/tcp/\(ip)/22 2>/dev/null && IFS= read -t 2 -u 3 banner && [[ \"$banner\" == SSH-* ]]"
         let probe: () -> Bool = {
-            Mpd.HostExec.capture(
+            Mpd.VM.capture(
                 ["bash", "-c", probeScript],
                 suppressStderr: true
             ).0 == 0
@@ -495,10 +502,10 @@ extension Mpd.Runtime {
             let projectList = projects.map { $0.name }.joined(separator: ", ")
             print("Runtime '\(name)' has projects: \(projectList)")
         }
-        let user = Mpd.detectUserAndUID().user
+        let user = Mpd.VM.detectUserAndUID().user
         print("Warning: /home/\(user)/ contents inside the runtime will be lost.")
         print("(IDE settings, shell history, manually installed CLIs in ~/.local/bin)")
-        print("Preserved (via /srv/personal/): known_hosts, mpd-user.env")
+        print("Preserved across recreate: mpd-vm.env (/var/lib/mpd/env/), VM-host skel (/var/lib/mpd/skel/)")
 
         guard skipPrompt || promptYesNo("Remove runtime '\(name)' and all its containers?") else {
             print("Aborted."); return
@@ -509,16 +516,15 @@ extension Mpd.Runtime {
         }
         // Clean up runtime-level dnsmasq + meta (sidecar-published URLs).
         // Pseudo-project `_runtime-<name>` holds mailpit's canonical URL meta.
-        let confPath = "\(Mpd.Core.State.dnsmasqDir)/\(name).conf"
+        let confPath = "\(Mpd.VM.dnsmasqDir)/\(name).conf"
         if fm.fileExists(atPath: confPath) {
             try? fm.removeItem(atPath: confPath)
         }
-        let pseudoConf = "\(Mpd.Core.State.dnsmasqDir)/_runtime-\(name).conf"
+        let pseudoConf = "\(Mpd.VM.dnsmasqDir)/_runtime-\(name).conf"
         if fm.fileExists(atPath: pseudoConf) {
             try? fm.removeItem(atPath: pseudoConf)
         }
         _ = Mpd.Podman.volumeToolRun(command: ["rm", "-rf", "/srv/meta/_runtime-\(name)"])
-        try? Mpd.Core.State.syncBindMountFiles()
         Mpd.Podman.restart(Mpd.Service.Dnsmasq.containerName)
         Mpd.Service.Dnsmasq.waitUntilReady()
         Mpd.Runtime.State.deleteRuntimeStateEntry(name)
@@ -555,7 +561,7 @@ extension Mpd.Runtime {
             // Run project-setup.sh from the project type's assets directory
             let pType = ProjectType(proj.type)
             if let config = try? pType.loadConfiguration() {
-                let args = ["bash", "/mnt/assets/runtimes/\(config.assetsRuntime)/project_types/\(config.assetsType)/project-setup.sh", proj.name]
+                let args = ["bash", "/opt/mpd/assets/runtimes/\(config.assetsRuntime)/project_types/\(config.assetsType)/project-setup.sh", proj.name]
                 Mpd.Project.projectExec(cName, args)
             }
 
@@ -606,7 +612,7 @@ extension Mpd.Runtime {
 
         // Reinstall CA into running runtime trust stores so `curl https://*.mpd.test`
         // from inside containers continues to validate cleanly.
-        let caPath = "\(Mpd.confCARootDir)/rootCA.pem"
+        let caPath = "\(Mpd.VM.confCARootDir)/rootCA.pem"
         let runtimes = allContainers().compactMap { $0.Labels?["mpd.name"] }.filter { !$0.isEmpty }
         for name in runtimes {
             let cName = containerName(name)
@@ -624,9 +630,9 @@ extension Mpd.Runtime {
     private static func installSSHKey(cName: String, home: String, user: String) throws {
         let fm = FileManager.default
 
-        let lines = Mpd.authorizedPublicKeys(home: home)
+        let lines = Mpd.VM.authorizedPublicKeys(home: home)
         guard !lines.isEmpty else {
-            throw RuntimeError("No SSH public keys found for runtime authorization on \(Mpd.label).")
+            throw RuntimeError("No SSH public keys found for runtime authorization on \(Mpd.VM.label).")
         }
         let keys = lines.joined(separator: "\n") + "\n"
 

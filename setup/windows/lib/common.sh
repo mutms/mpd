@@ -31,7 +31,7 @@ ensure_wsl_deps() {
 # --- CA generation ---
 # generate_mpd_ca KEY_PATH CERT_PATH
 #
-# Bash twin of Mpd.Environment.Certificate.generateCA in Certificate.swift.
+# Bash twin of Mpd.VM.Certificate.generateCA in mpd/VM/Certificate.swift.
 # DN, v3_ca extensions, and nameConstraints must stay in sync with the Swift
 # version so mpd --setup can detect and reuse a host-generated CA.
 
@@ -109,7 +109,7 @@ write_files:
       net.ipv6.conf.all.disable_ipv6 = 1
       net.ipv6.conf.default.disable_ipv6 = 1
       net.ipv6.conf.lo.disable_ipv6 = 1
-  - path: /home/${vm_user}/.mpd/conf/platform.env
+  - path: /var/lib/mpd/conf/platform.env
     owner: ${vm_user}:${vm_user}
     permissions: '0644'
     defer: true

@@ -10,8 +10,7 @@ import Foundation
 
 extension Mpd.Action.Restart {
     static func execute() throws {
-        let status = Mpd.Core.State.readStatus()
-        guard !status.activeMachine.isEmpty else {
+        guard FileManager.default.fileExists(atPath: Mpd.VM.stateDir) else {
             throw RuntimeError("mpd is not set up yet. Run: mpd --setup")
         }
 
@@ -29,7 +28,7 @@ extension Mpd.Action.Restart {
             return
         }
 
-        let rc = Mpd.HostExec.run(["sudo", "systemctl", "reboot"])
+        let rc = Mpd.VM.exec(["sudo", "systemctl", "reboot"])
         if rc != 0 {
             throw RuntimeError("Failed to reboot VM (sudo systemctl reboot returned \(rc)).")
         }

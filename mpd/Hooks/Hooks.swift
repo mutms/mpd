@@ -232,7 +232,7 @@ extension Mpd.Hooks {
         /// Filename only — e.g. `10-graceful-stop`.
         let basename: String
         /// Path inside the container — e.g.
-        /// `/mnt/assets/databases/postgres/hooks/mpd-pre-stop.d/10-graceful-stop`.
+        /// `/opt/mpd/assets/databases/postgres/hooks/mpd-pre-stop.d/10-graceful-stop`.
         let containerPath: String
     }
 
@@ -246,40 +246,40 @@ extension Mpd.Hooks {
         container: String,
         eventName: String
     ) throws -> [DiscoveredScript] {
-        let assets = try Mpd.Core.Assets.path()
+        let assets = try Mpd.VM.assetsPath()
         var dirs: [(hostDir: String, containerDir: String)] = []
 
         switch audience {
         case .runtime:
-            // Runtime containers have `<assets>:/mnt/assets:ro` bind-mounted.
+            // Runtime containers have `<assets>:/opt/mpd/assets:ro` bind-mounted.
             // Layered: base + per-runtime. Type-level layer (per-project)
             // is project-event territory and not yet wired in v1.
             dirs.append((
                 "\(assets)/runtime-base/hooks/\(eventName).d",
-                "/mnt/assets/runtime-base/hooks/\(eventName).d"
+                "/opt/mpd/assets/runtime-base/hooks/\(eventName).d"
             ))
             let runtimeName = Mpd.Podman.label(container, "mpd.name")
             if !runtimeName.isEmpty {
                 dirs.append((
                     "\(assets)/runtimes/\(runtimeName)/hooks/\(eventName).d",
-                    "/mnt/assets/runtimes/\(runtimeName)/hooks/\(eventName).d"
+                    "/opt/mpd/assets/runtimes/\(runtimeName)/hooks/\(eventName).d"
                 ))
             }
         case .database:
-            // DB containers get the same `<assets>:/mnt/assets:ro` bind
+            // DB containers get the same `<assets>:/opt/mpd/assets:ro` bind
             // mount — added in `Mpd.Runtime.DB.ensure`. Per-engine only;
             // there's no `database-base` layer (DB images are stock).
             let engine = Mpd.Podman.label(container, "mpd.db.engine")
             if !engine.isEmpty {
                 dirs.append((
                     "\(assets)/databases/\(engine)/hooks/\(eventName).d",
-                    "/mnt/assets/databases/\(engine)/hooks/\(eventName).d"
+                    "/opt/mpd/assets/databases/\(engine)/hooks/\(eventName).d"
                 ))
             }
         case .service(let name):
             dirs.append((
                 "\(assets)/services/\(name)/hooks/\(eventName).d",
-                "/mnt/assets/services/\(name)/hooks/\(eventName).d"
+                "/opt/mpd/assets/services/\(name)/hooks/\(eventName).d"
             ))
         }
 

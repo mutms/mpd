@@ -1,5 +1,5 @@
-// mpd — Mpd.Core.Platform namespace
-// Reads/writes ~/.mpd/conf/platform.env — the in-VM identity file that
+// mpd — Mpd.VM.Platform namespace
+// Reads/writes /var/lib/mpd/conf/platform.env — the in-VM identity file that
 // records which kind of mpd setup this is:
 //   MPD_PLATFORM=managed | sandbox
 //   MPD_VM_IP=<ip>           (empty for sandbox; for managed it's the
@@ -18,11 +18,11 @@
 //     MPD_PLATFORM=sandbox / MPD_VM_ID=sandbox before `mpd --setup` runs.
 //
 // Reader: mpd's setup actions and helpers that need to know the platform
-// or the VM ID at run-time. Lives under ~/.mpd/conf/ (persistent identity).
+// or the VM ID at run-time. Lives under /var/lib/mpd/conf/ (persistent identity).
 
 import Foundation
 
-extension Mpd.Core.Platform {
+extension Mpd.VM.Platform {
 
     enum PlatformKind: String {
         case managed = "managed"
@@ -35,9 +35,9 @@ extension Mpd.Core.Platform {
         let vmId: String   // 3-digit: "100"-"254" for managed, "000" for sandbox
     }
 
-    /// Path to ~/.mpd/conf/platform.env.
+    /// Path to /var/lib/mpd/conf/platform.env.
     static var path: String {
-        "\(Mpd.confDir)/platform.env"
+        "\(Mpd.VM.confDir)/platform.env"
     }
 
     /// Load the identity file; throws with a fix-it message if missing.
@@ -76,7 +76,7 @@ extension Mpd.Core.Platform {
     /// `MPD_NETWORK_*`) that bootstrap scripts may have written.
     static func write(platform: PlatformKind, vmIP: String, vmId: String) throws {
         let fm = FileManager.default
-        try fm.createDirectory(atPath: Mpd.confDir, withIntermediateDirectories: true)
+        try fm.createDirectory(atPath: Mpd.VM.confDir, withIntermediateDirectories: true)
 
         // Collect non-managed keys from the existing file, in original order.
         var preserved: [(key: String, value: String)] = []
@@ -95,7 +95,7 @@ extension Mpd.Core.Platform {
 
         var body = """
             # mpd platform identity — written by setup, read at runtime.
-            # Lives under ~/.mpd/conf/.
+            # Lives under /var/lib/mpd/conf/.
             MPD_PLATFORM=\(platform.rawValue)
             MPD_VM_IP=\(vmIP)
             # 3-digit VM identifier used in pod/container/hostname names.

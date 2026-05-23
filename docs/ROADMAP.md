@@ -14,9 +14,34 @@ Concrete shape, a use case driving it.
   coupling makes "snapshot the project" a real, named unit; other
   project types keep state in `git`.
 
+- **`mpd ps <project>`** — single-screen project status. Runtime +
+  PHP version + DB engine/version + active sidecars + URLs + xdebug
+  mode, all in one view. Pattern borrowed from Laravel's
+  `php artisan about` (familiar to Moodle devs increasingly working
+  in both ecosystems). All data already exists in
+  `Mpd.Project.show` / state files — this is presentation, not new
+  logic.
+
+- **`mpd env <project>`** — print the resolved layered env for a
+  project (runtime defaults → type defaults → vm overrides → project
+  mpd.env), showing which layer set each `MPD_*` key. Pattern
+  borrowed from Laravel's `php artisan config:show`. Especially
+  useful when the four-layer cascade lands a value you didn't
+  expect. Implementation: invoke `source-mpd-env.sh` with verbose
+  tracing, or re-implement the resolver in Swift for cleaner output.
+
 ## Parked: other ideas
 
 Real possibilities, not committed work.
+
+- **mpd as a nested-Podman container on Podman Desktop** — fourth
+  deployment mode. mpd binary lives inside a privileged Debian Trixie
+  container in Podman Desktop's existing VM; runtime/service/DB
+  containers nest inside it. Replaces the dedicated mpd VM for users
+  already running Podman Desktop on macOS — one fewer Linux VM, no
+  hypervisor licensing. Resurrects the killed `mpd-desktop` networking
+  model (WG + dnsmasq into Podman Desktop's VM) in a more isolated
+  shape. Full design in [`proposals/podman-host-nested.md`](proposals/podman-host-nested.md).
 
 - **Alternate repo/branch for VM provisioning** — an env var (e.g.
   `MPD_REPO`, `MPD_BRANCH`) that `create-vm.ps1` / `create-vm.sh`
@@ -79,3 +104,26 @@ Real possibilities, not committed work.
   this plugin actually look like" pitches. The data-generator side
   has prior work to build on; the new piece is the agent-driven
   first-install / plugin-install flow.
+
+- **Composer-based Moodle installation + plugin management** —
+  Moodle is moving toward `composer create-project moodle/moodle`
+  as the production install path, with plugins managed via
+  composer.json too (no more zip-and-drop). This is the future
+  shape of Moodle deployments, but not yet fully stable, and gated
+  on the new Moodle marketplace landing (which may or may not go
+  smoothly). When it does stabilize, mpd's moodle project type gets
+  a `composer` install mode alongside the current `git-clone`
+  mode, and the layered env grows a way to declare plugins
+  declaratively. Wait-and-see; no work scheduled until upstream
+  settles.
+
+- **`mpd quickstart` driven by composer-based Moodle install** —
+  once composer-based Moodle install is stable (item above), the
+  one-shot quickstart flow gets rebuilt on top of it instead of the
+  current `git clone moodle/moodle` path. The win is plugin
+  management: `composer require moodle-local/<plugin>` becomes a
+  first-class part of project setup, so `mpd quickstart moodle52
+  --plugins=local_foo,mod_bar` provisions a Moodle install with
+  those plugins already wired in. The current `demo moodle v5.2.0`
+  one-liner stays as the simple-case shortcut. Blocked on the
+  composer install item above.

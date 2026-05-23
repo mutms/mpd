@@ -1,41 +1,35 @@
-// mpd — Namespace root
-// Open this file to see the full API surface.
-// Each nested enum is implemented in the matching .swift file via extension.
+// mpd — Namespace root.
+// Open this file to see the full API surface. Each nested enum is implemented
+// in the matching .swift file under the corresponding directory.
 //
-//   Mpd.Action.{Setup,Start,Stop,Restart,Status}  lifecycle verbs        → Environment/Action*.swift
-//   Mpd.Certificate.*       CA + cert generation  → Environment/Certificate.swift
-//   Mpd.HostExec.*          Process() gateway     → Environment/HostExec.swift
-//   Mpd.Integration.*       DNS / resolver checks → Environment/Integration.swift
-//   Mpd.ShutdownUnit.*      systemd unit installer→ Environment/ShutdownUnit.swift
-//   Mpd.Runtime.*           runtime lifecycle     → Runtime/Runtime.swift
-//   Mpd.Project.*           project actions       → Runtime/Project.swift
-//   Mpd.Runtime.DB.*        DB containers         → Runtime/DB.swift
-//   Mpd.Runtime.State.*     runtime/project state → Runtime/RuntimeState.swift
-//   Mpd.Core.Assets.*       path resolution       → Core/Assets.swift
-//   Mpd.Core.DataVolume.*   volume operations     → Core/DataVolume.swift
-//   Mpd.Core.State.*        global/machine state  → Core/CoreState.swift
-//   Mpd.Core.Platform.*     platform.env reader   → Core/Platform.swift
-//   Mpd.Podman.*            Podman CLI layer      → Util/Podman.swift
+// Top-level Mpd statics: dataVolume name, internalSubnet, ServiceDescriptor.
 //
-//   Top-level helpers on Mpd directly (Environment.swift + Machine.swift):
-//     paths               homeDir, mpdDir, dotMpdDir, confDir, confCARootDir,
-//                         confServiceDir, confTempDir, assetsDir, binDir
-//     identity            label, fileFingerprint, detectUserAndUID,
-//                         authorizedPublicKeys
+//   Mpd.Action.{Setup,Start,Stop,Restart,Status}   verb entry points          → Action/*.swift
 //
-//   Services (each owns its container lifecycle):
-//   Mpd.Service.Dnsmasq.*    DNS resolver         → Service/ServiceDnsmasq.swift
-//   Mpd.Service.Portal.*     status dashboard     → Service/ServicePortal.swift
-//   Mpd.Service.Adminer.*    DB management UI     → Service/ServiceAdminer.swift
-//   Mpd.Service.FileAccess.* Data-volume exec target → Service/ServiceFileAccess.swift
+//   Mpd.VM.*                       VM host operations + path constants        → VM/VM.swift
+//     Mpd.VM.exec/capture          host command gateway                       → VM/Exec.swift
+//     Mpd.VM.detect{User,UID},     dev identity + ssh keys                    → VM/Identity.swift
+//       authorizedPublicKeys, label, fileFingerprint
+//     Mpd.VM.installShutdownUnit() systemd user-unit installer                → VM/ShutdownUnit.swift
+//     Mpd.VM.warnIfRemoteLoginEnabled()                                       → VM/DNS.swift
+//     Mpd.VM.DNS.*                 DNS resolver state, recipe install         → VM/DNS.swift
+//     Mpd.VM.Certificate.*         CA + cert generation                       → VM/Certificate.swift
+//     Mpd.VM.assetsPath()          asset path resolution (throwing)           → VM/VM.swift
+//     Mpd.VM.DataVolume.*          /srv volume rescan helpers                 → VM/DataVolume.swift
+//     Mpd.VM.Platform.*            platform.env reader/writer                 → VM/Platform.swift
+//     Mpd.VM.Config.*              user/uid persistence + VMConfig struct     → VM/Config.swift
 //
-// Mailpit, selenium, and valkey were global services before Phase 9; they now
-// run as per-runtime sidecars (Mpd.Runtime.{mailpit,selenium,valkey}SidecarSpec).
-// Mailpit attaches when a runtime declares `defaultSidecars: ["mailpit"]` in
-// its configuration.json (PHP runtime does); selenium attaches on demand when
-// any project on the runtime has a `kind: behat` URL; valkey is wired but
-// nothing currently triggers it — first project type to need it adds the
-// trigger source.
+//   Mpd.Runtime.*                  runtime lifecycle, isValidName(_:)         → Runtime/Runtime.swift
+//   Mpd.Project.*                  project actions, isValidName(_:)           → Runtime/Project.swift
+//   Mpd.Runtime.DB.*               DB containers                              → Runtime/DB.swift
+//   Mpd.Runtime.State.*            runtime/project registry                   → Runtime/RuntimeState.swift
+//
+//   Mpd.Service.{Dnsmasq,Portal,Adminer,FileAccess}    infra service lifecycle  → Service/Service*.swift
+//
+//   Mpd.Podman.*                   Podman CLI gateway                         → Util/Podman.swift
+//   Mpd.Completion.emit/install    shell completion emitter + shim installer  → CLI/{Complete,InstallCompletion}.swift
+//
+// JSONStateStore is a plain struct (not under Mpd) — VM/JSONStateStore.swift.
 
 import Foundation
 
@@ -55,9 +49,6 @@ enum Mpd {
     ///                 pinned at create time; vacated slots are reusable)
     ///   .100+         runtimes (php=.100, node=.101, util=.102) — see each
     ///                 runtime's configuration.json
-    /// Post-Phase 9, only true infra services remain in the global registry:
-    /// `dnsmasq`, `portal`, `adminer`, `fileaccess`.
-    /// Mailpit/selenium/valkey are per-runtime sidecars now.
     static let internalSubnet = "10.163.0.0/24"
 
     // MARK: - Namespaces
@@ -69,22 +60,21 @@ enum Mpd {
         enum Restart {}
         enum Status {}
     }
-    enum Integration {}
-    enum Certificate {}
-    enum HostExec {}
-    enum ShutdownUnit {}
+
+    enum VM {
+        enum DNS {}
+        enum Certificate {}
+        enum DataVolume {}
+        enum Platform {}
+        enum Config {}
+    }
+
     enum Runtime {
         enum DB {}
         enum State {}
     }
     enum Project {}
-    enum Core {
-        enum Assets {}
-        enum DataVolume {}
-        enum PersonalArea {}
-        enum Platform {}
-        enum State {}
-    }
+
     enum Podman {}
 
     /// Shell-completion candidate emitter — see `Mpd.Completion.emit(cword:words:)`.

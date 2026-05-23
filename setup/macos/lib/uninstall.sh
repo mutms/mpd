@@ -43,9 +43,9 @@ detect_host_targets() {
 
     # CA preservation: if the canonical on-disk CA at
     # ~/.mpd-virt/conf/caroot/ still exists, leave the keychain trust
-    # alone — mpd-desktop and any future mpd-vm setup still depend on
-    # it. The disposable mirror (~/.mpd-virt/) is removed below either
-    # way; only the keychain trust is the question here.
+    # alone — any future mpd-vm setup will reuse the same CA. The
+    # disposable mirror (~/.mpd-virt/) is removed below either way;
+    # only the keychain trust is the question here.
     local caroot_pem="${HOME}/.mpd-virt/conf/caroot/rootCA.pem"
     if [ -f "$caroot_pem" ]; then
         ca_preserved_caroot="${HOME}/.mpd-virt/conf/caroot"

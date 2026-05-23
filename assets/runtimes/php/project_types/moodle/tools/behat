@@ -3,7 +3,7 @@
 # All arguments are passed through to vendor/bin/behat.
 set -euo pipefail
 
-source /mnt/assets/runtimes/php/project_types/moodle/scripts/mpd-env.sh
+source /opt/mpd/assets/runtimes/php/project_types/moodle/scripts/mpd-env.sh
 
 cd "${PROJECT_DIR}"
 

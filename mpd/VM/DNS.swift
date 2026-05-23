@@ -1,14 +1,16 @@
-// In-VM host integration helpers
-// Machine host integration for machine workflow (native Podman,
-// Cert generation, CA trust, DNS guidance).
+// mpd — Mpd.VM.DNS namespace
+// DNS resolver state checks + recipe install (host systemd-resolved
+// drop-in that routes *.mpd.test to the in-VM dnsmasq container).
+// Also hosts the non-DNS `Mpd.VM.warnIfRemoteLoginEnabled()` straggler
+// for historical reasons (Integration.swift before the refactor).
 
 import Foundation
 
-extension Mpd.Integration {
+extension Mpd.VM.DNS {
 
     /// Detect the VM's primary LAN IP. Falls back to 127.0.0.1 (local-only access).
     static var primaryHostIP: String {
-        let (rc, out) = Mpd.HostExec.capture(
+        let (rc, out) = Mpd.VM.capture(
             ["bash", "-c", "ip -4 route get 1.1.1.1 2>/dev/null | grep -oP 'src \\K[0-9.]+'"],
             suppressStderr: true)
         return (rc == 0 && !out.isEmpty) ? out : "127.0.0.1"
@@ -35,7 +37,7 @@ extension Mpd.Integration {
             Then SSH back in and re-run mpd --setup.
 
             Otherwise, see the README of your platform under
-            ~/Developer/mpd/setup/ for the expected network stack.
+            /opt/mpd/setup/ for the expected network stack.
             """)
         }
         ok("systemd-resolved is active.")
@@ -52,7 +54,7 @@ extension Mpd.Integration {
         let alreadyMatches = (try? String(contentsOfFile: confPath, encoding: .utf8)) == content
         try writeRootOwnedFile(path: confPath, content: content)
         if !alreadyMatches {
-            guard Mpd.HostExec.run(
+            guard Mpd.VM.exec(
                 ["sudo", "systemctl", "reload", "systemd-resolved"]
             ) == 0 else {
                 throw RuntimeError("systemctl reload systemd-resolved failed.")
@@ -62,7 +64,7 @@ extension Mpd.Integration {
     }
 
     private static func systemctlIsActive(_ unit: String) -> Bool {
-        Mpd.HostExec.run(
+        Mpd.VM.exec(
             ["systemctl", "is-active", "--quiet", unit]) == 0
     }
 
@@ -77,7 +79,7 @@ extension Mpd.Integration {
         let tmp = NSTemporaryDirectory() + "mpd-conf-\(getpid())-\(UUID().uuidString).tmp"
         try content.write(toFile: tmp, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(atPath: tmp) }
-        guard Mpd.HostExec.run(
+        guard Mpd.VM.exec(
             ["sudo", "install", "-D", "-m", "644", tmp, path]
         ) == 0 else {
             throw RuntimeError("Failed to install \(path).")
@@ -96,7 +98,7 @@ extension Mpd.Integration {
         let deadline = Date().addingTimeInterval(8)
         var dnsmasqReady = false
         while Date() < deadline {
-            if Mpd.HostExec.capture(
+            if Mpd.VM.capture(
                 ["bash", "-c", "timeout 1 bash -c '\(probeScript)' 2>/dev/null"],
                 suppressStderr: true).0 == 0 {
                 dnsmasqReady = true
@@ -110,7 +112,7 @@ extension Mpd.Integration {
             return
         }
 
-        let (rc, out) = Mpd.HostExec.capture(
+        let (rc, out) = Mpd.VM.capture(
             ["bash", "-c", "getent hosts mpd.test 2>/dev/null | awk '{print $1}'"],
             suppressStderr: true)
         if rc == 0 && out == serviceIP {
@@ -121,6 +123,11 @@ extension Mpd.Integration {
         }
     }
 
+}
+
+// MARK: - Non-DNS bits that lived in Integration.swift historically
+
+extension Mpd.VM {
     static func warnIfRemoteLoginEnabled() {
         // No-op on Linux — SSH daemon is expected to be running.
     }

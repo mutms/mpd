@@ -5,7 +5,7 @@
 # to /srv/projects/<project>/mpd.env.
 #
 # Responsibilities:
-#   - Source layered mpd.env (~/<user>/mpd-user.env then project mpd.env)
+#   - Source layered mpd.env (/var/lib/mpd/env/mpd-vm.env then project mpd.env)
 #   - Resolve MPD_DB to dbTag/dbEngine/databaseId for downstream use
 #   - Fix ownership of /srv/projects/<project>
 #   - Ensure dataroot dirs exist with expected perms
@@ -35,11 +35,11 @@ fi
 # dev-owned (mode 0775) by fileaccess provisioning, so plain mkdir works.
 mkdir -p "/srv/meta/${PROJECT_NAME}"
 
-# Layered config: ~/<user>/mpd-user.env (bind-mounted RO), then per-project
+# Layered config: /var/lib/mpd/env/mpd-vm.env (bind-mounted RO), then per-project
 # /srv/projects/<n>/mpd.env. Project wins; explicit empty in project blocks
 # user-level fall-through; absent key in project falls through.
 # shellcheck source=/dev/null
-source /mnt/assets/runtime-base/lib/source-mpd-env.sh
+source /opt/mpd/assets/runtime-base/lib/source-mpd-env.sh
 
 # --- Resolve effective settings ---
 PHP_VER="${MPD_PHP_VERSION}"
@@ -86,7 +86,7 @@ chmod 0666 "${DATAROOT}/php_error.log"
 if [ -n "$DATABASE_ID" ] && \
    { [ -f "${PROJECT_DIR}/version.php" ] || [ -f "${PROJECT_DIR}/public/version.php" ]; }; then
     # Compute the public tunnel host when cftunnel is enabled for this
-    # project AND a public domain is set in ~/.mpd/mpd-user.env. Empty
+    # project AND a public domain is set in /var/lib/mpd/env/mpd-vm.env. Empty
     # otherwise — the baked-in detection block then does nothing.
     CFTUNNEL_HOST=""
     if [ "${MPD_PHP_MOODLE_CFTUNNEL:-}" = "1" ] && [ -n "${MPD_UTIL_CFTUNNEL_DOMAIN:-}" ]; then
@@ -100,12 +100,12 @@ if [ -n "$DATABASE_ID" ] && \
         -e "s|%%DBTYPE%%|${DBTYPE}|g" \
         -e "s|%%DBHOST%%|${DATABASE_ID}.db.mpd.test|g" \
         -e "s|%%CFTUNNEL_HOST%%|${CFTUNNEL_HOST}|g" \
-        /mnt/assets/runtimes/php/project_types/moodle/templates/config-mpd-generated.php \
+        /opt/mpd/assets/runtimes/php/project_types/moodle/templates/config-mpd-generated.php \
         > "${PROJECT_DIR}/config-mpd.php"
     echo "config-mpd.php generated."
 
     if [ ! -f "${PROJECT_DIR}/config.php" ]; then
-        cp /mnt/assets/runtimes/php/project_types/moodle/templates/config.php "${PROJECT_DIR}/config.php"
+        cp /opt/mpd/assets/runtimes/php/project_types/moodle/templates/config.php "${PROJECT_DIR}/config.php"
         echo "config.php created."
     else
         echo "config.php already exists — not overwritten."

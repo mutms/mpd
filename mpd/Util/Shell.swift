@@ -15,7 +15,7 @@
 // use (see CLI_BEHAVIOR.md "Behavioral invariants").
 //
 // Container/host command execution does NOT live here — that's
-// `Mpd.Podman.*` (containers) and `Mpd.HostExec.*` (host
+// `Mpd.Podman.*` (containers) and `Mpd.VM.*` (host
 // binaries). See `docs/ARCHITECTURE.md` §3.
 
 import Foundation

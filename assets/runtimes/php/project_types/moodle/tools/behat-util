@@ -3,6 +3,6 @@
 # Examples: behat-util --enable, behat-util --disable, behat-util --drop
 # All arguments are passed through to admin/tool/behat/cli/util.php.
 set -euo pipefail
-source /mnt/assets/runtimes/php/project_types/moodle/scripts/mpd-env.sh
+source /opt/mpd/assets/runtimes/php/project_types/moodle/scripts/mpd-env.sh
 
 moodle_run admin/tool/behat/cli/util.php "$@"

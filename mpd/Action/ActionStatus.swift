@@ -5,7 +5,7 @@ import Foundation
 
 extension Mpd.Action.Status {
     static func execute() throws {
-        guard FileManager.default.fileExists(atPath: Mpd.dotMpdDir) else {
+        guard FileManager.default.fileExists(atPath: Mpd.VM.varLibDir) else {
             print("""
                 mpd is not set up on this machine.
 

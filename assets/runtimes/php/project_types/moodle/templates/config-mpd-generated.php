@@ -22,7 +22,7 @@ $CFG->wwwroot  = 'https://%%PROJECT%%.mpd.test';
 
 // Cloudflare Tunnel support: when MPD_PHP_MOODLE_CFTUNNEL=1 in this
 // project's mpd.env (and MPD_UTIL_CFTUNNEL_DOMAIN is set in
-// ~/.mpd/mpd-user.env), the configure step bakes the public tunnel
+// /var/lib/mpd/env/mpd-vm.env), the configure step bakes the public tunnel
 // hostname here. Requests arriving with that Host get a wwwroot
 // rewrite so Moodle's generated URLs match the visitor; direct
 // .mpd.test access falls through unchanged. Empty string = feature

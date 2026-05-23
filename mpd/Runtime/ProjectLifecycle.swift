@@ -108,7 +108,7 @@ extension Mpd.Project {
     // MARK: - create
 
     static func create(project: String, args: [String]) throws {
-        guard Mpd.Core.isValidProjectIdentifier(project) else {
+        guard Mpd.Project.isValidName(project) else {
             throw RuntimeError(
                 "'\(project)' is not a valid project name. " +
                 "Use lowercase letters and digits, starting with a letter, " +
@@ -205,10 +205,10 @@ extension Mpd.Project {
         // it skip silently.
         let pType = ProjectType(typeHint)
         if let config = try? pType.loadConfiguration() {
-            let scriptPath = "\(try Mpd.Core.Assets.path())/runtimes/\(config.assetsRuntime)/project_types/\(config.assetsType)/project-create.sh"
+            let scriptPath = "\(try Mpd.VM.assetsPath())/runtimes/\(config.assetsRuntime)/project_types/\(config.assetsType)/project-create.sh"
             if FileManager.default.fileExists(atPath: scriptPath) {
                 step("Scaffolding project from \(typeHint) template")
-                let cmdArgs = ["bash", "/mnt/assets/runtimes/\(config.assetsRuntime)/project_types/\(config.assetsType)/project-create.sh", project]
+                let cmdArgs = ["bash", "/opt/mpd/assets/runtimes/\(config.assetsRuntime)/project_types/\(config.assetsType)/project-create.sh", project]
                 guard projectExec(createContainer, cmdArgs) == 0 else {
                     throw RuntimeError("project-create.sh failed for project '\(project)'.")
                 }
@@ -273,7 +273,7 @@ extension Mpd.Project {
         if let config = try? pType.loadConfiguration() {
             step("Setting up '\(project)' in '\(runtimeName)'")
             let setupArgs = [
-                "bash", "/mnt/assets/runtimes/\(config.assetsRuntime)/project_types/\(config.assetsType)/project-setup.sh", project,
+                "bash", "/opt/mpd/assets/runtimes/\(config.assetsRuntime)/project_types/\(config.assetsType)/project-setup.sh", project,
             ]
             guard projectExec(cName, setupArgs) == 0
             else { throw RuntimeError("project-setup.sh failed.") }
@@ -370,7 +370,7 @@ extension Mpd.Project {
             if let config = try? pType.loadConfiguration() {
                 projectExec(cName, [
                     "bash",
-                    "/mnt/assets/runtimes/\(config.assetsRuntime)/project_types/\(config.assetsType)/project-delete.sh", project,
+                    "/opt/mpd/assets/runtimes/\(config.assetsRuntime)/project_types/\(config.assetsType)/project-delete.sh", project,
                 ])
             }
         }

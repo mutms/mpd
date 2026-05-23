@@ -1,19 +1,17 @@
-// mpd — shared certificate operations
-// OpenSSL-backed CA and leaf cert generation used by environment integrations.
+// mpd — Mpd.VM.Certificate namespace
+// OpenSSL-backed CA and leaf cert generation, called by Mpd.Action.Setup.
 
 import Foundation
 
-extension Mpd.Certificate {
+extension Mpd.VM.Certificate {
 
     /// CA generation — KEEP IN SYNC with the bash twin
-    /// `generate_mpd_ca` in
-    /// `setup/macos/lib/common.sh`. The macOS
+    /// `generate_mpd_ca` in `setup/macos/lib/common.sh`. The macOS
     /// host-side bootstrap generates (or reuses) a CA *before* VM
     /// creation and uploads it; mpd inside the VM detects the existing
-    /// CA via the `fileExists` check in
-    /// `Mpd.Machine.MachineActionSetup` and reuses it.
-    /// Both implementations must produce certs with identical DN,
-    /// v3_ca extensions, and name constraints.
+    /// CA via the `fileExists` check in `Mpd.Action.Setup.execute()`
+    /// and reuses it. Both implementations must produce certs with
+    /// identical DN, v3_ca extensions, and name constraints.
     static func generateCA(caKeyPath: String, caCertPath: String, certsDir: String) throws {
         let caConf = "\(certsDir)/mpd-ca.conf"
         let caConfContent = """
@@ -39,8 +37,8 @@ extension Mpd.Certificate {
         try caConfContent.write(toFile: caConf, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(atPath: caConf) }
 
-        guard Mpd.HostExec.run(["openssl", "genrsa", "-out", caKeyPath, "4096"]) == 0,
-              Mpd.HostExec.run(["openssl", "req", "-new", "-x509",
+        guard Mpd.VM.exec(["openssl", "genrsa", "-out", caKeyPath, "4096"]) == 0,
+              Mpd.VM.exec(["openssl", "req", "-new", "-x509",
                      "-key", caKeyPath, "-out", caCertPath,
                      "-days", "3650", "-config", caConf]) == 0
         else { throw RuntimeError("Failed to generate CA certificate.") }
@@ -72,10 +70,10 @@ extension Mpd.Certificate {
             try? FileManager.default.removeItem(atPath: extFile)
         }
 
-        guard Mpd.HostExec.run(["openssl", "genrsa", "-out", keyPath, "2048"]) == 0,
-              Mpd.HostExec.run(["openssl", "req", "-new", "-key", keyPath, "-out", csr,
+        guard Mpd.VM.exec(["openssl", "genrsa", "-out", keyPath, "2048"]) == 0,
+              Mpd.VM.exec(["openssl", "req", "-new", "-key", keyPath, "-out", csr,
                      "-subj", "/CN=\(cn)"]) == 0,
-              Mpd.HostExec.run(["openssl", "x509", "-req",
+              Mpd.VM.exec(["openssl", "x509", "-req",
                      "-in", csr, "-CA", caCertPath, "-CAkey", caKeyPath,
                      "-CAcreateserial", "-out", certPath,
                      "-days", "397", "-extfile", extFile]) == 0
@@ -96,7 +94,7 @@ extension Mpd.Certificate {
                 withIntermediateDirectories: true)
             if fm.fileExists(atPath: dest) { try? fm.removeItem(atPath: dest) }
             try? fm.copyItem(atPath: caPath, toPath: dest)
-            if Mpd.HostExec.run(["update-ca-certificates"]) == 0 {
+            if Mpd.VM.exec(["update-ca-certificates"]) == 0 {
                 ok("CA installed in system trust store.")
             } else {
                 print("  Warning: update-ca-certificates failed.")
@@ -105,11 +103,11 @@ extension Mpd.Certificate {
         }
 
         print("Installing the mpd CA into the system trust store (sudo).")
-        guard Mpd.HostExec.run(["sudo", "install", "-D", "-m", "644", caPath, dest]) == 0 else {
+        guard Mpd.VM.exec(["sudo", "install", "-D", "-m", "644", caPath, dest]) == 0 else {
             print("  Warning: failed to install \(dest).")
             return
         }
-        guard Mpd.HostExec.run(["sudo", "update-ca-certificates"]) == 0 else {
+        guard Mpd.VM.exec(["sudo", "update-ca-certificates"]) == 0 else {
             print("  Warning: update-ca-certificates failed.")
             return
         }
@@ -222,7 +220,7 @@ extension Mpd.Certificate {
         // firefox-esr branch: the package owns the directory; skip mkdir.
         if needsCertCopy && !fm.fileExists(atPath: policyDir) {
             let mkdirArgs = sudoPrefix + ["install", "-d", "-m", "755", policyDir]
-            if Mpd.HostExec.run(mkdirArgs) != 0 {
+            if Mpd.VM.exec(mkdirArgs) != 0 {
                 print("  Warning: failed to create \(policyDir).")
                 return
             }
@@ -230,14 +228,14 @@ extension Mpd.Certificate {
 
         if needsCertCopy {
             let copyArgs = sudoPrefix + ["install", "-m", "644", caPath, certPathInPolicy]
-            if Mpd.HostExec.run(copyArgs) != 0 {
+            if Mpd.VM.exec(copyArgs) != 0 {
                 print("  Warning: failed to install \(certPathInPolicy).")
                 return
             }
         }
 
         let installArgs = sudoPrefix + ["install", "-D", "-m", "644", tmpPath, policyPath]
-        if Mpd.HostExec.run(installArgs) == 0 {
+        if Mpd.VM.exec(installArgs) == 0 {
             ok("\(label) enterprise policy installed at \(policyPath).")
         } else {
             print("  Warning: failed to install \(policyPath).")

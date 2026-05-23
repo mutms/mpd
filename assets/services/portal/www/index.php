@@ -15,7 +15,7 @@
 //   version, containerName) used to resolve databaseId → engine.
 // - /srv/meta/<project>/project.json — ground-truth project identity
 //   (mpd-managed; read-only here).
-// - /mnt/assets/runtimes — list of available runtime templates.
+// - /opt/mpd/assets/runtimes — list of available runtime templates.
 
 function h(string $s): string {
     return htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
@@ -24,8 +24,7 @@ function h(string $s): string {
 /**
  * Display name for the portal heading + title. Written by Swift's
  * Mpd.Service.Portal.setup() to /mpd-state/portal/display-name.txt:
- *   • mpd-machine: VM hostname (e.g. "mpd-machine-158")
- *   • mpd-desktop: machineName (e.g. "mpd-desktop" or "mpd-desktop-foo")
+ * the VM's short hostname (e.g. "mpd-158" managed, "mpd-000" sandbox).
  * Falls back to "mpd" if the file is missing (older setups, transient
  * read errors).
  */
@@ -55,7 +54,7 @@ function devUser(): string {
 
 /**
  * Read a project type's `ideLinks` flag from
- * /mnt/assets/runtimes/*&#47;project_types/<type>/configuration.json.
+ * /opt/mpd/assets/runtimes/*&#47;project_types/<type>/configuration.json.
  * Default true (matches Swift's ProjectTypeConfiguration default).
  * Cached per type — config files don't change inside a request.
  */
@@ -63,7 +62,7 @@ function projectTypeAllowsIdeLinks(string $type): bool {
     static $cache = [];
     if (isset($cache[$type])) return $cache[$type];
     if ($type === '') return $cache[$type] = false;
-    $matches = glob("/mnt/assets/runtimes/*/project_types/{$type}/configuration.json") ?: [];
+    $matches = glob("/opt/mpd/assets/runtimes/*/project_types/{$type}/configuration.json") ?: [];
     if (empty($matches)) return $cache[$type] = true;
     $data = json_decode((string)@file_get_contents($matches[0]), true);
     if (!is_array($data)) return $cache[$type] = true;
@@ -293,7 +292,7 @@ if (is_dir($runtimesDir)) {
 }
 
 // --- Merge with available runtime names from assets ---
-$availableRuntimeNames = collectAvailableRuntimeNames('/mnt/assets/runtimes');
+$availableRuntimeNames = collectAvailableRuntimeNames('/opt/mpd/assets/runtimes');
 $allRuntimeNames = [];
 foreach ($availableRuntimeNames as $n) { $allRuntimeNames[$n] = true; }
 foreach (array_keys($createdRuntimes) as $n) { $allRuntimeNames[$n] = true; }

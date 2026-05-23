@@ -181,7 +181,6 @@ extension Mpd.Runtime.DB {
         let imageBase = engine == "postgres" ? "postgres" : engine
         let image = "docker.io/library/\(imageBase):\(version)"
         let srvPath   = dataDir(engine: engine, version: version)
-        let assets    = try Mpd.Core.Assets.path()
 
         // Ensure shared DB parent directory exists in the volume.
         _ = Mpd.Podman.volumeToolRun(command: ["mkdir", "-p", "/srv/dbs"])
@@ -197,11 +196,10 @@ extension Mpd.Runtime.DB {
 
             let ip = try allocateIP()
             print("\(name): creating DB container at \(ip)...")
-            var runArgs: [String] = [
+            var runArgs: [String] = Mpd.VM.optMountRO + [
                 "-d", "--name", name,
                 "--network", "mpd-internal:ip=\(ip)",
                 "-v", "\(Mpd.dataVolume):/srv",
-                "-v", "\(assets):/mnt/assets:ro",
                 "--label", "mpd.managed=true",
                 "--label", "mpd.name=\(shortName(engine: engine, version: version))",
                 "--label", "mpd.ip=\(ip)",

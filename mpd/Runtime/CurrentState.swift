@@ -80,7 +80,7 @@ extension Mpd.Runtime.DB {
 // Out-of-process consumers — the portal container, in-runtime tools —
 // don't have podman access, so they can't compute `current` themselves.
 // We periodically snapshot live observations into
-// `~/.mpd/machines/<m>/current-state.json` (mounted into the portal
+// `/var/lib/mpd/state/current-state.json` (mounted into the portal
 // container at `/mpd-state/current-state.json`). The snapshot is
 // refreshed on every `mpd list`, `mpd --status`, `mpd --start/--stop/
 // --restart`, and the rebuild paths (`mpd --setup`).
@@ -103,11 +103,11 @@ struct CurrentStateSnapshot: Codable {
 }
 
 extension Mpd.Runtime.State {
-    /// Path to the live-state snapshot file for the active machine.
+    /// Path to the live-state snapshot file.
     /// Bind-mounted into the portal container at
-    /// `/mpd-state/current-state.json`.
+    /// `/mpd-state/current-state.json` via the stateDir RO mount.
     static var currentStatePath: String {
-        "\(Mpd.Core.State.machineDir())/current-state.json"
+        "\(Mpd.VM.stateDir)/current-state.json"
     }
 
     /// Refresh the live-state snapshot. Walks runtime metas, projects,
@@ -115,13 +115,9 @@ extension Mpd.Runtime.State {
     /// queries) — safe to call from list/status commands and at the end
     /// of state-mutating verbs.
     ///
-    /// Best-effort: if the active machine isn't set or podman isn't
-    /// reachable, silently skips. Never throws — diagnostic refresh
-    /// must never block a user-visible action.
+    /// Best-effort: if podman isn't reachable, silently skips. Never
+    /// throws — diagnostic refresh must never block a user-visible action.
     static func refreshCurrentStateCache() {
-        let machine = Mpd.Core.State.activeMachine()
-        guard !machine.isEmpty else { return }
-
         var runtimes: [String: String] = [:]
         for entry in listRuntimeStateEntries() {
             runtimes[entry.name] = Mpd.Runtime.current(entry.name).rawValue

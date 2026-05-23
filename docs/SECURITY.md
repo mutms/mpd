@@ -201,7 +201,7 @@ inside containers). No DB ports are exposed on `0.0.0.0` of the LAN.
 The host-side `mpd-virt uninstall` removes the VM and host-side
 networking; it offers to remove the CA from the macOS Keychain.
 The host's `~/.mpd-virt/conf/` is preserved by design (so a re-setup
-reuses the same CA + WG identity). In-VM state lives under `~/.mpd/`
+reuses the same CA + WG identity). In-VM state lives under `/var/lib/mpd/`
 on the VM filesystem and is wiped when the VM itself is deleted.
 
 ## Container isolation

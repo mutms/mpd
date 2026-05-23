@@ -191,14 +191,14 @@ private func projectCommands(_ proj: ProjectRow) -> [TUICommand] {
     }
 
     // Configure with DB input (if type has a configure.sh script)
-    if let assetsDir = try? Mpd.Core.Assets.path(),
+    if let assetsDir = try? Mpd.VM.assetsPath(),
        FileManager.default.fileExists(atPath: "\(assetsDir)/runtimes/\(config?.assetsRuntime ?? "")/project_types/\(assetsType)/scripts/configure.sh") {
         let databaseId = proj.databaseId.isEmpty ? "" : proj.databaseId
         cmds.append(TUICommand(label: "Configure", needsConfirm: false,
                    inputPrompt: "Database ID", inputDefault: databaseId) { input in
             let db = input.isEmpty ? databaseId : input
             Mpd.Podman.execInteractive(cName, ["bash",
-                "/mnt/assets/runtimes/\(config?.assetsRuntime ?? "")/project_types/\(assetsType)/scripts/configure.sh", proj.name, db])
+                "/opt/mpd/assets/runtimes/\(config?.assetsRuntime ?? "")/project_types/\(assetsType)/scripts/configure.sh", proj.name, db])
             return true
         })
     }

@@ -21,24 +21,23 @@ cd "${REPO_DIR}"
 make install
 ok "built ${REPO_DIR}/bin/mpd"
 
-# --- bin/ on PATH via ~/.bashrc ---------------------------------------
+# --- bin/ on PATH via /etc/profile.d ----------------------------------
 # `bin/` ships dev helpers (demo, claude-install, gnome-start/stop) that
-# users invoke by bare name. Add a conditional PATH line to ~/.bashrc —
-# matches Debian's stock ~/.profile snippet for ~/.local/bin. Idempotent:
-# marker comment is the dedupe key, re-runs no-op.
-step "bin/ on PATH (~/.bashrc)"
+# users invoke by bare name. System-wide drop-in is the right shape:
+# - applies to every login shell (the dev user, root, future ops users)
+# - no per-user dotfile editing required
+# - idempotent — re-running writes identical content.
+step "bin/ on PATH (/etc/profile.d/mpd.sh)"
 
-BASHRC="${HOME}/.bashrc"
-MARKER='# mpd: bin/ on PATH'
-SNIPPET="
-${MARKER}
-if [ -d \"\$HOME/Developer/mpd/bin\" ] ; then
-    PATH=\"\$HOME/Developer/mpd/bin:\$PATH\"
+PROFILE_D=/etc/profile.d/mpd.sh
+SNIPPET='# mpd: bin/ on PATH (system-wide, installed by bootstrap/50-build.sh)
+if [ -d /opt/mpd/bin ] ; then
+    PATH="/opt/mpd/bin:$PATH"
 fi
-"
-if [ -f "${BASHRC}" ] && grep -qF "${MARKER}" "${BASHRC}"; then
-    ok "${BASHRC} already has the PATH snippet"
+'
+if [ -f "${PROFILE_D}" ] && [ "$(sudo cat "${PROFILE_D}" 2>/dev/null || true)" = "${SNIPPET}" ]; then
+    ok "${PROFILE_D} already in place"
 else
-    printf '%s' "${SNIPPET}" >> "${BASHRC}"
-    ok "appended PATH snippet to ${BASHRC}"
+    printf '%s' "${SNIPPET}" | sudo install -m 0644 /dev/stdin "${PROFILE_D}"
+    ok "wrote ${PROFILE_D}"
 fi

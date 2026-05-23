@@ -177,14 +177,14 @@ else
     ok "sandbox VM: leaving IP on DHCP"
 fi
 
-# --- Platform identity (~/.mpd/conf/platform.env) --------------------
+# --- Platform identity (/var/lib/mpd/conf/platform.env) --------------
 # The in-VM `mpd` binary reads this file at startup to know which mode
 # it's in (managed vs sandbox), its 3-digit VM ID, and (for managed
 # VMs) its static IP. Writing it here means every VM that ran bootstrap
 # has the file in the canonical place; sandbox/take-over and
 # mpd-virt's create flow don't have to write it themselves.
 
-step "Platform identity (~/.mpd/conf/platform.env)"
+step "Platform identity (/var/lib/mpd/conf/platform.env)"
 
 PLATFORM_KIND="managed"
 [ "${OCTET}" -eq 0 ] && PLATFORM_KIND="sandbox"
@@ -197,13 +197,14 @@ if [ "${OCTET}" -ge 100 ]; then
                    | awk '$2 != "lo" {sub(/\/.*/,"",$4); print $4; exit}')"
 fi
 
-mkdir -p "${HOME}/.mpd/conf"
-cat > "${HOME}/.mpd/conf/platform.env" <<EOF
+CONF_DIR=/var/lib/mpd/conf
+sudo install -d -o "$(id -un)" -g "$(id -gn)" -m 0755 "${CONF_DIR}"
+cat > "${CONF_DIR}/platform.env" <<EOF
 # mpd platform identity — written by bootstrap/30-networking.sh.
-# Lives under ~/.mpd/conf/ (persistent identity dir for the in-VM mpd binary).
+# Lives under /var/lib/mpd/conf/ (persistent identity dir for the in-VM mpd binary).
 MPD_PLATFORM=${PLATFORM_KIND}
 MPD_VM_IP=${CURRENT_IP}
 MPD_VM_ID=$(printf '%03d' "${OCTET}")
 EOF
-chmod 0644 "${HOME}/.mpd/conf/platform.env"
-ok "wrote ~/.mpd/conf/platform.env (platform=${PLATFORM_KIND}, vm_id=$(printf '%03d' "${OCTET}"))"
+chmod 0644 "${CONF_DIR}/platform.env"
+ok "wrote ${CONF_DIR}/platform.env (platform=${PLATFORM_KIND}, vm_id=$(printf '%03d' "${OCTET}"))"

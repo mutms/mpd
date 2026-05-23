@@ -10,7 +10,7 @@ mariadb, mysql).
   wrapper.
 - **`project_types/moodle/`** — Moodle support: `phpunit`, `behat`,
   `mdl-cron`, `mdl-cache-purge`, `mdl-install`, `mdl-upgrade`, `grunt`,
-  `mpci` / `mpci-install`, `mdl-data-purge`. See `docs/{desktop,machine}/USAGE.md`
+  `mpci` / `mpci-install`, `mdl-data-purge`. See `docs/USAGE.md`
   for the full per-tool table.
 
 PHP version is resolved per project from the layered MPD_PHP_VERSION

@@ -14,14 +14,15 @@
 //      reachable solely via the
 //      laptop→VM tunnel.
 //
-// Mounts the data volume at `/srv` (no host overlay on either mode). Backup
-// artifacts written by runtime verbs land at `/srv/backups/` on the volume;
-// devs pull them off via this service's SSH/scp endpoint before wiping the
+// Mounts the data volume at `/srv` (no host overlay). Backup artifacts
+// written by runtime verbs land at `/srv/backups/` on the volume; devs
+// pull them off via this service's SSH/scp endpoint before wiping the
 // volume. See ARCHITECTURE.md §10 for the single-transit-point contract.
 //
-// Authorized keys are sourced from `$HOME/.ssh/authorized_keys` on machine
-// (cloud-init populated it with the dev's laptop pubkey). Bind-mounted
-// read-only into the container so a laptop ssh works out of the box.
+// Authorized keys are sourced from `$HOME/.ssh/authorized_keys` in the VM
+// (cloud-init populated it with the dev's laptop pubkey on managed VMs;
+// the sandbox setup script does the same). Bind-mounted read-only into
+// the container so a laptop ssh works out of the box.
 
 import Foundation
 
@@ -56,9 +57,9 @@ extension Mpd.Service.FileAccess {
     /// volume subdirectory). The VM user's `authorized_keys` is bind-mounted
     /// read-only so SSH into fileaccess works on first boot.
     private static func mountArgs(extuser: String, hostHome: String) -> [String] {
-        var args: [String] = [
+        var args: [String] = Mpd.VM.optMountRO + [
             "-v", "\(Mpd.dataVolume):/srv",
-            "-v", "\(Mpd.Core.State.fileAccessHostKeysDir):/etc/ssh/keys",
+            "-v", "\(Mpd.VM.fileAccessHostKeysDir):/etc/ssh/keys",
         ]
         if !extuser.isEmpty, !hostHome.isEmpty {
             args += [
@@ -72,7 +73,7 @@ extension Mpd.Service.FileAccess {
     /// Build the local fileaccess image if it isn't already present.
     private static func ensureImage() throws {
         guard !Mpd.Podman.imageExists(imageTag) else { return }
-        let assetsDir = try Mpd.Core.Assets.path()
+        let assetsDir = try Mpd.VM.assetsPath()
         let contextDir = "\(assetsDir)/services/fileaccess"
         step("Building fileaccess image")
         guard Mpd.Podman.buildImage(tag: imageTag, contextDir: contextDir) == 0 else {
@@ -90,13 +91,13 @@ extension Mpd.Service.FileAccess {
 
         // Persistent host-keys directory — survives container rebuilds, so
         // SSH fingerprints are stable.
-        let hostKeysDir = Mpd.Core.State.fileAccessHostKeysDir
+        let hostKeysDir = Mpd.VM.fileAccessHostKeysDir
         try FileManager.default.createDirectory(
             atPath: hostKeysDir, withIntermediateDirectories: true)
 
         Mpd.Podman.removeIfOutdated(containerName, labels: [revisionLabel: revision])
 
-        let identity = Mpd.detectUserAndUID()
+        let identity = Mpd.VM.detectUserAndUID()
         let hostHome = ProcessInfo.processInfo.environment["HOME"] ?? ""
 
         if !Mpd.Podman.exists(containerName) {
@@ -123,11 +124,11 @@ extension Mpd.Service.FileAccess {
 
         // Race-free guarantee: entry.sh inside the container also ensures
         // /srv/<dir> exists user-owned, but it runs asynchronously after
-        // `podman run -d` returns. Subsequent --setup steps (e.g.
-        // PersonalArea.provision) call volumeTool* immediately and would
-        // otherwise race ahead of entry.sh on a fresh container. This
-        // explicit root-mode exec runs through podman's normal "wait for
-        // container ready" semantics and is idempotent with entry.sh.
+        // `podman run -d` returns. Subsequent --setup steps call
+        // volumeTool* immediately and would otherwise race ahead of
+        // entry.sh on a fresh container. This explicit root-mode exec
+        // runs through podman's normal "wait for container ready"
+        // semantics and is idempotent with entry.sh.
         ensureDataVolumeDirectories(uid: identity.uid)
     }
 
@@ -137,7 +138,7 @@ extension Mpd.Service.FileAccess {
     /// Mirrors the same list in entry.sh; kept in sync.
     private static func ensureDataVolumeDirectories(uid: String) {
         guard !uid.isEmpty else { return }
-        let dirs = ["/srv/projects", "/srv/data", "/srv/meta", "/srv/dbs", "/srv/personal", "/srv/backups"]
+        let dirs = ["/srv/projects", "/srv/data", "/srv/meta", "/srv/dbs", "/srv/backups"]
         let cmd = ["install", "-d", "-o", uid, "-g", uid, "-m", "0775"] + dirs
         _ = Mpd.Podman.exec(containerName, options: ["--user", "0:0"], cmd)
     }

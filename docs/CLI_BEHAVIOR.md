@@ -10,7 +10,11 @@ Out of scope:
 
 CLI behavior assumes fixed paths:
 
-- `~/.mpd/` for state/cache and configuration
+- `/opt/mpd/` for the code checkout, assets, and built binary
+- `/var/lib/mpd/` for state/cache and configuration:
+  - `conf/` — CA + service cert, `platform.env`, WireGuard private key (PRIVATE)
+  - `env/mpd-vm.env` — user-editable VM-wide env overrides (mounted into runtimes)
+  - `state/` — operational state: projects.json, runtimes/, dnsmasq.d/, etc.
 
 Project backups live inside the data volume at `/srv/backups/`, accessed
 from the laptop via fileaccess SSH/scp; see

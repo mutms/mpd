@@ -61,7 +61,13 @@ The script:
        - Enter an existing number to switch to that VM or re-verify it.
        - Enter a new number to create a new VM end-to-end.
 
-When creating a new VM, the script:
+When creating a new VM, the script first asks for a VM username
+(default: your Windows username, sanitised to lowercase letters /
+digits / hyphens). Accept the default unless you have a reason —
+the bare 'ssh mpd-NN-php' jump-host form assumes one matching name
+across Windows / VM / runtime; see docs/NETWORKING.md.
+
+Then:
 
   1. Downloads the Debian cloud image (~200 MB, cached for reuse).
   2. Converts and resizes the disk image to VHDX format.
@@ -95,7 +101,7 @@ When setup finishes:
     5.2.0 site in one command -- URL and credentials printed at the
     end (typically ready in 2-3 minutes thanks to the pre-warm).
 
-  * For day-to-day usage see docs/machine/USAGE.md in the mpd repo.
+  * For day-to-day usage see docs/USAGE.md in the mpd repo.
 
 When switching to a different VM:
 
@@ -228,4 +234,4 @@ inside the VM as an SSH endpoint at fileaccess.service.mpd.test after
 "mpd --setup" has run.
 
 Do not copy private keys or the caroot/ directory out of the VM.
-Private material stays in ~/Developer/mpd/conf/ inside the VM.
+Private material stays in /var/lib/mpd/conf/ inside the VM.

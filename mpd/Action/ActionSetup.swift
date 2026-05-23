@@ -72,7 +72,7 @@ extension Mpd.Action.Setup {
         guard missing.isEmpty else {
             throw RuntimeError("""
                 Bootstrap incomplete — missing: \(missing.joined(separator: ", ")).
-                Run the bootstrap steps in ~/Developer/mpd/bootstrap/:
+                Run the bootstrap steps in /opt/mpd/bootstrap/:
                     bash bootstrap/30-networking.sh <NNN>      # sandbox: 000; managed: 100..254
                     bash bootstrap/40-install-software.sh
                     bash bootstrap/50-build.sh
@@ -88,7 +88,7 @@ extension Mpd.Action.Setup {
     /// `mpd-`. Used as the prefix for every runtime container/pod hostname:
     /// `mpd-<NNN>-php`, `mpd-<NNN>-node`, etc.
     private static func deriveVmId() -> String {
-        // Read /etc/hostname directly — `hostname` isn't on the HostExec
+        // Read /etc/hostname directly — `hostname` isn't on the Mpd.VM.exec
         // whitelist and the file is always present on Debian.
         let raw = (try? String(contentsOfFile: "/etc/hostname", encoding: .utf8)) ?? ""
         // Take the short name (first dot strips any FQDN form just in case).
@@ -103,17 +103,17 @@ extension Mpd.Action.Setup {
     /// Idempotent. Single source for the banner across all platforms — the
     /// per-platform `create-vm.sh` scripts no longer touch /etc/motd.
     private static func installLoginBanner() throws {
-        let source = "\(Mpd.assetsDir)/machine/motd"
+        let source = "\(Mpd.VM.assetsDir)/machine/motd"
         guard FileManager.default.fileExists(atPath: source) else {
             throw RuntimeError("motd asset missing: \(source)")
         }
         // Disable dynamic motd generation. Some Debian images ship
         // /etc/update-motd.d/* scripts that would otherwise compete with our
         // static /etc/motd. Best-effort — directory may not exist.
-        _ = Mpd.HostExec.run(
+        _ = Mpd.VM.exec(
             ["sudo", "bash", "-c", "chmod -x /etc/update-motd.d/* 2>/dev/null || true"]
         )
-        guard Mpd.HostExec.run(
+        guard Mpd.VM.exec(
             ["sudo", "install", "-m", "644", source, "/etc/motd"]
         ) == 0 else {
             throw RuntimeError("Failed to install /etc/motd from \(source).")
@@ -152,7 +152,7 @@ extension Mpd.Action.Setup {
         } else {
             let host = ProcessInfo.processInfo.hostName
             let comment = "mpd VM \(host)"
-            guard Mpd.HostExec.run([
+            guard Mpd.VM.exec([
                 "ssh-keygen", "-t", "ed25519", "-N", "", "-f", keyPath, "-C", comment, "-q",
             ]) == 0 else {
                 throw RuntimeError("Failed to generate ~/.ssh/id_ed25519. Run `ssh-keygen -t ed25519` manually and re-run mpd --setup.")
@@ -216,7 +216,7 @@ extension Mpd.Action.Setup {
         // certutil from libnss3-tools. If missing, log and skip — this isn't
         // worth failing setup for; the user can browse with -k or accept the
         // warning manually until they install it.
-        guard Mpd.HostExec.binaryPath(for: "certutil") != nil,
+        guard Mpd.VM.binaryPath(for: "certutil") != nil,
               FileManager.default.fileExists(atPath: "/usr/bin/certutil") else {
             print("  certutil not found (apt: libnss3-tools). Skipping NSS-DB import.")
             return
@@ -224,7 +224,7 @@ extension Mpd.Action.Setup {
 
         // -A adds; nickname "mpd CA" is overwritten on re-run, so this is
         // idempotent. Trust flags "C,," = trusted CA for SSL only.
-        guard Mpd.HostExec.run([
+        guard Mpd.VM.exec([
             "certutil", "-A",
             "-n", "mpd CA",
             "-t", "C,,",
@@ -251,69 +251,61 @@ extension Mpd.Action.Setup {
         // Verify the host's network stack is in the standardized state
         // (systemd-resolved active, fed by NetworkManager). bootstrap/30
         // is responsible for putting the system here.
-        try Mpd.Integration.requireSystemdResolvedActive()
+        try Mpd.VM.DNS.requireSystemdResolvedActive()
 
-        // The VM itself is the machine; pin the state name accordingly.
-        var status = Mpd.Core.State.readStatus()
-        if status.activeMachine != "mpd-machine" {
-            status.activeMachine = "mpd-machine"
-            Mpd.Core.State.writeStatus(status)
-        }
         ok("Podman runs natively — no machine needed.")
     }
 
     static func execute() throws {
-        let assetsDir = try Mpd.Core.Assets.path()
-        ok("Execution environment: \(Mpd.label)")
+        let assetsDir = try Mpd.VM.assetsPath()
+        ok("Execution environment: \(Mpd.VM.label)")
         let fm = FileManager.default
 
         try Mpd.Action.Setup.preflight()
 
         step("Conf directory")
-        try Mpd.ensureConfDirectory()
-        ok("Ensured ~/.mpd/conf/")
+        try Mpd.VM.ensureConfDirectory()
+        ok("Ensured /var/lib/mpd/conf/")
 
         // Step — Platform identity (must be written by the bootstrap script
         // before this point). Tells mpd which client OS the laptop runs and
         // what the VM IP is, so we print correct laptop-side recipes.
         step("Platform identity")
-        let identity = try Mpd.Core.Platform.load()
+        let identity = try Mpd.VM.Platform.load()
         // Auto-refresh the VM ID from the VM's OS hostname on every setup
         // run. User can hand-edit MPD_VM_ID in platform.env afterwards;
         // the next --setup overwrites it back to the auto-derived value.
         let derivedVmId = deriveVmId()
         if derivedVmId != identity.vmId {
-            try Mpd.Core.Platform.updateVmId(derivedVmId)
+            try Mpd.VM.Platform.updateVmId(derivedVmId)
         }
         ok("Platform: \(identity.platform.rawValue), VM IP: \(identity.vmIP.isEmpty ? "—" : identity.vmIP), VM ID: \(derivedVmId.isEmpty ? "—" : derivedVmId)")
 
         // Step — VM-local SSH keypair. Without this, the VM has no private key
         // to offer when SSHing into runtimes from a local terminal (e.g. inside
         // GNOME desktop), so users would always need `ssh -A` from the laptop.
-        // The pubkey is later picked up by Mpd.authorizedPublicKeys
+        // The pubkey is later picked up by Mpd.VM.authorizedPublicKeys
         // and ends up in every runtime's authorized_keys.
         step("VM-local SSH key")
         try ensureVMSSHKey()
 
-        let machineName = Mpd.Core.State.activeMachine()
-
         // Detect extuser/extuid
         step("Configuration")
-        var config = Mpd.Core.State.readConfig()
-        let detectedIdentity = Mpd.detectUserAndUID()
+        var config = Mpd.VM.Config.read()
+        let detectedIdentity = Mpd.VM.detectUserAndUID()
         let user = detectedIdentity.user
         let uid = detectedIdentity.uid
         if !user.isEmpty { config.user = user }
         if !uid.isEmpty { config.uid = uid }
-        Mpd.Core.State.writeConfig(config)
-        ok("machine=\(machineName)  user=\(user)  uid=\(uid)")
+        Mpd.VM.Config.write(config)
+        ok("user=\(user)  uid=\(uid)")
 
         // Root CA certificate
         step("Root CA certificate")
 
-        let carootDir = Mpd.confCARootDir
-        let serviceDir = Mpd.confServiceDir
-        let certOpsDir = Mpd.confTempDir
+        let carootDir = Mpd.VM.confCARootDir
+        let serviceDir = Mpd.VM.confServiceDir
+        let certOpsDir = Mpd.VM.confTempDir
         let caRootPem = "\(carootDir)/rootCA.pem"
         let caKeyPem = "\(carootDir)/rootCA-key.pem"
 
@@ -335,7 +327,7 @@ extension Mpd.Action.Setup {
         }
 
         if !fm.fileExists(atPath: caRootPem) {
-            try Mpd.Certificate.generateCA(caKeyPath: caKeyPem, caCertPath: caRootPem, certsDir: certOpsDir)
+            try Mpd.VM.Certificate.generateCA(caKeyPath: caKeyPem, caCertPath: caRootPem, certsDir: certOpsDir)
             ok("CA certificate generated in \(caRootPem)")
         } else {
             ok("CA already exists in \(caRootPem)")
@@ -355,7 +347,7 @@ extension Mpd.Action.Setup {
         let serviceCert = "\(serviceDir)/cert.pem"
         let serviceKey = "\(serviceDir)/key.pem"
         let serviceFingerprint = "\(serviceDir)/rootCA.fingerprint"
-        let currentCAFingerprint = Mpd.fileFingerprint(caRootPem)
+        let currentCAFingerprint = Mpd.VM.fileFingerprint(caRootPem)
         let storedServiceFingerprint: String
         if fm.fileExists(atPath: serviceFingerprint) {
             storedServiceFingerprint = try String(contentsOfFile: serviceFingerprint, encoding: .utf8)
@@ -380,7 +372,7 @@ extension Mpd.Action.Setup {
             }
             try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: serviceDir)
 
-            try Mpd.Certificate.generateCert(
+            try Mpd.VM.Certificate.generateCert(
                 sans: ["mpd.test"],
                 certPath: serviceCert,
                 keyPath: serviceKey,
@@ -394,16 +386,16 @@ extension Mpd.Action.Setup {
         }
 
         step("Root Certificate Authority for mpd.test in system trust store")
-        Mpd.Certificate.trustCA(caPath: caRootPem)
+        Mpd.VM.Certificate.trustCA(caPath: caRootPem)
 
         step("Trust mpd CA in user's NSS DB (Chromium)")
         try ensureCAInUserNSSDB(caPath: caRootPem)
 
         step("Trust mpd CA in Firefox (enterprise policy)")
-        Mpd.Certificate.installFirefoxPolicy(caPath: caRootPem)
+        Mpd.VM.Certificate.installFirefoxPolicy(caPath: caRootPem)
 
         step("DNS resolver for mpd.test")
-        try Mpd.Integration.configureDNSResolver()
+        try Mpd.VM.DNS.configureDNSResolver()
 
         step("Podman network")
         if Mpd.Podman.networkExists("mpd-internal") {
@@ -431,8 +423,13 @@ extension Mpd.Action.Setup {
         step("File access service")
         try Mpd.Service.FileAccess.setup()
 
-        step("Personal area in data volume")
-        try Mpd.Core.PersonalArea.provision()
+        // /var/lib/mpd/skel/ — VM-host slot for user-managed dotfile
+        // defaults that overlay assets/runtime-base/skel/ on every new
+        // runtime create. Created empty; signals to the user that this
+        // is where overrides go (no-op until they drop files in).
+        step("Skel override directory (/var/lib/mpd/skel/)")
+        try fm.createDirectory(atPath: "\(Mpd.VM.varLibDir)/skel", withIntermediateDirectories: true)
+        ok("/var/lib/mpd/skel/ ready.")
 
         step("mpd data directories")
         try fm.createDirectory(atPath: Mpd.Runtime.State.runtimesDir, withIntermediateDirectories: true)
@@ -444,42 +441,40 @@ extension Mpd.Action.Setup {
         if !fm.fileExists(atPath: databasesPath) {
             try "{\"databases\":[]}".write(toFile: databasesPath, atomically: true, encoding: .utf8)
         }
-        ok("~/.mpd/machines/\(machineName)/ ready.")
+        ok("/var/lib/mpd/state/ ready.")
 
-        // mpd-user.env defaults (created once from template, never overwritten).
-        // Comes BEFORE service setup so the first sync has a file to mirror.
-        step("mpd-user.env defaults")
-        let mpdUserEnvPath = "\(Mpd.dotMpdDir)/mpd-user.env"
-        if fm.fileExists(atPath: mpdUserEnvPath) {
-            ok("\(mpdUserEnvPath) already exists — edit to set your defaults.")
+        // mpd-vm.env defaults (created once from template, never overwritten).
+        // Lives at /var/lib/mpd/env/mpd-vm.env — bind-mounted RO into
+        // every runtime container at the same absolute path.
+        step("mpd-vm.env defaults")
+        try fm.createDirectory(atPath: Mpd.VM.envDir, withIntermediateDirectories: true)
+        let mpdVmEnvPath = "\(Mpd.VM.envDir)/mpd-vm.env"
+        if fm.fileExists(atPath: mpdVmEnvPath) {
+            ok("\(mpdVmEnvPath) already exists — edit to set your defaults.")
         } else {
-            let src = "\(assetsDir)/templates/mpd-user.env"
+            let src = "\(assetsDir)/templates/mpd-vm.env"
             if fm.fileExists(atPath: src) {
-                try fm.copyItem(atPath: src, toPath: mpdUserEnvPath)
-                ok("\(mpdUserEnvPath) created — edit to set your defaults.")
+                try fm.copyItem(atPath: src, toPath: mpdVmEnvPath)
+                ok("\(mpdVmEnvPath) created — edit to set your defaults.")
             } else {
                 print("  Warning: template not found at \(src)")
             }
         }
 
-        step("Syncing bind-mount sources into data volume")
-        try Mpd.Core.State.syncBindMountFiles()
-        ok("Bind-mount sources synced.")
-
         try Mpd.Service.Dnsmasq.setup()
         try Mpd.Service.Portal.setup()
 
         step("DNS resolution")
-        Mpd.Integration.verifyDNS()
+        Mpd.VM.DNS.verifyDNS()
 
         step("Shell completion for mpd")
-        Mpd.Core.Assets.installCompletion()
+        Mpd.Completion.install()
 
         step("Installing login banner (motd)")
         try installLoginBanner()
 
         step("Rescanning data volume")
-        try? Mpd.Core.DataVolume.rescan()
+        try? Mpd.VM.DataVolume.rescan()
 
         step("Probing existing runtime containers")
         Mpd.Runtime.rebuildStateCache()
@@ -505,7 +500,7 @@ extension Mpd.Action.Setup {
         // EventMpdPreStop hooks instead of being killed mid-flight.
         // See docs/HOOKS.md §"Systemd integration".
         step("Installing shutdown unit")
-        try Mpd.ShutdownUnit.install()
+        try Mpd.VM.installShutdownUnit()
         ok("~/.config/systemd/user/mpd.service installed and enabled.")
 
         // Hook diagnostics — orphans, audience drift, revision bumps.

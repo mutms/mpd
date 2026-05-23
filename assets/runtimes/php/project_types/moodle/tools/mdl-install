@@ -4,7 +4,7 @@
 # All arguments are passed through to admin/cli/install_database.php.
 set -euo pipefail
 
-source /mnt/assets/runtimes/php/project_types/moodle/scripts/mpd-env.sh
+source /opt/mpd/assets/runtimes/php/project_types/moodle/scripts/mpd-env.sh
 
 # Composer install runs at PROJECT_DIR — composer.json + vendor/ stay at the
 # project root in both pre-5.0 and post-5.0 layouts.

@@ -150,7 +150,7 @@ ok "Repository cloned"
 # new static IP). Wait for SSH on the new IP afterward.
 step "Bootstrap 30: networking (hostname → ${VM_NAME}, static IP → ${VM_IP})"
 ssh_cmd "$DHCP_IP" "$VM_USER" \
-    "bash \$HOME/Developer/mpd/bootstrap/30-networking.sh $(printf '%q' "$VM_OCTET")" \
+    "bash /opt/mpd/bootstrap/30-networking.sh $(printf '%q' "$VM_OCTET")" \
     || warn "bootstrap/30 ssh ended (expected — IP just changed)"
 
 clear_known_hosts
@@ -165,19 +165,19 @@ ok "sshd listening at ${VM_IP}:22"
 # --- Bootstrap steps 40 + 50 + 60: apt install set, mpd build, optional WG ---
 step "Bootstrap 40: apt install package set"
 ssh_cmd "$VM_IP" "$VM_USER" \
-    "bash \$HOME/Developer/mpd/bootstrap/40-install-software.sh" \
+    "bash /opt/mpd/bootstrap/40-install-software.sh" \
     || die "bootstrap/40 failed (apt install)."
 ok "Packages installed"
 
 step "Bootstrap 50: build mpd binary"
 ssh_cmd "$VM_IP" "$VM_USER" \
-    "bash \$HOME/Developer/mpd/bootstrap/50-build.sh" \
+    "bash /opt/mpd/bootstrap/50-build.sh" \
     || die "bootstrap/50 failed (make install)."
 ok "mpd binary built"
 
 step "Bootstrap 60: WireGuard (no-op when conf absent)"
 ssh_cmd "$VM_IP" "$VM_USER" \
-    "bash \$HOME/Developer/mpd/bootstrap/60-wireguard.sh" \
+    "bash /opt/mpd/bootstrap/60-wireguard.sh" \
     || die "bootstrap/60 failed."
 ok "Bootstrap complete"
 
@@ -204,11 +204,11 @@ ok "Swap ready"
 
 step "Uploading host CA into VM"
 ssh_cmd "$VM_IP" "$VM_USER" \
-    "mkdir -p ~/.mpd/conf/caroot && chmod 700 ~/.mpd/conf/caroot"
+    "mkdir -p /var/lib/mpd/conf/caroot && chmod 700 /var/lib/mpd/conf/caroot"
 scp -q -o StrictHostKeyChecking=no -o BatchMode=yes \
     "$ARG_HOST_CA_PEM" "$ARG_HOST_CA_KEY" \
-    "${VM_USER}@${VM_IP}:.mpd/conf/caroot/"
-ssh_cmd "$VM_IP" "$VM_USER" "chmod 600 ~/.mpd/conf/caroot/rootCA*.pem"
+    "${VM_USER}@${VM_IP}:/var/lib/mpd/conf/caroot/"
+ssh_cmd "$VM_IP" "$VM_USER" "chmod 600 /var/lib/mpd/conf/caroot/rootCA*.pem"
 ok "Host CA uploaded"
 
 # --- mpd --setup ---
@@ -223,7 +223,7 @@ step "Setting login banner"
 ssh_cmd "$VM_IP" "$VM_USER" 'bash -se' <<'EOF'
 set -e
 sudo chmod -x /etc/update-motd.d/* 2>/dev/null || true
-sudo cp "$HOME/Developer/mpd/assets/machine/motd" /etc/motd
+sudo cp /opt/mpd/assets/machine/motd /etc/motd
 EOF
 ok "Login banner set"
 

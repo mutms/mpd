@@ -11,9 +11,9 @@
 #   - sshd configured (PermitRootLogin no, pubkey auth)
 #   - dev user created with matching UID and passwordless sudo
 #   - /etc/mpd/runtime identity, /etc/hosts self-record
-#   - /home/<user> defaults (~/.bashrc cd /srv/projects, ~/.local/bin on PATH)
-#   - /srv/{projects,data,dbs,tools,personal} laid out with correct ownership
-#   - /srv/personal/* symlinked into /home/<user>/
+#   - /home/<user>/ seeded from skel (defaults + optional VM-host overrides)
+#   - /srv/{projects,data,dbs,tools} laid out with correct ownership
+#   - runtime-base tools symlinked into /srv/tools/_base/
 #
 # Runtime-specific layers (PHP, Node, …) are added on top by
 # assets/runtimes/<rt>/build.sh running as the dev user.
@@ -58,60 +58,35 @@ fi
 echo "${EXTUSER} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${EXTUSER}"
 chmod 440 "/etc/sudoers.d/${EXTUSER}"
 
-# --- SSH key directory for the dev user ---
 USER_HOME="/home/${EXTUSER}"
-mkdir -p "${USER_HOME}/.ssh"
-chmod 700 "${USER_HOME}/.ssh"
-chown "${EXTUSER}:${EXTUSER}" "${USER_HOME}/.ssh"
 
-# --- Default working directory for SSH sessions ---
-cat >> "${USER_HOME}/.bashrc" <<'EOF'
-cd /srv/projects 2>/dev/null || true
-EOF
-
-# --- ~/.local/bin on PATH for user-installed CLIs (Claude Code, etc.) ---
-# Debian's default ~/.profile only adds it for login shells; .bashrc covers
-# SSH command execution and non-login interactive shells.
-cat >> "${USER_HOME}/.bashrc" <<'EOF'
-[ -d "$HOME/.local/bin" ] && PATH="$HOME/.local/bin:$PATH"
-EOF
-
-# --- /srv/personal/ — shared developer state across all runtimes ---
-# Flat layout (no <user> subdir): runtimes are single-user.
-PERSONAL_DIR="/srv/personal"
-mkdir -p "${PERSONAL_DIR}/.ssh"
-chown -R "${EXTUSER}:${EXTUSER}" "${PERSONAL_DIR}" 2>/dev/null || true
-
-# known_hosts shared across all runtimes
-touch "${PERSONAL_DIR}/.ssh/known_hosts"
-chown "${EXTUSER}:${EXTUSER}" "${PERSONAL_DIR}/.ssh/known_hosts"
-if [ ! -e "${USER_HOME}/.ssh/known_hosts" ]; then
-    ln -sf "${PERSONAL_DIR}/.ssh/known_hosts" "${USER_HOME}/.ssh/known_hosts"
+# --- Skel: seed /home/<user>/ from shipped defaults + VM-host overrides ---
+# Two layers, last wins:
+#   1. /opt/mpd/assets/runtime-base/skel/   (shipped defaults — known_hosts,
+#                                            .bashrc with PATH + cd + nvm)
+#   2. /var/lib/mpd/skel/                   (VM-host overrides — optional;
+#                                            user-managed, copied if present)
+#
+# /var/lib/mpd/ on the VM is bind-mounted at the same path inside this
+# container (well, only /var/lib/mpd/env/ is — the rest isn't visible
+# here). The /var/lib/mpd/skel/ tree is mounted RO via Mpd.skelMountRO
+# (see Runtime.swift) so this script can read it.
+#
+# cp -aT copies CONTENTS of src into dst (the trailing T is important —
+# without it cp would create /home/<user>/skel/ instead of merging into
+# /home/<user>/). -a preserves modes; dotfiles included.
+cp -aT /opt/mpd/assets/runtime-base/skel "${USER_HOME}"
+if [ -d /var/lib/mpd/skel ]; then
+    cp -aT /var/lib/mpd/skel "${USER_HOME}"
 fi
 
-# Per-runtime by design: ~/.bash_history (transient, no value carrying it),
-# ~/.local (user-installed CLIs — re-provision on runtime recreate),
-# ~/.nvm (Node via nvm — same model).
+# Take ownership of everything in the dev user's home — useradd -m already
+# created the dir with the right owner, but cp -a inherited root for the
+# copied entries.
+chown -R "${EXTUSER}:${EXTUSER}" "${USER_HOME}"
 
-# mpd-user.env — synced from the host's ~/.mpd/mpd-user.env into
-# /srv/personal/mpd-user.env by Mpd.Core.State.syncBindMountFiles().
-# Symlink into the user's home so the canonical $HOME/mpd-user.env path
-# resolves to the volume copy.
-if [ ! -e "${USER_HOME}/mpd-user.env" ]; then
-    ln -sf "${PERSONAL_DIR}/mpd-user.env" "${USER_HOME}/mpd-user.env"
-fi
-
-chown -h "${EXTUSER}:${EXTUSER}" \
-    "${USER_HOME}/.ssh/known_hosts" \
-    "${USER_HOME}/mpd-user.env" 2>/dev/null || true
-
-# --- /opt/mpd — dev-user-owned system area ---
-# A managed scratch space under /opt for whatever wants to install
-# system-wide artifacts owned by the dev user (build tools, third-party
-# binaries, etc.). Lives in the container overlay — re-provisioned on
-# runtime recreate. /opt itself stays root-owned.
-mkdir -p /opt/mpd
-chown "${EXTUSER}:${EXTUSER}" /opt/mpd
+# .ssh needs strict mode regardless of what skel shipped.
+chmod 700 "${USER_HOME}/.ssh" 2>/dev/null || true
 
 # --- Shared volume directories ---
 # /srv/tools is the dev-user-writable area where phase-2 build.sh
@@ -126,15 +101,13 @@ chmod 0755 /srv/dbs
 
 # --- Runtime-base tools shared across all runtimes ---
 # Tools that work in any Trixie-based runtime (claude-install, node-install,
-# …) live in /mnt/assets/runtime-base/tools/. Symlink them into
-# /srv/tools/_base/ and add that directory to PATH for every login shell.
-# Sourced before /etc/profile.d/mpd-tools-runtime.sh so runtime tools win
-# over base tools if any name collides.
+# …) live in /opt/mpd/assets/runtime-base/tools/. Symlink them into
+# /srv/tools/_base/. The dev user's ~/.bashrc (shipped via skel) globs
+# /srv/tools/*/ onto PATH automatically — no /etc/profile.d/ drop-in
+# needed, and root deliberately stays without these on PATH.
 mkdir -p /srv/tools/_base
-for SCRIPT in /mnt/assets/runtime-base/tools/*; do
+for SCRIPT in /opt/mpd/assets/runtime-base/tools/*; do
     [ -f "$SCRIPT" ] || continue
     SCRIPT_NAME="$(basename "$SCRIPT")"
     ln -sf "$SCRIPT" "/srv/tools/_base/${SCRIPT_NAME}"
 done
-echo 'export PATH="/srv/tools/_base:$PATH"' > /etc/profile.d/mpd-tools-base.sh
-chmod 0644 /etc/profile.d/mpd-tools-base.sh

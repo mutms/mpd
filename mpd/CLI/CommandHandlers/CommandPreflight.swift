@@ -8,8 +8,8 @@ enum CommandPreflight {
         var missing: [(name: String, path: String?)] = []
 
         for name in requiredNames {
-            if !Mpd.HostExec.isExecutable(name) {
-                missing.append((name, Mpd.HostExec.binaryPath(for: name)))
+            if !Mpd.VM.isExecutable(name) {
+                missing.append((name, Mpd.VM.binaryPath(for: name)))
             }
         }
 

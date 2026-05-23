@@ -2,23 +2,19 @@
 # node-install — install nvm + Node.js into $HOME/.nvm (upstream-standard).
 # Idempotent: no-op if nvm is already installed (per ARCHITECTURE.md §7).
 # Default version is "lts"; pass an explicit version to override.
-# Runs as the dev user; uses sudo only to drop the /etc/profile.d shim.
+# Runs as the dev user; no sudo required.
 #
 # Available in any runtime: bootstrap.sh symlinks runtime-base tools into
-# /srv/tools/_base/ and adds that directory to PATH for every login shell.
-# The php and node runtimes' build.sh also invoke it directly during
-# provisioning to seed the LTS Node version.
+# /srv/tools/_base/; the skel-shipped ~/.bashrc puts /srv/tools/*/ on
+# the dev user's PATH for every login shell. The php and node runtimes'
+# build.sh also invoke it directly during provisioning to seed the LTS
+# Node version.
+#
+# Shell hookup: skel/.bashrc already sources $HOME/.nvm/nvm.sh when
+# present, so opening a new login shell after install picks up nvm/node
+# without any extra config step. Root deliberately has no nvm on PATH
+# (privilege model: tools run as the dev user only).
 set -euo pipefail
-
-# Drop the standard nvm shell hook (upstream's ~/.bashrc snippet) into
-# /etc/profile.d/ so every login shell picks up node + nvm + completion.
-# Always (re)write — cheap and idempotent.
-sudo tee /etc/profile.d/mpd-nvm.sh >/dev/null <<'EOF'
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
-EOF
-sudo chmod 0644 /etc/profile.d/mpd-nvm.sh
 
 if [ -s "$HOME/.nvm/nvm.sh" ]; then
     echo "nvm already installed at \$HOME/.nvm — open a new shell to use node/nvm."

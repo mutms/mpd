@@ -192,7 +192,7 @@ write_files:
       net.ipv6.conf.all.disable_ipv6 = 1
       net.ipv6.conf.default.disable_ipv6 = 1
       net.ipv6.conf.lo.disable_ipv6 = 1
-  - path: /home/${VM_USER}/.mpd/conf/platform.env
+  - path: /var/lib/mpd/conf/platform.env
     owner: ${VM_USER}:${VM_USER}
     permissions: '0644'
     defer: true
@@ -428,29 +428,29 @@ ok "Swap ready"
 
 step "Bootstrap 40: apt install package set"
 ssh_cmd "$VM_IP" "$VM_USER" \
-    "bash \$HOME/Developer/mpd/bootstrap/40-install-software.sh" \
+    "bash /opt/mpd/bootstrap/40-install-software.sh" \
     || die "bootstrap/40 failed (apt install)."
 ok "Packages installed"
 
 step "Bootstrap 50: build mpd binary"
 ssh_cmd "$VM_IP" "$VM_USER" \
-    "bash \$HOME/Developer/mpd/bootstrap/50-build.sh" \
+    "bash /opt/mpd/bootstrap/50-build.sh" \
     || die "bootstrap/50 failed (make install)."
 ok "mpd binary built"
 
 step "Bootstrap 60: WireGuard (no-op when conf absent)"
 ssh_cmd "$VM_IP" "$VM_USER" \
-    "bash \$HOME/Developer/mpd/bootstrap/60-wireguard.sh" \
+    "bash /opt/mpd/bootstrap/60-wireguard.sh" \
     || die "bootstrap/60 failed."
 ok "Bootstrap complete"
 
 step "Uploading host CA into VM (mpd will reuse it)"
 ssh_cmd "$VM_IP" "$VM_USER" \
-    "mkdir -p ~/.mpd/conf/caroot && chmod 700 ~/.mpd/conf/caroot"
+    "mkdir -p /var/lib/mpd/conf/caroot && chmod 700 /var/lib/mpd/conf/caroot"
 scp -q -o StrictHostKeyChecking=no -o BatchMode=yes \
     "$ARG_HOST_CA_PEM" "$ARG_HOST_CA_KEY" \
-    "${VM_USER}@${VM_IP}:.mpd/conf/caroot/"
-ssh_cmd "$VM_IP" "$VM_USER" "chmod 600 ~/.mpd/conf/caroot/rootCA*.pem"
+    "${VM_USER}@${VM_IP}:/var/lib/mpd/conf/caroot/"
+ssh_cmd "$VM_IP" "$VM_USER" "chmod 600 /var/lib/mpd/conf/caroot/rootCA*.pem"
 ok "Host CA uploaded"
 
 step "Running 'mpd --setup' (CA, podman network, services)"

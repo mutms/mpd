@@ -4,7 +4,7 @@
 #   . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 #
 # Sister to setup/macos/lib/common.sh — same shape,
-# Linux-ized: virsh + libvirt instead of utmctl + AppleScript;
+# Linux-ized: virsh + libvirt
 # `ip route` instead of macOS's `route`; systemd-resolved drop-in
 # instead of /etc/resolver/; ca-certificates + NSS DB instead of
 # /Library/Keychains/System.keychain.
@@ -39,8 +39,8 @@ FIREFOX_POLICIES_FILE="${FIREFOX_POLICIES_DIR}/policies.json"
 # bind-mount permits /etc/firefox/policies/ but generally not /usr/local/share/.
 FIREFOX_POLICIES_CERT="${FIREFOX_POLICIES_DIR}/mpd-rootCA.crt"
 
-# Platform state — dotfile, matches macos so Swift's
-# Mpd.Environment.mpdMachineCARootDir resolves uniformly across hosts.
+# Platform state — dotfile, matches macos so the in-VM mpd's CA-reuse
+# check finds the same CA layout across hosts.
 STATE_DIR="${HOME}/.mpd-virt"
 STATE_CA_FILE="${STATE_DIR}/ca.sha1"
 SSH_CONFIG="${HOME}/.ssh/config"
@@ -354,9 +354,9 @@ remove_desktop_shortcut() {
 }
 
 # --- CA generation (host-side) ---
-# Bash twin of Mpd.Environment.Certificate.generateCA in
-# mpd/Environment/Certificate.swift, identical to the version in
-# macos/lib/common.sh. KEEP IN SYNC across all three.
+# Bash twin of Mpd.VM.Certificate.generateCA in mpd/VM/Certificate.swift,
+# identical to the version in macos/lib/common.sh. KEEP IN SYNC across
+# all three.
 
 generate_mpd_ca() {
     local key_path="$1" cert_path="$2"

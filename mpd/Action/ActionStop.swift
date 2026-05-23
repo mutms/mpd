@@ -5,8 +5,7 @@ import Foundation
 
 extension Mpd.Action.Stop {
     static func execute() throws {
-        let status = Mpd.Core.State.readStatus()
-        guard !status.activeMachine.isEmpty else {
+        guard FileManager.default.fileExists(atPath: Mpd.VM.stateDir) else {
             throw RuntimeError("mpd is not set up yet. Run: mpd --setup")
         }
 
@@ -39,7 +38,7 @@ extension Mpd.Action.Stop {
         // systemd will SIGTERM podman services (rootful containers get graceful
         // shutdown via the podman.service unit). Passwordless sudo is set up
         // by the platform bootstrap script so this doesn't prompt.
-        let rc = Mpd.HostExec.run(["sudo", "systemctl", "poweroff"])
+        let rc = Mpd.VM.exec(["sudo", "systemctl", "poweroff"])
         if rc != 0 {
             throw RuntimeError("Failed to power off VM (sudo systemctl poweroff returned \(rc)).")
         }

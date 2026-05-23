@@ -27,7 +27,7 @@ extension Mpd.Project {
     static func configure(project: String, entry: inout RegisteredProjectRecord, args: [String]) throws {
         // CLI surface: positional KEY=VALUE pairs, each matching ^MPD_[A-Z0-9_]+=.*$.
         // Swift sanitises and writes mutations to /srv/projects/<n>/mpd.env, then
-        // the project-type configure.sh resolves the layered env (mpd-user.env +
+        // the project-type configure.sh resolves the layered env (mpd-vm.env +
         // project mpd.env) and emits dbTag/dbEngine/etc. into effective.json.
         // Swift reads effective.json to provision the DB container.
         var mutations: [(key: String, value: String)] = []
@@ -83,7 +83,7 @@ extension Mpd.Project {
             step("Updating /srv/projects/\(project)/mpd.env")
             for (key, value) in mutations {
                 let setCmd = [
-                    "bash", "/mnt/assets/runtime-base/tools/set-mpd-env",
+                    "bash", "/opt/mpd/assets/runtime-base/tools/set-mpd-env",
                     "/srv/projects/\(project)/mpd.env", key, value,
                 ]
                 guard projectExec(cName, setCmd) == 0 else {
@@ -100,9 +100,9 @@ extension Mpd.Project {
         // end of this function once configure.sh has populated those fields.
         writeProjectMeta(project: project, entry: entry)
         if let config = projectTypeConfig {
-            let scriptPath = "\(try Mpd.Core.Assets.path())/runtimes/\(config.assetsRuntime)/project_types/\(config.assetsType)/scripts/configure.sh"
+            let scriptPath = "\(try Mpd.VM.assetsPath())/runtimes/\(config.assetsRuntime)/project_types/\(config.assetsType)/scripts/configure.sh"
             if FileManager.default.fileExists(atPath: scriptPath) {
-                let cmdArgs = ["bash", "/mnt/assets/runtimes/\(config.assetsRuntime)/project_types/\(config.assetsType)/scripts/configure.sh", project]
+                let cmdArgs = ["bash", "/opt/mpd/assets/runtimes/\(config.assetsRuntime)/project_types/\(config.assetsType)/scripts/configure.sh", project]
                 guard projectExec(cName, cmdArgs) == 0 else {
                     throw RuntimeError("configure.sh failed for project '\(project)'.")
                 }

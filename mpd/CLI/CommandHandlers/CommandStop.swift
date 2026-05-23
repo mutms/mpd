@@ -1,5 +1,5 @@
 // mpd — handleStop() command entry
-// Delegates to environment-specific stop action.
+// Delegates to Mpd.Action.Stop.execute().
 
 import Foundation
 

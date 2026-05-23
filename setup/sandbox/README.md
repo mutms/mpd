@@ -14,9 +14,9 @@ stop / configure`).
 - **Experiments and Linux testing.** Anything destructive — testing
   a Trixie upgrade path, trying a PPA, validating a one-off hack —
   goes here. Snapshot before, revert if it breaks.
-- **Dogfooding mpd itself.** If you're editing mpd's macOS-side
-  scripts (or the future `mpd-prl` Swift binary), a sandbox VM is
-  where you can break the whole setup safely. Real Mac stays
+- **Dogfooding mpd itself.** If you're editing the in-VM `mpd` Swift
+  sources or the host-side `mpd-virt-macos` orchestrator, a sandbox
+  VM is where you can break the whole setup safely. Real Mac stays
   pristine.
 - **First-time evaluation.** Newcomers who want to see mpd work
   without touching their host. The "host stays untouched" promise
@@ -28,9 +28,7 @@ stop / configure`).
 
 For *daily* Moodle plugin work on macOS, you probably want the
 host-integrated [Parallels Desktop Pro mode](../macos/README.md)
-instead, where your host browser/IDE see `*.mpd.test` directly. See
-[`docs/VISION.md` §"How the three modes settle into daily roles"](../../docs/VISION.md)
-for the full split.
+instead, where your host browser/IDE see `*.mpd.test` directly.
 
 ## Files in this directory
 
@@ -39,6 +37,22 @@ for the full split.
 | `take-over-sandbox-vm.sh` | Entry point. Hostname gate + disclaimer + sudo bootstrap + repo clone (if needed) + hand off to `lib/provision.sh`. |
 | `lib/provision.sh` | The work: apt deps, `make install`, `mpd --setup`, optional pre-warm. |
 
+## Pick a hypervisor
+
+Any will do — Debian Trixie is well-supported everywhere — but if you
+don't already have one installed, the free + native options per host
+OS:
+
+- **macOS (Apple Silicon)**: [UTM](https://mac.getutm.app/) — free,
+  uses Apple's Virtualization.framework directly (no third-party kernel
+  extensions). Parallels Desktop / VMware Fusion also work if you
+  already own them.
+- **Windows 11 Pro/Enterprise**: Hyper-V — built in, enable via
+  "Turn Windows features on or off."
+- **Linux**: virt-manager + KVM — built into most distros
+  (`apt install virt-manager` on Debian/Ubuntu).
+- **Anywhere else**: VirtualBox (free, cross-platform).
+
 ## Prerequisites
 
 - A clean **Debian Trixie (13)** install in your hypervisor of choice,
@@ -46,6 +60,10 @@ for the full split.
   → "Debian desktop environment" + "GNOME"). The desktop is required —
   sandbox is the "live inside the VM" mode and needs Firefox, a
   terminal, and the GNOME launcher integration.
+- VM sizing: **8 GB RAM, 4 CPUs, 100 GB disk** is the comfortable
+  default. **4 GB / 2 CPUs / 50 GB** is the workable minimum (slow
+  builds, tighter disk). The disk is sparse on most hypervisors —
+  100 GB is what it can grow to, not what it allocates up front.
 - Hostname **`mpd-sandbox`**. Easiest is to type that name into
   the hostname field during the Debian installer. If you already
   installed with a different hostname, rename now:
@@ -85,12 +103,12 @@ bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/sandbox/
 …or, if the repo is already cloned:
 
 ```bash
-bash ~/Developer/mpd/setup/sandbox/take-over-sandbox-vm.sh
+bash /opt/mpd/setup/sandbox/take-over-sandbox-vm.sh
 ```
 
 In standalone mode (no repo present), the script self-bootstraps:
 `apt install git`, clones `https://github.com/mutms/mpd.git` to
-`~/Developer/mpd/`, then hands off to `lib/provision.sh` from the
+`/opt/mpd/`, then hands off to `lib/provision.sh` from the
 freshly cloned tree.
 
 If you've installed `curl` yourself, the equivalent invocation also
@@ -113,7 +131,7 @@ works: `bash <(curl -sSL <url>)`.
 8. Adds Microsoft's apt repo and installs **VS Code** so the in-VM
    IDE story works without leaving the desktop.
 9. `make install` of mpd; bin/ is added to PATH via ~/.bashrc.
-10. Writes `~/Developer/mpd/conf/platform.env` with `MPD_PLATFORM=sandbox`.
+10. Writes `/var/lib/mpd/conf/platform.env` with `MPD_PLATFORM=sandbox`.
 11. `mpd --setup` — generates the CA, installs system trust + Firefox
     policies + `~/.pki/nssdb` import, brings up podman + dnsmasq + portal
     + adminer + fileaccess.
@@ -172,12 +190,21 @@ rollback is reverting your hypervisor snapshot.
 There is **no** `uninstall.sh` shim in this directory: VM lifecycle
 (start / stop / snapshot / revert / delete) is the hypervisor's job.
 For a partial cleanup of mpd's runtime state without a full snapshot
-revert, run `mpd --uninstall` — it removes `~/.mpd/`, podman containers,
-and the `mpd-internal` network, while leaving `~/Developer/mpd/conf/`
-and the system CA trust intact.
+revert, manually remove containers and state:
+
+```bash
+podman ps -a --format '{{.Names}}' | grep -E '^mpd-' | xargs -r sudo podman rm -f
+sudo podman network rm mpd-internal 2>/dev/null || true
+sudo podman volume rm mpd-data-volume 2>/dev/null || true
+sudo rm -rf /var/lib/mpd/state /var/lib/mpd/env
+# keep /var/lib/mpd/conf/ if you want to reuse the same CA on re-setup
+```
+
+(There is no `mpd --uninstall` verb today. A reset/uninstall verb
+is on the roadmap.)
 
 ## Day-to-day
 
 Once setup completes, mpd commands work identically to other
 mpd VM platforms — see
-[`docs/machine/USAGE.md`](../../docs/machine/USAGE.md).
+[`docs/USAGE.md`](../../docs/USAGE.md).

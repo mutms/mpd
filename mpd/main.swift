@@ -55,14 +55,14 @@ private func normalizeEntryArgs(_ args: [String]) -> [String] {
 private func enforceNonRootExecution() {
     if geteuid() == 0 {
         errPrint("mpd must run as a regular user, not as root.")
-        errPrint("Current execution environment: \(Mpd.label)")
+        errPrint("Current execution environment: \(Mpd.VM.label)")
         errPrint("Re-run without sudo.")
         exit(1)
     }
 }
 
 private func enforceExpectedExecutableLocation() {
-    let expected = Mpd.expectedExecutablePath
+    let expected = Mpd.VM.expectedExecutablePath
     let expectedPath = URL(fileURLWithPath: expected)
         .standardizedFileURL
         .resolvingSymlinksInPath()
@@ -70,13 +70,13 @@ private func enforceExpectedExecutableLocation() {
     let fm = FileManager.default
 
     // Beginner-friendly preflight: ensure the fixed source checkout exists.
-    if !fm.fileExists(atPath: Mpd.mpdDir) {
+    if !fm.fileExists(atPath: Mpd.VM.mpdDir) {
         errPrint("mpd source checkout not found at expected path:")
-        errPrint("  \(Mpd.mpdDir)")
+        errPrint("  \(Mpd.VM.mpdDir)")
         errPrint("Clone it there and build first:")
-        errPrint("  git clone https://github.com/mutms/mpd.git \(Mpd.mpdDir)")
-        errPrint("  \(Mpd.recommendedBuildCommand)")
-        errPrint("  \(Mpd.pathExportHint)")
+        errPrint("  git clone https://github.com/mutms/mpd.git \(Mpd.VM.mpdDir)")
+        errPrint("  \(Mpd.VM.recommendedBuildCommand)")
+        errPrint("  \(Mpd.VM.pathExportHint)")
         exit(1)
     }
 
@@ -91,8 +91,8 @@ private func enforceExpectedExecutableLocation() {
         errPrint("Expected: \(expectedPath)")
         errPrint("Actual: \(actualPath)")
         errPrint("Build and run from the source checkout:")
-        errPrint("  \(Mpd.recommendedBuildCommand)")
-        errPrint("  \(Mpd.pathExportHint)")
+        errPrint("  \(Mpd.VM.recommendedBuildCommand)")
+        errPrint("  \(Mpd.VM.pathExportHint)")
         errPrint("Do not copy the mpd binary elsewhere; always run the built binary from bin/.")
         exit(1)
     }
@@ -129,10 +129,10 @@ struct GlobalCommand: ParsableCommand {
           help: "Daily start: start services and verify tunnel + DNS. No provisioning.")
     var start: Bool = false
     @Flag(name: .customLong("stop"),
-          help: "Graceful stop: mark running projects as stopped, then run environment-specific stop.")
+          help: "Graceful stop: fire pre-stop hooks, mark running projects as stopped, then power off the VM.")
     var stop: Bool = false
     @Flag(name: .customLong("restart"),
-          help: "Restart: machine reboots the VM (graceful DB shutdown via systemd unit, mpd auto-starts on boot).")
+          help: "Restart: reboot the VM (graceful DB shutdown via systemd unit, mpd auto-starts on boot).")
     var restart: Bool = false
 
     // (Listing is now a verb: `mpd list [projects|runtimes|services|dbs]`. See ListSubcommand below.)

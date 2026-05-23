@@ -30,9 +30,7 @@ bash setup/macos/lib/setup.sh
 
 VM start / suspend / shutdown is **owned by Parallels Desktop** — use
 the GUI (Cmd+R, Cmd+P, the toolbar buttons) or `prlctl start|stop|
-suspend <name-or-uuid>` directly. mpd no longer ships start/stop shims;
-they were a UTM-era crutch and Parallels' own VM management is good
-enough on its own.
+suspend <name-or-uuid>` directly.
 
 ## Prerequisites
 
@@ -103,15 +101,17 @@ you through:
    - Enter an existing number to switch to that VM or re-verify it.
    - Enter a new number to clone the template into a new VM.
 
-When cloning a new VM, the script asks for **username** (must exist in
-the template), **memory in GB**, and **disk size in GB**, then **does
-all host-side privileged work up front** so you can walk away through
-the long unattended phase:
+When cloning a new VM, the script asks for **username** (must exist
+in the template — and should match your **laptop** username so the
+bare `ssh mpd-<NN>-php` jump-host form works without explicit
+`user@`; see `docs/NETWORKING.md`), **memory in GB**, and **disk
+size in GB**, then **does all host-side privileged work up front**
+so you can walk away through the long unattended phase:
 
 1. Prepares the mpd CA on the host — reuses
-   `~/Developer/mpd/conf/caroot/{rootCA.pem,rootCA-key.pem}` if
-   populated (shared with mpd-desktop and macos), or
-   `~/.mpd-virt/ca/` as a fallback, otherwise generates fresh.
+   `${HOME}/.mpd-virt/conf/caroot/{rootCA.pem,rootCA-key.pem}` if
+   populated (canonical Mac-side location), or
+   `/var/lib/mpd-virt/ca/` as a fallback mirror, otherwise generates fresh.
 2. Prints the exact commands it would run as root and lets you choose:
    copy/paste them into another terminal, or press Enter to let the
    script sudo for you. Either path ends at the same state.
@@ -134,7 +134,7 @@ the long unattended phase:
 10. Adds a `Host mpd-NN` block to `~/.ssh/config` (so
     `ssh mpd-155` works) and writes
     `~/Desktop/mpd VM.command`, which reads
-    `~/.mpd-virt/current.env` at click time and SSHes to whichever
+    `/var/lib/mpd-virt/current.env` at click time and SSHes to whichever
     VM is currently active. The block uses platform-agnostic markers
     — macos and macos share it, so switching between them
     just replaces the previous platform's entries cleanly.
@@ -188,12 +188,12 @@ Asks for confirmation (`Type YES`), then runs in order:
    `/etc/resolver/mpd.test`, and any mpd CA certificate(s) in the
    System keychain. Same sudo affordance as `setup.command`.
 
-   **CA preservation:** if `~/Developer/mpd/conf/caroot/rootCA.pem`
-   still exists on disk, the keychain trust is **kept** (mpd-desktop
-   and any future mpd VM setup still depend on it). Delete that
+   **CA preservation:** if `${HOME}/.mpd-virt/conf/caroot/rootCA.pem`
+   still exists on disk, the keychain trust is **kept** (any future
+   mpd VM setup on this Mac will reuse the same CA). Delete that
    directory first if you want a true reset, then re-run `uninstall`.
-2. Deletes `~/.mpd-virt/` (helper state — including the disposable
-   CA mirror at `~/.mpd-virt/ca/`).
+2. Deletes `/var/lib/mpd-virt/` (helper state — including the disposable
+   CA mirror at `/var/lib/mpd-virt/ca/`).
 3. Removes the mpd VM block from `~/.ssh/config`.
 4. Removes `~/Desktop/mpd VM.command`.
 5. Asks `Delete <name>? [y/N]` for each `mpd-NN` VM — default
@@ -206,23 +206,23 @@ If you keep one or more VMs, host networking is still gone — re-run
 `setup.command` and pick a kept VM's number to restore the route,
 resolver, and (if needed) CA trust for it.
 
-## Shared CA across mpd-desktop and mpd VMs
+## Host CA layout
 
 `setup.command` keeps a single host CA alive in two real-file locations
 and mirrors between them on every run:
 
-- `~/Developer/mpd/conf/caroot/{rootCA.pem,rootCA-key.pem}` — the
-  canonical mpd location, shared with mpd-desktop **and** macos.
-  Populated whenever `~/Developer/mpd/conf/` exists.
-- `~/.mpd-virt/ca/{rootCA.pem,rootCA-key.pem}` — the disposable
+- `${HOME}/.mpd-virt/conf/caroot/{rootCA.pem,rootCA-key.pem}` — the
+  canonical Mac-side CA. Persists across mpd-virt uninstalls so
+  re-setup reuses the same CA + the System keychain trust still applies.
+- `/var/lib/mpd-virt/ca/{rootCA.pem,rootCA-key.pem}` — the disposable
   platform mirror. Always populated on any Mac that has run
   `setup.command` at least once. Deleted on uninstall.
 
-Net effect: one CA per Mac, trusted once in the System keychain, shared
-across mpd-desktop and every mpd VM you create on this host.
+Net effect: one CA per Mac, trusted once in the System keychain, reused
+by every mpd VM you create on this host.
 
-If both copies somehow diverge, `~/Developer/mpd/conf/caroot/` wins as
-the canonical source and the platform copy is overwritten, with a
+If both copies somehow diverge, `${HOME}/.mpd-virt/conf/caroot/` wins
+as the canonical source and the platform copy is overwritten, with a
 warning printed.
 
 CAs only flow host → VM, never the reverse. The System keychain only
@@ -235,8 +235,8 @@ boots with a static IP of `10.211.55.NN`. A static IP is required so
 the host route + DNS resolver target a known address. mpd VMs are
 constrained to `.100+` because Parallels Shared DHCP owns `.1–.99`.
 
-The static IP is recorded in the VM at `~/Developer/mpd/conf/platform.env`
-(`MPD_VM_IP=…`) and on the macOS host at `~/.mpd-virt/<vmname>.env`.
+The static IP is recorded in the VM at `/var/lib/mpd/conf/platform.env`
+(`MPD_VM_IP=…`) and on the macOS host at `/var/lib/mpd-virt/<vmname>.env`.
 
 The active VM is tracked via the persistent route: `10.163.0.0/24`
 (the container subnet) routes to the active VM's IP.
@@ -273,4 +273,4 @@ ssh-keygen -R 10.211.55.155
   SSH/scp endpoint at `fileaccess.service.mpd.test`.
 
 Never print private keys to terminal output. Canonical secrets stay in
-the VM's `~/Developer/mpd/conf/`.
+the VM's `/var/lib/mpd/conf/`.

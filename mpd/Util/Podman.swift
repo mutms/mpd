@@ -2,14 +2,15 @@
 //
 // **Mandatory architecture rule** — `Mpd.Podman` is the *single* shared
 // gateway for every container/runtime operation in the codebase. Direct
-// host-OS command execution is allowed only inside `mpd/Environment/*`. Other layers
-// (`CLI`, `Runtime`, `Service`, `Core`) MUST go through Mpd.Podman.
+// host-OS command execution is allowed only inside `mpd/VM/Exec.swift`.
+// Other layers (`CLI`, `Action`, `Runtime`, `Service`, `Hooks`) MUST go
+// through Mpd.Podman.
 // Full rule + review checklist: `docs/ARCHITECTURE.md` §3 (Mandatory
 // Constraint: Host Command Boundary).
 //
 // External callers (Runtime / DB / Project / Service / Core) call the
 // public methods below. Internal helpers (`podmanShell`, `podmanCapture`)
-// stay private — they wrap `Mpd.HostExec.run/capture` and
+// stay private — they wrap `Mpd.VM.exec/capture` and
 // add the `useSudo: true` toggle for rootful Podman on Linux.
 //
 // Adding a new podman invocation? Add a public method here, not a one-off
@@ -30,11 +31,11 @@ struct PsItem: Decodable {
 extension Mpd.Podman {
     @discardableResult
     private static func podmanShell(_ args: [String], input: Data? = nil) -> Int32 {
-        Mpd.HostExec.run(["podman"] + args, input: input, useSudo: true)
+        Mpd.VM.exec(["podman"] + args, input: input, useSudo: true)
     }
 
     private static func podmanCapture(_ args: [String], suppressStderr: Bool = false) -> (Int32, String) {
-        Mpd.HostExec.capture(["podman"] + args, suppressStderr: suppressStderr, useSudo: true)
+        Mpd.VM.capture(["podman"] + args, suppressStderr: suppressStderr, useSudo: true)
     }
 
     // MARK: - Queries
@@ -353,7 +354,7 @@ extension Mpd.Podman {
     // mount, fixed name, and is always read-write.
 
     private static func volumeToolUserOptions() -> [String] {
-        let id = Mpd.detectUserAndUID()
+        let id = Mpd.VM.detectUserAndUID()
         guard !id.uid.isEmpty else { return [] }
         return ["--user", "\(id.uid):\(id.uid)"]
     }

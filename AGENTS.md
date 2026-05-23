@@ -16,11 +16,13 @@ the user sits and where `mpd` runs:
   the VM. User installs Debian Trixie desktop in any hypervisor,
   snapshots, runs `setup/sandbox/take-over-sandbox-vm.sh` inside the
   VM. Host stays untouched.
-- **mpd VM** — automated headless Debian Trixie VM driven by a
-  matched-host bootstrap (Parallels Desktop Pro on macOS — primary;
-  libvirt/KVM on Ubuntu and Hyper-V on Windows are speculative).
-  User stays on their host: host browser visits `*.mpd.test` directly
-  via WireGuard + CA trust; host terminal SSHes into the VM to use the
+- **mpd VM** — automated Debian Trixie VM driven by a matched-host
+  bootstrap (Parallels Desktop Pro on macOS — primary; libvirt/KVM on
+  Ubuntu and Hyper-V on Windows are speculative). Defaults to
+  headless; GNOME is installed and toggleable on demand via
+  `gnome-start` / `gnome-stop` (persistent across reboots). User stays
+  on their host: host browser visits `*.mpd.test` directly via
+  WireGuard + CA trust; host terminal SSHes into the VM to use the
   `mpd` CLI.
 
 `mpd` itself is a single Linux binary that runs **inside the VM**. The
@@ -28,29 +30,58 @@ macOS-host orchestrator (`mpd-virt`) that drives Parallels lives in a
 separate repository.
 
 **Implementation note:** sandbox and mpd VM share the same
-`mpd/Environment/` code path; sandbox is `PlatformKind.sandbox` and
-from the user's perspective is a distinct mode, but the codebase
+`mpd/Action/` + `mpd/VM/` code paths; sandbox is `PlatformKind.sandbox`
+and from the user's perspective is a distinct mode, but the codebase
 treats it as a Machine-flavored variant.
 
 Read `README.md` first for the user-facing overview.
 
-## Fixed source checkout path
+## Fixed in-VM paths
 
-- Required path inside the VM: `~/Developer/mpd`.
-- Runtime path checks are strict — `mpd` enforces it. Do not propose alternate
-  source locations.
+mpd has three absolute, VM-wide paths. All owned by the dev user (bootstrap
+chowns), all enforced at runtime — do not propose alternates.
+
+- `/opt/mpd/` — the git checkout: code, assets, built binary (`/opt/mpd/bin/mpd`).
+  FHS slot for add-on packages. Bind-mounted RO into every mpd-created
+  container at the same path, so `/opt/mpd/assets/...` resolves identically
+  on the VM and inside containers.
+- `/var/lib/mpd/conf/` — persistent identity. CA + service cert,
+  `platform.env`, wireguard private key. PRIVATE — never bind-mounted
+  into containers.
+- `/var/lib/mpd/env/` — user-editable env overrides. Holds `mpd-vm.env`
+  only. Bind-mounted RO into every runtime container at the same path
+  (directory mount, so vim/nano atomic-rename writes propagate).
+- `/var/lib/mpd/skel/` — user-managed dotfile overrides for new runtime
+  containers. Same idea as `/etc/skel/`: contents are copied into
+  `/home/<user>/` at runtime create, layered on top of the shipped
+  `assets/runtime-base/skel/`. Empty by default; user populates as
+  needed (`.gitconfig`, `.ssh/known_hosts` additions, `.ssh/config`,
+  etc.). Last-write-wins: VM-host skel overrides shipped skel.
+- `/var/lib/mpd/state/` — mpd-managed operational state. `projects.json`,
+  `databases.json`, `current-state.json`, `hooks-state.json`,
+  `runtimes/<n>/`, `dnsmasq.d/`, `fileaccess/hostkeys/`, `portal/`. The
+  portal mounts the whole tree at `/mpd-state` RO; dnsmasq mounts
+  `state/dnsmasq.d/` at `/etc/dnsmasq.d/` RO. Wipe to reset.
+- `/srv/` — only exists inside containers (Podman data volume). Holds
+  per-project trees (projects/, data/, meta/), the database state (dbs/),
+  shared dev tools (tools/), and project backups (backups/).
+
+`$HOME` is *not* used for anything mpd-owned; per-user concerns (SSH keys,
+shell config, NSS DB) stay in `$HOME` and are not mpd's responsibility.
 
 ## Code layout
 
 The Swift binary lives under `mpd/`. Each subdirectory is a `Mpd.<X>` namespace:
 
 - `mpd/CLI/` — command handlers, status rendering, completion (`Mpd.Completion`)
-- `mpd/Core/` — assets path, state files, persistent identity
-- `mpd/Environment/` — Linux VM integration (host exec, lifecycle actions,
-  certificate handling)
+- `mpd/Action/` — top-level lifecycle verbs (`Mpd.Action.{Setup,Start,Stop,Restart,Status}`)
+- `mpd/VM/` — VM-host operations (paths, `Mpd.VM.exec/capture`, identity,
+  shutdown unit) plus sub-namespaces (`DNS`, `Certificate`, `DataVolume`,
+  `Platform`, `Config`)
 - `mpd/Runtime/` — runtime/project orchestration, sidecar reconciliation
 - `mpd/Service/` — always-on infra services (dnsmasq, portal, adminer,
   fileaccess)
+- `mpd/Hooks/` — typed `Event` lifecycle hooks + asset-side `hooks/<event>.d/` dispatch
 - `mpd/TUI/` — interactive terminal UI
 - `mpd/Util/` — Podman shell-out gateway (`Mpd.Podman.*`) and other utilities
 - `mpd/Mpd.swift` — namespace root (open this file to see the full API surface)
@@ -63,7 +94,7 @@ Runtime/project-type behavior + service container assets live under `assets/`:
 - `assets/services/<n>/...` — always-on infra services
 - `assets/sidecars/<n>/...` — per-runtime-pod sidecars
 - `assets/completions/` — shell completion shims
-- `assets/templates/` — per-developer template (`mpd-user.env`); runtime
+- `assets/templates/` — per-developer template (`mpd-vm.env`); runtime
   and type *defaults* live next to their owners under
   `assets/runtimes/<rt>/mpd-defaults.env` and
   `assets/runtimes/<rt>/project_types/<type>/mpd-defaults.env`
@@ -78,13 +109,13 @@ across docs.
 - `docs/CLI_BEHAVIOR.md` — CLI behavior contract (both modes)
 - `docs/ARCHITECTURE.md` — repo architecture, mode split, networking summary, **verb/tool contract (§7)**
 - `docs/HOOKS.md` — typed `Event` lifecycle hooks: events, audiences, asset-side `hooks/<event>.d/` scripts
-- `docs/VISION.md` — product vision (origin lineage + design principles)
 - `docs/ROADMAP.md` — committed near-term work
+- `docs/proposals/` — design docs for parked / exploratory ideas in
+  *this* repo (mpd binary, in-VM behavior)
 - *(Architecture proposals for the host-side `mpd-virt` orchestrator
   live in the separate `mpd-virt-macos` repo under
   `docs/proposals/`.)*
-- `docs/MACHINE.md` — what mpd VM is, status, scope
-- `docs/USAGE.md` — machine workflow
+- `docs/USAGE.md` — day-to-day workflow (bootstrap → first project → SSH-into-runtime)
 - `docs/NETWORKING.md` — networking model (WireGuard via mpd-virt)
 - `docs/SECURITY.md` — security model
 - `setup/macos/README.md` — Parallels Desktop Pro on macOS automation
@@ -95,7 +126,7 @@ across docs.
 ## Mandatory architecture rule
 
 `Mpd.Podman` is the single shared gateway for container operations. Direct
-host-OS command execution is allowed only inside `mpd/Environment/HostExec.swift`.
+host-OS command execution is allowed only inside `mpd/VM/Exec.swift`.
 Other layers (CLI, Runtime, Service, Core) must not shell out directly — they
 request via Podman or environment APIs. Full rule + review checklist in
 `docs/ARCHITECTURE.md` §"Mandatory Constraint".
@@ -144,9 +175,6 @@ layout). The orchestrator (`Mpd.Runtime` provisioning step) is the
 only caller. After it returns, phase 2 — `assets/runtimes/<rt>/build.sh`
 — runs as the dev user via `podman exec -u <user>`. Nothing else
 may invoke a script as root.
-
-The boundary guard `make check-privilege-boundary` greps for the
-forbidden shapes in (3) and (4) — keep it green.
 
 ## Change discipline
 
@@ -253,16 +281,16 @@ if [ ! -f "$PROJECT_DIR/mpd.env" ]; then
 fi
 
 # Load the four-layer MPD_* env (runtime defaults → type defaults →
-# $HOME/mpd-user.env → project mpd.env). source-mpd-env.sh uses a
+# /var/lib/mpd/env/mpd-vm.env → project mpd.env). source-mpd-env.sh uses a
 # whitelist parser, so a malicious project mpd.env cannot inject code.
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
-. /mnt/assets/runtime-base/lib/source-mpd-env.sh
+. /opt/mpd/assets/runtime-base/lib/source-mpd-env.sh
 
 # Do the work. Idempotent if -install or -init.
 ...
 ```
 
-Tools are bind-mounted at `/mnt/assets/runtimes/<rt>/...`, symlinked
+Tools are bind-mounted at `/opt/mpd/assets/runtimes/<rt>/...`, symlinked
 into `/srv/tools/<type>/`, and added to PATH at runtime provision time.
 Edits on the host (or VM) are immediately visible inside the runtime —
 no rebuild step.
@@ -366,12 +394,6 @@ not found." Internal sudo on specific operations is the right shape.
 
 **Build / static checks** (run after any code or asset change):
 - `make install` (writes `bin/mpd`)
-- `make check` — runs the boundary guards:
-  - `check-hostexec-boundary` — fails if `Process(...)` appears
-    outside `mpd/Environment/{Desktop,Machine}/HostExec.swift`.
-  - `check-mpdenv-source-boundary` — fails if any shell asset under
-    `assets/` or `mpd-virt/` raw-`source`s an `mpd*.env` file
-    (everything must go through `source-mpd-env.sh`'s whitelist parser).
 - skim affected docs for stale path / link references when moving or
   renaming files.
 

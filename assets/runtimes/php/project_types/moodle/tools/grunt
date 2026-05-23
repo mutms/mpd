@@ -5,10 +5,10 @@
 # All arguments are passed through to grunt.
 set -euo pipefail
 
-source /mnt/assets/runtimes/php/project_types/moodle/scripts/mpd-env.sh
+source /opt/mpd/assets/runtimes/php/project_types/moodle/scripts/mpd-env.sh
 
 # Load nvm so node/npm/npx are available
-source /mnt/assets/runtime-base/lib/nvm-env.sh
+source /opt/mpd/assets/runtime-base/lib/nvm-env.sh
 
 # Ensure we're somewhere within the project
 if [[ ! "$PWD" =~ ^/srv/projects/${PROJECT} ]]; then

@@ -1,14 +1,14 @@
 # mpd setup — bootstrap platforms
 
 Each subdirectory under `setup/` is a self-contained bootstrap that
-gets a VM (or, in the desktop case, a host) to the point where
+gets a VM to the point where
 `mpd --setup` can run. From there, the mpd flow is identical
 regardless of which path you took.
 
 The brand for the VM-mode product is **mpd VM**; this directory
-holds the scripts that get someone *into* an mpd VM. (Canonical
-product / workflow documentation lives in
-[`docs/machine/README.md`](../docs/machine/README.md).)
+holds the scripts that get someone *into* an mpd VM. Day-to-day usage
+once inside lives in [`docs/USAGE.md`](../docs/USAGE.md); architecture
+detail in [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md).
 
 ## Pick the path that matches your situation
 
@@ -36,9 +36,9 @@ browser to resolve `*.mpd.test` directly.
 - **WSL2** — not the right shape. WSL2 is a partial Linux environment
   with surprising filesystem and networking semantics; mpd VM
   expects a real, isolated VM. On Windows, use Hyper-V.
-- **Docker Desktop / OrbStack as alternative backends** — `mpd-desktop`
-  uses Podman Desktop specifically; `mpd VM` uses rootful Podman
-  inside a real VM. Other container backends aren't supported.
+- **Docker Desktop / OrbStack as alternative backends** — mpd uses
+  rootful Podman inside a real VM. Other container backends aren't
+  supported.
 
 ## Each platform directory is self-contained
 
@@ -63,7 +63,7 @@ What that means for the contents:
   isolation — assume the user has only the directory contents and
   can't see `docs/` or the rest of the repo.
 - "Bootstrap" stage = before `git clone`. Once the script has cloned
-  the repo to `~/Developer/mpd`, anything goes — that's mpd's normal
+  the repo to `/opt/mpd`, anything goes — that's mpd's normal
   build/setup flow, and the user has the full repo.
 
 The sandbox platform is the natural exception that proves the rule:

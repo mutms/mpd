@@ -1,9 +1,9 @@
-// mpd — Mpd.Core.DataVolume namespace
+// mpd — Mpd.VM.DataVolume namespace
 // Data volume operations: rescan.
 
 import Foundation
 
-extension Mpd.Core.DataVolume {
+extension Mpd.VM.DataVolume {
 
     // MARK: - Private helpers
 
@@ -34,7 +34,7 @@ extension Mpd.Core.DataVolume {
 
     // MARK: - Public operations
 
-    /// Read /srv/meta/*/project.json from the volume and rebuild per-machine projects.json cache.
+    /// Read /srv/meta/*/project.json from the volume and rebuild the projects.json cache.
     static func rescan() throws {
         step("Scanning data volume for project metadata")
         let script = """

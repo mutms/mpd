@@ -2,7 +2,7 @@
 
 import Foundation
 
-extension Mpd.HostExec {
+extension Mpd.VM {
     private static let binaryPaths: [String: String] = [
         "podman": "/usr/bin/podman",
         "sudo": "/usr/bin/sudo",
@@ -50,7 +50,7 @@ extension Mpd.HostExec {
     }
 
     @discardableResult
-    static func run(_ args: [String], input: Data? = nil, useSudo: Bool = false) -> Int32 {
+    static func exec(_ args: [String], input: Data? = nil, useSudo: Bool = false) -> Int32 {
         guard let command = args.first else {
             errPrint("Command not found or not executable: \(args.first ?? "(empty)")")
             return 127
@@ -62,7 +62,7 @@ extension Mpd.HostExec {
         let p = Process()
 
         if useSudo {
-            let sudoPath = Mpd.HostExec.require("sudo")
+            let sudoPath = Mpd.VM.require("sudo")
             p.executableURL = URL(fileURLWithPath: sudoPath)
             p.arguments = ["-n", resolvedCommand] + Array(args.dropFirst())
         } else {
@@ -106,7 +106,7 @@ extension Mpd.HostExec {
 
         let p = Process()
         if useSudo {
-            let sudoPath = Mpd.HostExec.require("sudo")
+            let sudoPath = Mpd.VM.require("sudo")
             p.executableURL = URL(fileURLWithPath: sudoPath)
             p.arguments = ["-n", resolvedCommand] + Array(args.dropFirst())
         } else {

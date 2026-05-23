@@ -1,6 +1,6 @@
 #!/bin/bash
 # phpunit-init — initialize PHPUnit test environment for the current project.
 set -euo pipefail
-source /mnt/assets/runtimes/php/project_types/moodle/scripts/mpd-env.sh
+source /opt/mpd/assets/runtimes/php/project_types/moodle/scripts/mpd-env.sh
 
 moodle_run admin/tool/phpunit/cli/init.php "$@"

@@ -477,10 +477,10 @@ EOF
 }
 
 # --- CA generation (host-side) ---
-# generate_mpd_ca is the bash twin of Mpd.Environment.Certificate.generateCA
-# in mpd/Environment/Certificate.swift. Both must produce certs with the
-# same DN, v3_ca extensions, and name constraints so mpd inside the VM
-# can reuse a host-generated CA. KEEP IN SYNC with the macos twin.
+# generate_mpd_ca is the bash twin of Mpd.VM.Certificate.generateCA in
+# mpd/VM/Certificate.swift. Both must produce certs with the same DN,
+# v3_ca extensions, and name constraints so mpd inside the VM can reuse
+# a host-generated CA. KEEP IN SYNC with the linux/windows twins.
 
 generate_mpd_ca() {
     local key_path="$1" cert_path="$2"
@@ -535,11 +535,10 @@ copy_ca_files() {
 
 # prepare_host_ca — locate or generate the local CA on the macOS host.
 #
-# Source of truth: ${HOME}/.mpd-virt/conf/caroot/ ("caroot"). This is
-# the path mpd-desktop and the in-VM mpd both reference. Whatever lands
-# here is what ships into every runtime container and into the host
-# keychain. On uninstall, this directory's continued existence is what
-# protects the keychain trust from being torn down.
+# Source of truth: ${HOME}/.mpd-virt/conf/caroot/ ("caroot"). Whatever
+# lands here is what ships into every mpd VM created on this Mac and
+# into the host keychain. On uninstall, this directory's continued
+# existence is what protects the keychain trust from being torn down.
 #
 # Disposable mirror: ${STATE_DIR}/ca/ (~/.mpd-virt/ca/). Survives a
 # corrupted/blown-away repo checkout so the user can re-clone without

@@ -1,17 +1,17 @@
 import Foundation
 
-// Runtime/project registry persisted under ~/.mpd/machines/<machine>/.
+// Runtime/project registry persisted under /var/lib/mpd/state/.
 // Owns "known/registered" records (projects, runtimes, selected databaseId, status intent).
 // Does not query or represent live container truth directly (Podman is authoritative for live state).
 
 // MARK: - Mpd.Runtime.State
 
 extension Mpd.Runtime.State {
-    /// Runtimes metadata directory for the active machine.
-    static var runtimesDir: String { "\(Mpd.Core.State.machineDir())/runtimes" }
+    /// Runtimes metadata directory.
+    static var runtimesDir: String { "\(Mpd.VM.stateDir)/runtimes" }
 
-    static var projectsPath: String { "\(Mpd.Core.State.machineDir())/projects.json" }
-    static var databasesPath: String { "\(Mpd.Core.State.machineDir())/databases.json" }
+    static var projectsPath: String { "\(Mpd.VM.stateDir)/projects.json" }
+    static var databasesPath: String { "\(Mpd.VM.stateDir)/databases.json" }
 
     static func loadProjects() -> RegisteredProjects {
         JSONStateStore.readJSON(projectsPath, as: RegisteredProjects.self) ?? RegisteredProjects()

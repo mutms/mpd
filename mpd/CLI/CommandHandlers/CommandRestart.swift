@@ -1,5 +1,5 @@
 // mpd — handleRestart() command entry
-// Delegates to environment-specific restart action.
+// Delegates to Mpd.Action.Restart.execute().
 
 import Foundation
 

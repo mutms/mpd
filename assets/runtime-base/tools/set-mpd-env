@@ -7,7 +7,7 @@
 #     "KEY=<VALUE>" to the file.
 #   - If <VALUE> is empty: delete any existing KEY= line and do nothing else.
 #     This makes the key "absent" so layered resolution falls through to
-#     ~/<user>/mpd-user.env (or whatever lower layer is in effect).
+#     /var/lib/mpd/env/mpd-vm.env (or whatever lower layer is in effect).
 #
 # Safe to call even if the file does not yet exist; this script does not create
 # the file (project-create.sh seeds it from the type's mpd-template.env).

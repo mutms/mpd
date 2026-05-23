@@ -9,11 +9,11 @@
 #
 #   2. ssh / scp / sftp — for ad-hoc file access from the dev's laptop. Pubkey
 #      auth only, single user, no sudo, listening only on the internal podman
-#      network (no -p mapping), so the SSH endpoint is reachable only via the
-#      WireGuard tunnel (mpd-desktop) or the static route into the VM
-#      (mpd-machine). See docs/{desktop,machine}/SECURITY.md.
+#      network (no -p mapping), so the SSH endpoint is reachable from the
+#      laptop only via the WireGuard tunnel into the VM. See
+#      docs/SECURITY.md.
 #
-# Host keys persist on the host under ~/.mpd/machines/<n>/fileaccess/hostkeys/
+# Host keys persist on the host under /var/lib/mpd/state/fileaccess/hostkeys/
 # and are bind-mounted in, so the SSH fingerprint is stable across container
 # rebuilds and the user's known_hosts doesn't churn.
 

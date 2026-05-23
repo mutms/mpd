@@ -13,7 +13,7 @@
 //
 // Diagnostics are warnings, never hard failures — orphan hooks just
 // don't fire. Stamps the per-event revision into
-// `~/.mpd/hooks-state.json` so revision-bump detection survives across
+// `/var/lib/mpd/state/hooks-state.json` so revision-bump detection survives across
 // runs. See docs/HOOKS.md §"Diagnostics".
 
 import Foundation
@@ -49,7 +49,7 @@ extension Mpd.Hooks {
     // MARK: - State file (revision tracking)
 
     private static var stateFilePath: String {
-        "\(Mpd.dotMpdDir)/hooks-state.json"
+        "\(Mpd.VM.stateDir)/hooks-state.json"
     }
 
     private struct State: Codable {
@@ -64,7 +64,7 @@ extension Mpd.Hooks {
     }
 
     private static func writeState(_ state: State) {
-        let dir = Mpd.dotMpdDir
+        let dir = Mpd.VM.stateDir
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         guard let data = try? JSONEncoder().encode(state) else { return }
         try? data.write(to: URL(fileURLWithPath: stateFilePath))
@@ -76,7 +76,7 @@ extension Mpd.Hooks {
     /// print warnings for orphans and revision bumps. Always returns;
     /// never throws or aborts. Stamps the current revisions for next run.
     static func diagnose() {
-        guard let assets = try? Mpd.Core.Assets.path() else { return }
+        guard let assets = try? Mpd.VM.assetsPath() else { return }
 
         let byName: [String: EventCatalogueEntry] =
             Dictionary(uniqueKeysWithValues: catalogue.map { ($0.name, $0) })

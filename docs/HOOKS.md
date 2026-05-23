@@ -267,7 +267,7 @@ classes of warning:
   layer's container kind is no longer in the event's audiences.
   → "Hook X subscribed to event Y, but Y no longer fires on this audience."
 - **Revision bump** — event's `revision` increased since the last
-  `mpd --setup` run (tracked in `~/.mpd/hooks-state.json`).
+  `mpd --setup` run (tracked in `/var/lib/mpd/hooks-state.json`).
   → "Event X revised; review env-var contract for hooks under hooks/X.d/."
 
 Diagnostics are warnings, never hard failures — orphan hooks just

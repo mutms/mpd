@@ -1,5 +1,5 @@
 // mpd — handleStart() command entry
-// Delegates to environment-specific start action.
+// Delegates to Mpd.Action.Start.execute().
 
 import Foundation
 

@@ -43,7 +43,7 @@ extension Mpd.Project {
 
     /// Effective project user inside runtime containers.
     static func projectExecUser() -> String {
-        Mpd.detectUserAndUID().user
+        Mpd.VM.detectUserAndUID().user
     }
 
     static func projectExecOptions() -> [String] {
@@ -209,23 +209,21 @@ extension Mpd.Project {
     /// runtime IP. Removes the conf if the URL list yields no hosts.
     static func writeDnsmasqRecord(project: String, urls: [ProjectURL], runtimeIP: String) {
         let hosts = mpdHosts(from: urls)
-        let confPath = "\(Mpd.Core.State.dnsmasqDir)/\(project).conf"
+        let confPath = "\(Mpd.VM.dnsmasqDir)/\(project).conf"
         if hosts.isEmpty {
             try? FileManager.default.removeItem(atPath: confPath)
         } else {
             let content = hosts.map { "address=/\($0)/\(runtimeIP)" }.joined(separator: "\n") + "\n"
             try? content.write(toFile: confPath, atomically: true, encoding: .utf8)
         }
-        try? Mpd.Core.State.syncBindMountFiles()
         Mpd.Podman.restart(Mpd.Service.Dnsmasq.containerName)
         Mpd.Service.Dnsmasq.waitUntilReady()
     }
 
     /// Remove dnsmasq conf for a project.
     static func removeDnsmasqRecord(project: String) {
-        let confPath = "\(Mpd.Core.State.dnsmasqDir)/\(project).conf"
+        let confPath = "\(Mpd.VM.dnsmasqDir)/\(project).conf"
         try? FileManager.default.removeItem(atPath: confPath)
-        try? Mpd.Core.State.syncBindMountFiles()
         Mpd.Podman.restart(Mpd.Service.Dnsmasq.containerName)
         Mpd.Service.Dnsmasq.waitUntilReady()
     }
@@ -247,10 +245,10 @@ extension Mpd.Project {
         )
         if rc == 0 { return }
 
-        let certsDir = Mpd.confTempDir
-        let caKey = "\(Mpd.confCARootDir)/rootCA-key.pem"
-        let caCert = "\(Mpd.confCARootDir)/rootCA.pem"
-        let tmpDir = Mpd.confTempDir
+        let certsDir = Mpd.VM.confTempDir
+        let caKey = "\(Mpd.VM.confCARootDir)/rootCA-key.pem"
+        let caCert = "\(Mpd.VM.confCARootDir)/rootCA.pem"
+        let tmpDir = Mpd.VM.confTempDir
         let certPath = "\(tmpDir)/mpd-\(project)-cert.pem"
         let keyPath = "\(tmpDir)/mpd-\(project)-key.pem"
         defer {
@@ -259,7 +257,7 @@ extension Mpd.Project {
         }
 
         step("Generating TLS certificate for \(sans.joined(separator: ", "))")
-        try Mpd.Certificate.generateCert(
+        try Mpd.VM.Certificate.generateCert(
             sans: sans,
             certPath: certPath,
             keyPath: keyPath,

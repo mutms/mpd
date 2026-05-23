@@ -157,10 +157,10 @@ Write-Step "Uploading host CA to VM"
 
 $CaPem = Join-Path $MpdUserDir "ca\rootCA.pem"
 $CaKey = Join-Path $MpdUserDir "ca\rootCA-key.pem"
-Invoke-Ssh -User $VmUser -RemoteHost $VmIp -Command "mkdir -p ~/.mpd/conf/caroot"
-& scp -o StrictHostKeyChecking=no -o BatchMode=yes $CaPem "${VmUser}@${VmIp}:~/.mpd/conf/caroot/rootCA.pem"
+Invoke-Ssh -User $VmUser -RemoteHost $VmIp -Command "mkdir -p /var/lib/mpd/conf/caroot"
+& scp -o StrictHostKeyChecking=no -o BatchMode=yes $CaPem "${VmUser}@${VmIp}:/var/lib/mpd/conf/caroot/rootCA.pem"
 if ($LASTEXITCODE -ne 0) { throw "scp of CA cert failed." }
-& scp -o StrictHostKeyChecking=no -o BatchMode=yes $CaKey "${VmUser}@${VmIp}:~/.mpd/conf/caroot/rootCA-key.pem"
+& scp -o StrictHostKeyChecking=no -o BatchMode=yes $CaKey "${VmUser}@${VmIp}:/var/lib/mpd/conf/caroot/rootCA-key.pem"
 if ($LASTEXITCODE -ne 0) { throw "scp of CA key failed." }
 Write-Ok "Host CA uploaded (mpd --setup will reuse it)"
 
@@ -207,17 +207,17 @@ Write-Ok "Swap ready"
 
 Write-Step "Bootstrap 40: apt install package set"
 Invoke-Ssh -User $VmUser -RemoteHost $VmIp `
-    -Command "bash `$HOME/Developer/mpd/bootstrap/40-install-software.sh"
+    -Command "bash /opt/mpd/bootstrap/40-install-software.sh"
 Write-Ok "Packages installed"
 
 Write-Step "Bootstrap 50: build mpd binary"
 Invoke-Ssh -User $VmUser -RemoteHost $VmIp `
-    -Command "bash `$HOME/Developer/mpd/bootstrap/50-build.sh"
+    -Command "bash /opt/mpd/bootstrap/50-build.sh"
 Write-Ok "mpd binary built"
 
 Write-Step "Bootstrap 60: WireGuard (no-op when conf absent)"
 Invoke-Ssh -User $VmUser -RemoteHost $VmIp `
-    -Command "bash `$HOME/Developer/mpd/bootstrap/60-wireguard.sh"
+    -Command "bash /opt/mpd/bootstrap/60-wireguard.sh"
 Write-Ok "Bootstrap complete"
 
 # ── 13. Run mpd --setup ───────────────────────────────────────────────────────
@@ -234,7 +234,7 @@ Write-Step "Setting login banner"
 Send-SshScript -User $VmUser -RemoteHost $VmIp -Script @"
 set -e
 sudo chmod -x /etc/update-motd.d/* 2>/dev/null || true
-sudo cp "`$HOME/Developer/mpd/assets/machine/motd" /etc/motd
+sudo cp /opt/mpd/assets/machine/motd /etc/motd
 "@
 Write-Ok "Login banner set"
 

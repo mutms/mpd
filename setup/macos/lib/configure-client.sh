@@ -10,7 +10,7 @@
 #   3. Import the mpd CA certificate into /Library/Keychains/System.keychain
 #      so browsers trust *.mpd.test HTTPS without warnings. CA source: the
 #      local cache at ~/.mpd-virt/conf/caroot/rootCA.pem if present
-#      (shared with mpd-desktop and macos), otherwise ~/.mpd-virt/ca/.
+#      (canonical Mac-side location), otherwise ~/.mpd-virt/ca/.
 #
 # Privilege model: inspect current state without sudo first, print a
 # runnable recipe for any work needed, let the dev choose between running

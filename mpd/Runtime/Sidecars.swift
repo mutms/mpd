@@ -67,7 +67,7 @@ extension Mpd.Runtime {
             }
             return
         }
-        let assetsDir = try Mpd.Core.Assets.path()
+        let assetsDir = try Mpd.VM.assetsPath()
         let contextDir = "\(assetsDir)/\(context)"
         step("Building sidecar image '\(spec.image)'")
         guard Mpd.Podman.buildImage(tag: spec.image, contextDir: contextDir) == 0 else {
@@ -88,7 +88,7 @@ extension Mpd.Runtime {
             return
         }
 
-        var args: [String] = [
+        var args: [String] = Mpd.VM.optMountRO + [
             "-d", "--name", cName, "--pod", podName,
             "--label", "mpd.managed=true",
             "--label", "mpd.role=\(spec.role)-sidecar",

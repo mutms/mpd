@@ -7,8 +7,9 @@ Purpose: describe how `mpd` is structured, what is currently in scope, and where
 `mpd` is a single Linux binary that runs inside a Debian Trixie VM
 (under rootful Podman). Two user-facing modes share this binary:
 
-- `mpd VM`: headless VM driven from the host by the separate
-  `mpd-virt` orchestrator (own repo). Primary target.
+- `mpd VM`: VM driven from the host by the separate `mpd-virt`
+  orchestrator (own repo); headless by default, GNOME toggleable
+  on demand. Primary target.
 - `sandbox`: same Debian Trixie VM but with a GNOME desktop, set up
   in-VM via `setup/sandbox/take-over-sandbox-vm.sh`. Same `mpd` binary;
   the host stays untouched.
@@ -19,7 +20,7 @@ Current scope:
   lifecycle (`--setup/--start/--stop/--restart`, `--status`,
   `mpd list`), runtime/project orchestration, per-runtime sidecar
   reconciliation.
-- The mode distinction is recorded in `~/.mpd/conf/platform.env` as
+- The mode distinction is recorded in `/var/lib/mpd/conf/platform.env` as
   `MPD_PLATFORM=machine|sandbox` and used by paths/messages that need
   to differ slightly.
 - Outstanding work is project-type coverage under
@@ -49,7 +50,7 @@ These should remain stable even as implementation details evolve.
 
 This is a required architecture rule.
 
-- Direct host OS command execution is allowed only in `mpd/Environment/HostExec.swift`.
+- Direct host OS command execution is allowed only in `mpd/VM/Exec.swift`.
 - All other layers (`CLI`, `Runtime`, `Service`, `Core`) must not execute host commands directly.
 - Cross-layer container/runtime operations must go through `Mpd.Podman.*` only.
 
@@ -66,7 +67,7 @@ Allowed exception:
 
 Any PR that adds command execution must answer:
 
-1. Is this host command in `mpd/Environment/HostExec.swift`?
+1. Is this host command in `mpd/VM/Exec.swift`?
 2. If not, can it be routed through `Mpd.Podman` or moved into `Environment/`?
 3. Is binary resolution sourced from `Mpd.Environment.Binaries`?
 
@@ -102,7 +103,7 @@ macOS). The pattern these scripts follow:
    terminated by an explicit `sudo -k` to invalidate the cached
    credential immediately.
 3. **No `sudo` outside the fence.** Discovery, reporting, and state
-   writes (`~/.mpd-virt/`, `~/.ssh/config`, `~/Desktop/`) all run
+   writes (`/var/lib/mpd-virt/`, `~/.ssh/config`, `~/Desktop/`) all run
    as the user with no cached creds — a later bug cannot accidentally
    piggy-back on the elevated session.
 4. **EXIT trap as backstop.** `trap 'sudo -k' EXIT` ensures cached
@@ -113,14 +114,14 @@ macOS). The pattern these scripts follow:
    sees no password prompt at all.
 6. **Generate the CA on the host before VM creation, and only on
    the host.** `prepare_host_ca` in `lib/common.sh` keeps the host
-   CA at `~/.mpd-virt/ca/` (platform-owned; always present after
+   CA at `/var/lib/mpd-virt/ca/` (platform-owned; always present after
    the first `setup.command` run).
 
    On a wipe, the next `setup.command` regenerates and re-imports
    into the System keychain. Generation uses the bash twin of
-   `Mpd.Certificate.generateCA` (`mpd/Environment/Certificate.swift`);
+   `Mpd.VM.Certificate.generateCA` (`mpd/VM/Certificate.swift`);
    the two generators must stay in sync. The CA is then uploaded into
-   the VM, where mpd's reuse check (`mpd/Environment/ActionSetup.swift`)
+   the VM, where mpd's reuse check (`mpd/Action/ActionSetup.swift`)
    picks it up. Route, resolver, **and** CA-trust collapse into a
    single upfront fenced block, after which the long unattended
    VM-creation phase runs holding no sudo creds.
@@ -130,7 +131,7 @@ macOS). The pattern these scripts follow:
    `configure-client.sh` will not pull a CA off a VM and import it
    into the keychain — that would invert the trust direction by
    accepting a cert of unknown provenance from inside an SSH session.
-   On a Mac with `~/.mpd-virt/ca/` empty (e.g. an imported VM
+   On a Mac with `/var/lib/mpd-virt/ca/` empty (e.g. an imported VM
    created elsewhere), `configure-client.sh` configures route + DNS
    but skips CA import; the user has to bring a host CA across
    themselves.
@@ -168,17 +169,17 @@ bootstrap runs as the dev user on the host: **macos** and
 
 ## 4) Repository Directory Contract
 
-Fixed source checkout path: `~/Developer/mpd`
+Fixed source checkout path: `/opt/mpd`
 
 Directory ownership split:
 
 - `bin/` — local built binaries (`bin/mpd`); executable path checks depend on this.
-- `~/.mpd/conf/` — persistent local trust/network material:
+- `/var/lib/mpd/conf/` — persistent local trust/network material:
   - `caroot/` — root CA keypair/fingerprint
   - `service/` — service TLS cert/key (`mpd.test`)
   - `temp/` — short-lived cert operation files
   - `platform.env` — platform identity (see §9)
-- `~/.mpd/` (other subdirs) — state/cache (machine metadata, runtime/project state, transient runtime files)
+- `/var/lib/mpd/` (other subdirs) — state/cache (machine metadata, runtime/project state, transient runtime files)
 
 Project backups live inside the data volume at `/srv/backups/`, not on the
 host filesystem (see §10).
@@ -187,7 +188,7 @@ Cleanup contract:
 
 - The in-VM `mpd` has no `--uninstall` verb; the VM itself is the
   unit of removal (drop it via `mpd-virt` on the host).
-- Manual cleanup of the VM's `~/.mpd/` is just `rm -rf` — state and
+- Manual cleanup of the VM's `/var/lib/mpd/` is just `rm -rf` — state and
   cache are designed to be safe to remove and rebuild.
 
 ## 5) State Model and Mutation Points
@@ -238,7 +239,7 @@ Display layers show both columns side-by-side (`mpd list runtimes`,
 Out-of-process consumers (the portal container, in-runtime tools)
 don't have podman access, so they can't compute `current` themselves.
 mpd writes a snapshot to
-`~/.mpd/machines/<m>/current-state.json` (`CurrentStateSnapshot` —
+`/var/lib/mpd/state/current-state.json` (`CurrentStateSnapshot` —
 runtimes/projects/databases name → status map plus a `refreshedAt`
 timestamp). The snapshot is refreshed automatically by `mpd list`,
 `mpd --status`, `mpd --start` / `--stop` / `--restart`, `mpd --setup`,
@@ -349,23 +350,31 @@ win over base tools win over system binaries:
 [normal system PATH]                                     ← system fallback
 ```
 
-Profile.d files are sourced alphabetically and each prepends to PATH;
-naming guarantees the order:
+PATH is set by the dev user's `~/.bashrc` (shipped via skel —
+`assets/runtime-base/skel/.bashrc`), which globs every directory under
+`/srv/tools/` and prepends each to PATH in alphabetical order. The glob
+is self-extending: a new project type or runtime that drops a new
+`/srv/tools/<name>/` is picked up automatically, no `.bashrc` edit
+required.
 
-- `mpd-tools-base.sh` (sourced first → ends up lowest in mpd's tiers)
-- `mpd-tools-runtime.sh` (sourced second → middle)
-- `mpd-tools-type-<type>.sh` (sourced last → highest)
+Order within the glob: alphabetical iteration with each entry prepending
+to PATH means later entries rank higher. `_base` sorts first (underscore
+is < lowercase), then runtimes (`php`, `node`, `util`), then project
+types whose names happen to sort after their runtime (`moodle` > `php`).
+The "by design" caveat: if a project type name collides earlier than its
+runtime, the ranking flips. Name your types accordingly.
+
+The dev user is the only login identity inside a runtime. **Root has
+none of the mpd tool dirs on PATH** — `sudo composer install` returns
+"command not found" by design (see AGENTS.md "Mandatory privilege rule").
+Tools that need root sudo individual operations; whole tools never run
+under sudo.
 
 This means a tool named `php` overrides the system `php` when invoked
-from anywhere inside the runtime. The same holds for `composer`,
-`node`, etc. A wrapper tool `exec`s the upstream binary by absolute
-path (e.g. `exec /usr/bin/php8.4 "$@"`) to avoid recursing into
+from anywhere inside the runtime as the dev user. The same holds for
+`composer`, `node`, etc. A wrapper tool `exec`s the upstream binary by
+absolute path (e.g. `exec /usr/bin/php8.4 "$@"`) to avoid recursing into
 itself.
-
-Project-type tool dirs are added to PATH unconditionally for any
-project type that ships under `assets/runtimes/<runtime>/project_types/`.
-Name collisions across project types are resolved by PATH order, by
-design ("if not unique — bad luck").
 
 ### Privilege model
 
@@ -373,9 +382,7 @@ Tools run as the dev user — the only non-root user inside the runtime,
 created at provisioning time with the same UID as the developer's host
 account so files written through the runtime land with the right owner
 on the data volume. The dev user has **passwordless `sudo`** inside the
-runtime by design (see
-[`desktop/SECURITY.md`](desktop/SECURITY.md) and
-[`machine/SECURITY.md`](machine/SECURITY.md)).
+runtime by design (see [`SECURITY.md`](SECURITY.md)).
 
 **Tools `sudo` internally; the dev/AI invokes them bare.** The right
 shape is:
@@ -497,7 +504,7 @@ Five named files with distinct lifecycles. Four are *sourced* at every
 |------------------|-------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|----------------------------------------------------------------------|
 | Runtime defaults | `assets/runtimes/<rt>/mpd-defaults.env`                                                   | runtime, in repo (read-only)                                                                  | "the default value" for `MPD_<RT>_*` keys; sourced 1st               |
 | Type defaults    | `assets/runtimes/<rt>/project_types/<type>/mpd-defaults.env`                              | project type, in repo (read-only)                                                             | type-specific overrides of the runtime default; sourced 2nd          |
-| Per-developer    | `~/.mpd/mpd-user.env` (host) → `/srv/personal/mpd-user.env` (synced into the data volume) | developer (manual edit)                                                                       | cross-project preferences and secrets; sourced 3rd                   |
+| VM-wide          | `/var/lib/mpd/env/mpd-vm.env` (host; bind-mounted RO into runtime containers at the same path) | developer (manual edit)                                                                       | cross-project preferences and secrets; sourced 3rd                   |
 | Per-project      | `/srv/projects/<n>/mpd.env`                                                               | seeded by `project-create.sh`, mutated by `mpd configure <project> KEY=VALUE` and manual edit | project-scoped truth; sourced 4th, wins                              |
 | Per-type seed    | `assets/runtimes/<rt>/project_types/<type>/mpd-template.env`                              | project type, in repo (read-only)                                                             | NOT sourced — copied to `/srv/projects/<n>/mpd.env` at `create` time |
 
@@ -513,7 +520,7 @@ hints for discoverability.
 
 1. runtime defaults (`mpd-defaults.env`)
 2. type defaults (`mpd-defaults.env`)
-3. `~/.mpd/mpd-user.env`
+3. `/var/lib/mpd/env/mpd-vm.env`
 4. project `mpd.env`
 
 Runtime + type are read from `/srv/meta/<n>/project.json` (written by
@@ -530,17 +537,15 @@ the right semantics — each layer overrides earlier ones, and explicit
 
 `MPD_DB` is the same: a project type that doesn't use a DB ships `MPD_DB=""`
 in its `mpd-template.env` (astro, bare) so the seeded project file blocks
-any `MPD_DB=...` the developer set in mpd-user.env; types that do ship a
+any `MPD_DB=...` the developer set in mpd-vm.env; types that do ship a
 sensible default (`MPD_DB=postgres:latest` for moodle).
 
-**How `mpd-user.env` reaches the runtime:** the host file `~/.mpd/mpd-user.env`
-is *synced* into the data volume at `/srv/personal/mpd-user.env` by
-`Mpd.Core.State.syncBindMountFiles()` on every `mpd --setup` / `mpd --start`
-(libkrun virtiofs has multi-second cache lag on bind-mounts of
-freshly-created paths, so routing through the volume sidesteps that).
-`bootstrap.sh` creates a symlink at `/home/<user>/mpd-user.env`
-pointing at the volume copy, so `$HOME/mpd-user.env` resolves correctly inside
-every runtime. Edit on the host, run `mpd --start` to re-sync.
+**How `mpd-vm.env` reaches the runtime:** the host file
+`/var/lib/mpd/env/mpd-vm.env` is bind-mounted RO into every runtime
+container at the same absolute path (`Mpd.envMountRO` in
+`mpd/VM/VM.swift`). Directory mount, so vim/nano
+atomic-rename writes on the host propagate inside the container
+immediately. No sync, no restart needed.
 
 **Naming convention:**
 
@@ -569,8 +574,8 @@ DB container).
 ## 9) Platform identity: conf/platform.env
 
 `mpd` records the mode context — machine vs sandbox — in
-`~/.mpd/conf/platform.env`, sibling to `caroot/` and `service/`. Lives
-under `~/.mpd/conf/` so it's part of the persistent identity that
+`/var/lib/mpd/conf/platform.env`, sibling to `caroot/` and `service/`. Lives
+under `/var/lib/mpd/conf/` so it's part of the persistent identity that
 survives runtime-state wipes.
 
 ```
@@ -599,14 +604,14 @@ and Platform can share the same file without clobbering each other.
 | `mpd VM` via mpd-virt  | `mpd-virt` orchestrator (host, separate repo, over SSH)      | `machine`, `${IP}` | written before `mpd --setup` runs in the VM            |
 | `mpd VM` via sandbox   | `setup/sandbox/lib/provision.sh`                             | `sandbox`, `""`    | written before `mpd --setup` runs inside the Debian VM |
 
-**Reader:** `Mpd.Core.Platform.load()` (Swift). Throws with a fix-it message
+**Reader:** `Mpd.VM.Platform.load()` (Swift). Throws with a fix-it message
 when missing, pointing at the matching bootstrap script. The machine path
 records the VM's IP so the in-VM mpd can verify network identity; sandbox
 has no host side, so its `MPD_VM_IP` stays empty.
 
-**Why under `~/.mpd/conf/`:** the platform identity is part of the
+**Why under `/var/lib/mpd/conf/`:** the platform identity is part of the
 persistent setup — the same answers should apply across rebuilds.
-`~/.mpd/` (excluding `conf/`) is state cache; `~/.mpd/conf/` is
+`/var/lib/mpd/` (excluding `conf/`) is state cache; `/var/lib/mpd/conf/` is
 durable config (CA, certs, etc.).
 
 ## 10) Backup persistence
@@ -715,18 +720,21 @@ for users who already know them.
 
 See detailed docs:
 
-- `desktop/NETWORKING.md`, `desktop/SECURITY.md`
-- `machine/NETWORKING.md`, `machine/SECURITY.md`
+- [`NETWORKING.md`](NETWORKING.md), [`SECURITY.md`](SECURITY.md)
 
 ## 12) Repository Layer Map
 
-- `mpd/mpd/CLI/` — command handlers, routing, status rendering
-- `mpd/mpd/Environment/Desktop/` — macOS + Podman Desktop integration
-- `mpd/mpd/Environment/Machine/` — machine-mode integration
-- `mpd/mpd/Runtime/` — runtime/project orchestration and records
-- `mpd/mpd/Service/` — service lifecycle control (`Mpd.Service.*`)
-- `mpd/mpd/Core/` — core config/state/assets/data-volume logic
-- `mpd/assets/` — runtime/type/service scripts/config/templates
+- `mpd/CLI/` — command handlers, routing, status rendering
+- `mpd/Action/` — top-level verb implementations (`Setup`, `Start`, `Stop`, `Restart`, `Status`)
+- `mpd/VM/` — VM-host operations (`exec`, paths, DNS, Certificate, ShutdownUnit, Identity, Platform, DataVolume, Config)
+- `mpd/Runtime/` — runtime/project orchestration and records
+- `mpd/Service/` — service lifecycle control (`Mpd.Service.*`)
+- `mpd/Hooks/` — typed `Event` lifecycle hooks
+- `mpd/TUI/` — interactive TUI
+- `mpd/Util/` — Podman gateway, JSONStateStore
+- `assets/` — runtime/type/service scripts/config/templates + `runtime-base/skel/`
+- `bootstrap/` — VM bring-up steps 10–60 (passwordless sudo, repo clone, networking, apt, build, WireGuard)
+- `setup/` — per-platform host-side orchestration (sandbox, macos, linux, windows)
 - `docs/` — behavioral and architecture contracts
 
 ## 13) Contributor Change Map
@@ -748,8 +756,6 @@ If you change:
 - `README.md`
 - `docs/README.md`
 - `docs/CLI_BEHAVIOR.md`
-- `docs/desktop/README.md`
-- `docs/machine/README.md`
-- `docs/VISION.md`
+- `docs/USAGE.md`
 - `docs/ROADMAP.md`
 - `AGENTS.md` — practical authoring guidance for verbs and tools (§"Authoring verbs and tools")

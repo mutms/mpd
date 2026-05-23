@@ -1,28 +1,22 @@
-// mpd — Mpd.Core.Assets namespace
-// Asset path resolution and shell completion installation (bash + zsh).
-// Assets are sourced directly from ~/Developer/mpd/assets.
+// mpd — shell completion shim installer.
+//
+// Sibling to Complete.swift. While Complete.swift emits candidates for
+// `mpd --complete` (called at every Tab press), this file installs the
+// shell-side shim that triggers those calls. Two consumers, one
+// namespace: `Mpd.Completion.install()` and `Mpd.Completion.emit()`.
+//
+// Operates on the user's shell config (~/.zsh/completions/_mpd or
+// ~/.bash_completion.d/mpd, plus a one-line sourcing snippet in ~/.zshrc
+// or ~/.bashrc). Not "mpd state" — per-user shell ergonomics.
 
 import Foundation
 
-extension Mpd.Core.Assets {
-
-    // MARK: - Path resolution
-
-    /// Resolve the assets directory in the source checkout.
-    static func path() throws -> String {
-        let p = Mpd.assetsDir
-        guard FileManager.default.fileExists(atPath: "\(p)/runtime-base") else {
-            throw RuntimeError("Assets not found at \(p) — clone mpd to ~/Developer/mpd.")
-        }
-        return p
-    }
-
-    // MARK: - Post-install steps
+extension Mpd.Completion {
 
     /// Install a shell-completion shim matching the user's `$SHELL`. Both
-    /// shims forward to `mpd --complete` (see `mpd/CLI/Complete.swift`); the
-    /// shim itself is small and stable.
-    static func installCompletion() {
+    /// shims forward to `mpd --complete` (see Complete.swift); the shim
+    /// itself is small and stable.
+    static func install() {
         let userShell = ProcessInfo.processInfo.environment["SHELL"] ?? ""
         if userShell.hasSuffix("/zsh") {
             installZshCompletion()
@@ -36,7 +30,7 @@ extension Mpd.Core.Assets {
     // MARK: - zsh
 
     private static func installZshCompletion() {
-        let homeDir = Mpd.homeDir
+        let homeDir = Mpd.VM.homeDir
         let completionsDir = "\(homeDir)/.zsh/completions"
         let completionFile = "\(completionsDir)/_mpd"
         let zshrcPath = "\(homeDir)/.zshrc"
@@ -81,7 +75,7 @@ extension Mpd.Core.Assets {
     // MARK: - bash
 
     private static func installBashCompletion() {
-        let homeDir = Mpd.homeDir
+        let homeDir = Mpd.VM.homeDir
         let dropDir = "\(homeDir)/.bash_completion.d"
         let dropFile = "\(dropDir)/mpd"
         let bashrcPath = "\(homeDir)/.bashrc"
@@ -126,7 +120,7 @@ extension Mpd.Core.Assets {
     // MARK: - Shared helpers
 
     private static func sourcePath(named filename: String) -> String? {
-        guard let assetsPath = try? Mpd.Core.Assets.path() else {
+        guard let assetsPath = try? Mpd.VM.assetsPath() else {
             print("Warning: cannot resolve assets path for completion installation.")
             return nil
         }

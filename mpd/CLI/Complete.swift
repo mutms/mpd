@@ -134,13 +134,13 @@ extension Mpd.Completion {
 
     // MARK: - State sources
 
-    /// Names of registered projects from `~/.mpd/machines/<n>/projects.json`.
+    /// Names of registered projects from `/var/lib/mpd/state/projects.json`.
     private static func projectNames() -> [String] {
         Mpd.Runtime.State.loadProjects().projects.map(\.name)
     }
 
     /// Names of created runtimes (directories under
-    /// `~/.mpd/machines/<n>/runtimes/`).
+    /// `/var/lib/mpd/state/runtimes/`).
     private static func runtimeNames() -> [String] {
         let dir = Mpd.Runtime.State.runtimesDir
         guard let entries = try? FileManager.default.contentsOfDirectory(atPath: dir) else {
@@ -149,7 +149,7 @@ extension Mpd.Completion {
         return entries.sorted()
     }
 
-    /// Names of DB containers from `~/.mpd/machines/<n>/databases.json`.
+    /// Names of DB containers from `/var/lib/mpd/state/databases.json`.
     private static func databaseNames() -> [String] {
         Mpd.Runtime.State.loadDatabases().databases.map(\.databaseId)
     }
@@ -157,7 +157,7 @@ extension Mpd.Completion {
     /// Names of runtimes that have asset definitions but no state entry yet —
     /// candidates for `--runtime-create`.
     private static func uncreatedRuntimeAssetNames() -> [String] {
-        guard let assets = try? Mpd.Core.Assets.path() else { return [] }
+        guard let assets = try? Mpd.VM.assetsPath() else { return [] }
         let runtimesAssetDir = "\(assets)/runtimes"
         guard let assetEntries = try? FileManager.default.contentsOfDirectory(atPath: runtimesAssetDir)
         else { return [] }

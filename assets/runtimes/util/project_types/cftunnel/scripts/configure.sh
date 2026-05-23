@@ -15,7 +15,7 @@ META_DIR="/srv/meta/${PROJECT_NAME}"
 
 # Load layered MPD_* env. Per-project mpd.env wins.
 # shellcheck source=/dev/null
-. /mnt/assets/runtime-base/lib/source-mpd-env.sh
+. /opt/mpd/assets/runtime-base/lib/source-mpd-env.sh
 
 if [ -z "${MPD_CFTUNNEL_TOKEN:-}" ]; then
     echo "Error: MPD_CFTUNNEL_TOKEN is not set." >&2

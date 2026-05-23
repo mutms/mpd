@@ -3,16 +3,17 @@
 # any of the four layered files is in the environment.
 #
 # Layering (last assignment wins):
-#   1. /mnt/assets/runtimes/<rt>/mpd-defaults.env — runtime-wide defaults.
+#   1. /opt/mpd/assets/runtimes/<rt>/mpd-defaults.env — runtime-wide defaults.
 #      Single source of truth for "the default value of MPD_<RT>_*".
-#   2. /mnt/assets/runtimes/<rt>/project_types/<type>/mpd-defaults.env —
+#   2. /opt/mpd/assets/runtimes/<rt>/project_types/<type>/mpd-defaults.env —
 #      project-type defaults (override the runtime layer).
-#   3. /home/<user>/mpd-user.env — symlink into the bind-mounted host file
-#      (~/.mpd/mpd-user.env on the host). Per-developer cross-project overrides.
+#   3. /var/lib/mpd/env/mpd-vm.env — VM-wide cross-project overrides.
+#      Bind-mounted RO from the host into runtime containers at the same
+#      absolute path (see Mpd.envMountRO).
 #   4. /srv/projects/<project>/mpd.env — per-project, seeded from the project
 #      type's mpd-template.env at create time. Wins over everything above.
 #
-# Per-project values win over per-developer, which win over type defaults,
+# Per-project values win over VM-wide, which win over type defaults,
 # which win over runtime defaults. Explicit `KEY=""` in any layer blocks
 # fall-through from earlier layers (last-assignment-wins, even when empty).
 #
@@ -30,13 +31,12 @@
 # `MPD_DB` set to the literal string `$(rm -rf ~)` — never executed. Format
 # follows the systemd EnvironmentFile spec (systemd.exec(5)).
 #
-# Caller must have $PROJECT_NAME set. The script runs as the (one and only)
-# dev user, so $HOME is the per-developer mpd-user.env location — no lookup
-# needed. Idempotent — safe to source multiple times in a script chain.
+# Caller must have $PROJECT_NAME set. Idempotent — safe to source multiple
+# times in a script chain.
 #
 # Usage:
 #   PROJECT_NAME=foo
-#   source /mnt/assets/runtime-base/lib/source-mpd-env.sh
+#   source /opt/mpd/assets/runtime-base/lib/source-mpd-env.sh
 #   PHP_VER="${MPD_PHP_VERSION}"
 
 _mpd_load_env_file() {
@@ -73,17 +73,17 @@ if [ -f "$_mpd_meta" ] && command -v jq >/dev/null 2>&1; then
     _mpd_runtime=$(jq -r '.runtime // empty' "$_mpd_meta" 2>/dev/null)
     _mpd_type=$(jq -r '.type // empty' "$_mpd_meta" 2>/dev/null)
     if [ -n "$_mpd_runtime" ]; then
-        _mpd_load_env_file "/mnt/assets/runtimes/${_mpd_runtime}/mpd-defaults.env"
+        _mpd_load_env_file "/opt/mpd/assets/runtimes/${_mpd_runtime}/mpd-defaults.env"
         if [ -n "$_mpd_type" ]; then
-            _mpd_load_env_file "/mnt/assets/runtimes/${_mpd_runtime}/project_types/${_mpd_type}/mpd-defaults.env"
+            _mpd_load_env_file "/opt/mpd/assets/runtimes/${_mpd_runtime}/project_types/${_mpd_type}/mpd-defaults.env"
         fi
     fi
     unset _mpd_runtime _mpd_type
 fi
 unset _mpd_meta
 
-# Layer 3+4: per-developer + per-project (always sourced).
-_mpd_load_env_file "${HOME}/mpd-user.env"
+# Layer 3+4: VM-wide + per-project (always sourced).
+_mpd_load_env_file "/var/lib/mpd/env/mpd-vm.env"
 _mpd_load_env_file "/srv/projects/${PROJECT_NAME}/mpd.env"
 
 unset -f _mpd_load_env_file

@@ -1,7 +1,7 @@
 #!/bin/bash
 # mpd-env.sh — shared helper sourced by Moodle project-type tools.
 # Provides: PROJECT, PROJECT_DIR, moodle_run(), and all MPD_* env variables.
-# Usage: source /mnt/assets/runtimes/php/project_types/moodle/scripts/mpd-env.sh
+# Usage: source /opt/mpd/assets/runtimes/php/project_types/moodle/scripts/mpd-env.sh
 
 # Detect project from current working directory.
 if [[ "$PWD" =~ ^/srv/projects/([^/]+) ]]; then
@@ -42,7 +42,7 @@ moodle_run() {
 # Layered MPD_* env via the secure whitelist parser (NOT raw `source` — a
 # malicious project's mpd.env with `MPD_FOO=$(rm -rf ~)` would otherwise
 # execute when cloned from git). Loads runtime defaults → type defaults →
-# $HOME/mpd-user.env → project mpd.env, last-assignment-wins.
+# /var/lib/mpd/env/mpd-vm.env → project mpd.env, last-assignment-wins.
 PROJECT_NAME="${PROJECT}"
 # shellcheck source=/dev/null
-source /mnt/assets/runtime-base/lib/source-mpd-env.sh
+source /opt/mpd/assets/runtime-base/lib/source-mpd-env.sh

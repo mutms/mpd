@@ -28,13 +28,13 @@ sudo apt-get install -y --no-install-recommends \
     default-mysql-client
 
 # ── Node.js (nvm) ───────────────────────────────────────────────────────────
-bash /mnt/assets/runtime-base/tools/node-install lts
+bash /opt/mpd/assets/runtime-base/tools/node-install lts
 
 # ── Data directory ──────────────────────────────────────────────────────────
 chmod 02777 /srv/data
 
 # ── Tool symlinks + PATH wiring (see ARCHITECTURE.md §7) ────────────────────
-RUNTIME_TOOLS_SRC="/mnt/assets/runtimes/node/tools"
+RUNTIME_TOOLS_SRC="/opt/mpd/assets/runtimes/node/tools"
 RUNTIME_TOOLS_DST="/srv/tools/node"
 if [ -d "$RUNTIME_TOOLS_SRC" ]; then
     mkdir -p "$RUNTIME_TOOLS_DST"
@@ -43,14 +43,12 @@ if [ -d "$RUNTIME_TOOLS_SRC" ]; then
         SCRIPT_NAME="$(basename "$SCRIPT")"
         ln -sf "$SCRIPT" "$RUNTIME_TOOLS_DST/$SCRIPT_NAME"
     done
-    echo "export PATH=\"${RUNTIME_TOOLS_DST}:\$PATH\"" \
-        | sudo tee /etc/profile.d/mpd-tools-runtime.sh >/dev/null
-    sudo chmod 644 /etc/profile.d/mpd-tools-runtime.sh
     echo "Installed runtime tools → ${RUNTIME_TOOLS_DST}"
 fi
 
-# Project-type tools.
-ASSETS_RT="/mnt/assets/runtimes/node/project_types"
+# Project-type tools. PATH is set by the dev user's ~/.bashrc (shipped via
+# skel) which globs /srv/tools/*/; no /etc/profile.d/ drop-in needed.
+ASSETS_RT="/opt/mpd/assets/runtimes/node/project_types"
 for TYPE_DIR in "${ASSETS_RT}"/*/tools; do
     [ -d "$TYPE_DIR" ] || continue
     TYPE_NAME="$(basename "$(dirname "$TYPE_DIR")")"
@@ -61,9 +59,6 @@ for TYPE_DIR in "${ASSETS_RT}"/*/tools; do
         SCRIPT_NAME="$(basename "$SCRIPT")"
         ln -sf "$SCRIPT" "$TOOLS_DIR/$SCRIPT_NAME"
     done
-    echo "export PATH=\"${TOOLS_DIR}:\$PATH\"" \
-        | sudo tee "/etc/profile.d/mpd-tools-type-${TYPE_NAME}.sh" >/dev/null
-    sudo chmod 644 "/etc/profile.d/mpd-tools-type-${TYPE_NAME}.sh"
     echo "Installed tools for '${TYPE_NAME}' → ${TOOLS_DIR}"
 done
 

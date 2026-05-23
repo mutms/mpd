@@ -10,7 +10,7 @@
 # uses for managed VMs). This wrapper just:
 #   - shows the disclaimer,
 #   - runs bootstrap/10-passwordless-sudo.sh (root password prompt),
-#   - runs bootstrap/20-git-clone.sh (clones the repo to ~/Developer/mpd),
+#   - runs bootstrap/20-git-clone.sh (clones the repo to /opt/mpd),
 #   - chains to setup/sandbox/lib/provision.sh which runs the remaining
 #     bootstrap steps + sandbox-specific finalize (VS Code, GNOME launcher,
 #     mpd --setup, pre-warm).
@@ -21,7 +21,7 @@
 #      Downloads bootstrap/10 + bootstrap/20 via wget, runs them, then
 #      execs the cloned lib/provision.sh.
 #   2. In-repo (when the mpd repo is already cloned):
-#        bash ~/Developer/mpd/setup/sandbox/take-over-sandbox-vm.sh
+#        bash /opt/mpd/setup/sandbox/take-over-sandbox-vm.sh
 #      Uses the local bootstrap/* scripts directly.
 #
 # Idempotent — safe to re-run after a partial failure.
@@ -67,7 +67,7 @@ read -r -p "Press Enter to proceed (Ctrl-C to abort): " _
 # bootstrap/ files. If it was invoked via wget|bash, the repo isn't
 # cloned yet — wget bootstrap/10 + bootstrap/20 to /tmp first.
 
-REPO_DIR="${HOME}/Developer/mpd"
+REPO_DIR=/opt/mpd
 MPD_BRANCH="${MPD_BRANCH:-main}"
 MPD_REPO_RAW="https://raw.githubusercontent.com/mutms/mpd/${MPD_BRANCH}"
 
@@ -94,7 +94,7 @@ fi
 bash "${BOOT10}"
 bash "${BOOT20}"
 
-# At this point ~/Developer/mpd is a clean git checkout. Chain to the
+# At this point /opt/mpd is a clean git checkout. Chain to the
 # sandbox-specific finalizer, which runs bootstrap/30..60 + the
 # GNOME-VM-only extras (VS Code, launcher, mpd --setup, pre-warm).
 exec bash "${REPO_DIR}/setup/sandbox/lib/provision.sh"

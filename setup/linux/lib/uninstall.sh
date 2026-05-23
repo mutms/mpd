@@ -191,7 +191,6 @@ remove_desktop_shortcut
 echo "Desktop launcher removed."
 
 # --- Per-VM deletion (last step — Ctrl-C here is safe) ---
-# Default keeps the VM. UTM-equivalent: virsh / virt-manager can delete
 # kept VMs later. Pool teardown after the loop, only if every VM was deleted.
 
 kept_count=0

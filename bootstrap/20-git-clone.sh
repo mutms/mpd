@@ -6,7 +6,8 @@
 #
 #   1. Asserts `sudo -n true` works.
 #   2. apt-installs `git` + `ca-certificates`.
-#   3. Clones (or fast-forwards) the mpd repo into ~/Developer/mpd.
+#   3. Ensures /opt/mpd + /var/lib/mpd exist, owned by the dev user.
+#   4. Clones (or fast-forwards) the mpd repo into /opt/mpd.
 #
 # No hostname gate — 10 already validated; 20 is just a worker.
 #
@@ -25,12 +26,25 @@ die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
 REPO_URL="${MPD_REPO:-https://github.com/mutms/mpd.git}"
 BRANCH="${MPD_BRANCH:-main}"
-DEST="${HOME}/Developer/mpd"
+DEST="/opt/mpd"
+STATE_DIR="/var/lib/mpd"
+USER_NAME="$(id -un)"
+GROUP_NAME="$(id -gn)"
 
 step "Sudo precondition"
 sudo -n true 2>/dev/null \
     || die "Passwordless sudo not configured. Run 10-passwordless-sudo.sh first."
 ok "sudo -n true works"
+
+step "FHS directories: ${DEST} + ${STATE_DIR} (owned by ${USER_NAME})"
+# install -d is idempotent — creates the dir if missing, leaves alone if
+# present (and re-applies mode/owner). Chown'd to the dev user so git
+# clone, make install, mpd --setup all run without sudo from here on.
+# Subdirs (conf/, env/, state/) are created later by mpd --setup as
+# needed and inherit the parent owner.
+sudo install -d -o "${USER_NAME}" -g "${GROUP_NAME}" -m 0755 "${DEST}"
+sudo install -d -o "${USER_NAME}" -g "${GROUP_NAME}" -m 0755 "${STATE_DIR}"
+ok "${DEST} + ${STATE_DIR} ready (owner=${USER_NAME})"
 
 step "Install git + ca-certificates"
 need_install=()
@@ -54,7 +68,9 @@ if [ -d "${DEST}/.git" ]; then
         || die "git pull --ff-only failed in ${DEST}. Resolve manually and re-run."
     ok "fast-forwarded ${DEST} to origin/${BRANCH}"
 else
-    mkdir -p "$(dirname "${DEST}")"
+    # `${DEST}` was just install -d'd above (owned by the dev user); git
+    # clone into a non-empty existing dir is supported as long as the dir
+    # itself is empty — install -d created an empty dir, so this just works.
     git clone --branch "${BRANCH}" "${REPO_URL}" "${DEST}"
     ok "cloned ${REPO_URL} (${BRANCH}) → ${DEST}"
 fi

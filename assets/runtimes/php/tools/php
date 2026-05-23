@@ -5,7 +5,7 @@
 # defaults → user → project). Falls back to the system default outside a
 # project tree or if no version is configured.
 #
-# Lives at /mnt/assets/runtimes/php/tools/php (bind-mounted live).
+# Lives at /opt/mpd/assets/runtimes/php/tools/php (bind-mounted live).
 # Symlinked into /srv/tools/php/php and /usr/local/bin/php at runtime
 # provision time so it's reachable both via PATH and via absolute path.
 #
@@ -18,7 +18,7 @@
 if [[ -z "${MPD_PHP_VERSION:-}" ]] && [[ "$PWD" =~ ^/srv/projects/([^/]+) ]]; then
     PROJECT_NAME="${BASH_REMATCH[1]}"
     # shellcheck source=/dev/null
-    source /mnt/assets/runtime-base/lib/source-mpd-env.sh
+    source /opt/mpd/assets/runtime-base/lib/source-mpd-env.sh
 fi
 
 if [[ -n "${MPD_PHP_VERSION:-}" ]] && [[ -x "/usr/bin/php${MPD_PHP_VERSION}" ]]; then

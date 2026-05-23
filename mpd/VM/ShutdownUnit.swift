@@ -1,4 +1,4 @@
-// mpd — Mpd.ShutdownUnit namespace
+// mpd — Mpd.VM.installShutdownUnit() implementation
 //
 // Installs a user-level systemd unit that brackets the VM lifecycle:
 //   - At boot: runs `mpd --start` to reconcile current state toward
@@ -18,10 +18,10 @@
 
 import Foundation
 
-extension Mpd.ShutdownUnit {
+extension Mpd.VM {
 
     private static var unitDir: String {
-        "\(Mpd.homeDir)/.config/systemd/user"
+        "\(Mpd.VM.homeDir)/.config/systemd/user"
     }
 
     private static var unitPath: String {
@@ -34,10 +34,9 @@ extension Mpd.ShutdownUnit {
     /// the user runs `mpd --start` themselves; the graceful-shutdown
     /// path is never lost.
     ///
-    /// The mpd binary path is the dev user's actual home + the canonical
-    /// in-repo location. Hardcoded (not via systemd's `%h` specifier) so
-    /// `cat ~/.config/systemd/user/mpd.service` shows the real path — far
-    /// easier to debug when something goes wrong.
+    /// The mpd binary path is the absolute `/opt/mpd/bin/mpd`. Hardcoded
+    /// in the rendered unit so `cat ~/.config/systemd/user/mpd.service`
+    /// shows the real path — far easier to debug when something goes wrong.
     private static func renderUnit(mpdBin: String) -> String {
         """
         [Unit]
@@ -60,9 +59,9 @@ extension Mpd.ShutdownUnit {
 
     /// Install + enable the unit and turn linger on for the dev user.
     /// Idempotent — overwrites the unit and re-enables on every call.
-    static func install() throws {
-        let user = Mpd.detectUserAndUID().user
-        let mpdBin = "\(Mpd.homeDir)/Developer/mpd/bin/mpd"
+    static func installShutdownUnit() throws {
+        let user = Mpd.VM.detectUserAndUID().user
+        let mpdBin = Mpd.VM.expectedExecutablePath
         let unitContent = renderUnit(mpdBin: mpdBin)
         let fm = FileManager.default
 
@@ -70,13 +69,13 @@ extension Mpd.ShutdownUnit {
         try unitContent.write(toFile: unitPath, atomically: true, encoding: .utf8)
 
         // Reload + enable. `systemctl --user` runs against the calling user.
-        _ = Mpd.HostExec.run(["systemctl", "--user", "daemon-reload"])
-        _ = Mpd.HostExec.run(["systemctl", "--user", "enable", "mpd.service"])
-        _ = Mpd.HostExec.run(["systemctl", "--user", "start", "mpd.service"])
+        _ = Mpd.VM.exec(["systemctl", "--user", "daemon-reload"])
+        _ = Mpd.VM.exec(["systemctl", "--user", "enable", "mpd.service"])
+        _ = Mpd.VM.exec(["systemctl", "--user", "start", "mpd.service"])
 
         // Linger so user-systemd survives logout — required for the unit
         // to fire on unattended shutdown (host-driven, cron, etc.) and
         // to start mpd at boot.
-        _ = Mpd.HostExec.run(["sudo", "loginctl", "enable-linger", user])
+        _ = Mpd.VM.exec(["sudo", "loginctl", "enable-linger", user])
     }
 }

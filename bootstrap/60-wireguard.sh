@@ -2,7 +2,7 @@
 # bootstrap/60-wireguard.sh
 #
 # Configure the in-VM WireGuard server end. Gated on the presence of
-# ~/.mpd/conf/wireguard/mpd0.conf — that file is pushed in from outside
+# /var/lib/mpd/conf/wireguard/mpd0.conf — that file is pushed in from outside
 # the VM by the host-side orchestrator (e.g. mpd-virt-macos) BEFORE
 # bootstrap runs.
 #
@@ -28,7 +28,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 . "${SCRIPT_DIR}/00-common.sh"
 
-IN_VM_CONF="${HOME}/.mpd/conf/wireguard/mpd0.conf"
+IN_VM_CONF=/var/lib/mpd/conf/wireguard/mpd0.conf
 SYSTEM_CONF=/etc/wireguard/mpd0.conf
 WG_SERVICE=wg-quick@mpd0.service
 

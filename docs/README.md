@@ -1,78 +1,77 @@
-# mpd Documentation
+# mpd documentation
 
-Index for the `mpd` documentation tree. New here? Start with the top-level
-[`../README.md`](../README.md) for the pitch and the mode picker, then
-come back here once you've decided which mode to install.
+Index for the `docs/` tree. The user-facing pitch + mode picker
+lives in [`../README.md`](../README.md) — start there if you
+haven't already.
 
-Two modes — Sandbox VM, **mpd VM**. Same CLI, same
-URLs, switch without relearning.
+## If you're installing or using mpd
 
-## Reading order
+In rough order of when you'll want them:
 
-If you're installing mpd for the first time:
+- [`../README.md`](../README.md) — pitch + "Two modes" picker + first
+  bootstrap. The single starting point.
+- The bootstrap doc for your chosen mode (linked from the top-level
+  README's "Get started" section):
+  - [`../setup/sandbox/README.md`](../setup/sandbox/README.md) — Sandbox VM (any hypervisor)
+  - [`../setup/macos/README.md`](../setup/macos/README.md) — mpd VM on macOS via Parallels Desktop Pro
+  - [`../setup/linux/README.md`](../setup/linux/README.md) — mpd VM on Ubuntu via libvirt/KVM
+  - [`../setup/windows/README.txt`](../setup/windows/README.txt) — mpd VM on Windows via Hyper-V
+- [`USAGE.md`](USAGE.md) — universal day-to-day handbook. Project
+  lifecycle, SSH into the runtime, tools list, git auth via agent
+  forwarding, project backups. Applies to both modes once setup
+  has completed.
+- [`NETWORKING.md`](NETWORKING.md) — host ↔ VM ↔ container routing
+  model for laptop-driven setups (WireGuard tunnel, DNS split,
+  ProxyJump SSH config). Read when reachability isn't working or
+  you're curious about the path packets take.
+- [`SECURITY.md`](SECURITY.md) — trust boundaries, threat model,
+  what mpd is and isn't designed to protect. Read when you're
+  deciding whether to let an AI agent loose, or when something
+  feels too privileged.
 
-1. [`../README.md`](../README.md) — overview and mode picker.
-2. The bootstrap doc that fits the mode you picked — see the three
-   sections below.
-3. [`machine/USAGE.md`](machine/USAGE.md) for the universal day-to-day
-   handbook (project lifecycle, SSH-into-runtime, tools) — the `mpd`
-   CLI is identical across all three modes once installed.
-4. Optional, on-demand: `NETWORKING.md`, `SECURITY.md`, `ARCHITECTURE.md`.
+## If you're working on mpd itself
 
-[`VISION.md`](VISION.md) covers the origin and design principles.
+Or you're an AI agent helping out:
 
-On macOS the three modes settle into two distinct workflows:
-sandbox for experiments and Linux testing, mpd VM via Parallels
-for daily-driver Moodle work. [`VISION.md`](VISION.md)
-§"How the two modes settle into daily roles" has the full framing.
+- [`../AGENTS.md`](../AGENTS.md) — agent + contributor starting
+  point. Fixed paths, code layout, mandatory privilege and
+  architecture rules, verb/tool authoring contract. Read first.
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — repo architecture, mode
+  split, networking summary, configuration model, verb/tool
+  contract in depth. The "under the hood" reference.
+- [`CLI_BEHAVIOR.md`](CLI_BEHAVIOR.md) — **behavioral contract** for
+  CLI changes. Spec, not a manual: if implementation diverges,
+  align code to this doc or update the doc in the same change.
+- [`HOOKS.md`](HOOKS.md) — typed `Event` lifecycle hooks: events,
+  audiences, asset-side `hooks/<event>.d/` scripts. Read when
+  adding a hook trigger or authoring a hook script.
+- [`proposals/`](proposals/) — design docs for parked exploratory
+  ideas (e.g. the nested-Podman deployment mode). Each proposal
+  is precise enough that a contributor can implement it without
+  re-deriving the design.
 
-## Mode 1 — Sandbox VM (experiments + Linux testing; "live inside the VM")
+## Direction
 
-Full GNOME desktop inside the VM. Install Debian Trixie with the
-GNOME desktop in any hypervisor, snapshot, run one script inside the
-VM. GNOME terminal runs `mpd`; GNOME Firefox-ESR sees `mpd.test`.
-Host stays untouched. Lowest friction. Snapshot-and-revert is the
-safety net.
+- [`ROADMAP.md`](ROADMAP.md) — queued work + parked ideas.
 
-- [`../setup/sandbox/README.md`](../setup/sandbox/README.md) — install,
-  prerequisites (hostname rename), revert.
+## Shared in-VM directory model
 
-## Mode 2 — mpd VM (daily-driver Moodle work; host browser + SSH into headless VM)
+Quick reference; full contract in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
-Automated headless Debian Trixie VM. The matched-host bootstrap
-creates the VM, builds `mpd`, and configures host-side networking +
-DNS + CA trust. Host browser visits `*.mpd.test` directly; host
-terminal SSH'es into the VM to run the `mpd` CLI; your IDE
-(PHPStorm Gateway / VSCode Remote-SSH) SSH'es one hop further into
-the runtime container inside the VM.
+- `/opt/mpd/` — code, assets, built binary (`/opt/mpd/bin/mpd`).
+  Owned by the dev user.
+- `/var/lib/mpd/conf/` — persistent identity: CA, service certs,
+  `platform.env`, WireGuard private key. PRIVATE — never bind-mounted
+  into containers.
+- `/var/lib/mpd/env/mpd-vm.env` — user-editable VM-wide env
+  overrides. Bind-mounted RO into every runtime container.
+- `/var/lib/mpd/skel/` — optional user-managed dotfile defaults for
+  new runtimes (`/etc/skel/`-style). Empty by default.
+- `/var/lib/mpd/state/` — mpd-managed operational state
+  (projects.json, runtimes/, dnsmasq.d/, etc.). Wipe to reset.
+- `/srv/` — Podman data volume, only exists inside containers
+  (projects/, data/, meta/, dbs/, tools/, backups/).
 
-- [`machine/README.md`](machine/README.md) — what mpd VM is, when to pick it, picking a hypervisor
-- [`machine/USAGE.md`](machine/USAGE.md) — bootstrap, setup, first project, day-to-day (universal handbook)
-- [`machine/NETWORKING.md`](machine/NETWORKING.md) — host ↔ VM ↔ container routing model, per-OS laptop recipes
-- [`machine/SECURITY.md`](machine/SECURITY.md) — trust boundaries
-- Per-platform bootstrap:
-  - [`../setup/macos/README.md`](../setup/macos/README.md) — Parallels Desktop Pro on macOS
-  - [`../setup/linux/README.md`](../setup/linux/README.md) — libvirt/KVM on Ubuntu
-  - [`../setup/windows/README.txt`](../setup/windows/README.txt) — Hyper-V on Windows
-
-## Vision and direction
-
-- [`VISION.md`](VISION.md) — *Why mpd* — origin lineage, design principles, what working with mpd feels like
-- [`ROADMAP.md`](ROADMAP.md) — what's queued next (`mdl-backup` / `mdl-restore` tools) and parked ideas
-
-## Reference
-
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — repository architecture, mode split, networking summary, configuration model
-- [`CLI_BEHAVIOR.md`](CLI_BEHAVIOR.md) — CLI behavior contract
-- [`HOOKS.md`](HOOKS.md) — typed `Event` lifecycle hooks: events, audiences, asset-side `hooks/<event>.d/` scripts
-
-## Shared host directory model
-
-- `~/Developer/mpd/bin/` — local built binary output
-- `~/Developer/mpd/conf/` — persistent local trust/network material
-  (`caroot/`, `service/`, `temp/`, `platform.env`)
-- `~/.mpd/` — runtime state and cache (recreated by `mpd --setup`)
-
-Project backups live inside the data volume at `/srv/backups/` and are
-pulled off via fileaccess SSH/scp before wiping. Full contract:
+Project backups live in `/srv/backups/` inside the data volume and
+are pulled off via fileaccess SSH/scp before wiping. Full contract:
 [`ARCHITECTURE.md` §10](ARCHITECTURE.md#10-backup-persistence).

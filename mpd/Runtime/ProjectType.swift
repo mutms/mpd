@@ -64,9 +64,9 @@ struct ProjectType {
         allRuntimeNames().contains(name)
     }
 
-    /// Asset search base directory (~/Developer/mpd/assets).
+    /// Asset search base directory (/opt/mpd/assets).
     static func assetsBases() -> [String] {
-        guard let p = try? Mpd.Core.Assets.path() else { return [] }
+        guard let p = try? Mpd.VM.assetsPath() else { return [] }
         return [p]
     }
 
@@ -169,9 +169,10 @@ extension ProjectType {
         }
 
         // Project-type specific knobs (PHP version, DB tag, etc.) are resolved
-        // by configure.sh from the layered mpd.env files: synced mpd-user.env
-        // at /srv/personal/mpd-user.env, then per-project /srv/projects/<n>/mpd.env
-        // (project wins on duplicate keys).
+        // by configure.sh from the layered mpd.env files: VM-wide overrides
+        // at /var/lib/mpd/env/mpd-vm.env (bind-mounted RO into the runtime),
+        // then per-project /srv/projects/<n>/mpd.env (project wins on
+        // duplicate keys).
         let stopObj       = json["stop"] as? [String: Any] ?? [:]
         let stopSystemd   = stopObj["systemdStop"] as? Bool ?? false
 

@@ -1,5 +1,5 @@
 // mpd — handleSetup() command entry
-// Delegates to environment-specific setup action.
+// Delegates to Mpd.Action.Setup.execute().
 
 import Foundation
 

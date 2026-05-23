@@ -40,7 +40,7 @@ extension Mpd.Service.Adminer {
     /// `SQLSTATE[08006] could not translate host name ...`.
     private static func ensureImage() throws {
         guard !Mpd.Podman.imageExists(imageTag) else { return }
-        let assetsDir = try Mpd.Core.Assets.path()
+        let assetsDir = try Mpd.VM.assetsPath()
         let contextDir = "\(assetsDir)/services/adminer"
         step("Building adminer image")
         guard Mpd.Podman.buildImage(tag: imageTag, contextDir: contextDir) == 0 else {
@@ -58,7 +58,8 @@ extension Mpd.Service.Adminer {
 
         if !Mpd.Podman.exists(containerName) {
             guard Mpd.Podman.run(
-                ["-d", "--name", containerName,
+                Mpd.VM.optMountRO
+                + ["-d", "--name", containerName,
                  "--network", "mpd-internal:ip=\(ip)",
                  "--restart", "always",
                  "--label", "\(revisionLabel)=\(revision)"]

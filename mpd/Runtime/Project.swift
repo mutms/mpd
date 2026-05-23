@@ -23,6 +23,19 @@ import Foundation
 
 extension Mpd.Project {
 
+    // MARK: - Name validation
+
+    /// Project identifier rule. Like a runtime name (lowercase letter
+    /// + alphanumerics, min length 2) but allows internal dashes
+    /// (no leading/trailing/consecutive) — needed for the
+    /// `<target>-cftunnel` naming convention and other suffix-style
+    /// project type names. Project names don't appear in mpd-internal
+    /// name parsing the way runtime names do.
+    static func isValidName(_ name: String) -> Bool {
+        name.wholeMatch(of: #/[a-z][a-z0-9]*(-[a-z0-9]+)*/#) != nil
+            && name.count >= 2
+    }
+
     // MARK: - Entry point: dispatch from ProjectCommand
 
     static func dispatch(project: String, verb: String, args: [String]) throws {

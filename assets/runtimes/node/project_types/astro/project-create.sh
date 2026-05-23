@@ -12,7 +12,7 @@ set -euo pipefail
 PROJECT_NAME="$1"
 PROJECT_DIR="/srv/projects/${PROJECT_NAME}"
 PROJECT_ENV="${PROJECT_DIR}/mpd.env"
-TEMPLATE_ENV="/mnt/assets/runtimes/node/project_types/astro/mpd-template.env"
+TEMPLATE_ENV="/opt/mpd/assets/runtimes/node/project_types/astro/mpd-template.env"
 
 if [ ! -d "$PROJECT_DIR" ]; then
     echo "Error: ${PROJECT_DIR} does not exist." >&2

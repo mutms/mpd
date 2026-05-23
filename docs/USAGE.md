@@ -1,7 +1,9 @@
-# mpd VM — Usage
+# Usage
 
-Operational handbook for `mpd VM`: bootstrap, first project,
-day-to-day.
+Operational handbook for `mpd`: bootstrap, first project, day-to-day.
+Applies to **both Sandbox VM and mpd VM modes** — the CLI surface is
+identical once `mpd --setup` has run. Mode-specific notes are called
+out where they matter.
 
 ## Bootstrap (one-time)
 
@@ -36,7 +38,7 @@ Pick the path that matches your host:
   DNS/route/trust changes.
 
 End state of either path: a VM where `mpd` is on `PATH`, your laptop
-SSH key is in `~/.ssh/authorized_keys`, and `~/.mpd/conf/platform.env`
+SSH key is in `~/.ssh/authorized_keys`, and `/var/lib/mpd/conf/platform.env`
 is set.
 
 ## `mpd --setup`
@@ -49,7 +51,7 @@ mpd --setup
 
 Idempotent — safe to re-run any time. Walks you through:
 
-- generating the local CA at `~/.mpd/conf/caroot/`
+- generating the local CA at `/var/lib/mpd/conf/caroot/`
 - installing the CA into the VM's system trust store + Firefox + NSS DB
 - creating the Podman network and data volume
 - bringing up the always-on infra services (dnsmasq, portal, Adminer,
@@ -57,7 +59,7 @@ Idempotent — safe to re-run any time. Walks you through:
 - a final DNS sanity check
 
 (VM-side apt installs, network stack setup, hostname/IP canonicalization,
-`mpd` build, and `~/Developer/mpd/bin/` on PATH all happen earlier in the
+`mpd` build, and `/opt/mpd/bin/` on PATH all happen earlier in the
 `bootstrap/30..60` steps and don't re-run here. See `bootstrap/README.md`.)
 
 Host-side trust + WireGuard setup lives in the separate `mpd-virt`
@@ -125,12 +127,14 @@ Mailpit UI with this project's mail pre-filtered (302-redirect to
 `kind: behat` URL declared, `https://behat.moodle51.mpd.test/` is
 wired automatically.
 
-Per-developer defaults (Moodle admin password, Behat preferences, DNS
-upstream, etc.) live in `~/.mpd/mpd-user.env` *inside the VM*, synced
-into every runtime via the data volume. The full layered
+VM-wide defaults (Moodle admin password, Behat preferences, Cloudflare
+Tunnel domain, etc.) live in `/var/lib/mpd/env/mpd-vm.env` *inside the VM*
+and are bind-mounted RO into every runtime container — edit on the host
+and the new values are visible to the next command run inside any runtime.
+The full layered
 configuration model — file paths, sourcing order, reserved keys — is
 documented in
-[`../ARCHITECTURE.md` §8](../ARCHITECTURE.md#8-configuration-model-mpdenv).
+[`ARCHITECTURE.md` §8](ARCHITECTURE.md#8-configuration-model-mpdenv).
 
 ## SSH into the runtime
 
@@ -190,12 +194,46 @@ absent). On the sandbox platform the "laptop key" is just whatever
 keys you have authorized for SSHing into the VM (or none, if you only
 ever access the sandbox via the hypervisor's console).
 
+### Pushing to git from inside the runtime
+
+Runtimes don't carry your private SSH key. Authenticate to
+GitHub/GitLab/private remotes via **SSH agent forwarding** (`ssh -A`):
+
+```bash
+ssh-add ~/.ssh/id_ed25519           # load the key into your laptop's agent
+                                    # (once per laptop session)
+ssh -A user@php.runtime.mpd.test    # -A forwards the agent socket in
+cd /srv/projects/moodle51
+git push origin main                # forwarded agent signs; the remote
+                                    # sees your laptop's key
+```
+
+VSCode Remote-SSH forwards the agent silently
+(`remote.ssh.enableAgentForwarding` is on by default). PHPStorm Gateway
+also forwards by default but prompts on each key access — use
+per-access prompts when an AI agent is driving, per-session when you're
+typing. An AI agent launched inside an `-A` SSH session uses the same
+forwarded socket — `git push` from the agent authenticates against your
+GitHub account via your laptop's key.
+
+The private key **never leaves the laptop**. The runtime can request
+signatures via the agent's API only while your SSH session is open —
+there's no way to extract the key. Close the session, auth goes away.
+Wipe or compromise the runtime, your key is unaffected.
+
+**One more guard.** Agent forwarding lets the AI push commits *under
+your identity* — so the consequence-blocking moves to the remote, not
+the runtime. Minimum recommended: **block force-pushes on protected
+branches** (`main`, release branches) under *GitHub Settings →
+Branches*. Every change the AI makes lands as an append-only commit
+you can audit. Stricter shops also require PRs for `main`.
+
 ### Tools available inside the runtime
 
 Once you're SSHed into the runtime, the following tools are on PATH —
 project-aware (cwd-walk to find the current project) and ready for
 either a human or an AI agent to invoke directly. Full taxonomy in
-[`../ARCHITECTURE.md` §7](../ARCHITECTURE.md).
+[`ARCHITECTURE.md` §7](ARCHITECTURE.md).
 
 **Base tools (available in every runtime):**
 
@@ -302,7 +340,7 @@ project access control.
 
 **One-time per developer** (host):
 ```bash
-# Add to ~/.mpd/mpd-user.env (replace with the public domain you own):
+# Add to /var/lib/mpd/env/mpd-vm.env (replace with the public domain you own):
 MPD_UTIL_CFTUNNEL_DOMAIN=.mpd-test.org
 ```
 
@@ -359,7 +397,7 @@ mpd --runtime-delete php         # nuke a runtime, keep projects + DBs
                                  # (the data volume keeps /srv/projects, /srv/dbs)
 
 # Manual in-VM reset (no --uninstall verb on mpd):
-rm -rf ~/.mpd                    # blow away state + identity in the VM
+rm -rf /var/lib/mpd                    # blow away state + identity in the VM
 
 # Nuke the VM itself: hypervisor's VM-delete operation (or, for sandbox,
 # revert to your pre-take-over snapshot), then re-bootstrap from any
@@ -369,11 +407,10 @@ rm -rf ~/.mpd                    # blow away state + identity in the VM
 
 ## Reference
 
-- [README.md](README.md) — when to pick mpd VM, picking a
-  hypervisor, prerequisites
+- [README.md](README.md) — documentation index (audience-shaped)
+- [../README.md](../README.md) — top-level pitch + mode picker + first bootstrap
 - [NETWORKING.md](NETWORKING.md) — host ↔ VM ↔ container routing
 - [SECURITY.md](SECURITY.md) — trust boundaries
-- [../ARCHITECTURE.md](../ARCHITECTURE.md) — full architecture
-- [../CLI_BEHAVIOR.md](../CLI_BEHAVIOR.md) — CLI behavior contract
-- [../VISION.md](../VISION.md) — *Why mpd*
-- [../ROADMAP.md](../ROADMAP.md) — what's queued next
+- [ARCHITECTURE.md](ARCHITECTURE.md) — full architecture
+- [CLI_BEHAVIOR.md](CLI_BEHAVIOR.md) — CLI behavior contract
+- [ROADMAP.md](ROADMAP.md) — what's queued next

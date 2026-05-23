@@ -2,6 +2,6 @@
 # Tool: run Moodle cron for the current project (one cycle).
 # Cwd-walks via mpd-env.sh to find the project context.
 set -euo pipefail
-source /mnt/assets/runtimes/php/project_types/moodle/scripts/mpd-env.sh
+source /opt/mpd/assets/runtimes/php/project_types/moodle/scripts/mpd-env.sh
 
 moodle_run admin/cli/cron.php "$@"

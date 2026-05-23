@@ -1,5 +1,5 @@
 // mpd — handleStatus() command entry
-// Delegates status rendering to environment-specific implementation.
+// Delegates status rendering to Mpd.Action.Status.execute().
 
 import Foundation
 

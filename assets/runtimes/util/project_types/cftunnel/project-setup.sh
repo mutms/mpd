@@ -17,7 +17,7 @@ SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 # Load layered MPD_* env to get the token. Configure has already
 # validated all the required values; this is a re-load before start.
 # shellcheck source=/dev/null
-. /mnt/assets/runtime-base/lib/source-mpd-env.sh
+. /opt/mpd/assets/runtime-base/lib/source-mpd-env.sh
 
 if [ -z "${MPD_CFTUNNEL_TOKEN:-}" ]; then
     echo "Error: MPD_CFTUNNEL_TOKEN missing — re-run mpd configure ${PROJECT_NAME}." >&2

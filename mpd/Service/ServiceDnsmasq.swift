@@ -2,7 +2,7 @@
 // dnsmasq DNS resolver: container lifecycle.
 // Container: mpd-service-dnsmasq at 10.163.0.3
 // Config file: assets/services/dnsmasq/dnsmasq.conf (bind-mounted read-only).
-// Per-runtime overrides in ~/.mpd/machines/<m>/dnsmasq.d/ (bind-mounted read-only).
+// Per-runtime overrides in /var/lib/mpd/state/dnsmasq.d/ (bind-mounted read-only).
 // Restart with `podman restart` after conf.d changes — SIGHUP does NOT reload conf-dir.
 
 import Foundation
@@ -50,7 +50,7 @@ extension Mpd.Service.Dnsmasq {
         let fm = FileManager.default
 
         // Remove outdated container (version or CA fingerprint mismatch → rebuild)
-        let caFP = Mpd.fileFingerprint("\(Mpd.confCARootDir)/rootCA.pem")
+        let caFP = Mpd.VM.fileFingerprint("\(Mpd.VM.confCARootDir)/rootCA.pem")
 
         Mpd.Podman.removeIfOutdated(containerName, labels: [
             revisionLabel: revision,
@@ -59,35 +59,27 @@ extension Mpd.Service.Dnsmasq {
 
         step("Service: dnsmasq DNS resolver")
 
-        let assetsDir = try Mpd.Core.Assets.path()
+        let assetsDir = try Mpd.VM.assetsPath()
         let dnsmasqConf = "\(assetsDir)/services/dnsmasq/dnsmasq.conf"
-        let dnsmasqDir = Mpd.Core.State.dnsmasqDir
+        let dnsmasqDir = Mpd.VM.dnsmasqDir
         try fm.createDirectory(atPath: dnsmasqDir, withIntermediateDirectories: true)
         guard fm.fileExists(atPath: dnsmasqConf) else {
             throw RuntimeError("dnsmasq.conf not found at \(dnsmasqConf)")
         }
         let serviceDNSChanged = try ensureServiceDNSRecords(in: dnsmasqDir)
         let databaseDNSChanged = try ensureDatabaseDNSRecords(in: dnsmasqDir)
-        if serviceDNSChanged || databaseDNSChanged {
-            // Sync the *.conf drop-ins into the data volume so the bind-mount
-            // below sees them. Snapshot-at-attach is fine here — dnsmasq
-            // restarts on conf-dir change anyway, re-attach picks up new
-            // content.
-            try Mpd.Core.State.syncBindMountFiles()
-        }
 
         if !Mpd.Podman.exists(containerName) {
             print("Creating dnsmasq container")
-            // Bind dnsmasq.d from the data volume (subpath) instead of from
-            // the host directory. Routes around virtiofs cache lag on libkrun.
-            // Source of truth lives at <dnsmasqDir> on the host;
-            // syncBindMountFiles() mirrors it into the volume.
-            guard Mpd.Podman.run([
+            // Bind dnsmasq.d directly from the host. Directory mount, so
+            // *.conf adds/removes are visible inside immediately. dnsmasq
+            // restarts on conf-dir change.
+            guard Mpd.Podman.run(Mpd.VM.optMountRO + [
                 "-d", "--name", containerName,
                 "--network", "mpd-internal:ip=\(ip)",
                 "--restart", "always",
                 "-v", "\(dnsmasqConf):/etc/dnsmasq.conf:ro",
-                "--mount", "type=volume,source=\(Mpd.dataVolume),target=/etc/dnsmasq.d,subpath=state/dnsmasq.d,readonly",
+                "-v", "\(dnsmasqDir):/etc/dnsmasq.d:ro",
                 "-v", "\(hostResolvConfPath):/etc/dnsmasq-host-resolv.conf:ro",
                 "--label", "com.docker.compose.project=mpd-service",
                 "--label", "\(revisionLabel)=\(revision)",
@@ -127,13 +119,10 @@ extension Mpd.Service.Dnsmasq {
             throw RuntimeError("\(containerName) not found. Run: mpd --setup")
         }
 
-        let dnsmasqDir = Mpd.Core.State.dnsmasqDir
+        let dnsmasqDir = Mpd.VM.dnsmasqDir
         try FileManager.default.createDirectory(atPath: dnsmasqDir, withIntermediateDirectories: true)
         let serviceDNSChanged = try ensureServiceDNSRecords(in: dnsmasqDir)
         let databaseDNSChanged = try ensureDatabaseDNSRecords(in: dnsmasqDir)
-        if serviceDNSChanged || databaseDNSChanged {
-            try Mpd.Core.State.syncBindMountFiles()
-        }
 
         if !Mpd.Podman.running(containerName) {
             guard Mpd.Podman.startQuietly(containerName) == 0 else {

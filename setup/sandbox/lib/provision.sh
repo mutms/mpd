@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-REPO_DIR="${HOME}/Developer/mpd"
+REPO_DIR=/opt/mpd
 
 step() { printf '\n==> %s\n' "$*"; }
 ok()   { printf '    ok: %s\n' "$*"; }

@@ -100,16 +100,16 @@ INIEOF
 done
 
 # ── Runtime tools: /usr/local/bin/php symlink (project-aware version dispatcher) ──
-# The php wrapper itself lives at /mnt/assets/runtimes/php/tools/php so edits
+# The php wrapper itself lives at /opt/mpd/assets/runtimes/php/tools/php so edits
 # on the host are live in the runtime; we install a symlink under
 # /usr/local/bin/ for consumers that don't go through PATH (systemd, cron).
-sudo ln -sf /mnt/assets/runtimes/php/tools/php /usr/local/bin/php
+sudo ln -sf /opt/mpd/assets/runtimes/php/tools/php /usr/local/bin/php
 
 # ── Composer ─────────────────────────────────────────────────────────────────
-bash /mnt/assets/runtimes/php/tools/composer-install
+bash /opt/mpd/assets/runtimes/php/tools/composer-install
 
 # ── Node.js (nvm, for Moodle JS tooling) ────────────────────────────────────
-bash /mnt/assets/runtime-base/tools/node-install lts
+bash /opt/mpd/assets/runtime-base/tools/node-install lts
 
 # ── Data directory ──────────────────────────────────────────────────────────
 # /srv/data already exists, dev-user-owned (bootstrap.sh). World-writable
@@ -117,15 +117,20 @@ bash /mnt/assets/runtime-base/tools/node-install lts
 chmod 02777 /srv/data
 
 # ── Tool symlinks + PATH wiring (see ARCHITECTURE.md §7) ────────────────────
-# PATH order at SSH/login time: project-type tools first, runtime tools
-# second, system PATH last. Profile.d files are sourced alphabetically and
-# each prepends to PATH, so the file that's sourced LAST ends up FIRST in
-# PATH. Naming guarantees the order:
-#   mpd-tools-runtime.sh         (sourced first; ends up second in PATH)
-#   mpd-tools-type-<type>.sh     (sourced last;  ends up first in PATH)
+# Runtime + project-type tools land under /srv/tools/<rt>/ and
+# /srv/tools/<type>/. PATH is set by the dev user's ~/.bashrc (shipped via
+# skel) which globs every dir under /srv/tools/. No per-runtime/per-type
+# /etc/profile.d/ drop-in is needed — and root deliberately has none of
+# these on PATH (see AGENTS.md "Mandatory privilege rule").
+#
+# PATH order at shell start: dotfile/loop order is base → runtime → types,
+# because `/srv/tools/*/` enumerates alphabetically and each iteration
+# prepends to PATH, so later entries win. To rank type tools above runtime
+# tools, runtime names are deliberately short (`php`) and type names tend
+# to sort after (`moodle`); the glob preserves that order.
 
 # Runtime-level tools.
-RUNTIME_TOOLS_SRC="/mnt/assets/runtimes/php/tools"
+RUNTIME_TOOLS_SRC="/opt/mpd/assets/runtimes/php/tools"
 RUNTIME_TOOLS_DST="/srv/tools/php"
 if [ -d "$RUNTIME_TOOLS_SRC" ]; then
     mkdir -p "$RUNTIME_TOOLS_DST"
@@ -134,14 +139,11 @@ if [ -d "$RUNTIME_TOOLS_SRC" ]; then
         SCRIPT_NAME="$(basename "$SCRIPT")"
         ln -sf "$SCRIPT" "$RUNTIME_TOOLS_DST/$SCRIPT_NAME"
     done
-    echo "export PATH=\"${RUNTIME_TOOLS_DST}:\$PATH\"" \
-        | sudo tee /etc/profile.d/mpd-tools-runtime.sh >/dev/null
-    sudo chmod 644 /etc/profile.d/mpd-tools-runtime.sh
     echo "Installed runtime tools → ${RUNTIME_TOOLS_DST}"
 fi
 
 # Project-type tools. Scan assets for project types with a tools/ directory.
-ASSETS_RT="/mnt/assets/runtimes/php/project_types"
+ASSETS_RT="/opt/mpd/assets/runtimes/php/project_types"
 for TYPE_DIR in "${ASSETS_RT}"/*/tools; do
     [ -d "$TYPE_DIR" ] || continue
     TYPE_NAME="$(basename "$(dirname "$TYPE_DIR")")"
@@ -154,9 +156,6 @@ for TYPE_DIR in "${ASSETS_RT}"/*/tools; do
         SCRIPT_NAME="$(basename "$SCRIPT")"
         ln -sf "$SCRIPT" "$TOOLS_DIR/$SCRIPT_NAME"
     done
-    echo "export PATH=\"${TOOLS_DIR}:\$PATH\"" \
-        | sudo tee "/etc/profile.d/mpd-tools-type-${TYPE_NAME}.sh" >/dev/null
-    sudo chmod 644 "/etc/profile.d/mpd-tools-type-${TYPE_NAME}.sh"
     echo "Installed tools for '${TYPE_NAME}' → ${TOOLS_DIR}"
 done
 

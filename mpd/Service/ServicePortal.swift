@@ -30,7 +30,6 @@ extension Mpd.Service.Portal {
     // Label keys
     private static let revisionLabel = "mpd.service.revision"
     private static let caFingerprintLabel = "mpd.ca.fingerprint"
-    private static let machineLabel = "mpd.machine.name"
 
     // MARK: - Container lifecycle
 
@@ -40,19 +39,16 @@ extension Mpd.Service.Portal {
 
         step("Service: portal at https://mpd.test")
 
-        // Remove outdated container (version, CA fingerprint, or machine mismatch → rebuild)
-        let caFP = Mpd.fileFingerprint("\(Mpd.confCARootDir)/rootCA.pem")
-        let machineName = Mpd.Core.State.activeMachine()
+        // Remove outdated container (version, CA fingerprint → rebuild)
+        let caFP = Mpd.VM.fileFingerprint("\(Mpd.VM.confCARootDir)/rootCA.pem")
         Mpd.Podman.removeIfOutdated(containerName, labels: [
             revisionLabel: revision,
             caFingerprintLabel: caFP,
-            machineLabel: machineName,
         ])
 
-        let assetsDir = try Mpd.Core.Assets.path()
-        let machineDir = Mpd.Core.State.machineDir()
-        let serviceCert = "\(Mpd.confServiceDir)/cert.pem"
-        let serviceKey = "\(Mpd.confServiceDir)/key.pem"
+        let assetsDir = try Mpd.VM.assetsPath()
+        let serviceCert = "\(Mpd.VM.confServiceDir)/cert.pem"
+        let serviceKey = "\(Mpd.VM.confServiceDir)/key.pem"
 
         let portalDir = "\(assetsDir)/services/portal"
         let portalWWW = "\(portalDir)/www"
@@ -60,7 +56,6 @@ extension Mpd.Service.Portal {
         let apacheConf = "\(portalDir)/apache.conf"
         let portalPhpIni = "\(portalDir)/php.ini"
         let vhostTemplate = "\(portalDir)/templates/service-vhost.conf.tpl"
-        let runtimesAssetsDir = "\(assetsDir)/runtimes"
 
         guard fm.fileExists(atPath: portalPhp) else {
             throw RuntimeError("portal/www/index.php not found at \(portalPhp)")
@@ -75,7 +70,7 @@ extension Mpd.Service.Portal {
             throw RuntimeError("portal/php.ini not found at \(portalPhpIni)")
         }
 
-        let portalStateDir = "\(machineDir)/portal"
+        let portalStateDir = "\(Mpd.VM.stateDir)/portal"
         let portalVhostsDir = "\(portalStateDir)/vhosts"
         let portalCertsDir = "\(portalStateDir)/certs"
         let certOpsDir = "\(portalStateDir)/certops"
@@ -85,7 +80,7 @@ extension Mpd.Service.Portal {
         try fm.createDirectory(atPath: certOpsDir, withIntermediateDirectories: true)
 
         // Display name for the portal's H1 / title. The portal already mounts
-        // machineDir at /mpd-state read-only, so the file is reachable inside
+        // stateDir at /mpd-state read-only, so the file is reachable inside
         // the container without a new bind mount. PHP reads it on every
         // request — refreshes pick up changes immediately.
         //   • VM hostname: mpd-NNN for managed VMs, mpd-000 for sandbox.
@@ -116,13 +111,12 @@ extension Mpd.Service.Portal {
 
         if !Mpd.Podman.exists(containerName) {
             print("Creating portal")
-            let portalMounts = [
+            let portalMounts = Mpd.VM.optMountRO + [
                 "-v", "\(portalWWW):/var/www/html:ro",
                 "-v", "\(Mpd.dataVolume):/srv:ro",
-                "-v", "\(machineDir):/mpd-state:ro",
+                "-v", "\(Mpd.VM.stateDir):/mpd-state:ro",
                 "-v", "\(apacheConf):/etc/apache2/sites-available/mpd-portal.conf:ro",
                 "-v", "\(portalPhpIni):/tmp/mpd-portal.ini:ro",
-                "-v", "\(runtimesAssetsDir):/mnt/assets/runtimes:ro",
                 "-v", "\(serviceCert):/etc/mpd/cert.pem:ro",
                 "-v", "\(serviceKey):/etc/mpd/key.pem:ro",
                 "-v", "\(portalVhostsDir):/etc/apache2/mpd-vhosts:ro",
@@ -144,7 +138,6 @@ extension Mpd.Service.Portal {
                 + ["--label", "com.docker.compose.project=mpd-service",
                    "--label", "\(revisionLabel)=\(revision)",
                    "--label", "\(caFingerprintLabel)=\(caFP)",
-                   "--label", "\(machineLabel)=\(machineName)",
                    "docker.io/library/debian:trixie",
                    "bash", "-c", aptCmd]
             ) == 0 else { throw RuntimeError("Failed to start \(containerName).") }
@@ -234,12 +227,12 @@ extension Mpd.Service.Portal {
             let keyPath = "\(certDir)/key.pem"
 
             if mustRegenerateAllCerts || !fm.fileExists(atPath: certPath) || !fm.fileExists(atPath: keyPath) {
-                try Mpd.Certificate.generateCert(
+                try Mpd.VM.Certificate.generateCert(
                     sans: [service.dns],
                     certPath: certPath,
                     keyPath: keyPath,
-                    caKeyPath: "\(Mpd.confCARootDir)/rootCA-key.pem",
-                    caCertPath: "\(Mpd.confCARootDir)/rootCA.pem",
+                    caKeyPath: "\(Mpd.VM.confCARootDir)/rootCA-key.pem",
+                    caCertPath: "\(Mpd.VM.confCARootDir)/rootCA.pem",
                     certsDir: certOpsDir
                 )
                 changed = true
