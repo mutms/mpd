@@ -171,9 +171,11 @@ extension Mpd.Action.Setup {
         let fm = FileManager.default
         let authPath = "\(sshDir)/authorized_keys"
         if !fm.fileExists(atPath: authPath) {
-            fm.createFile(atPath: authPath, contents: Data(), attributes: [
+            guard fm.createFile(atPath: authPath, contents: Data(), attributes: [
                 .posixPermissions: 0o600
-            ])
+            ]) else {
+                throw RuntimeError("Failed to create \(authPath).")
+            }
         } else {
             try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: authPath)
         }

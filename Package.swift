@@ -16,7 +16,7 @@ let package = Package(
             ],
             path: ".",
             exclude: [
-                "bin",
+                "bin", "bootstrap",
                 "assets", ".swiftpm", "setup",
                 "docs", "README.md", "LICENSE", "Makefile", "CLAUDE.md", "AGENTS.md"
             ],

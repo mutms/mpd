@@ -276,7 +276,17 @@ clear_known_hosts() {
 ssh_cmd() {
     local host="$1" user="$2"
     shift 2
-    ssh -o StrictHostKeyChecking=no -o BatchMode=yes "${user}@${host}" "$@"
+    # Prepend a deterministic PATH so the remote command sees:
+    #   - /opt/mpd/bin (the `mpd` binary, normally only on PATH via
+    #     /etc/profile.d/mpd.sh — which non-login non-interactive SSH
+    #     commands do NOT source);
+    #   - /usr/sbin and /sbin (where swapon, mkswap, visudo, etc. live;
+    #     also missing from the default sshd PATH on Debian for non-root
+    #     users).
+    # Without this, calls like `ssh_cmd … 'mpd --setup'` or heredocs that
+    # use `swapon --show` fail with "command not found".
+    ssh -o StrictHostKeyChecking=no -o BatchMode=yes "${user}@${host}" \
+        "export PATH=/opt/mpd/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; $*"
 }
 
 # Poll until TCP port 22 on $host accepts a connection. Doesn't auth —
