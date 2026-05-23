@@ -30,18 +30,19 @@ die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
 # --- VM-name gate ---
 step "Hostname gate"
-case "$(hostname -s 2>/dev/null || cat /etc/hostname | tr -d '[:space:]' | cut -d. -f1)" in
+CURRENT_HOSTNAME="$(hostname -s 2>/dev/null || cat /etc/hostname | tr -d '[:space:]' | cut -d. -f1)"
+case "${CURRENT_HOSTNAME}" in
     mpd-template|mpd-sandbox) ;;
     mpd-[0-9][0-9][0-9])     ;;
     *)
-        die "Refusing to run: hostname must be mpd-template, mpd-sandbox, or mpd-NNN (3-digit).
+        die "Refusing to run: hostname is '${CURRENT_HOSTNAME}', must be mpd-template, mpd-sandbox, or mpd-NNN (3-digit).
 Set it first:
     sudo hostnamectl set-hostname mpd-sandbox   # for the sandbox VM
     sudo hostnamectl set-hostname mpd-template  # for the Parallels template VM
 Then log out + back in and re-run."
         ;;
 esac
-ok "hostname '$(hostname -s)' accepted"
+ok "hostname '${CURRENT_HOSTNAME}' accepted"
 
 # --- OS gate ---
 step "OS gate"
@@ -69,14 +70,15 @@ echo "    No passwordless sudo for ${USER_NAME}. About to ask for the root passw
 echo "    (one-time setup). The prompt comes from \`su\`."
 echo
 
-# `su -c '<cmd>'` runs a single command as root. visudo -cf validates
-# the drop-in; if invalid the file is removed so subsequent sudo calls
-# don't get bricked. Atomic via install -m 440.
-if ! su -c "
+# `su - -c '<cmd>'` runs a single command as root in a login shell so
+# root's own PATH (with /usr/sbin) is used — visudo lives there and is
+# not on a regular user's PATH. visudo -cf validates the drop-in; if
+# invalid the file is removed so subsequent sudo calls don't get
+# bricked. Atomic via install -m 440.
+if ! su - -c "
     set -e
     install -m 0440 -o root -g root /dev/null '${SUDOERS_PATH}'
     printf '%s ALL=(ALL) NOPASSWD:ALL\n' '${USER_NAME}' > '${SUDOERS_PATH}'
-    chmod 0440 '${SUDOERS_PATH}'
     if ! visudo -cf '${SUDOERS_PATH}' >/dev/null; then
         rm -f '${SUDOERS_PATH}'
         echo 'visudo rejected the drop-in; removed.' >&2

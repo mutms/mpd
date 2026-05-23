@@ -134,7 +134,7 @@ step "Bootstrap 10: passwordless sudo (interactive — root password prompt)"
 ssh -t -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     "${VM_USER}@${DHCP_IP}" \
     "bash <(wget -qO- ${MPD_REPO_RAW}/bootstrap/10-passwordless-sudo.sh)" \
-    || die "bootstrap/10 failed. Is the VM hostname mpd-template / mpd-sandbox / mpd-NNN?"
+    || die "bootstrap/10 failed. See the VM's output above for the actual error."
 ok "Passwordless sudo configured"
 
 # --- Bootstrap step 20: apt install git + git clone repo ---
