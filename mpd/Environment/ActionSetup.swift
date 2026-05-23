@@ -54,10 +54,10 @@ extension Mpd.Action.Setup {
         }
     }
 
-    /// Assert that `bootstrap/run-all.sh` has run. Looks for representative
-    /// binaries the bootstrap apt phase installs (`30-install-software.sh`).
-    /// On a fresh VM where bootstrap hasn't run, the error points the user at
-    /// the right next step. Cheap — just stat'ing a handful of paths.
+    /// Assert that the bootstrap apt phase has run. Looks for representative
+    /// binaries that `bootstrap/40-install-software.sh` installs. On a fresh
+    /// VM where bootstrap hasn't completed, the error points the user at the
+    /// right next step. Cheap — just stat'ing a handful of paths.
     private static func requireBootstrapCompleted() throws {
         let representativeBinaries: [(name: String, path: String)] = [
             ("podman",   "/usr/bin/podman"),
@@ -72,9 +72,11 @@ extension Mpd.Action.Setup {
         guard missing.isEmpty else {
             throw RuntimeError("""
                 Bootstrap incomplete — missing: \(missing.joined(separator: ", ")).
-                Run the bootstrap layer first:
-                    bash ~/Developer/mpd/bootstrap/run-all.sh <NNN>
-                (<NNN> = 000 for sandbox, 100..254 for managed VMs)
+                Run the bootstrap steps in ~/Developer/mpd/bootstrap/:
+                    bash bootstrap/30-networking.sh <NNN>      # sandbox: 000; managed: 100..254
+                    bash bootstrap/40-install-software.sh
+                    bash bootstrap/50-build.sh
+                    bash bootstrap/60-wireguard.sh
                 """)
         }
     }
@@ -241,12 +243,13 @@ extension Mpd.Action.Setup {
 
         // Bootstrap pre-condition: apt packages, network stack, mpd build,
         // podman-restart.service, sysctl tweaks, ~/.bashrc PATH — all done
-        // by `bootstrap/run-all.sh` before `mpd --setup` ever runs. Verify
-        // representative binaries exist; bail with a fix-it message if not.
+        // by the bootstrap/30..60 steps before `mpd --setup` ever runs.
+        // Verify representative binaries exist; bail with a fix-it message
+        // if not.
         try requireBootstrapCompleted()
 
         // Verify the host's network stack is in the standardized state
-        // (systemd-resolved active, fed by NetworkManager). bootstrap/20
+        // (systemd-resolved active, fed by NetworkManager). bootstrap/30
         // is responsible for putting the system here.
         try Mpd.Integration.requireSystemdResolvedActive()
 

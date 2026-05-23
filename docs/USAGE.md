@@ -57,8 +57,8 @@ Idempotent — safe to re-run any time. Walks you through:
 - a final DNS sanity check
 
 (VM-side apt installs, network stack setup, hostname/IP canonicalization,
-`mpd` build, and `~/Developer/mpd/bin/` on PATH all happen earlier in
-`bootstrap/run-all.sh` and don't re-run here.)
+`mpd` build, and `~/Developer/mpd/bin/` on PATH all happen earlier in the
+`bootstrap/30..60` steps and don't re-run here. See `bootstrap/README.md`.)
 
 Host-side trust + WireGuard setup lives in the separate `mpd-virt`
 orchestrator (own repo); see its README for the host-side flow.

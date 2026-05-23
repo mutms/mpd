@@ -1,5 +1,5 @@
 #!/bin/bash
-# bootstrap/40-build.sh
+# bootstrap/50-build.sh
 #
 # Build the in-VM `mpd` binary from this checkout and add bin/ to PATH.
 # Idempotent — `make install` is fast when nothing changed.

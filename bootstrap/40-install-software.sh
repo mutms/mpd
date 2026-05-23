@@ -1,5 +1,5 @@
 #!/bin/bash
-# bootstrap/30-install-software.sh
+# bootstrap/40-install-software.sh
 #
 # apt-install everything the in-VM `mpd` binary depends on at run time:
 # runtime essentials (podman + friends), DNS diagnostics, build deps for

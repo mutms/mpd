@@ -137,26 +137,18 @@ while (((Get-Date) - $start).TotalSeconds -lt 300) {
 }
 Write-Ok "Cloud-init complete"
 
-# ── 8. Clone mpd repository ───────────────────────────────────────────────────
+# ── 8. Bootstrap step 20: clone mpd repository ────────────────────────────────
+# (Cloud-init already handled step 10's job: passwordless sudo, SSH key,
+# hostname, static IP, IPv6 disable. Bootstrap/30 is skipped — it's
+# NetworkManager-only while cloud-init Debian uses systemd-networkd.
+# platform.env was written via the seed ISO's write_files entry.)
 
-Write-Step "Cloning mpd repository in VM"
+$MpdBranch    = if ($env:MPD_BRANCH) { $env:MPD_BRANCH } else { "main" }
+$MpdRepoRaw   = "https://raw.githubusercontent.com/mutms/mpd/$MpdBranch"
 
-Send-SshScript -User $VmUser -RemoteHost $VmIp -Script @"
-set -e
-if ! command -v git >/dev/null 2>&1; then
-    sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -qq
-    sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
-        git curl libnss3-tools hyperv-daemons
-fi
-mkdir -p "`$HOME/Developer"
-mkdir -p "`$HOME/.ssh"
-chmod 700 "`$HOME/.ssh"
-if ! ssh-keygen -F github.com >/dev/null 2>&1; then
-    ssh-keyscan github.com >> "`$HOME/.ssh/known_hosts"
-fi
-chmod 600 "`$HOME/.ssh/known_hosts"
-git clone $MpdRepo "`$HOME/Developer/mpd"
-"@
+Write-Step "Bootstrap 20: install git + clone mpd repo"
+Invoke-Ssh -User $VmUser -RemoteHost $VmIp `
+    -Command "MPD_BRANCH=$MpdBranch MPD_REPO=$MpdRepo bash <(wget -qO- $MpdRepoRaw/bootstrap/20-git-clone.sh)"
 Write-Ok "Repository cloned"
 
 # ── 9. Upload host CA to VM ─────────────────────────────────────────────────
@@ -209,11 +201,23 @@ fi
 "@
 Write-Ok "Swap ready"
 
-# Bootstrap (apt packages, network, hostname, build, platform.env). Shared
-# with the sandbox + macos flow. Idempotent.
-Write-Step "Running bootstrap in VM (bash bootstrap/run-all.sh $VmOctet)"
+# Bootstrap steps 40 + 50 + 60: apt install set, mpd build, optional WG.
+# Step 30 (networking) is skipped on cloud-init flows -- cloud-init owns
+# hostname + netplan on this VM, and bootstrap/30 is NetworkManager-only.
+
+Write-Step "Bootstrap 40: apt install package set"
 Invoke-Ssh -User $VmUser -RemoteHost $VmIp `
-    -Command "bash `$HOME/Developer/mpd/bootstrap/run-all.sh $VmOctet"
+    -Command "bash `$HOME/Developer/mpd/bootstrap/40-install-software.sh"
+Write-Ok "Packages installed"
+
+Write-Step "Bootstrap 50: build mpd binary"
+Invoke-Ssh -User $VmUser -RemoteHost $VmIp `
+    -Command "bash `$HOME/Developer/mpd/bootstrap/50-build.sh"
+Write-Ok "mpd binary built"
+
+Write-Step "Bootstrap 60: WireGuard (no-op when conf absent)"
+Invoke-Ssh -User $VmUser -RemoteHost $VmIp `
+    -Command "bash `$HOME/Developer/mpd/bootstrap/60-wireguard.sh"
 Write-Ok "Bootstrap complete"
 
 # ── 13. Run mpd --setup ───────────────────────────────────────────────────────

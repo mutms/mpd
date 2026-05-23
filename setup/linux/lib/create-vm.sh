@@ -192,6 +192,18 @@ write_files:
       net.ipv6.conf.all.disable_ipv6 = 1
       net.ipv6.conf.default.disable_ipv6 = 1
       net.ipv6.conf.lo.disable_ipv6 = 1
+  - path: /home/${VM_USER}/.mpd/conf/platform.env
+    owner: ${VM_USER}:${VM_USER}
+    permissions: '0644'
+    defer: true
+    content: |
+      # mpd platform identity — written by cloud-init.
+      # Bootstrap/30-networking.sh is skipped on cloud-init flows
+      # (cloud-init owns hostname + netplan), so platform.env is
+      # written here so the in-VM mpd binary can read its identity.
+      MPD_PLATFORM=managed
+      MPD_VM_IP=${VM_IP}
+      MPD_VM_ID=$(printf '%03d' "${VM_OCTET}")
 
 runcmd:
   - systemctl enable --now ssh
@@ -349,31 +361,21 @@ else
     warn "could not verify root filesystem size."
 fi
 
-# --- Clone mpd repo ---
+# --- Bootstrap step 20: clone mpd repo ---
+# (Cloud-init already handled step 10's job: passwordless sudo, SSH key,
+# hostname, static IP, IPv6 disable. We skip bootstrap/30 entirely on
+# cloud-init flows — it's NetworkManager-only, while cloud-init Debian
+# uses systemd-networkd. platform.env was written via write_files above.)
 
-step "Cloning mpd repository in VM"
-ssh_cmd "$VM_IP" "$VM_USER" "export MPD_REPO=$(printf '%q' "$MPD_REPO"); bash -se" <<'EOF'
-set -e
-if ! command -v git >/dev/null 2>&1; then
-    echo "    installing base packages (git, curl, libnss3-tools, qemu-guest-agent)"
-    sudo apt-get -o Acquire::Retries=3 update
-    sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
-        git curl libnss3-tools qemu-guest-agent
-fi
+MPD_BRANCH="${MPD_BRANCH:-main}"
+MPD_REPO_RAW="https://raw.githubusercontent.com/mutms/mpd/${MPD_BRANCH}"
 
-mkdir -p "$HOME/Developer"
-mkdir -p "$HOME/.ssh"
-chmod 700 "$HOME/.ssh"
-
-if ! ssh-keygen -F github.com >/dev/null 2>&1; then
-    ssh-keyscan github.com >> "$HOME/.ssh/known_hosts"
-fi
-chmod 600 "$HOME/.ssh/known_hosts"
-
-git clone "$MPD_REPO" "$HOME/Developer/mpd"
-echo "    Repository cloned to $HOME/Developer/mpd"
-EOF
-ok "Repository ready"
+step "Bootstrap 20: install git + clone mpd repo"
+ssh_cmd "$VM_IP" "$VM_USER" \
+    "MPD_BRANCH=$(printf '%q' "${MPD_BRANCH}") MPD_REPO=$(printf '%q' "${MPD_REPO}") \
+     bash <(wget -qO- ${MPD_REPO_RAW}/bootstrap/20-git-clone.sh)" \
+    || die "bootstrap/20 failed (git install + clone)."
+ok "Repository cloned"
 
 # --- Detach cloud-init CD ---
 
@@ -420,14 +422,26 @@ fi
 EOF
 ok "Swap ready"
 
-# --- Bootstrap (apt packages, network, hostname, build, platform.env) ---
-#
-# Single source of truth shared with the sandbox flow and any future
-# mpd-virt-* repos. Idempotent on re-runs. Pins static IP to
-# <subnet>.<VM_OCTET> and renames hostname to mpd-<NNN>.
+# --- Bootstrap steps 40 + 50 + 60: apt install set, mpd build, optional WG ---
+# Step 30 (networking) is skipped on cloud-init flows — cloud-init owns
+# hostname + netplan on this VM, and bootstrap/30 is NetworkManager-only.
 
-step "Running bootstrap in VM (bash bootstrap/run-all.sh ${VM_OCTET})"
-ssh_cmd "$VM_IP" "$VM_USER" "bash \$HOME/Developer/mpd/bootstrap/run-all.sh $(printf '%q' "$VM_OCTET")"
+step "Bootstrap 40: apt install package set"
+ssh_cmd "$VM_IP" "$VM_USER" \
+    "bash \$HOME/Developer/mpd/bootstrap/40-install-software.sh" \
+    || die "bootstrap/40 failed (apt install)."
+ok "Packages installed"
+
+step "Bootstrap 50: build mpd binary"
+ssh_cmd "$VM_IP" "$VM_USER" \
+    "bash \$HOME/Developer/mpd/bootstrap/50-build.sh" \
+    || die "bootstrap/50 failed (make install)."
+ok "mpd binary built"
+
+step "Bootstrap 60: WireGuard (no-op when conf absent)"
+ssh_cmd "$VM_IP" "$VM_USER" \
+    "bash \$HOME/Developer/mpd/bootstrap/60-wireguard.sh" \
+    || die "bootstrap/60 failed."
 ok "Bootstrap complete"
 
 step "Uploading host CA into VM (mpd will reuse it)"

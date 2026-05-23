@@ -1,53 +1,80 @@
 # `bootstrap/` — bring a Debian Trixie VM to the state `mpd --setup` expects
 
-These scripts are the single source of truth for VM-side bring-up. Every
-caller invokes the same `bootstrap/run-all.sh`; the bash never lives in
-two places.
+These scripts are the single source of truth for VM-side bring-up. The
+**template VM stays pure Debian** — bootstrap runs in full on every
+sandbox/managed VM that gets created.
 
-## Callers
-
-| Caller | Invocation | Hostname state |
-|---|---|---|
-| `setup/sandbox/take-over-sandbox-vm.sh` | `bash bootstrap/run-all.sh 0` | `mpd-sandbox` → renamed to `mpd-000` by step 20 |
-| `mpd-virt create <NNN>` (host) | `bash bootstrap/run-all.sh <NNN>` over SSH | template clone (`mpd-template`) → renamed to `mpd-<NNN>` by step 20 |
-
-There's no separate "template-builder" mode — the template VM is just an
-ordinary VM you preserve in Parallels (or similar) after running bootstrap
-on it. mpd-virt re-runs the full bootstrap on every clone; it's
-idempotent, so apt installs and `make install` are fast no-ops on a
-template-derived VM.
-
-**Important for host orchestrators (e.g. `mpd-virt-macos`):** push
-host-provided artefacts (CA cert at `~/.mpd/conf/caroot/`, WireGuard
-conf at `~/.mpd/conf/wireguard/mpd0.conf`) **before** running
-`bootstrap/run-all.sh`. Step 50 reads the WG conf at bootstrap time;
-pushing afterward means re-running bootstrap.
+There is **no orchestrator** (no `run-all.sh`). Each step is independently
+invokable; callers list them explicitly.
 
 ## Steps
 
-| Step | What it does | Interactive? |
-|---|---|---|
-| `00-common.sh` | sourced library — logging helpers, hostname gate, distro gate. | — |
-| `10-passwordless-sudo.sh` | writes `/etc/sudoers.d/00-mpd-<user>` via `su -c` if `sudo -n true` fails. | only on truly fresh Debian (one-time root password prompt) |
-| `20-networking.sh` | renames hostname to canonical form; standardises NetworkManager + systemd-resolved + libnss-resolve; pins static IP when octet ∈ 100..254. | no |
-| `30-install-software.sh` | apt-installs the full package set the in-VM `mpd` binary needs at runtime + build deps; enables `podman-restart.service`. | no |
-| `40-build.sh` | `make install` + adds `bin/` to PATH via `~/.bashrc` snippet. | no |
-| `50-wireguard.sh` | gated on `~/.mpd/conf/wireguard/mpd0.conf` (pushed in by the host orchestrator before bootstrap). When present: sysctl `ip_forward=1`, install conf to `/etc/wireguard/mpd0.conf`, enable + start `wg-quick@mpd0`. When absent: no-op. | no |
-| `run-all.sh` | dispatches the steps in order. Takes the octet as its only argument. | inherits interactivity from step 10 only |
+| File | Wgettable? | Interactive? | What it does |
+|---|---|---|---|
+| `10-passwordless-sudo.sh` | yes | yes (one root password prompt) | Validate hostname (mpd-template, mpd-sandbox, mpd-NNN) + Debian Trixie. If `sudo -n` already works, no-op. Otherwise write `/etc/sudoers.d/00-mpd-<user>` via `su -c`. |
+| `20-git-clone.sh` | yes | no | Assert `sudo -n` works; apt-install `git` + `ca-certificates`; clone (or fast-forward) the mpd repo to `~/Developer/mpd`. No hostname gate — step 10 already did it. |
+| `30-networking.sh` | no (local) | no | Hostname rename to `mpd-<NNN>`, NetworkManager + systemd-resolved + libnss-resolve, optional static IP for octets in `[100, 254]`, IPv6 disable, write `~/.mpd/conf/platform.env`. |
+| `40-install-software.sh` | no (local) | no | apt-install the full runtime + build + diagnostics package set; enable `podman-restart.service`. |
+| `50-build.sh` | no (local) | no | `make install` + add `~/Developer/mpd/bin/` to PATH via `~/.bashrc`. |
+| `60-wireguard.sh` | no (local) | no | Gated on `~/.mpd/conf/wireguard/mpd0.conf`. When present: sysctl `ip_forward=1`, install conf to `/etc/wireguard/mpd0.conf`, enable + start `wg-quick@mpd0`. |
 
-## Hostname accept-list (`00-common.sh`)
+Steps `10` and `20` are wgettable because they must run before the mpd
+repo exists on disk. They inline their own helpers and don't source
+`00-common.sh`. Everything from `30` on lives in the repo and sources
+`00-common.sh` for shared logging helpers.
 
-| Hostname | Meaning |
-|---|---|
-| `mpd-template` | template VM, before being cloned into a numbered VM |
-| `mpd-sandbox` | sandbox VM, transitional — user typed this into the Debian installer; step 20 renames it to `mpd-000` |
-| `mpd-NNN` | canonical 3-digit form; `mpd-000` is sandbox (DHCP), `mpd-100..254` are managed (static IP) |
+## Invocation flows
 
-## After bootstrap
+### Sandbox VM (user-driven, inside the VM)
 
-`mpd --setup` does no apt work — it just asserts every package is present
-and fails loudly with a "re-run `bootstrap/run-all.sh`" message if anything
-is missing. Setup focuses on Podman networks, the data volume, services,
-CA generation and trust, the WireGuard wg-quick install (when an mpd-virt
-push left `~/.mpd/conf/wireguard/mpd0.conf` behind), and runtime
-reconciliation.
+The user-facing wrapper at `setup/sandbox/take-over-sandbox-vm.sh` is
+itself wgettable; it chains 10 + 20 + 30..60 + sandbox-specific
+finalize (VS Code, GNOME launcher, `mpd --setup`, pre-warm).
+
+```bash
+bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/sandbox/take-over-sandbox-vm.sh)
+```
+
+### Managed VM (mpd-virt-macos / mpd-virt-linux / mpd-virt-windows)
+
+Each orchestrator clones a **pure Debian template**, gets SSH access
+(`ssh-copy-id` or cloud-init-injected key), then runs the steps:
+
+```text
+ssh -t … bash <(wget -qO- …/bootstrap/10-passwordless-sudo.sh)   # one interactive root pw
+ssh    … bash <(wget -qO- …/bootstrap/20-git-clone.sh)
+ssh    … bash ~/Developer/mpd/bootstrap/30-networking.sh <NNN>   # SSH drops on IP change
+# reconnect at new static IP
+ssh    … bash ~/Developer/mpd/bootstrap/40-install-software.sh
+ssh    … bash ~/Developer/mpd/bootstrap/50-build.sh
+ssh    … bash ~/Developer/mpd/bootstrap/60-wireguard.sh
+ssh    … mpd --setup
+```
+
+Cloud-init flows (KVM, Hyper-V) handle the sudo bit via their
+`user-data` natively, so step 10 is a silent no-op there.
+
+### Upgrade (any VM)
+
+```bash
+cd ~/Developer/mpd && git pull --ff-only
+bash bootstrap/30-networking.sh <NNN>
+bash bootstrap/40-install-software.sh
+bash bootstrap/50-build.sh
+bash bootstrap/60-wireguard.sh
+```
+
+All steps are idempotent — re-running everything is fine, costs only
+the time of `dpkg -s` checks and a `make install` that detects no
+changes.
+
+## Environment variables (steps 10 + 20)
+
+| Var | Default | Used by | Meaning |
+|---|---|---|---|
+| `MPD_REPO` | `https://github.com/mutms/mpd.git` | `20-git-clone.sh` | full https URL of the mpd repo |
+| `MPD_BRANCH` | `main` | `20-git-clone.sh` | branch / ref to clone |
+
+The wget URL for the seed scripts encodes the branch in its path
+(`raw.githubusercontent.com/<owner>/mpd/<branch>/bootstrap/…`) — set
+`MPD_BRANCH` to match if you wget from a non-main branch.

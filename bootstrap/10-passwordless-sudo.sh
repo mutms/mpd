@@ -1,31 +1,64 @@
 #!/bin/bash
 # bootstrap/10-passwordless-sudo.sh
 #
-# Make `sudo` work without a password for the invoking user. The **only**
-# bootstrap step that can be interactive — and only on a truly fresh
-# Debian where the user isn't in the sudoers group yet. Once it's set up,
-# the script is a silent no-op on subsequent runs.
+# Wgettable. Self-contained. The ONLY script in the bootstrap chain that
+# can be invoked interactively before the mpd repo is cloned, so it
+# inlines its own helpers and hostname/OS gates instead of sourcing
+# 00-common.sh.
 #
-# Interactive path: prompts the root password via `su -c '…'` and writes
-# a NOPASSWD drop-in. `su -c` is the privilege-rule-approved root
-# elevation shape (AGENTS.md §"Mandatory privilege rule") — no identity
-# switch to a non-root user, no whole-script sudo wrapping.
+# Behavior:
+#   1. VM-name gate: hostname must be mpd-template, mpd-sandbox, or
+#      mpd-NNN (3-digit). Refuses anything else — accidental run on a
+#      workstation is fatal.
+#   2. OS gate: Debian Trixie.
+#   3. If `sudo -n true` already works (cloud-init / pre-prepped VM):
+#      silent no-op.
+#   4. Otherwise prompt for the root password (`su -c …`) and write
+#      /etc/sudoers.d/00-mpd-<user> with NOPASSWD for the invoking user.
+#      `su -c` is the privilege-rule-approved root elevation shape
+#      (no identity switch to a non-root user).
 #
-# Non-interactive callers (e.g. mpd-virt's SSH-driven flow) work as long
-# as the VM image they boot already has passwordless sudo configured —
-# either via cloud-init, or by having been built from a template that
-# went through this step at template-build time.
+# Standalone invocation:
+#   bash <(wget -qO- https://raw.githubusercontent.com/<owner>/mpd/<branch>/bootstrap/10-passwordless-sudo.sh)
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck disable=SC1091
-. "${SCRIPT_DIR}/00-common.sh"
+# --- Inline helpers (can't source 00-common.sh; the repo may not exist yet) ---
+step() { printf '\n==> %s\n' "$*"; }
+ok()   { printf '    ok: %s\n' "$*"; }
+die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
-step "Passwordless sudo"
+# --- VM-name gate ---
+step "Hostname gate"
+case "$(hostname -s 2>/dev/null || cat /etc/hostname | tr -d '[:space:]' | cut -d. -f1)" in
+    mpd-template|mpd-sandbox) ;;
+    mpd-[0-9][0-9][0-9])     ;;
+    *)
+        die "Refusing to run: hostname must be mpd-template, mpd-sandbox, or mpd-NNN (3-digit).
+Set it first:
+    sudo hostnamectl set-hostname mpd-sandbox   # for the sandbox VM
+    sudo hostnamectl set-hostname mpd-template  # for the Parallels template VM
+Then log out + back in and re-run."
+        ;;
+esac
+ok "hostname '$(hostname -s)' accepted"
+
+# --- OS gate ---
+step "OS gate"
+[ -r /etc/os-release ] || die "/etc/os-release missing — cannot verify OS."
+# shellcheck disable=SC1091
+. /etc/os-release
+[ "${ID:-}" = "debian" ] \
+    || die "bootstrap targets Debian (got ID=${ID:-unknown})."
+[ "${VERSION_CODENAME:-}" = "trixie" ] \
+    || die "bootstrap targets Debian Trixie (got VERSION_CODENAME=${VERSION_CODENAME:-unknown})."
+ok "Debian Trixie"
+
+# --- Passwordless sudo ---
+step "Passwordless sudo for $(id -un)"
 
 if sudo -n true 2>/dev/null; then
-    ok "passwordless sudo already configured for $(id -un)"
+    ok "already configured (sudo -n works)"
     exit 0
 fi
 
@@ -33,12 +66,12 @@ USER_NAME="$(id -un)"
 SUDOERS_PATH="/etc/sudoers.d/00-mpd-${USER_NAME}"
 
 echo "    No passwordless sudo for ${USER_NAME}. About to ask for the root password"
-echo "    (one-time setup). The root password prompt comes from \`su\`."
+echo "    (one-time setup). The prompt comes from \`su\`."
 echo
 
-# `su -c '<one cmd>'` runs the single command as root. The drop-in writes
-# itself; `visudo -cf` validates it; if invalid the file is removed so
-# subsequent sudo calls don't break. Atomic via install -m 0440.
+# `su -c '<cmd>'` runs a single command as root. visudo -cf validates
+# the drop-in; if invalid the file is removed so subsequent sudo calls
+# don't get bricked. Atomic via install -m 440.
 if ! su -c "
     set -e
     install -m 0440 -o root -g root /dev/null '${SUDOERS_PATH}'
@@ -50,11 +83,9 @@ if ! su -c "
         exit 1
     fi
 "; then
-    die "Failed to write ${SUDOERS_PATH}. Is the user '${USER_NAME}' typing the root password correctly?"
+    die "Failed to write ${SUDOERS_PATH}. Wrong root password, or the user '${USER_NAME}' isn't permitted to become root via su."
 fi
 
-# Verify sudo now works without a password.
-if ! sudo -n true 2>/dev/null; then
-    die "Wrote ${SUDOERS_PATH} but \`sudo -n true\` still fails. Inspect manually."
-fi
+sudo -n true 2>/dev/null \
+    || die "Wrote ${SUDOERS_PATH} but \`sudo -n true\` still fails. Inspect manually."
 ok "passwordless sudo enabled for ${USER_NAME}"

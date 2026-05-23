@@ -1,26 +1,19 @@
 #!/bin/bash
 # provision.sh — sandbox-side finalization, called by take-over-sandbox-vm.sh.
 #
-# By this point the take-over script has:
-#   - validated the hostname (mpd-sandbox or mpd-000) and the Debian Trixie OS
-#   - enabled passwordless sudo for the dev user
-#   - apt-installed git
-#   - cloned mpd at ~/Developer/mpd
-#
+# Take-over has already run bootstrap/10-passwordless-sudo.sh and
+# bootstrap/20-git-clone.sh, so the repo is cloned and `sudo -n` works.
 # This script:
-#   1. Runs the shared bootstrap (apt packages, network stack, mpd build,
-#      hostname → mpd-000, platform.env). Idempotent; safe to re-run.
-#   2. Adds sandbox-specific tooling (VS Code).
-#   3. Runs `mpd --setup` to bring up podman networks, services, CA, etc.
-#   4. Pre-warms a PHP runtime + postgres so the first `demo moodle` is fast.
-#   5. Drops a GNOME desktop launcher.
-#
-# Everything in step 1 is shared with mpd-virt's managed-VM create flow.
-# Steps 2–5 are sandbox-only (GNOME, in-VM IDE).
+#   1. Runs the remaining bootstrap steps (30-60): networking, apt,
+#      build, optional WireGuard.
+#   2. Installs sandbox-specific tooling (VS Code).
+#   3. Runs `mpd --setup` to bring up podman networks, services, CA.
+#   4. Pre-warms a PHP runtime + postgres for fast first `demo moodle`.
+#   5. Drops GNOME desktop launchers.
 
 set -euo pipefail
 
-REPO_DIR="$HOME/Developer/mpd"
+REPO_DIR="${HOME}/Developer/mpd"
 
 step() { printf '\n==> %s\n' "$*"; }
 ok()   { printf '    ok: %s\n' "$*"; }
@@ -31,16 +24,17 @@ die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
 [ -d "${REPO_DIR}/.git" ] || die "Repo not cloned at ${REPO_DIR}. Run take-over-sandbox-vm.sh first."
 sudo -n true 2>/dev/null  || die "Passwordless sudo not configured. Run take-over-sandbox-vm.sh first."
 
-# --- Shared bootstrap -------------------------------------------------
-# Heavy lifting: sudoers no-op (already set), networking + hostname
-# rename to mpd-000, apt package set, podman-restart, mpd build,
-# ~/.bashrc PATH wiring, platform.env.
-step "Running bootstrap (apt, networking, build)"
-bash "${REPO_DIR}/bootstrap/run-all.sh" 0
+# --- Remaining bootstrap steps (30-60) --------------------------------
+# Sandbox VM = octet 000 (DHCP, no static IP pin).
+
+bash "${REPO_DIR}/bootstrap/30-networking.sh" 0
+bash "${REPO_DIR}/bootstrap/40-install-software.sh"
+bash "${REPO_DIR}/bootstrap/50-build.sh"
+bash "${REPO_DIR}/bootstrap/60-wireguard.sh"
 
 # --- VS Code (Microsoft official apt repo) -----------------------------
-# Sandbox-specific: gives the in-VM GNOME desktop an IDE so the story is
-# complete (terminal + browser + IDE, all inside the VM, no host hop).
+# Sandbox-specific: gives the in-VM GNOME desktop an IDE so the story
+# is complete (terminal + browser + IDE, all inside the VM, no host hop).
 step "VS Code"
 if command -v code >/dev/null 2>&1; then
     ok "VS Code already installed ($(code --version | head -n1))"
@@ -81,7 +75,7 @@ fi
 # Desktop icons are enabled) on the desktop itself. Terminal=true keeps
 # the launcher portable across GNOME (ptyxis), KDE (konsole), XFCE.
 step "GNOME desktop launcher"
-apps_dir="$HOME/.local/share/applications"
+apps_dir="${HOME}/.local/share/applications"
 apps_shortcut="${apps_dir}/mpd.desktop"
 mkdir -p "$apps_dir"
 cat > "$apps_shortcut" <<EOF
@@ -99,19 +93,17 @@ chmod 0755 "$apps_shortcut"
 update-desktop-database "$apps_dir" >/dev/null 2>&1 || true
 ok "Launcher: ${apps_shortcut}"
 
-if [ -d "$HOME/Desktop" ]; then
-    desktop_shortcut="$HOME/Desktop/mpd.desktop"
+if [ -d "${HOME}/Desktop" ]; then
+    desktop_shortcut="${HOME}/Desktop/mpd.desktop"
     cp -f "$apps_shortcut" "$desktop_shortcut"
     chmod 0755 "$desktop_shortcut"
-    # GNOME 'Desktop Icons NG' refuses to launch unless the file is marked
-    # trusted. No-op on KDE/XFCE; harmless if `gio` is missing.
+    # GNOME 'Desktop Icons NG' refuses to launch unless marked trusted.
+    # No-op on KDE/XFCE; harmless if `gio` is missing.
     gio set "$desktop_shortcut" metadata::trusted true 2>/dev/null || true
     ok "Launcher: ${desktop_shortcut}"
 
-    # Mirror VS Code's system-wide launcher to the desktop so the IDE
-    # icon sits next to the mpd one.
     if [ -f /usr/share/applications/code.desktop ]; then
-        code_shortcut="$HOME/Desktop/code.desktop"
+        code_shortcut="${HOME}/Desktop/code.desktop"
         cp -f /usr/share/applications/code.desktop "$code_shortcut"
         chmod 0755 "$code_shortcut"
         gio set "$code_shortcut" metadata::trusted true 2>/dev/null || true
@@ -135,10 +127,9 @@ launcher in GNOME Activities (and on your Desktop, if desktop icons
 are on). Click "mpd" any time to drop into the interactive TUI.
 
 For VS Code: install the "Remote - SSH" extension on first launch,
-then connect to user@php.runtime.mpd.test (or whichever runtime
-holds your project) and open /srv/projects/<your-project>/. The
-runtime container lives in this same VM, so the connection is
-local — no host↔VM hop.
+then connect to user@php.runtime.mpd.test and open
+/srv/projects/<your-project>/. The runtime container lives in this
+same VM, so the connection is local — no host↔VM hop.
 
 Create a Moodle project:
 

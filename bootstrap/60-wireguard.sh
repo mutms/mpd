@@ -1,5 +1,5 @@
 #!/bin/bash
-# bootstrap/50-wireguard.sh
+# bootstrap/60-wireguard.sh
 #
 # Configure the in-VM WireGuard server end. Gated on the presence of
 # ~/.mpd/conf/wireguard/mpd0.conf — that file is pushed in from outside
@@ -19,7 +19,7 @@
 #   3. enable + start wg-quick@mpd0.service. Restart if the conf changed.
 #
 # The `wireguard` apt package was already installed by
-# 30-install-software.sh, so `wg-quick` is on PATH by the time this
+# 40-install-software.sh, so `wg-quick` is on PATH by the time this
 # runs.
 
 set -euo pipefail

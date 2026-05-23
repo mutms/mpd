@@ -1,11 +1,11 @@
 #!/bin/bash
-# bootstrap/20-networking.sh
+# bootstrap/30-networking.sh
 #
 # Standardize the VM's network stack and fix the IP + hostname to the
 # canonical form. Idempotent.
 #
 # Usage:
-#   bash bootstrap/20-networking.sh <NNN>
+#   bash bootstrap/30-networking.sh <NNN>
 #     <NNN>   3-digit octet:
 #               000          sandbox  — rename hostname to mpd-000, leave
 #                                       IP on DHCP.
@@ -24,7 +24,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 . "${SCRIPT_DIR}/00-common.sh"
 
-[ $# -eq 1 ] || die "Usage: bash 20-networking.sh <NNN>   (NNN = 000 or 100..254)"
+[ $# -eq 1 ] || die "Usage: bash 30-networking.sh <NNN>   (NNN = 000 or 100..254)"
 OCTET="$1"
 
 # Validate: 000 (sandbox) or 100..254 (managed). 001..099 is reserved
@@ -63,7 +63,7 @@ fi
 step "Hostname"
 
 target="mpd-$(printf '%03d' "${OCTET}")"
-current="$(current_hostname)"
+current="$(hostname -s)"
 
 if [ "${current}" = "${target}" ]; then
     ok "hostname already ${target}"
@@ -199,7 +199,7 @@ fi
 
 mkdir -p "${HOME}/.mpd/conf"
 cat > "${HOME}/.mpd/conf/platform.env" <<EOF
-# mpd platform identity — written by bootstrap/20-networking.sh.
+# mpd platform identity — written by bootstrap/30-networking.sh.
 # Lives under ~/.mpd/conf/ (persistent identity dir for the in-VM mpd binary).
 MPD_PLATFORM=${PLATFORM_KIND}
 MPD_VM_IP=${CURRENT_IP}

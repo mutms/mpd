@@ -6,92 +6,48 @@
 # Designed for a wipe-and-rebuild sandbox VM. Do NOT run on a workstation
 # or any host with data you would be sad to lose.
 #
+# All actual provisioning lives in bootstrap/ (the same scripts mpd-virt
+# uses for managed VMs). This wrapper just:
+#   - shows the disclaimer,
+#   - runs bootstrap/10-passwordless-sudo.sh (root password prompt),
+#   - runs bootstrap/20-git-clone.sh (clones the repo to ~/Developer/mpd),
+#   - chains to setup/sandbox/lib/provision.sh which runs the remaining
+#     bootstrap steps + sandbox-specific finalize (VS Code, GNOME launcher,
+#     mpd --setup, pre-warm).
+#
 # Two valid invocation modes:
-#   1. Standalone (wget|bash flow, no separate clone step — `wget` is in
-#      Debian's standard task and always present; `curl` is not):
+#   1. Standalone (wget|bash flow, no separate clone step):
 #        bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/sandbox/take-over-sandbox-vm.sh)
-#      Self-bootstraps: enables passwordless sudo, apt-installs git,
-#      clones mpd to ~/Developer/mpd/, then exec's lib/provision.sh.
+#      Downloads bootstrap/10 + bootstrap/20 via wget, runs them, then
+#      execs the cloned lib/provision.sh.
 #   2. In-repo (when the mpd repo is already cloned):
 #        bash ~/Developer/mpd/setup/sandbox/take-over-sandbox-vm.sh
+#      Uses the local bootstrap/* scripts directly.
 #
 # Idempotent — safe to re-run after a partial failure.
 
 set -euo pipefail
 
-REPO_URL="https://github.com/mutms/mpd.git"
-REPO_DIR="$HOME/Developer/mpd"
-SUDOERS_FILE="/etc/sudoers.d/00-mpd-${USER}"
-EXPECTED_SCRIPT="${REPO_DIR}/setup/sandbox/take-over-sandbox-vm.sh"
-PROVISION_SCRIPT="${REPO_DIR}/setup/sandbox/lib/provision.sh"
-
-# --- Hostname gate ------------------------------------------------------
-# Primary safety mechanism: the act of renaming a fresh VM to one of these
-# names is the deliberate consent that you intend this VM to be sacrificed
-# to mpd's sandbox configuration. Stronger than a typed confirmation word.
-#
-#   mpd-sandbox — the user-friendly name we tell Debian-installer users
-#                 to type. bootstrap/20-networking.sh renames it to mpd-000
-#                 on first take-over.
-#   mpd-000     — the canonical name after the first take-over completed.
-#                 Accepting it here keeps the script idempotent on re-runs.
-current_hostname="$(hostname -s)"
-case "$current_hostname" in
-    mpd-sandbox|mpd-000) ;;
-    *)
-        cat >&2 <<EOF
-
-ERROR: This script requires hostname 'mpd-sandbox' (first take-over) or
-       'mpd-000' (re-run after a previous take-over).
-       Current hostname is '${current_hostname}'.
-
-The hostname gate is the safety mechanism — every shell prompt on this VM
-should read 'user@mpd-000', a permanent reminder that this host is mpd's
-sandbox and not your workstation.
-
-To rename and continue:
-
-    sudo hostnamectl set-hostname mpd-sandbox
-    sudo sed -i 's/^127\\.0\\.1\\.1.*/127.0.1.1\\tmpd-sandbox/' /etc/hosts
-
-Then log out and log back in (so your shell prompt picks up the new
-name), and re-run this script.
-EOF
-        exit 1
-        ;;
-esac
-
-# --- OS gate ------------------------------------------------------------
-if [ ! -r /etc/os-release ]; then
-    echo "ERROR: /etc/os-release missing — cannot verify OS." >&2
-    exit 1
-fi
-# shellcheck disable=SC1091
-. /etc/os-release
-if [ "${ID:-}" != "debian" ] || [ "${VERSION_CODENAME:-}" != "trixie" ]; then
-    cat >&2 <<EOF
-ERROR: This script targets Debian Trixie (13).
-       Detected: ${ID:-unknown}/${VERSION_CODENAME:-unknown}
-EOF
-    exit 1
-fi
-
 # --- Disclaimer ---------------------------------------------------------
-cat <<EOF
+# Everything below is gated by bootstrap/10-passwordless-sudo.sh
+# (hostname must be mpd-sandbox or mpd-000; OS must be Debian Trixie).
+# Show the disclaimer first so the user knows what they're consenting to
+# before bootstrap/10 prompts for the root password.
+
+cat <<'EOF'
 
 ================================================================
-  TAKE OVER VM: ${current_hostname}
+  TAKE OVER VM
 ================================================================
 
-This script is about to take over '${current_hostname}' and turn it
-into an mpd sandbox VM. To do so it intentionally weakens VM security
-and reconfigures the host:
+This script is about to turn this VM into an mpd sandbox. To do so
+it intentionally weakens VM security and reconfigures the host:
 
-  * passwordless sudo for '${USER}'
+  * passwordless sudo for the current user
   * mpd's self-signed CA installed in the system trust store
   * persistent SSH host keys, runtime credentials, generated secrets
   * network stack switched to systemd-resolved fed by NetworkManager
-  * hostname renamed from mpd-sandbox to mpd-000 if needed
+  * hostname normalised to mpd-000 if it isn't already
 
 This is appropriate ONLY for a sandbox VM you can wipe and rebuild.
 Never run this on a workstation, on a shared host, or on a VM with
@@ -106,55 +62,39 @@ EOF
 
 read -r -p "Press Enter to proceed (Ctrl-C to abort): " _
 
-# --- Enable passwordless sudo (pre-bootstrap) --------------------------
-# We can't call bootstrap/10-passwordless-sudo.sh yet — the repo isn't
-# cloned. Replicate its `su -c` shape inline so we can install git and
-# clone the repo. bootstrap step 10 is a silent no-op once we get there.
-if ! sudo -n true 2>/dev/null; then
-    echo
-    echo "==> Enabling passwordless sudo for ${USER} (you will be prompted once for the root password)"
-    su -c "echo '${USER} ALL=(ALL) NOPASSWD:ALL' | install -m 440 /dev/stdin '${SUDOERS_FILE}'"
-    echo "    Wrote ${SUDOERS_FILE}"
-fi
+# --- Locate the bootstrap scripts -------------------------------------
+# If take-over was invoked from inside the cloned repo, use the local
+# bootstrap/ files. If it was invoked via wget|bash, the repo isn't
+# cloned yet — wget bootstrap/10 + bootstrap/20 to /tmp first.
 
-# --- Install git --------------------------------------------------------
-if ! command -v git >/dev/null 2>&1; then
-    echo
-    echo "==> Installing git via apt"
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get update -qq
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git
-fi
+REPO_DIR="${HOME}/Developer/mpd"
+MPD_BRANCH="${MPD_BRANCH:-main}"
+MPD_REPO_RAW="https://raw.githubusercontent.com/mutms/mpd/${MPD_BRANCH}"
 
-# --- Clone or pull the mpd repo ---------------------------------------
-# wget|bash invocation: clone if absent, ff-pull if present. In-repo
-# invocation: leave the checkout alone (explicit "use what I have").
-script_path="$(realpath "${BASH_SOURCE[0]}")"
-if [ "$script_path" = "$EXPECTED_SCRIPT" ]; then
-    echo
-    echo "==> Running from inside cloned repo at ${REPO_DIR} — leaving tree as-is"
+script_path="$(realpath "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+if [ -f "${REPO_DIR}/setup/sandbox/take-over-sandbox-vm.sh" ] \
+   && [ "${script_path}" = "$(realpath "${REPO_DIR}/setup/sandbox/take-over-sandbox-vm.sh")" ]; then
+    # Running from inside the cloned repo — use local files.
+    BOOT10="${REPO_DIR}/bootstrap/10-passwordless-sudo.sh"
+    BOOT20="${REPO_DIR}/bootstrap/20-git-clone.sh"
 else
-    if [ -d "$REPO_DIR" ] && [ ! -d "$REPO_DIR/.git" ]; then
-        echo "ERROR: ${REPO_DIR} exists but is not a git checkout. Move or delete it, then re-run." >&2
-        exit 1
-    fi
-    if [ ! -d "$REPO_DIR/.git" ]; then
-        echo
-        echo "==> Cloning mpd repo to ${REPO_DIR}"
-        mkdir -p "$(dirname "$REPO_DIR")"
-        git clone "$REPO_URL" "$REPO_DIR"
-    else
-        echo
-        echo "==> Repo at ${REPO_DIR} already cloned — pulling latest"
-        if ! git -C "$REPO_DIR" pull --ff-only 2>&1 | sed 's/^/    /'; then
-            echo "ERROR: git pull --ff-only failed in ${REPO_DIR}. Resolve and re-run." >&2
-            exit 1
-        fi
-    fi
+    # Running via wget|bash — fetch the two wgettable bootstrap scripts.
+    TMPDIR_BOOT=$(mktemp -d)
+    trap 'rm -rf "$TMPDIR_BOOT"' EXIT
+    wget -qO "${TMPDIR_BOOT}/10-passwordless-sudo.sh" "${MPD_REPO_RAW}/bootstrap/10-passwordless-sudo.sh"
+    wget -qO "${TMPDIR_BOOT}/20-git-clone.sh"         "${MPD_REPO_RAW}/bootstrap/20-git-clone.sh"
+    BOOT10="${TMPDIR_BOOT}/10-passwordless-sudo.sh"
+    BOOT20="${TMPDIR_BOOT}/20-git-clone.sh"
 fi
 
-# --- Hand off to lib/provision.sh -------------------------------------
-[ -f "$PROVISION_SCRIPT" ] || { echo "ERROR: ${PROVISION_SCRIPT} missing." >&2; exit 1; }
-echo
-echo "==> Handing off to ${PROVISION_SCRIPT}"
-echo
-exec bash "$PROVISION_SCRIPT"
+# --- Run the wgettable bootstrap steps --------------------------------
+# Step 10 prompts for the root password ONCE (interactively) to write
+# the sudoers drop-in. Step 20 apt-installs git and clones the repo.
+
+bash "${BOOT10}"
+bash "${BOOT20}"
+
+# At this point ~/Developer/mpd is a clean git checkout. Chain to the
+# sandbox-specific finalizer, which runs bootstrap/30..60 + the
+# GNOME-VM-only extras (VS Code, launcher, mpd --setup, pre-warm).
+exec bash "${REPO_DIR}/setup/sandbox/lib/provision.sh"
