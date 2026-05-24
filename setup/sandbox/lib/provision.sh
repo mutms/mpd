@@ -32,11 +32,11 @@ bash "${REPO_DIR}/bootstrap/40-install-software.sh"
 bash "${REPO_DIR}/bootstrap/50-build.sh"
 bash "${REPO_DIR}/bootstrap/60-wireguard.sh"
 
-# 50-build.sh writes /etc/profile.d/mpd.sh which puts /opt/mpd/bin on
-# PATH — but only for *new* login shells. The currently-running shell
-# (this script) doesn't pick that up. Export it directly so the
+# 50-build.sh prepends /opt/mpd/bin to ~/.bashrc and also exports it
+# inside its own shell — but since we invoked it via `bash …` (a
+# subshell), the export doesn't reach us. Mirror it here so the
 # `mpd --setup` / `mpd --runtime-create` / `mpd --db-create` calls
-# below can find the just-built binary.
+# below find the just-built binary without spawning a new login shell.
 export PATH="${REPO_DIR}/bin:${PATH}"
 
 # --- VS Code (Microsoft official apt repo) -----------------------------

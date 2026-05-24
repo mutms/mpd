@@ -538,18 +538,10 @@ extension Mpd.Action.Setup {
         // Live-state snapshot for out-of-process consumers (portal etc.).
         Mpd.Runtime.State.refreshCurrentStateCache()
 
-        print("""
-
-        \u{001B}[1;32m✓ mpd --setup complete.\u{001B}[0m
-
-          https://mpd.test/
-
-        Next steps — create, configure, start a Moodle project:
-          mpd create moodle52 --git-repo=https://github.com/moodle/moodle.git --git-branch=MOODLE_502_STABLE
-          mpd configure moodle52 MPD_DB=postgres:18
-          mpd start moodle52
-
-        Then browse to: https://moodle52.mpd.test/
-        """)
+        // Minimal completion marker. Anything user-facing about
+        // "what to do next" lives in the orchestration that called us
+        // (mpd-virt setup for the managed case, sandbox/provision.sh
+        // for the sandbox case).
+        print("\n\u{001B}[1;32m✓ mpd --setup complete.\u{001B}[0m")
     }
 }
