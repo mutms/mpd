@@ -224,6 +224,22 @@ extension Mpd.Action.Setup {
             return
         }
 
+        // Initialize the NSS database if it doesn't exist yet. `certutil -A`
+        // fails on an empty directory — it requires an existing cert9.db /
+        // key4.db. On a fresh dev account (or a sandbox VM that never ran
+        // Chromium) the .pki/nssdb folder exists but the SQL DB files
+        // don't. `certutil -N --empty-password` creates them in place.
+        let cert9 = "\(nssDir)/cert9.db"
+        if !fm.fileExists(atPath: cert9) {
+            guard Mpd.VM.exec([
+                "certutil", "-N",
+                "--empty-password",
+                "-d", "sql:\(nssDir)",
+            ]) == 0 else {
+                throw RuntimeError("certutil failed to initialize NSS DB at \(nssDir).")
+            }
+        }
+
         // -A adds; nickname "mpd CA" is overwritten on re-run, so this is
         // idempotent. Trust flags "C,," = trusted CA for SSL only.
         guard Mpd.VM.exec([
