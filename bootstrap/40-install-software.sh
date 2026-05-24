@@ -50,11 +50,14 @@ step "Installing software via apt"
 # `catatonit` is a Recommends of podman (pause binary for pods) — pulled
 # explicitly because we use --no-install-recommends. aardvark-dns is
 # similarly the resolver podman uses for container-name → IP; without it,
-# `--dns` on Podman networks is silently dropped. bind9-dnsutils is the
-# real package for dig/host on Trixie (dnsutils is virtual; dpkg-query
-# against the virtual name always reports not-installed).
+# `--dns` on Podman networks is silently dropped. `uidmap` provides
+# newuidmap/newgidmap; rootless podman requires it for multi-ID maps
+# (missing on minimal Debian images, present on full installs).
+# bind9-dnsutils is the real package for dig/host on Trixie (dnsutils
+# is virtual; dpkg-query against the virtual name always reports
+# not-installed).
 RUNTIME_PKGS=(
-    podman catatonit aardvark-dns nftables sudo openssl
+    podman catatonit aardvark-dns uidmap nftables sudo openssl
     bash coreutils git iputils-ping ca-certificates systemd iproute2 jq
     bind9-dnsutils traceroute tcpdump lsof curl less vim-tiny psmisc
 )
