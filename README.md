@@ -130,15 +130,17 @@ Pick this when you want your laptop's own browser/IDE to resolve
 side (static route + DNS resolver + CA trust + WireGuard) so the
 laptop sees the VM's container subnet:
 
-| Host                          | Bootstrap                                                          |
-|-------------------------------|--------------------------------------------------------------------|
-| macOS (Parallels Desktop Pro) | [setup/macos/README.md](setup/macos/README.md)             |
-| Ubuntu (libvirt/KVM)          | [setup/linux/README.md](setup/linux/README.md)           |
-| Windows (Hyper-V)             | [setup/windows/README.txt](setup/windows/README.txt) |
+| Host                          | Bootstrap                                                                          |
+|-------------------------------|------------------------------------------------------------------------------------|
+| macOS (Parallels / UTM)       | [mpd-virt-macos](https://github.com/mutms/mpd-virt-macos) — Swift CLI orchestrator |
+| Ubuntu (libvirt/KVM)          | [setup/linux/README.md](setup/linux/README.md)                                     |
+| Windows (Hyper-V)             | [setup/windows/README.txt](setup/windows/README.txt)                               |
 
-The `mpd-virt` orchestrator binary on the host (separate repository)
-does VM creation + cloud-init + repo clone + build + host-side
-networking in one shot.
+The `mpd-virt-macos` repo ships a `mpd-virt` host binary that drives
+Parallels Desktop Pro and UTM (via cloud-init), runs the in-VM
+bootstrap pipeline over SSH, and configures the macOS side (route, DNS
+resolver, CA trust, WireGuard) in one shot. Sibling `mpd-virt-linux` /
+`mpd-virt-windows` repos are planned along the same shape.
 
 ## What to expect, timing-wise
 

@@ -118,7 +118,7 @@ across docs.
 - `docs/USAGE.md` — day-to-day workflow (bootstrap → first project → SSH-into-runtime)
 - `docs/NETWORKING.md` — networking model (WireGuard via mpd-virt)
 - `docs/SECURITY.md` — security model
-- `setup/macos/README.md` — Parallels Desktop Pro on macOS automation
+- macOS automation (Parallels / UTM) lives in the sibling `mpd-virt-macos` repo: <https://github.com/mutms/mpd-virt-macos>
 - `setup/linux/README.md` — Ubuntu host + libvirt/KVM automation
 - `setup/windows/README.txt` — Windows host + Hyper-V automation
 - `setup/sandbox/README.md` — graphical "live in the VM" Debian sandbox

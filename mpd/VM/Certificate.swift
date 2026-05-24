@@ -5,13 +5,14 @@ import Foundation
 
 extension Mpd.VM.Certificate {
 
-    /// CA generation — KEEP IN SYNC with the bash twin
-    /// `generate_mpd_ca` in `setup/macos/lib/common.sh`. The macOS
-    /// host-side bootstrap generates (or reuses) a CA *before* VM
-    /// creation and uploads it; mpd inside the VM detects the existing
-    /// CA via the `fileExists` check in `Mpd.Action.Setup.execute()`
-    /// and reuses it. Both implementations must produce certs with
-    /// identical DN, v3_ca extensions, and name constraints.
+    /// CA generation — KEEP IN SYNC with the host-side twin: the Swift
+    /// CA generator in mpd-virt-macos (`CA.swift`) and the `generate_mpd_ca`
+    /// bash function in `setup/linux/lib/common.sh`. The host-side
+    /// orchestrator generates (or reuses) a CA *before* VM creation and
+    /// uploads it; mpd inside the VM detects the existing CA via the
+    /// `fileExists` check in `Mpd.Action.Setup.execute()` and reuses it.
+    /// All three implementations must produce certs with identical DN,
+    /// v3_ca extensions, and name constraints.
     static func generateCA(caKeyPath: String, caCertPath: String, certsDir: String) throws {
         let caConf = "\(certsDir)/mpd-ca.conf"
         let caConfContent = """

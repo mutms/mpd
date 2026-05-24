@@ -27,8 +27,9 @@ stop / configure`).
   identical regardless of how you got there.
 
 For *daily* Moodle plugin work on macOS, you probably want the
-host-integrated [Parallels Desktop Pro mode](../macos/README.md)
-instead, where your host browser/IDE see `*.mpd.test` directly.
+host-integrated [`mpd-virt-macos`](https://github.com/mutms/mpd-virt-macos)
+orchestrator instead, where your host browser/IDE see `*.mpd.test`
+directly via Parallels Desktop Pro or UTM.
 
 ## Files in this directory
 

@@ -10,14 +10,15 @@ out where they matter.
 You need a Debian Trixie VM with `mpd` built and reachable over SSH.
 Pick the path that matches your host:
 
-- **macOS + Parallels Desktop Pro (automated)** —
-  [`setup/macos/`](../../setup/macos/README.md).
-  Double-click `setup.command`. Clones a one-time-built Parallels VM
-  template (`mpd-template`) via `prlctl`, configures the clone
-  over SSH, and applies macOS networking (route, resolver, CA).
-  Requires Parallels Desktop Pro. `doctor.command` re-applies host
-  networking when needed; `uninstall.command` tears everything down.
-  VM start / suspend / shutdown is owned by Parallels' GUI.
+- **macOS + Parallels / UTM (automated)** —
+  [`mpd-virt-macos`](https://github.com/mutms/mpd-virt-macos) (separate
+  repo). Swift CLI orchestrator `mpd-virt`: `clone` against a Parallels
+  template VM or `create` against UTM via cloud-init, then the
+  bootstrap pipeline runs over SSH and applies macOS networking (route,
+  resolver, CA trust, WireGuard). `mpd-virt diag` re-applies host
+  config when needed; `mpd-virt delete` / `uninstall` tear everything
+  down. VM start / suspend / shutdown via `mpd-virt start|stop` or the
+  hypervisor's GUI.
 - **Ubuntu 26.04 LTS + libvirt/KVM (automated)** —
   [`setup/linux/`](../../setup/linux/README.md).
   `bash setup.sh` from a terminal: preflight (apt deps, libvirt group,

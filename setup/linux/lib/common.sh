@@ -3,11 +3,12 @@
 # Source from every lib/*.sh script:
 #   . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 #
-# Sister to setup/macos/lib/common.sh — same shape,
-# Linux-ized: virsh + libvirt
-# `ip route` instead of macOS's `route`; systemd-resolved drop-in
-# instead of /etc/resolver/; ca-certificates + NSS DB instead of
-# /Library/Keychains/System.keychain.
+# Linux-side counterpart to the mpd-virt-macos orchestrator
+# (https://github.com/mutms/mpd-virt-macos): same job — clone or create
+# a managed Debian Trixie VM and wire the host into it — using virsh +
+# libvirt, `ip route` instead of macOS's `route`, a systemd-resolved
+# drop-in instead of /etc/resolver/, and ca-certificates + NSS DB
+# instead of /Library/Keychains/System.keychain.
 
 # --- Constants ---
 
@@ -354,9 +355,9 @@ remove_desktop_shortcut() {
 }
 
 # --- CA generation (host-side) ---
-# Bash twin of Mpd.VM.Certificate.generateCA in mpd/VM/Certificate.swift,
-# identical to the version in macos/lib/common.sh. KEEP IN SYNC across
-# all three.
+# Bash twin of Mpd.VM.Certificate.generateCA in mpd/VM/Certificate.swift
+# and the Swift CA generator in mpd-virt-macos (CA.swift). KEEP IN SYNC
+# across all three.
 
 generate_mpd_ca() {
     local key_path="$1" cert_path="$2"

@@ -222,7 +222,7 @@ setup/podman-host/
 │   ├── create-container.sh    ← podman run with the right flags
 │   ├── push-wg-conf.sh        ← generate WG keys, push conf into container
 │   ├── configure-mac-host.sh  ← Mac-side route + resolver + CA trust
-│   │                            (mirrors setup/macos/lib/configure-client.sh)
+│   │                            (mirrors mpd-virt-macos's Diag.swift)
 │   └── common.sh
 ├── start.command  stop.command  uninstall.command
 └── doctor.command
