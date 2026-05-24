@@ -11,7 +11,7 @@ invokable; callers list them explicitly.
 
 | File | Wgettable? | Interactive? | What it does |
 |---|---|---|---|
-| `10-passwordless-sudo.sh` | yes | yes (one root password prompt) | Validate hostname (mpd-template, mpd-sandbox, mpd-NNN) + Debian Trixie. If `sudo -n` already works, no-op. Otherwise write `/etc/sudoers.d/00-mpd-<user>` via `su -c`. |
+| `10-passwordless-sudo.sh` | yes | yes (one root password prompt) | Validate hostname (`mpd-template`, `mpd-sandbox`, `mpd-template-<suffix>`, `mpd-sandbox-<suffix>`, or `mpd-NNN`) + Debian Trixie. If `sudo -n` already works, no-op. Otherwise write `/etc/sudoers.d/00-mpd-<user>` via `su -c`. |
 | `20-git-clone.sh` | yes | no | Assert `sudo -n` works; create `/opt/mpd` + `/var/lib/mpd` (owned by the dev user); apt-install `git` + `ca-certificates`; clone (or fast-forward) the mpd repo to `/opt/mpd`. No hostname gate — step 10 already did it. |
 | `30-networking.sh` | no (local) | no | Hostname rename to `mpd-<NNN>`, NetworkManager + systemd-resolved + libnss-resolve, optional static IP for octets in `[100, 254]`, IPv6 disable, write `/var/lib/mpd/conf/platform.env`. |
 | `40-install-software.sh` | no (local) | no | apt-install the full runtime + build + diagnostics package set; enable `podman-restart.service`. |

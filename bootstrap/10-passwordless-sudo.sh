@@ -7,8 +7,13 @@
 # 00-common.sh.
 #
 # Behavior:
-#   1. VM-name gate: hostname must be mpd-template, mpd-sandbox, or
-#      mpd-NNN (3-digit). Refuses anything else — accidental run on a
+#   1. VM-name gate: hostname must be mpd-template, mpd-sandbox,
+#      mpd-template-<suffix>, mpd-sandbox-<suffix>, or mpd-NNN (3-digit).
+#      The -<suffix> forms exist so a developer can keep several
+#      pre-takeover templates and sandboxes side by side (e.g.
+#      mpd-template-trixie, mpd-sandbox-utm). After 30-networking.sh
+#      runs the hostname is canonicalized to mpd-NNN regardless of the
+#      initial form. Refuses anything else — accidental run on a
 #      workstation is fatal.
 #   2. OS gate: Debian Trixie.
 #   3. If `sudo -n true` already works (cloud-init / pre-prepped VM):
@@ -32,13 +37,17 @@ die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
 step "Hostname gate"
 CURRENT_HOSTNAME="$(hostname -s 2>/dev/null || cat /etc/hostname | tr -d '[:space:]' | cut -d. -f1)"
 case "${CURRENT_HOSTNAME}" in
-    mpd-template|mpd-sandbox) ;;
-    mpd-[0-9][0-9][0-9])     ;;
+    mpd-template|mpd-sandbox)             ;;
+    mpd-template-?*|mpd-sandbox-?*)       ;;
+    mpd-[0-9][0-9][0-9])                  ;;
     *)
-        die "Refusing to run: hostname is '${CURRENT_HOSTNAME}', must be mpd-template, mpd-sandbox, or mpd-NNN (3-digit).
-Set it first:
-    sudo hostnamectl set-hostname mpd-sandbox   # for the sandbox VM
-    sudo hostnamectl set-hostname mpd-template  # for the Parallels template VM
+        die "Refusing to run: hostname is '${CURRENT_HOSTNAME}', must be one of:
+    mpd-template          mpd-template-<suffix>   (pre-takeover template VMs)
+    mpd-sandbox           mpd-sandbox-<suffix>    (pre-takeover sandbox VMs)
+    mpd-NNN  (3-digit)                            (post-takeover, managed)
+Set it first, e.g.:
+    sudo hostnamectl set-hostname mpd-sandbox-trixie
+    sudo hostnamectl set-hostname mpd-template-parallels
 Then log out + back in and re-run."
         ;;
 esac
