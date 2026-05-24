@@ -34,15 +34,6 @@ Concrete shape, a use case driving it.
 
 Real possibilities, not committed work.
 
-- **mpd as a nested-Podman container on Podman Desktop** — fourth
-  deployment mode. mpd binary lives inside a privileged Debian Trixie
-  container in Podman Desktop's existing VM; runtime/service/DB
-  containers nest inside it. Replaces the dedicated mpd VM for users
-  already running Podman Desktop on macOS — one fewer Linux VM, no
-  hypervisor licensing. Resurrects the killed `mpd-desktop` networking
-  model (WG + dnsmasq into Podman Desktop's VM) in a more isolated
-  shape. Full design in [`proposals/podman-host-nested.md`](proposals/podman-host-nested.md).
-
 - **Alternate repo/branch for VM provisioning** — an env var (e.g.
   `MPD_REPO`, `MPD_BRANCH`) that `create-vm.ps1` / `create-vm.sh`
   pass to cloud-init so the VM clones a feature branch or a fork

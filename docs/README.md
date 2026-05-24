@@ -46,9 +46,8 @@ Or you're an AI agent helping out:
   audiences, asset-side `hooks/<event>.d/` scripts. Read when
   adding a hook trigger or authoring a hook script.
 - [`proposals/`](proposals/) — design docs for parked exploratory
-  ideas (e.g. the nested-Podman deployment mode). Each proposal
-  is precise enough that a contributor can implement it without
-  re-deriving the design.
+  ideas. Each proposal is precise enough that a contributor can
+  implement it without re-deriving the design.
 
 ## Direction
 
