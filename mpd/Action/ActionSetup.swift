@@ -240,8 +240,17 @@ extension Mpd.Action.Setup {
             }
         }
 
-        // -A adds; nickname "mpd CA" is overwritten on re-run, so this is
-        // idempotent. Trust flags "C,," = trusted CA for SSL only.
+        // `certutil -A` is NOT idempotent — it fails with
+        // SEC_ERROR_ADDING_CERT when the nickname is already present
+        // (even if the cert bytes are identical). Delete-then-add is
+        // the supported pattern. The delete is best-effort; it errors
+        // when the nickname doesn't exist yet, which is fine.
+        _ = Mpd.VM.exec([
+            "certutil", "-D",
+            "-n", "mpd CA",
+            "-d", "sql:\(nssDir)",
+        ])
+        // Trust flags "C,," = trusted CA for SSL only.
         guard Mpd.VM.exec([
             "certutil", "-A",
             "-n", "mpd CA",
