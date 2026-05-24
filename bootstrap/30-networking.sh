@@ -27,6 +27,27 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [ $# -eq 1 ] || die "Usage: bash 30-networking.sh <NNN>   (NNN = 000 or 100..254)"
 OCTET="$1"
 
+# --- Platform identity helper ---------------------------------------
+# Write /var/lib/mpd/conf/platform.env with the dev user as owner of
+# the conf dir. Called once from each branch (managed/sandbox/already-
+# pinned) of the static-IP block below so the script can exit early
+# in the "ssh-is-about-to-die" path without falling through to a
+# bottom-of-script writer.
+write_platform_env() {
+    local kind="$1"  ip="$2"
+    local conf_dir=/var/lib/mpd/conf
+    sudo install -d -o "$(id -un)" -g "$(id -gn)" -m 0755 "${conf_dir}"
+    cat > "${conf_dir}/platform.env" <<EOF
+# mpd platform identity — written by bootstrap/30-networking.sh.
+# Lives under /var/lib/mpd/conf/ (persistent identity dir for the in-VM mpd binary).
+MPD_PLATFORM=${kind}
+MPD_VM_IP=${ip}
+MPD_VM_ID=$(printf '%03d' "${OCTET}")
+EOF
+    chmod 0644 "${conf_dir}/platform.env"
+    ok "wrote ${conf_dir}/platform.env (platform=${kind}, vm_id=$(printf '%03d' "${OCTET}"))"
+}
+
 # Validate: 000 (sandbox) or 100..254 (managed). 001..099 is reserved
 # (DHCP pool) and 255+ is out of range.
 [[ "${OCTET}" =~ ^[0-9]+$ ]] || die "octet '${OCTET}' is not numeric"
@@ -159,6 +180,7 @@ if [ "${OCTET}" -ge 100 ]; then
     if [ "${current_ip}" = "${new_ip}" ] \
        && [ "$(nmcli -t -f ipv4.method connection show "${conn}" | cut -d: -f2)" = "manual" ]; then
         ok "static IP ${new_ip} already pinned on ${iface}"
+        write_platform_env "managed" "${new_ip}"
     else
         # Point DNS at the gateway. In every NAT-style hypervisor network
         # we ship for (Parallels Shared, libvirt default, Hyper-V Default
@@ -173,49 +195,36 @@ if [ "${OCTET}" -ge 100 ]; then
             ipv4.gateway   "${gateway}" \
             ipv4.dns       "${gateway}" \
             ipv4.ignore-auto-dns yes
-        # `nmcli connection up` will renegotiate; the SSH session via the
-        # OLD IP will drop. The orchestrator (mpd-virt) is expected to
-        # reconnect at the new IP. The OLD SSH session here on the host
-        # may not notice the dead TCP for a long time (no keepalive) —
-        # if it hangs, hit Ctrl-C ONCE and the orchestrator will resume
-        # at the new IP.
-        warn "applying static IP ${new_ip} — SSH will drop"
-        warn "if this hangs after a few seconds, hit Ctrl-C ONCE to continue"
-        sudo nmcli connection up "${conn}" >/dev/null
-        ok "static IP set: ${new_ip}/${prefix} gw ${gateway} on ${iface}"
+
+        # Write platform.env BEFORE the IP bounce — once nmcli up runs,
+        # the SSH session dies and we may not get another foreground
+        # opportunity to write it. We know the target IP ahead of time.
+        write_platform_env "managed" "${new_ip}"
+
+        # Print confirmation while we still have a live SSH stdout.
+        ok "static IP being applied: ${new_ip}/${prefix} gw ${gateway} on ${iface}"
+        warn "nmcli connection up backgrounded — SSH about to drop, this is expected"
+
+        # Background the connection bounce so this script can exit
+        # cleanly and the orchestrator's ssh returns immediately rather
+        # than blocking on a stale TCP connection.
+        #
+        #   - nohup: ignore SIGHUP when sshd reaps the session
+        #   - </dev/null + >/dev/null 2>&1: fully detach stdio
+        #   - setsid: new session so kernel SIGHUP-on-session-leader-exit
+        #     doesn't reach us
+        #   - disown: remove from this shell's job table
+        # Together these let nmcli run to completion under init after
+        # this script and its ssh session are gone.
+        setsid nohup bash -c "sudo nmcli connection up \"${conn}\"" \
+            </dev/null >/dev/null 2>&1 &
+        disown 2>/dev/null || true
+
+        # Exit immediately — anything after this would race the
+        # disappearing SSH session. The orchestrator polls the new IP.
+        exit 0
     fi
 else
     ok "sandbox VM: leaving IP on DHCP"
+    write_platform_env "sandbox" ""
 fi
-
-# --- Platform identity (/var/lib/mpd/conf/platform.env) --------------
-# The in-VM `mpd` binary reads this file at startup to know which mode
-# it's in (managed vs sandbox), its 3-digit VM ID, and (for managed
-# VMs) its static IP. Writing it here means every VM that ran bootstrap
-# has the file in the canonical place; sandbox/take-over and
-# mpd-virt's create flow don't have to write it themselves.
-
-step "Platform identity (/var/lib/mpd/conf/platform.env)"
-
-PLATFORM_KIND="managed"
-[ "${OCTET}" -eq 0 ] && PLATFORM_KIND="sandbox"
-
-CURRENT_IP=""
-if [ "${OCTET}" -ge 100 ]; then
-    # We just pinned this above; read it back from the live state so we
-    # store what's actually live (not just what we asked for).
-    CURRENT_IP="$(ip -4 -o addr show \
-                   | awk '$2 != "lo" {sub(/\/.*/,"",$4); print $4; exit}')"
-fi
-
-CONF_DIR=/var/lib/mpd/conf
-sudo install -d -o "$(id -un)" -g "$(id -gn)" -m 0755 "${CONF_DIR}"
-cat > "${CONF_DIR}/platform.env" <<EOF
-# mpd platform identity — written by bootstrap/30-networking.sh.
-# Lives under /var/lib/mpd/conf/ (persistent identity dir for the in-VM mpd binary).
-MPD_PLATFORM=${PLATFORM_KIND}
-MPD_VM_IP=${CURRENT_IP}
-MPD_VM_ID=$(printf '%03d' "${OCTET}")
-EOF
-chmod 0644 "${CONF_DIR}/platform.env"
-ok "wrote ${CONF_DIR}/platform.env (platform=${PLATFORM_KIND}, vm_id=$(printf '%03d' "${OCTET}"))"
