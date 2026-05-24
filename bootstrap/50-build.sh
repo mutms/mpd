@@ -21,23 +21,44 @@ cd "${REPO_DIR}"
 make install
 ok "built ${REPO_DIR}/bin/mpd"
 
-# --- bin/ on PATH via /etc/profile.d ----------------------------------
-# `bin/` ships dev helpers (demo, claude-install, gnome-start/stop) that
-# users invoke by bare name. System-wide drop-in is the right shape:
-# - applies to every login shell (the dev user, root, future ops users)
-# - no per-user dotfile editing required
-# - idempotent — re-running writes identical content.
-step "bin/ on PATH (/etc/profile.d/mpd.sh)"
+# --- /opt/mpd/bin on PATH (via ~/.bashrc) ----------------------------
+# ~/.bashrc covers every shell shape this VM's single dev user ever
+# uses: login shells (via Debian's ~/.bash_profile → ~/.bashrc),
+# interactive non-login (default), and sshd-invoked non-interactive
+# (bash sources ~/.bashrc when stdin is a network socket). Prepending
+# at the very top — before the standard "if not interactive, return"
+# guard — lets all three pick it up.
+#
+# Why not /etc/profile.d/: only fires for login shells, so
+# `ssh user@vm cmd` (non-login) misses it.
 
-PROFILE_D=/etc/profile.d/mpd.sh
-SNIPPET='# mpd: bin/ on PATH (system-wide, installed by bootstrap/50-build.sh)
-if [ -d /opt/mpd/bin ] ; then
-    PATH="/opt/mpd/bin:$PATH"
-fi
-'
-if [ -f "${PROFILE_D}" ] && [ "$(sudo cat "${PROFILE_D}" 2>/dev/null || true)" = "${SNIPPET}" ]; then
-    ok "${PROFILE_D} already in place"
+step "/opt/mpd/bin on PATH (~/.bashrc)"
+
+BASHRC="${HOME}/.bashrc"
+if grep -qF '# mpd PATH' "${BASHRC}" 2>/dev/null; then
+    ok "${BASHRC} already has mpd PATH snippet"
 else
-    printf '%s' "${SNIPPET}" | sudo install -m 0644 /dev/stdin "${PROFILE_D}"
-    ok "wrote ${PROFILE_D}"
+    tmp=$(mktemp)
+    {
+        printf '%s\n' '[ -d /opt/mpd/bin ] && PATH="/opt/mpd/bin:$PATH"  # mpd PATH'
+        cat "${BASHRC}"
+    } > "${tmp}"
+    chmod --reference="${BASHRC}" "${tmp}"
+    mv "${tmp}" "${BASHRC}"
+    ok "prepended mpd PATH to ${BASHRC}"
 fi
+
+# Drop the legacy /etc/profile.d/mpd.sh that earlier bootstraps may
+# have written — superseded by the ~/.bashrc approach above.
+if [ -f /etc/profile.d/mpd.sh ]; then
+    sudo rm -f /etc/profile.d/mpd.sh
+    ok "removed legacy /etc/profile.d/mpd.sh"
+fi
+
+# Also export PATH in this running shell so the rest of the bootstrap
+# (and anything the user runs interactively after `bash 50-build.sh`)
+# sees /opt/mpd/bin without having to start a new shell. Idempotent.
+case ":${PATH}:" in
+    *":/opt/mpd/bin:"*) ;;
+    *) export PATH="/opt/mpd/bin:${PATH}" ;;
+esac
