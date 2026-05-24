@@ -15,7 +15,7 @@ invokable; callers list them explicitly.
 | `20-git-clone.sh` | yes | no | Assert `sudo -n` works; create `/opt/mpd` + `/var/lib/mpd` (owned by the dev user); apt-install `git` + `ca-certificates`; clone (or fast-forward) the mpd repo to `/opt/mpd`. No hostname gate — step 10 already did it. |
 | `30-networking.sh` | no (local) | no | Hostname rename to `mpd-<NNN>`, NetworkManager + systemd-resolved + libnss-resolve, optional static IP for octets in `[100, 254]`, IPv6 disable, write `/var/lib/mpd/conf/platform.env`. |
 | `40-install-software.sh` | no (local) | no | apt-install the full runtime + build + diagnostics package set; enable `podman-restart.service`. |
-| `50-build.sh` | no (local) | no | `make install` + drop `/etc/profile.d/mpd.sh` so `/opt/mpd/bin/` is on PATH for every login shell. |
+| `50-build.sh` | no (local) | no | `make install` + prepend `/opt/mpd/bin` to PATH in the dev user's `~/.bashrc` (before the non-interactive guard so it applies to login, interactive, AND sshd-invoked non-interactive shells). Also exports PATH in the running shell. |
 | `60-wireguard.sh` | no (local) | no | Gated on `/var/lib/mpd/conf/wireguard/mpd0.conf`. When present: sysctl `ip_forward=1`, install conf to `/etc/wireguard/mpd0.conf`, enable + start `wg-quick@mpd0`. |
 
 Steps `10` and `20` are wgettable because they must run before the mpd
