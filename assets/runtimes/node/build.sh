@@ -6,8 +6,8 @@
 # §"Mandatory privilege rule".
 #
 # Phase 1 (assets/runtime-base/bootstrap.sh) has already created the
-# dev user, set up sshd, /etc/mpd identity, /srv/{projects,data,dbs,
-# tools,personal} layout, and ~/.bashrc defaults.
+# dev user, set up sshd, /etc/mpd identity, /srv/{projects,data,dbs,tools}
+# layout, and ~/.bashrc defaults.
 #
 # Installs: Node.js (nvm) + DB client tools. No Apache — TLS termination
 # and project routing run in the Caddy frontdoor sidecar attached to the

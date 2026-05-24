@@ -53,7 +53,7 @@ chown -R "${EXTUID}:${EXTUID}" "${HOME_DIR}/.ssh" 2>/dev/null || true
 # fileaccess start. `/srv/backups` is the single transit point: runtime
 # backup verbs write here; the dev pulls files off via this service's
 # SSH/scp endpoint.
-for d in projects data meta dbs personal backups; do
+for d in projects data meta dbs backups; do
     install -d -o "${EXTUID}" -g "${EXTUID}" -m 0775 "/srv/${d}"
 done
 

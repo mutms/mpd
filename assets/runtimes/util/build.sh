@@ -2,8 +2,8 @@
 # build.sh — util runtime build phase.
 #
 # Phase 1 (assets/runtime-base/bootstrap.sh) has already created the dev
-# user, set up sshd, /etc/mpd identity, /srv/{projects,data,dbs,tools,
-# personal} layout, and ~/.bashrc defaults.
+# user, set up sshd, /etc/mpd identity, /srv/{projects,data,dbs,tools}
+# layout, and ~/.bashrc defaults.
 #
 # util has no language stack on top of runtime-base. Its purpose is to
 # host helper / utility project types — cftunnel, future cron-style
