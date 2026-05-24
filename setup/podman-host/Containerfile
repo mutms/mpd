@@ -1,0 +1,50 @@
+# mpd podman-host (POC) — Debian Trixie + systemd + sshd in a single
+# privileged Podman container. Stand-in for a full Debian VM for users
+# who already run Podman Desktop and would rather not pay the cost of
+# a second VM. Status: experimental — see
+# docs/proposals/podman-host-nested.md.
+#
+# Build & run (from this dir):
+#   cp ~/.ssh/id_ed25519.pub .
+#   sudo podman build -t mpd-poc .
+#   sudo podman run -d --name mpd-poc \
+#       --hostname mpd-000 \
+#       --privileged --systemd=always \
+#       -p 2223:22 \
+#       mpd-poc
+#   ssh -p 2223 <DEV_USER>@localhost
+#
+# Then run bootstrap/{20,30,40,50,60} + `mpd --setup` inside.
+
+FROM debian:trixie
+
+# systemd-sysv is the PID 1 entry. dbus is needed by hostnamectl
+# (--no-install-recommends drops it otherwise). openssh-server +
+# sudo + ca-certificates + curl + wget are the same shape the
+# bootstrap pipeline assumes on a fresh VM.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        systemd systemd-sysv dbus \
+        openssh-server sudo ca-certificates curl wget \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG DEV_USER=skodak
+RUN useradd -m -s /bin/bash -G sudo "$DEV_USER" \
+    && echo "$DEV_USER ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/00-mpd-$DEV_USER" \
+    && chmod 0440 "/etc/sudoers.d/00-mpd-$DEV_USER"
+
+# Bake the dev's SSH pubkey. Caller drops it into the build context:
+#   cp ~/.ssh/id_ed25519.pub .
+ARG PUBKEY_FILE=id_ed25519.pub
+COPY ${PUBKEY_FILE} /tmp/key.pub
+RUN install -d -o "$DEV_USER" -g "$DEV_USER" -m 700 "/home/$DEV_USER/.ssh" \
+    && install -o "$DEV_USER" -g "$DEV_USER" -m 600 /tmp/key.pub "/home/$DEV_USER/.ssh/authorized_keys" \
+    && rm /tmp/key.pub
+
+RUN systemctl enable ssh
+
+# Pre-create the dirs bootstrap/20-git-clone.sh expects to own.
+RUN install -d -o "$DEV_USER" -g "$DEV_USER" /opt/mpd /var/lib/mpd /var/lib/mpd/conf
+
+# systemd uses RTMIN+3 for graceful shutdown.
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]
