@@ -177,6 +177,15 @@ extension Mpd.Service.Dnsmasq {
                 lines.append("address=/\(record.host)/\(record.ip)")
             }
         }
+
+        // `vm.service.mpd.test` → this VM's own IP (NOT a container IP).
+        // Lets the host-side orchestrator (mpd-virt diag) verify it's
+        // talking to THIS VM's dnsmasq by checking the answer matches
+        // the expected MPD_VM_IP. Skipped on sandbox VMs (vmIP is empty).
+        if let identity = try? Mpd.VM.Platform.load(), !identity.vmIP.isEmpty {
+            lines.append("host-record=vm.service.mpd.test,\(identity.vmIP)")
+        }
+
         let content = lines.joined(separator: "\n") + "\n"
 
         let existing = (try? String(contentsOfFile: recordsPath, encoding: .utf8)) ?? ""

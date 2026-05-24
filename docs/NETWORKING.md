@@ -71,6 +71,26 @@ return NoData. This avoids the upstream-forwarding stalls that previously
 caused multi-second `getaddrinfo` delays when AAAA queries leaked to public
 DNS for `.test` TLD names.
 
+## Diagnostic record: `vm.service.mpd.test`
+
+In addition to the runtime / service / project records, dnsmasq serves
+one special record:
+
+```
+vm.service.mpd.test → <MPD_VM_IP from /var/lib/mpd/conf/platform.env>
+```
+
+i.e. the **VM's own static IP** (e.g. `10.211.55.125` for a managed VM),
+not a container subnet address. It's written as `host-record=...` in
+`services.conf` by `Mpd.Service.Dnsmasq.ensureServiceDNSRecords()` and
+skipped on sandbox VMs (where `MPD_VM_IP` is empty).
+
+The purpose is identity verification: `mpd-virt diag` on the Mac queries
+this name and compares the answer to the VM's known IP. A match proves
+the Mac is talking to **this specific VM's** dnsmasq — not some other
+resolver that happens to know about `*.mpd.test` (e.g. when juggling
+multiple VMs and the wrong WireGuard tunnel is active).
+
 ## SSH access to runtime containers
 
 Two parallel paths, both fine:
