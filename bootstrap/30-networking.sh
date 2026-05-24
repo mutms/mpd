@@ -58,28 +58,9 @@ if [ "${OCTET}" -gt 254 ] || \
     die "octet '${OCTET}' out of range. Allowed: 0 (sandbox) or 100..254 (managed)."
 fi
 
-# --- Link manager: detect, convert later if needed ------------------
-# mpd standardizes on systemd-networkd inside the VM. Two starting
-# states we handle automatically:
-#   - **networkd already active** (Debian generic-cloud, UTM cidata
-#     path): just normalize the static IP file.
-#   - **NetworkManager active** (Debian Desktop, untouched Parallels
-#     template): the static-IP block below will write our .network
-#     file, then background a conversion (stop NM → enable networkd →
-#     apt-purge NM → networkctl reconfigure). SSH drops during the
-#     switch; the orchestrator polls the canonical IP.
-# A fresh Debian Trixie install is guaranteed to be one or the other.
-
-USING_NM=0
-if command -v nmcli >/dev/null 2>&1 \
-   && systemctl is-active --quiet NetworkManager 2>/dev/null; then
-    USING_NM=1
-    ok "link manager: NetworkManager (will convert to systemd-networkd)"
-elif systemctl is-active --quiet systemd-networkd 2>/dev/null; then
-    ok "link manager: systemd-networkd"
-else
-    die "neither NetworkManager nor systemd-networkd is active. Inspect: systemctl status NetworkManager systemd-networkd"
-fi
+# Link-manager detection is deferred until the static-IP block below
+# (it's only needed there). Sandbox VMs / containers that don't pin a
+# static IP don't care what manages the link.
 
 # --- Disable IPv6 -----------------------------------------------------
 # mpd is IPv4-only end-to-end (container subnet, dnsmasq's `*.mpd.test`
@@ -164,6 +145,26 @@ ok "DNS active (deb.debian.org resolves)"
 
 if [ "${OCTET}" -ge 100 ]; then
     step "Static IP for managed VM"
+
+    # mpd standardizes on systemd-networkd inside the VM. Two starting
+    # states we handle automatically:
+    #   - **networkd already active** (Debian generic-cloud, UTM cidata
+    #     path): just normalize the static IP file.
+    #   - **NetworkManager active** (Debian Desktop, untouched Parallels
+    #     template): write the .network file, then background a
+    #     conversion (stop NM → enable networkd → apt-purge NM →
+    #     networkctl reconfigure). SSH drops during the switch; the
+    #     orchestrator polls the canonical IP.
+    USING_NM=0
+    if command -v nmcli >/dev/null 2>&1 \
+       && systemctl is-active --quiet NetworkManager 2>/dev/null; then
+        USING_NM=1
+        ok "link manager: NetworkManager (will convert to systemd-networkd)"
+    elif systemctl is-active --quiet systemd-networkd 2>/dev/null; then
+        ok "link manager: systemd-networkd"
+    else
+        die "neither NetworkManager nor systemd-networkd is active. Inspect: systemctl status NetworkManager systemd-networkd"
+    fi
 
     iface="$(ip -4 -o route show default 2>/dev/null | awk '{print $5; exit}')"
     [ -n "${iface}" ] || die "no default IPv4 route — cannot derive interface"
