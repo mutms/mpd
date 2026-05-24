@@ -30,7 +30,7 @@ extension Mpd.Action.Setup {
     /// Hard gate: mpd targets Debian Trixie across every
     /// platform — cloud-init (macos, linux, windows) and
     /// sandbox alike. Other distros / releases are unsupported (package
-    /// names, Swift availability, systemd unit layout, NetworkManager
+    /// names, Swift availability, systemd unit layout, systemd-networkd
     /// defaults all vary).
     private static func requireSupportedHost() throws {
         guard let os = readOSRelease() else {
@@ -47,7 +47,7 @@ extension Mpd.Action.Setup {
         guard os.codename == "trixie" else {
             throw RuntimeError("""
             mpd targets Debian Trixie (got VERSION_CODENAME=\(os.codename)).
-            Package names, Swift toolchain, and systemd-resolved/NetworkManager
+            Package names, Swift toolchain, and systemd-resolved/systemd-networkd
             defaults vary between releases — pin to Trixie or accept that
             you're off the supported path.
             """)
@@ -276,7 +276,7 @@ extension Mpd.Action.Setup {
         try requireBootstrapCompleted()
 
         // Verify the host's network stack is in the standardized state
-        // (systemd-resolved active, fed by NetworkManager). bootstrap/30
+        // (systemd-resolved active, fed by systemd-networkd). bootstrap/30
         // is responsible for putting the system here.
         try Mpd.VM.DNS.requireSystemdResolvedActive()
 

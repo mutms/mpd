@@ -85,6 +85,11 @@ You build the template once, then `setup.command` clones it on demand.
 5. **Convert the VM to a template** in Parallels: File → Convert to
    Template. Name it `mpd-template`.
 
+   You don't need to switch from NetworkManager to systemd-networkd
+   yourself — `bootstrap/30-networking.sh` does that automatically the
+   first time it runs on a cloned VM (the link manager is migrated
+   alongside the static-IP pin in one background step).
+
 After step 5 the template is reusable indefinitely. Rebuild it only
 when you want a fresh base image (newer Debian point release, etc.).
 

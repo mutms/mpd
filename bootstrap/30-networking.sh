@@ -13,9 +13,11 @@
 #                                       pin static IP <subnet>.<NNN>.
 #
 # Network stack target (Debian Trixie):
-#   - NetworkManager owns the link
-#   - systemd-resolved owns DNS (NM's `dns=systemd-resolved` plugin)
-#   - libnss-resolve plugs glibc NSS into resolved
+#   - link manager: systemd-networkd (one stack for every mpd VM —
+#     Debian generic-cloud has it by default; Desktop templates must
+#     be converted from NetworkManager during template prep).
+#   - systemd-resolved owns DNS.
+#   - libnss-resolve plugs glibc NSS into resolved.
 # This matches what the in-VM `mpd --setup` asserts is in place.
 
 set -euo pipefail
@@ -54,6 +56,29 @@ EOF
 if [ "${OCTET}" -gt 254 ] || \
    { [ "${OCTET}" -gt 0 ] && [ "${OCTET}" -lt 100 ]; }; then
     die "octet '${OCTET}' out of range. Allowed: 0 (sandbox) or 100..254 (managed)."
+fi
+
+# --- Link manager: detect, convert later if needed ------------------
+# mpd standardizes on systemd-networkd inside the VM. Two starting
+# states we handle automatically:
+#   - **networkd already active** (Debian generic-cloud, UTM cidata
+#     path): just normalize the static IP file.
+#   - **NetworkManager active** (Debian Desktop, untouched Parallels
+#     template): the static-IP block below will write our .network
+#     file, then background a conversion (stop NM → enable networkd →
+#     apt-purge NM → networkctl reconfigure). SSH drops during the
+#     switch; the orchestrator polls the canonical IP.
+# A fresh Debian Trixie install is guaranteed to be one or the other.
+
+USING_NM=0
+if command -v nmcli >/dev/null 2>&1 \
+   && systemctl is-active --quiet NetworkManager 2>/dev/null; then
+    USING_NM=1
+    ok "link manager: NetworkManager (will convert to systemd-networkd)"
+elif systemctl is-active --quiet systemd-networkd 2>/dev/null; then
+    ok "link manager: systemd-networkd"
+else
+    die "neither NetworkManager nor systemd-networkd is active. Inspect: systemctl status NetworkManager systemd-networkd"
 fi
 
 # --- Disable IPv6 -----------------------------------------------------
@@ -99,20 +124,6 @@ else
     ok "hostname renamed: ${current} → ${target}"
 fi
 
-# --- NetworkManager → systemd-resolved DNS plugin --------------------
-
-step "NetworkManager DNS plugin"
-
-NM_DROP_IN=/etc/NetworkManager/conf.d/10-mpd-dns.conf
-NM_BODY=$'[main]\ndns=systemd-resolved\n'
-if [ -f "${NM_DROP_IN}" ] && [ "$(sudo cat "${NM_DROP_IN}" 2>/dev/null || true)" = "${NM_BODY}" ]; then
-    ok "${NM_DROP_IN} already in place"
-else
-    sudo install -d -m 755 "$(dirname "${NM_DROP_IN}")"
-    printf '%s' "${NM_BODY}" | sudo install -m 644 /dev/stdin "${NM_DROP_IN}"
-    ok "wrote ${NM_DROP_IN}"
-fi
-
 # --- systemd-resolved + libnss-resolve --------------------------------
 
 step "systemd-resolved + libnss-resolve"
@@ -133,9 +144,7 @@ sudo systemctl enable --now systemd-resolved >/dev/null 2>&1 || true
 systemctl is-active --quiet systemd-resolved \
     || die "systemd-resolved didn't come up. Inspect: systemctl status systemd-resolved"
 
-# Re-read NM drop-in and re-bind resolved.
-sudo systemctl restart NetworkManager
-sleep 1
+# Re-bind systemd-resolved.
 sudo systemctl restart systemd-resolved
 
 # Wait for DNS to settle (up to 30 s).
@@ -156,17 +165,10 @@ ok "DNS active (deb.debian.org resolves)"
 if [ "${OCTET}" -ge 100 ]; then
     step "Static IP for managed VM"
 
-    # Find the primary active NM connection.
-    conn="$(nmcli -t -f NAME,STATE connection show --active 2>/dev/null \
-              | awk -F: '$2=="activated"{print $1; exit}')"
-    [ -n "${conn}" ] || die "no active NetworkManager connection found"
+    iface="$(ip -4 -o route show default 2>/dev/null | awk '{print $5; exit}')"
+    [ -n "${iface}" ] || die "no default IPv4 route — cannot derive interface"
 
-    iface="$(nmcli -t -f GENERAL.DEVICES connection show "${conn}" \
-              | awk -F: '{print $2; exit}')"
-    [ -n "${iface}" ] || die "could not derive interface for connection '${conn}'"
-
-    cidr="$(ip -4 -o addr show dev "${iface}" 2>/dev/null \
-              | awk '{print $4; exit}')"
+    cidr="$(ip -4 -o addr show dev "${iface}" 2>/dev/null | awk '{print $4; exit}')"
     [ -n "${cidr}" ] || die "no IPv4 address on ${iface}"
 
     subnet24="$(echo "${cidr}" | cut -d/ -f1 | cut -d. -f1-3)"
@@ -177,52 +179,99 @@ if [ "${OCTET}" -ge 100 ]; then
     new_ip="${subnet24}.${OCTET}"
     current_ip="$(echo "${cidr}" | cut -d/ -f1)"
 
-    if [ "${current_ip}" = "${new_ip}" ] \
-       && [ "$(nmcli -t -f ipv4.method connection show "${conn}" | cut -d: -f2)" = "manual" ]; then
-        ok "static IP ${new_ip} already pinned on ${iface}"
+    # Point DNS at the gateway. In every NAT-style hypervisor network
+    # we ship for (Parallels Shared, vmnet shared bridge, libvirt
+    # default, Hyper-V Default Switch, VirtualBox NAT) the gateway
+    # runs a DNS proxy back to the host resolver. Leaving DNS empty
+    # would make networkd push nothing to systemd-resolved and
+    # `apt-get update` in bootstrap/40 would fail.
+    #
+    # `05-mpd.network` deliberately sorts before any cloud-init or
+    # distro-shipped `10-*.network` so systemd-networkd matches ours
+    # first (.network files don't merge — first hit wins).
+    NETWORKD_FILE=/etc/systemd/network/05-mpd.network
+    NETWORKD_BODY="# mpd: managed VM static IP. Written by bootstrap/30-networking.sh.
+[Match]
+Name=${iface}
+
+[Network]
+Address=${new_ip}/${prefix}
+Gateway=${gateway}
+DNS=${gateway}
+"
+    existing_body=""
+    [ -f "${NETWORKD_FILE}" ] && existing_body="$(sudo cat "${NETWORKD_FILE}" 2>/dev/null || true)"
+
+    # Ask networkd which .network file is currently governing this link.
+    # Just checking "current_ip == canonical" isn't enough — a DHCP lease
+    # could coincidentally hand out the canonical address. The
+    # authoritative signal is networkd reporting our 05-mpd.network as
+    # the active config (and the file content matching, in case someone
+    # edited it after networkd loaded it).
+    active_network_file=""
+    if [ "$USING_NM" = 0 ]; then
+        active_network_file="$(networkctl status "${iface}" 2>/dev/null \
+            | awk -F': *' '/^[[:space:]]*Network File:/{print $2; exit}')"
+    fi
+
+    # Idempotent fast path: networkd is the link manager, networkd is
+    # using *our* file (not cloud-init's or distro's), file content is
+    # exactly what we'd write, and the IP we'd assign is already live.
+    if [ "$USING_NM" = 0 ] \
+       && [ "${active_network_file}" = "${NETWORKD_FILE}" ] \
+       && [ "${existing_body}" = "${NETWORKD_BODY}" ] \
+       && [ "${current_ip}" = "${new_ip}" ]; then
+        ok "static IP ${new_ip} already pinned on ${iface} (governed by ${NETWORKD_FILE})"
         write_platform_env "managed" "${new_ip}"
     else
-        # Point DNS at the gateway. In every NAT-style hypervisor network
-        # we ship for (Parallels Shared, libvirt default, Hyper-V Default
-        # Switch, VirtualBox NAT) the gateway runs a DNS proxy back to
-        # the host resolver. Leaving ipv4.dns empty here makes NM push
-        # zero upstream DNS into systemd-resolved when the connection
-        # comes back up — `apt-get update` then fails with "Temporary
-        # failure resolving" in bootstrap/40.
-        sudo nmcli connection modify "${conn}" \
-            ipv4.method   manual \
-            ipv4.addresses "${new_ip}/${prefix}" \
-            ipv4.gateway   "${gateway}" \
-            ipv4.dns       "${gateway}" \
-            ipv4.ignore-auto-dns yes
-
-        # Write platform.env BEFORE the IP bounce — once nmcli up runs,
-        # the SSH session dies and we may not get another foreground
-        # opportunity to write it. We know the target IP ahead of time.
+        # Write the canonical .network file + platform.env synchronously
+        # so neither survives only in the about-to-be-killed SSH session.
+        printf '%s' "${NETWORKD_BODY}" | sudo install -m 644 /dev/stdin "${NETWORKD_FILE}"
+        ok "wrote ${NETWORKD_FILE}"
         write_platform_env "managed" "${new_ip}"
-
-        # Print confirmation while we still have a live SSH stdout.
         ok "static IP being applied: ${new_ip}/${prefix} gw ${gateway} on ${iface}"
-        warn "nmcli connection up backgrounded — SSH about to drop, this is expected"
 
-        # Background the connection bounce so this script can exit
-        # cleanly and the orchestrator's ssh returns immediately rather
-        # than blocking on a stale TCP connection.
-        #
-        #   - nohup: ignore SIGHUP when sshd reaps the session
-        #   - </dev/null + >/dev/null 2>&1: fully detach stdio
-        #   - setsid: new session so kernel SIGHUP-on-session-leader-exit
-        #     doesn't reach us
-        #   - disown: remove from this shell's job table
-        # Together these let nmcli run to completion under init after
-        # this script and its ssh session are gone.
-        setsid nohup bash -c "sudo nmcli connection up \"${conn}\"" \
-            </dev/null >/dev/null 2>&1 &
-        disown 2>/dev/null || true
+        # Build the apply sequence. Three things can each drop SSH:
+        #   - swapping the link manager (NM → networkd)
+        #   - changing the IP address on the active link
+        #   - apt-purging network-manager (postrm tears down NM's connections)
+        # Run the whole sequence in a backgrounded subshell so the SSH
+        # session that invoked this script can return cleanly.
+        APPLY=""
+        if [ "$USING_NM" = 1 ]; then
+            APPLY="$APPLY sudo systemctl enable --now systemd-networkd systemd-resolved >/dev/null;"
+            APPLY="$APPLY sudo ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf;"
+            APPLY="$APPLY sudo systemctl disable --now NetworkManager >/dev/null 2>&1 || true;"
+            APPLY="$APPLY sudo env DEBIAN_FRONTEND=noninteractive apt-get -y purge \
+network-manager network-manager-gnome >/dev/null 2>&1 || true;"
+        fi
+        APPLY="$APPLY sudo networkctl reload;"
+        APPLY="$APPLY sudo networkctl reconfigure ${iface};"
 
-        # Exit immediately — anything after this would race the
-        # disappearing SSH session. The orchestrator polls the new IP.
-        exit 0
+        # If nothing IP-disrupting is happening (already on networkd,
+        # IP already correct, only the .network file got rewritten),
+        # the reload is harmless — run it foreground.
+        if [ "$USING_NM" = 0 ] && [ "${current_ip}" = "${new_ip}" ]; then
+            eval "$APPLY"
+            ok "networkctl reload (no IP or link-manager change)"
+        else
+            warn "applying network changes — SSH about to drop, this is expected"
+            # Background the apply so this script can exit cleanly and
+            # the orchestrator's ssh returns immediately rather than
+            # blocking on a stale TCP connection.
+            #
+            #   - nohup: ignore SIGHUP when sshd reaps the session
+            #   - </dev/null + >/dev/null 2>&1: fully detach stdio
+            #   - setsid: new session so kernel SIGHUP-on-session-leader-exit
+            #     doesn't reach us
+            #   - disown: remove from this shell's job table
+            setsid nohup bash -c "$APPLY" </dev/null >/dev/null 2>&1 &
+            disown 2>/dev/null || true
+
+            # Exit immediately — anything after this would race the
+            # disappearing SSH session. The orchestrator polls the new IP.
+            exit 0
+        fi
     fi
 else
     ok "sandbox VM: leaving IP on DHCP"
