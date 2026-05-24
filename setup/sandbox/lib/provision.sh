@@ -32,6 +32,13 @@ bash "${REPO_DIR}/bootstrap/40-install-software.sh"
 bash "${REPO_DIR}/bootstrap/50-build.sh"
 bash "${REPO_DIR}/bootstrap/60-wireguard.sh"
 
+# 50-build.sh writes /etc/profile.d/mpd.sh which puts /opt/mpd/bin on
+# PATH — but only for *new* login shells. The currently-running shell
+# (this script) doesn't pick that up. Export it directly so the
+# `mpd --setup` / `mpd --runtime-create` / `mpd --db-create` calls
+# below can find the just-built binary.
+export PATH="${REPO_DIR}/bin:${PATH}"
+
 # --- VS Code (Microsoft official apt repo) -----------------------------
 # Sandbox-specific: gives the in-VM GNOME desktop an IDE so the story
 # is complete (terminal + browser + IDE, all inside the VM, no host hop).
