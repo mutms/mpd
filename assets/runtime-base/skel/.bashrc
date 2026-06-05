@@ -11,10 +11,14 @@
 # `ssh user@runtime cmd` reaches the same PATH as `ssh user@runtime`
 # followed by typing cmd.
 
-# Source Debian's system-wide interactive bashrc (PS1, colored ls, etc.).
-# The file's own [ -z "$PS1" ] && return guard keeps it inert for
-# non-interactive shells; mpd-specific lines below still apply.
-[ -f /etc/bash.bashrc ] && . /etc/bash.bashrc
+# Source the distro's default per-user bashrc that this file displaced
+# (useradd -m seeds it from /etc/skel, then the mpd skel copy overwrites
+# it). Debian keeps the colored prompt, dircolors/ls aliases, and history
+# defaults there — sourcing it keeps us tracking upstream instead of
+# duplicating it. Its own interactivity guard makes it a no-op for
+# non-interactive (sshd command-execution) shells; the mpd-specific lines
+# below still apply either way.
+[ -f /etc/skel/.bashrc ] && . /etc/skel/.bashrc
 
 # --- mpd tool dirs on PATH -------------------------------------------------
 # Every dir under /srv/tools/ (base + the active runtime + per-project-type
