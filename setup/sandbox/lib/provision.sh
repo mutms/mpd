@@ -32,7 +32,7 @@ bash "${REPO_DIR}/bootstrap/40-install-software.sh"
 bash "${REPO_DIR}/bootstrap/50-build.sh"
 bash "${REPO_DIR}/bootstrap/60-wireguard.sh"
 
-# 50-build.sh prepends /opt/mpd/bin to ~/.bashrc and also exports it
+# 50-build.sh prepends ~/.local/bin + /opt/mpd/bin to ~/.bashrc and also exports it
 # inside its own shell — but since we invoked it via `bash …` (a
 # subshell), the export doesn't reach us. Mirror it here so the
 # `mpd --setup` / `mpd --runtime-create` / `mpd --db-create` calls

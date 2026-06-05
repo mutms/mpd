@@ -80,6 +80,11 @@ if [ -d /var/lib/mpd/skel ]; then
     cp -aT /var/lib/mpd/skel "${USER_HOME}"
 fi
 
+# Pre-create ~/.local/bin so user-installed CLIs (claude-install drops
+# binaries there) land in a dir that exists and is on PATH (the skel
+# .bashrc prepends it unconditionally) from the very first shell.
+mkdir -p "${USER_HOME}/.local/bin"
+
 # Take ownership of everything in the dev user's home — useradd -m already
 # created the dir with the right owner, but cp -a inherited root for the
 # copied entries.

@@ -21,7 +21,7 @@ cd "${REPO_DIR}"
 make install
 ok "built ${REPO_DIR}/bin/mpd"
 
-# --- /opt/mpd/bin on PATH (via ~/.bashrc) ----------------------------
+# --- /opt/mpd/bin + ~/.local/bin on PATH (via ~/.bashrc) -------------
 # ~/.bashrc covers every shell shape this VM's single dev user ever
 # uses: login shells (via Debian's ~/.bash_profile → ~/.bashrc),
 # interactive non-login (default), and sshd-invoked non-interactive
@@ -29,19 +29,28 @@ ok "built ${REPO_DIR}/bin/mpd"
 # at the very top — before the standard "if not interactive, return"
 # guard — lets all three pick it up.
 #
+# ~/.local/bin rides along: Debian only adds it via ~/.profile (login
+# shells, guarded on the dir existing at login), so a CLI installed
+# mid-session (claude-install) would otherwise need a re-login. We
+# pre-create the dir and prepend unconditionally instead.
+#
 # Why not /etc/profile.d/: only fires for login shells, so
 # `ssh user@vm cmd` (non-login) misses it.
 
-step "/opt/mpd/bin on PATH (~/.bashrc)"
+step "mpd PATH + ~/.local/bin (~/.bashrc)"
+
+install -d "${HOME}/.local/bin"
 
 BASHRC="${HOME}/.bashrc"
-if grep -qF '# mpd PATH' "${BASHRC}" 2>/dev/null; then
+SNIPPET='PATH="$HOME/.local/bin:/opt/mpd/bin:$PATH"  # mpd PATH'
+if grep -qxF "${SNIPPET}" "${BASHRC}" 2>/dev/null; then
     ok "${BASHRC} already has mpd PATH snippet"
 else
     tmp=$(mktemp)
     {
-        printf '%s\n' '[ -d /opt/mpd/bin ] && PATH="/opt/mpd/bin:$PATH"  # mpd PATH'
-        cat "${BASHRC}"
+        printf '%s\n' "${SNIPPET}"
+        # Drop superseded '# mpd PATH'-tagged snippet versions on update.
+        grep -vF '# mpd PATH' "${BASHRC}" || true
     } > "${tmp}"
     chmod --reference="${BASHRC}" "${tmp}"
     mv "${tmp}" "${BASHRC}"

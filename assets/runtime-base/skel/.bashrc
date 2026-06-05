@@ -35,8 +35,10 @@ unset _d
 
 # --- User-installed CLIs ---------------------------------------------------
 # Claude Code, gh, and other tools that ship via personal `~/.local/bin`
-# installs (claude-install drops binaries here).
-[ -d "$HOME/.local/bin" ] && PATH="$HOME/.local/bin:$PATH"
+# installs (claude-install drops binaries here). Unguarded on purpose:
+# bootstrap.sh pre-creates the dir, and an unconditional prepend means a
+# CLI installed mid-session is found by the very shell that installed it.
+PATH="$HOME/.local/bin:$PATH"
 
 # --- nvm (Node Version Manager) -------------------------------------------
 # Sourced only when nvm is actually installed; node-install runs in the
