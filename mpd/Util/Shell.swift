@@ -19,11 +19,7 @@
 // binaries). See `docs/ARCHITECTURE.md` §3.
 
 import Foundation
-#if canImport(Darwin)
-import Darwin
-#elseif canImport(Glibc)
 import Glibc
-#endif
 
 /// When true, *Quietly methods show full output (set by --debug flag).
 var debugMode = false

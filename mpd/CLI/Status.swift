@@ -3,11 +3,7 @@
 // (projects / runtimes / services / dbs).
 
 import Foundation
-#if canImport(Darwin)
-import Darwin
-#else
 import Glibc
-#endif
 
 private func supportsAnsiColor() -> Bool {
     guard isatty(STDOUT_FILENO) == 1 else { return false }

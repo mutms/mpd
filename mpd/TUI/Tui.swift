@@ -2,11 +2,7 @@
 // Terminal UI: runtime list → runtime detail → command list → execute
 
 import Foundation
-#if canImport(Darwin)
-import Darwin
-#else
 import Glibc
-#endif
 
 extension Mpd { enum TUI {} }
 

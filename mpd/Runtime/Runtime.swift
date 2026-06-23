@@ -29,11 +29,7 @@
 // Verb/tool authoring guidance: ARCHITECTURE.md §7, AGENTS.md.
 
 import Foundation
-#if canImport(Darwin)
-import Darwin
-#else
 import Glibc
-#endif
 
 private func runtimeListSupportsAnsiColor() -> Bool {
     guard isatty(STDOUT_FILENO) == 1 else { return false }
