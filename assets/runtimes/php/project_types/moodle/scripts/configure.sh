@@ -116,25 +116,38 @@ else
     echo "Moodle source not detected yet — skipping config.php / config-mpd.php generation."
 fi
 
-# --- Allocate (or reuse) FPM port (9000–9099 pool) ---
+# --- Allocate (or reuse) FPM port (9100–9199 pool) ---
+# Port 9000 is deliberately avoided: the Selenium sidecar's video_ready.py
+# binds 0.0.0.0:9000, and sidecars share the runtime pod's network namespace,
+# so a project FPM on 9000 clashes with it (php-fpm fails to bind, Caddy 502s).
+# The pool also stays clear of Selenium's other ports (4444 grid, 5900/7900
+# VNC) and the Behat chrome debug port (9222).
+FPM_POOL_START=9100
+FPM_POOL_END=9199
 EFFECTIVE_FILE="/srv/meta/${PROJECT_NAME}/effective.json"
 FPM_PORT=""
 if [ -f "$EFFECTIVE_FILE" ]; then
     FPM_PORT=$(jq -r '.phpFpmPort // empty' "$EFFECTIVE_FILE" 2>/dev/null || true)
+fi
+# Drop a previously-assigned port that falls outside the current pool (e.g. a
+# legacy 9000 from before the pool moved off the Selenium clash) so it gets
+# reallocated into the valid range below.
+if [ -n "$FPM_PORT" ] && { [ "$FPM_PORT" -lt "$FPM_POOL_START" ] || [ "$FPM_PORT" -gt "$FPM_POOL_END" ]; }; then
+    FPM_PORT=""
 fi
 if [ -z "$FPM_PORT" ]; then
     USED_PORTS=$(for f in /srv/meta/*/effective.json; do
         [ -f "$f" ] || continue
         jq -r '.phpFpmPort // empty' "$f" 2>/dev/null
     done | sort -un)
-    for p in $(seq 9000 9099); do
+    for p in $(seq "$FPM_POOL_START" "$FPM_POOL_END"); do
         if ! echo "$USED_PORTS" | grep -qx "$p"; then
             FPM_PORT="$p"
             break
         fi
     done
     if [ -z "$FPM_PORT" ]; then
-        echo "Error: FPM port pool exhausted (9000-9099)" >&2
+        echo "Error: FPM port pool exhausted (${FPM_POOL_START}-${FPM_POOL_END})" >&2
         exit 1
     fi
 fi

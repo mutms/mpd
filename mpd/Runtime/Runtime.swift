@@ -249,6 +249,13 @@ extension Mpd.Runtime {
             "--name", runtimePodName(name),
             "--hostname", runtimeHostname,
             "--network", "mpd-internal:ip=\(runtimeIP)",
+            // Pod members share this infra container's IPC namespace and thus
+            // /dev/shm. Chromium (Behat's Selenium sidecar) maps renderer
+            // shared memory there and hangs/crashes on the default 64 MB; size
+            // it up per Selenium's guidance. tmpfs is a cap, not a reservation
+            // — idle pods (no browser) consume ~nothing, so this is safe for
+            // every runtime, not just PHP/behat.
+            "--shm-size=2g",
             "--label", "com.docker.compose.project=mpd-dev",
         ]) == 0 else {
             throw RuntimeError("Failed to create runtime '\(name)'.")

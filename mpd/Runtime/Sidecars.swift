@@ -226,7 +226,23 @@ extension Mpd.Runtime {
         SidecarSpec(
             role: "selenium",
             image: "docker.io/selenium/standalone-chromium:latest",
-            extraArgs: []
+            // Env-only config (mirrors mdc's compose-selenium.yaml). /dev/shm
+            // sizing is NOT here — pod members share the pod infra container's
+            // IPC/shm namespace, so a per-container --shm-size is ignored; it's
+            // set on the pod (see runtimePodName pod create, --shm-size).
+            //
+            // SE_NODE_MAX_SESSIONS raises the concurrent-session cap for
+            // parallel Behat runs; OVERRIDE is required because Selenium
+            // otherwise clamps it to the CPU count. SE_SCREEN_* matches Moodle's
+            // default Behat window so responsive-layout steps behave. The Behat
+            // site's HTTPS cert is accepted via acceptInsecureCerts in the
+            // generated Moodle config — no CA install into Chromium needed.
+            extraArgs: [
+                "-e", "SE_NODE_MAX_SESSIONS=10",
+                "-e", "SE_NODE_OVERRIDE_MAX_SESSIONS=true",
+                "-e", "SE_SCREEN_WIDTH=1400",
+                "-e", "SE_SCREEN_HEIGHT=800",
+            ]
         )
     }
 

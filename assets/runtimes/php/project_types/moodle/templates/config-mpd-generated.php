@@ -75,6 +75,35 @@ $CFG->behat_wwwroot   = 'https://behat.%%PROJECT%%.mpd.test';
 $CFG->behat_dataroot  = '/srv/data/%%PROJECT%%/dataroot_behat';
 $CFG->behat_prefix    = 'bht_';
 
+// Behat runs against the per-runtime Selenium sidecar
+// (see Mpd.Runtime.seleniumSidecarSpec), which is standalone-chromium and
+// shares the pod's netns — hence localhost:4444. Without an explicit profile
+// Moodle/Mink defaults to firefox, which the chromium node doesn't offer, so
+// session creation fails with "No nodes support the capabilities". The node
+// advertises browserName 'chrome' (Chromium reports as chrome), so pin that.
+$CFG->behat_profiles = [
+    'default' => [
+        'browser' => 'chrome',
+        'wd_host' => 'http://localhost:4444/wd/hub',
+        'capabilities' => [
+            'extra_capabilities' => [
+                // The Behat site is served over HTTPS with mpd's private CA,
+                // which the Selenium sidecar's Chromium doesn't trust — without
+                // this every page load hits a "your connection is not private"
+                // interstitial (and steps then fail to find elements). This is
+                // the standard W3C capability for testing against a local cert;
+                // it keeps the sidecar a stock image (no CA install).
+                'acceptInsecureCerts' => true,
+                'goog:chromeOptions' => [
+                    'args' => [
+                        'remote-debugging-port=9222',
+                    ],
+                ],
+            ],
+        ],
+    ],
+];
+
 // Mailpit SMTP — catches all outgoing mail. Runs as a per-runtime sidecar
 // (see Mpd.Runtime.mailpitSidecarSpec) sharing the pod's netns, hence localhost.
 $CFG->smtphosts = 'localhost:1025';

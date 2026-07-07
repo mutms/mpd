@@ -63,6 +63,24 @@ done
 touch "${DATAROOT}/php_error.log"
 chmod 0666 "${DATAROOT}/php_error.log"
 
+# --- Drop any stale pool for this project under a *different* PHP version ---
+# If the project's PHP version changed (e.g. an upgrade bumped Moodle's
+# minimum), project-setup previously wrote the pool into the new version's
+# pool.d but left the old one behind. That orphan keeps its old listen port
+# in the wrong php-fpm — and once that port is reallocated to another project,
+# the orphan makes the shared php-fpm fail to bind and start at all, taking
+# every project on that version offline (a 502). Remove it and refresh the
+# affected service before writing the current pool.
+for STALE in /etc/php/*/fpm/pool.d/mpd-"${PROJECT_NAME}".conf; do
+    [ -e "$STALE" ] || continue
+    STALE_VER=$(printf '%s' "$STALE" | sed -n 's#^/etc/php/\([0-9.]\+\)/.*#\1#p')
+    [ "$STALE_VER" = "$PHP_VER" ] && continue
+    sudo rm -f "$STALE"
+    sudo systemctl reset-failed "php${STALE_VER}-fpm" 2>/dev/null || true
+    sudo systemctl reload "php${STALE_VER}-fpm" 2>/dev/null \
+        || sudo systemctl restart "php${STALE_VER}-fpm" 2>/dev/null || true
+done
+
 # --- Per-project FPM pool (TCP, runs as the dev user) ---
 # Caddy sidecar reaches this pool via 127.0.0.1:${FPM_PORT} on the pod's
 # shared netns. FPM workers run as the developer user so web and CLI both

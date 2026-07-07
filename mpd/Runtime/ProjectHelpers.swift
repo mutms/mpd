@@ -237,13 +237,27 @@ extension Mpd.Project {
         let sans = mpdHosts(from: urls)
         guard !sans.isEmpty else { return }
 
-        // Check if cert already exists
-        let (rc, _) = Mpd.Podman.volumeToolOutput(
+        // Reuse the existing cert only when it already covers exactly the
+        // current SAN set. We record the SAN signature alongside the cert
+        // (`cert.sans`) at generation time and compare it here — a bare
+        // `test -f cert.pem` would keep a stale cert forever, so enabling
+        // behat (or any host-adding change) on an existing project would
+        // never widen the cert and its `behat.<project>.mpd.test` SNI would
+        // fail the TLS handshake. Missing signature (pre-upgrade certs)
+        // counts as a mismatch, forcing a one-time regeneration.
+        let sansSignature = sans.joined(separator: "\n")
+        let (rc, existingSig) = Mpd.Podman.volumeToolOutput(
             readOnly: true,
-            command: ["test", "-f", "/srv/meta/\(project)/cert.pem"],
+            command: [
+                "bash", "-c",
+                "test -f /srv/meta/\(project)/cert.pem && cat /srv/meta/\(project)/cert.sans",
+            ],
             suppressStderr: true
         )
-        if rc == 0 { return }
+        if rc == 0
+            && existingSig.trimmingCharacters(in: .whitespacesAndNewlines) == sansSignature {
+            return
+        }
 
         let certsDir = Mpd.VM.confTempDir
         let caKey = "\(Mpd.VM.confCARootDir)/rootCA-key.pem"
@@ -265,10 +279,17 @@ extension Mpd.Project {
             caCertPath: caCert,
             certsDir: certsDir)
 
-        // Write into /srv/meta/<project>/ via accessor container
+        // Write into /srv/meta/<project>/ via accessor container. Each file
+        // is written to a temp path and renamed into place: the Caddy
+        // frontdoor watches this directory and re-validates on every change,
+        // so a half-written cert.pem would fail `caddy validate` and get the
+        // reload skipped — leaving Caddy serving the pre-widening cert until
+        // a manual restart. An atomic rename means the watcher only ever
+        // observes a complete file.
         let certWriteScript = """
             mkdir -p /srv/meta/\(project) && \
-            cat > /srv/meta/\(project)/cert.pem
+            cat > /srv/meta/\(project)/cert.pem.tmp && \
+            mv -f /srv/meta/\(project)/cert.pem.tmp /srv/meta/\(project)/cert.pem
             """
         let certData = try Data(contentsOf: URL(fileURLWithPath: certPath))
         let keyData = try Data(contentsOf: URL(fileURLWithPath: keyPath))
@@ -279,12 +300,38 @@ extension Mpd.Project {
         )
 
         let keyWriteScript = """
-            cat > /srv/meta/\(project)/key.pem && \
-            chmod 0600 /srv/meta/\(project)/key.pem
+            cat > /srv/meta/\(project)/key.pem.tmp && \
+            chmod 0600 /srv/meta/\(project)/key.pem.tmp && \
+            mv -f /srv/meta/\(project)/key.pem.tmp /srv/meta/\(project)/key.pem
             """
         _ = Mpd.Podman.volumeToolRunWithInput(
             command: ["bash", "-c", keyWriteScript],
             input: keyData
         )
+
+        // Record the SAN signature so a later ensureProjectCert can tell
+        // whether the cert still covers the project's current host set.
+        _ = Mpd.Podman.volumeToolRunWithInput(
+            command: ["bash", "-c", "cat > /srv/meta/\(project)/cert.sans"],
+            input: Data(sansSignature.utf8)
+        )
+
+        // The Caddy frontdoor loads project certs from file and caches them in
+        // memory; it does NOT evict a superseded cert on config reload (a
+        // `caddy reload` keeps serving the old cert for the same SNI). Only a
+        // full process restart clears the cache. So a running frontdoor would
+        // keep presenting the pre-regeneration cert — e.g. after enabling
+        // behat, the widened `behat.<project>.mpd.test` SAN would be on disk
+        // but never served. Restart the frontdoor now that the new cert is in
+        // place. Skipped when it isn't running (initial create/start, or
+        // runtimes without a frontdoor): it reads the current cert on start.
+        if let runtime = Mpd.Runtime.State.loadProjects().projects
+            .first(where: { $0.name == project })?.runtimeName, !runtime.isEmpty {
+            let frontdoor = Mpd.Runtime.frontdoorSidecarSpec()
+                .containerName(in: Mpd.Runtime.runtimePodName(runtime))
+            if Mpd.Podman.running(frontdoor) {
+                _ = Mpd.Podman.restart(frontdoor)
+            }
+        }
     }
 }
