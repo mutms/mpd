@@ -118,3 +118,20 @@ Real possibilities, not committed work.
   those plugins already wired in. The current `demo moodle v5.2.0`
   one-liner stays as the simple-case shortcut. Blocked on the
   composer install item above.
+
+- **Proxmox host + single Cloudflare client** — support Proxmox VE as
+  an "mpd VM" host platform, with Cloudflare Zero Trust (WARP +
+  `cloudflared`) as the network transport instead of WireGuard.
+  Proxmox is a headless remote hypervisor, so the `mpd-virt`
+  orchestrator role drives it over its REST API / `qm`/`pvesh`, and
+  the host-side CA-trust + `*.mpd.test` resolver bits land on the
+  user's separate workstation. Since the user already runs one CF
+  Zero Trust client to reach Proxmox, mpd reuses it: a `cloudflared`
+  connector inside the VM advertises the container CIDR
+  (`10.163.0.0/16`, dnsmasq `10.163.0.3`) as a private route; WARP
+  split-DNS handles `*.mpd.test`; CA trust is unchanged. Reframes
+  WireGuard as one transport impl rather than a fixed dependency.
+  Gotchas: CIDR overlap with other WARP routes, and split-DNS
+  precedence for `.test` vs Cloudflare Gateway. Distinct from the
+  cftunnel ZT item above (that exposes *projects*; this is the
+  *host↔VM* transport). No work scheduled.
