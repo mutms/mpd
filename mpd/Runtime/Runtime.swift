@@ -86,6 +86,12 @@ extension Mpd.Runtime {
     /// e.g. on VM "159" with runtime "php" → "mpd-159-php".
     static func runtimePodName(_ name: String) -> String { "mpd-\(vmId)-\(name)" }
 
+    /// Disk-backed named volume mounted at `/tmp` in the runtime container.
+    /// Without it, `--systemd` mode makes podman mount a RAM-backed tmpfs on
+    /// `/tmp`, so large build/test scratch (composer, npm, behat) eats VM RAM.
+    /// e.g. on VM "159" with runtime "php" → "mpd-159-php-tmp".
+    static func runtimeTmpVolume(_ name: String) -> String { "mpd-\(vmId)-\(name)-tmp" }
+
     /// Returns all runtime main containers (excludes DB, service).
     static func allContainers() -> [PsItem] {
         Mpd.Podman.ps(filter: "label=mpd.runtime")
@@ -273,6 +279,10 @@ extension Mpd.Runtime {
             "--systemd", "always",
         ] + Mpd.VM.optMountRO + Mpd.VM.envMountRO + Mpd.VM.skelMountRO + [
             "-v", "\(Mpd.dataVolume):/srv",
+            // Disk-backed /tmp. An explicit mount here suppresses the
+            // RAM-backed tmpfs podman auto-mounts on /tmp in --systemd mode;
+            // podman copies up the image's 1777 perms into the fresh volume.
+            "-v", "\(runtimeTmpVolume(name)):/tmp",
             "--label", "mpd.managed=true",
             "--label", "mpd.name=\(name)",
             "--label", "mpd.runtime=\(name)",
@@ -282,6 +292,7 @@ extension Mpd.Runtime {
         ]
         guard Mpd.Podman.run(runArgs) == 0 else {
             Mpd.Podman.podRemove(runtimePodName(name))
+            Mpd.Podman.volumeRemove(runtimeTmpVolume(name))
             throw RuntimeError("Failed to create main container.")
         }
 
@@ -517,6 +528,8 @@ extension Mpd.Runtime {
         guard Mpd.Podman.podRemove(runtimePodName(name)) == 0 else {
             throw RuntimeError("Failed to remove runtime '\(name)'.")
         }
+        // Reclaim the disk-backed /tmp volume (pod rm leaves named volumes).
+        Mpd.Podman.volumeRemove(runtimeTmpVolume(name))
         // Clean up runtime-level dnsmasq + meta (sidecar-published URLs).
         // Pseudo-project `_runtime-<name>` holds mailpit's canonical URL meta.
         let confPath = "\(Mpd.VM.dnsmasqDir)/\(name).conf"

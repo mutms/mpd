@@ -412,4 +412,11 @@ extension Mpd.Podman {
         podmanShell([ "volume", "create", name])
     }
 
+    /// Remove a named Podman volume, ignoring "no such volume". `-f` also
+    /// detaches it from any stopped container still referencing it.
+    @discardableResult
+    static func volumeRemove(_ name: String) -> Int32 {
+        podmanShell([ "volume", "rm", "-f", name])
+    }
+
 }
