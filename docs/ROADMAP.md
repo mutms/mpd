@@ -128,10 +128,19 @@ Real possibilities, not committed work.
   user's separate workstation. Since the user already runs one CF
   Zero Trust client to reach Proxmox, mpd reuses it: a `cloudflared`
   connector inside the VM advertises the container CIDR
-  (`10.163.0.0/16`, dnsmasq `10.163.0.3`) as a private route; WARP
-  split-DNS handles `*.mpd.test`; CA trust is unchanged. Reframes
-  WireGuard as one transport impl rather than a fixed dependency.
-  Gotchas: CIDR overlap with other WARP routes, and split-DNS
-  precedence for `.test` vs Cloudflare Gateway. Distinct from the
-  cftunnel ZT item above (that exposes *projects*; this is the
-  *host↔VM* transport). No work scheduled.
+  (`10.163.0.0/24`, dnsmasq `10.163.0.3`) as a private route; CA
+  trust is unchanged. Reframes WireGuard as one transport impl
+  rather than a fixed dependency: mpd's client-side contract
+  collapses to three transport-agnostic facts — (1) a route to
+  `10.163.0.0/24` exists, (2) `*.mpd.test` resolves to those IPs,
+  (3) the mpd CA is trusted — and mpd should *document/emit* these
+  rather than program the user's VPN client. In practice a scoped
+  `sudo ip route add 10.163.0.0/24 …` beats fighting WARP
+  split-tunnel when a second (work) WireGuard tunnel is up at the
+  same time — both want to own routes, and a single-/24 static
+  route coexists cleanly. Caveats: the route needs a next-hop/iface
+  that actually carries the /24 to the VM (tunnel still has to be
+  up), and it must be made persistent across reboots (NM dispatcher
+  / systemd-networkd / login hook). Distinct from the cftunnel ZT
+  item above (that exposes *projects*; this is the *host↔VM*
+  transport). No work scheduled.
