@@ -62,12 +62,15 @@ for VER in $PHP_VERSIONS; do
 done
 
 echo "Installing PHP versions ${PHP_VERSIONS} + DB clients in one apt pass..."
+# golang-go provides the Go toolchain for `mudev`, the Go binary that manages
+# project checkouts inside the php runtime.
 # shellcheck disable=SC2086
 sudo apt-get install -y --no-install-recommends \
     $PKG_LIST \
     postgresql-client \
     mariadb-client \
-    default-mysql-client
+    default-mysql-client \
+    golang-go
 
 # ── Per-version FPM configuration (file ops only — no apt) ────────────────────
 for VER in $PHP_VERSIONS; do
