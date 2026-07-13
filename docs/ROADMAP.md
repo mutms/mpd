@@ -144,3 +144,73 @@ Real possibilities, not committed work.
   / systemd-networkd / login hook). Distinct from the cftunnel ZT
   item above (that exposes *projects*; this is the *host↔VM*
   transport). No work scheduled.
+
+- **Feel familiar to OS-native container CLIs (NOT a substrate change)**
+  — the three OS vendors now ship native Docker-CLI-shaped
+  Linux-container tooling: **Apple `container`** (Swift, per-container
+  lightweight VMs via the Containerization framework, macOS 26) and
+  **Microsoft `wslc`** (native runtime built into WSL, `container.exe`
+  alias, GA ~fall 2026), alongside podman on Linux. All converge on the
+  `run/build/ls/exec/logs/start/stop/rm` grammar — `container` is
+  becoming the universal command name, and even non-devs will learn it.
+  **Firm design boundary: mpd/mpd-virt will NEVER adopt Apple
+  `container` or `wslc` as its runtime — it keeps podman + the
+  persistent Debian VM permanently.** (mpd's model depends on a
+  persistent systemd/SSH host, podman **pods** with shared IPC/shm
+  (behat/Chromium `--shm-size`), and one shared network + local DNS
+  (`10.163.0.0/24`, `*.mpd.test`) — none of which fit
+  one-micro-VM-per-container anyway.) The convergence matters for
+  **ergonomics only**: mpd's `create/start/stop/delete/show` already
+  map onto that grammar, so mpd feels familiar to anyone fluent in
+  `docker`/`container`/`wslc` — while staying a *higher* project-level
+  abstraction, not a docker clone. Action when picked up: audit the CLI
+  for gratuitous divergence from the shared verb vocabulary; do NOT
+  touch the runtime. No work scheduled. (Apple `container`/`wslc` DO
+  get used — but only by the standalone `mdl-demo` image below, a
+  separate product from mpd.)
+
+- **`mdl-demo` — standalone all-in-one Moodle demo image** — a
+  single published OCI image (Apache+PHP+MariaDB+Moodle+demo data)
+  runnable by *anyone* with `container run` / `wslc run` / `docker run`,
+  **without mpd installed**. Distinct from the in-VM `demo` verb (which
+  provisions a Moodle project inside the mpd VM); this is a
+  distributable, self-contained on-ramp for non-devs — an instant,
+  disposable Moodle you can throw away. Design calls:
+  - **Inherits the universal CLI grammar** — no bespoke CLI; the demo
+    *is* a container, so `container run` is the install. The growing
+    docker-literate (incl. non-dev) audience is a feature here.
+  - **All-in-one single container** fits Apple `container`'s
+    one-VM-per-container model cleanly — none of mpd's pod / shared-shm
+    / shared-network / `*.mpd.test` substrate friction applies.
+  - **Publish, don't build** — versioned image on a registry; `run`
+    pulls (seconds, not minutes).
+  - **`wwwroot` set at runtime** (env var or first-request
+    autodetect), never a baked hostname — else non-default `-p` ports
+    break Moodle redirects/logins. First-run step lives in the Go UI.
+  - **Try plugins in the sandbox** — install any free or paid plugin
+    into the throwaway Moodle to evaluate it before using it for real;
+    the plugin list comes from a companion index repo (`mdl-plugins`)
+    and prebuilt site setups from `mdl-recipes`. Trying untrusted code
+    in a disposable container is also a safety win (zero blast radius).
+  - **Two API surfaces, kept separate**: (1) *lifecycle* (up/down) via
+    platform-native thin layers — Apple Containerization (Swift),
+    `wslc` API, or the `container`/`docker` CLI; (2) *management* (admin
+    pass, sample course, plugin install, reset) via an **in-container Go
+    HTTP/JSON API**, identical on every platform. Build management once
+    (Go, in the image); web UI + native apps are thin clients. Native
+    apps own lifecycle only, then embed the web UI — don't reimplement
+    management per platform.
+  - Phase 1: CLI + internal Go web UI. Phase 2: native macOS/Windows
+    apps wrapping it via the Swift/MS container APIs.
+  - Naming: `mdl-demo`/`moodle-demo` reads more honestly than
+    `mpd-demo` since it runs without mpd; mpd may optionally
+    build/publish it. No work scheduled.
+
+- **`mdl-plugins` / `mdl-recipes` — companion index repos** —
+  `mdl-plugins` holds a list of plugins (name, versions, Moodle-version
+  compat, source/download, checksums); `mdl-recipes` holds
+  site-installation recipes (predefined setups: a Moodle version + a
+  plugin set + config). Both are plain git repos of static manifests
+  that the demo, mpd, and composer read to install plugins or stand up
+  a recipe. Static + mirrorable + signable = trivial to host and easy
+  to fork. No work scheduled.

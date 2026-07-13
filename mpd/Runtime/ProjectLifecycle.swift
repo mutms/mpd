@@ -141,7 +141,7 @@ extension Mpd.Project {
             else {
                 throw RuntimeError(
                     "Unknown argument '\(arg)' for create. " +
-                    "Configure knobs live in mpd.env: `mpd \(project) configure KEY=VALUE`.")
+                    "Configure knobs live in mpd.env: `mpd configure \(project) KEY=VALUE`.")
             }
         }
 
@@ -224,7 +224,7 @@ extension Mpd.Project {
         print("")
         ok("Project '\(project)' scaffolded.")
         print("  Edit /srv/projects/\(project)/mpd.env if needed, then:")
-        print("    mpd \(project) configure")
+        print("    mpd configure \(project)")
     }
 
     // MARK: - start

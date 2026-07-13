@@ -38,4 +38,4 @@ if [ -d "${PROJECT_DIR}/.git" ]; then
     fi
 fi
 
-echo "Project '${PROJECT_NAME}' scaffolded — next: mpd ${PROJECT_NAME} configure"
+echo "Project '${PROJECT_NAME}' scaffolded — next: mpd configure ${PROJECT_NAME}"
