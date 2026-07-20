@@ -29,7 +29,7 @@ That's it — the dispatcher discovers it on the next event firing.
 Example: graceful postgres shutdown when `mpd --stop` runs:
 
 ```
-assets/databases/postgres/hooks/mpd-pre-stop.d/10-graceful-stop.sh
+assets/databases/postgres/hooks/mpd-pre-stop.d/90-graceful-stop.sh
 ```
 
 ```bash
@@ -85,9 +85,9 @@ crash recovery.
 - **Env vars**: just the standard set (no event-specific extras).
 
 Shipped scripts:
-- `assets/databases/postgres/hooks/mpd-pre-stop.d/10-graceful-stop.sh`
-- `assets/databases/mariadb/hooks/mpd-pre-stop.d/10-graceful-stop.sh`
-- `assets/databases/mysql/hooks/mpd-pre-stop.d/10-graceful-stop.sh`
+- `assets/databases/postgres/hooks/mpd-pre-stop.d/90-graceful-stop.sh`
+- `assets/databases/mariadb/hooks/mpd-pre-stop.d/90-graceful-stop.sh`
+- `assets/databases/mysql/hooks/mpd-pre-stop.d/90-graceful-stop.sh`
 
 All three send SIGTERM to PID 1 (the daemon) and exit immediately;
 the kernel keeps the daemon running until smart shutdown completes,
@@ -165,6 +165,12 @@ helper execs it from a one-line wrapper.
 Numeric prefixes (`10-`, `90-`) order scripts within a directory
 (run-parts style). Cross-layer order: strictly by layer
 (base → runtime → type), then alphabetical within each.
+
+**Pick the number by what the hook does to its container.** A hook that
+terminates the service it runs in must sort last, because everything
+after it fails against a container that is already shutting down — the
+shipped `90-graceful-stop.sh` SIGTERMs the database engine, so
+`mpd-pre-stop` hooks needing a live database belong in 10–89.
 
 Note this differs from mpd's *tools*, which are deliberately
 extensionless (`composer-install`, `mudev-install`): a tool is invoked

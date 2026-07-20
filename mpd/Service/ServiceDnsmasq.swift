@@ -57,7 +57,7 @@ extension Mpd.Service.Dnsmasq {
             caFingerprintLabel: caFP,
         ])
 
-        step("Service: dnsmasq DNS resolver")
+        step("Service: dnsmasq")
 
         let assetsDir = try Mpd.VM.assetsPath()
         let dnsmasqConf = "\(assetsDir)/services/dnsmasq/dnsmasq.conf"
@@ -102,7 +102,7 @@ extension Mpd.Service.Dnsmasq {
                     ok("dnsmasq reloaded service DNS records.")
                 }
             } else {
-                ok("Already running.")
+                ok("dnsmasq already running.")
             }
         }
     }
@@ -143,7 +143,7 @@ extension Mpd.Service.Dnsmasq {
                 }
             }
         } else if verbose {
-            ok("Already running.")
+            ok("dnsmasq already running.")
         }
     }
 

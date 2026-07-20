@@ -9,11 +9,31 @@ extension Mpd.Action.Stop {
             throw RuntimeError("mpd is not set up yet. Run: mpd --setup")
         }
 
-        // Graceful DB shutdown before poweroff. Without this, the next boot
-        // would find postgres doing crash recovery on first start. Failures
-        // are logged but never block — `.continue` failure mode.
-        step("Firing pre-stop hooks")
-        try Mpd.Hooks.fire(EventMpdPreStop(), verb: "stop")
+        // This command has two callers, and they need opposite halves of
+        // the work:
+        //
+        //   • a human typing `mpd --stop` — should power the VM off, and
+        //     must NOT fire hooks, because powering off makes systemd stop
+        //     mpd.service, whose ExecStop runs this same command again.
+        //   • systemd's ExecStop during shutdown — should fire the hooks,
+        //     and must NOT power off (it is already happening).
+        //
+        // Firing in both places ran `mpd-pre-stop` twice, the second time
+        // against databases that were already shutting down.
+        //
+        // systemd sets INVOCATION_ID for every process it runs as a unit,
+        // so the two cases tell themselves apart with no unit change and
+        // nothing to migrate on existing VMs.
+        let fromSystemd = !(ProcessInfo.processInfo.environment["INVOCATION_ID"] ?? "").isEmpty
+
+        if fromSystemd {
+            // Graceful DB shutdown. Without it the next boot finds postgres
+            // doing crash recovery on first start. Failures are logged but
+            // never block — `.continue` failure mode.
+            step("Firing pre-stop hooks")
+            try Mpd.Hooks.fire(EventMpdPreStop(), verb: "stop")
+            return
+        }
 
         // Project status is *preserved* across the reboot (persisted intent
         // model — see docs/HOOKS.md §"Resource lifecycle model"). Projects
@@ -23,7 +43,7 @@ extension Mpd.Action.Stop {
         print("""
 
         \u{001B}[1;33mPowering off VM\u{001B}[0m
-        (your SSH session will drop in a moment)
+        (your SSH session will drop in a moment; pre-stop hooks fire during shutdown)
         """)
 
         // Test/dev escape hatch: setting MPD_STOP_DOES_NOT_SHUTDOWN_VM

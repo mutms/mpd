@@ -1,5 +1,11 @@
 #!/bin/bash
 set -euo pipefail
+# Ordered 90- so it runs LAST. This hook SIGTERMs PID 1 — the engine
+# itself — so the container starts going down the moment it returns.
+# Any hook numbered after it fails with exit 255 on a container that
+# is already shutting down. Leave 10-89 free for hooks that need a
+# live database (dumps, cache flushes, final migrations).
+#
 # Hook: graceful mysql shutdown for EventMpdPreStop.
 #
 # mysql image's PID 1 is mysqld (after the exec chain through

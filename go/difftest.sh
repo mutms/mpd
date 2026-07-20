@@ -40,6 +40,10 @@ declare -a PAIRED=(
     "--runtime util|runtime util"
     "--runtime nosuchruntime|runtime nosuchruntime"
     "--check-hooks|check-hooks"
+    # --start is read-mostly: it starts what already runs and refreshes
+    # caches. Safe to run twice, so it belongs here rather than in
+    # mutatetest.
+    "--start|up"
 )
 
 for bin in "$SWIFT" "$GO"; do

@@ -7,7 +7,11 @@
 package service
 
 import (
+	"context"
 	"fmt"
+	"io"
+
+	"github.com/mutms/mpd/go/internal/podman"
 
 	"github.com/mutms/mpd/go/internal/net"
 )
@@ -89,4 +93,34 @@ func Find(name string) (Descriptor, bool) {
 		}
 	}
 	return Descriptor{}, false
+}
+
+// --- Lifecycle --------------------------------------------------------
+
+// Start starts a service container that already exists.
+//
+// Deliberately does NOT create a missing one: `--start` is the daily
+// path and must stay fast and predictable, while creating a service
+// means building images and generating certs. A missing container means
+// setup has not run, and saying so is more useful than silently doing
+// setup's job.
+// Every message names the service the same way — "Service: <name>",
+// "<name> running.", "<name> already running." — so a scrolling setup or
+// start log reads uniformly. The Swift implementation worded these
+// per-service; both were normalised together so the two binaries stay
+// byte-comparable.
+func Start(ctx context.Context, out io.Writer, d Descriptor, n net.Net, p *podman.Client) error {
+	fmt.Fprintf(out, "\n\033[1m==> Service: %s\033[0m\n", d.Name)
+	if !p.Exists(ctx, d.Container) {
+		return fmt.Errorf("%s not found. Run: mpd --setup", d.Container)
+	}
+	if p.Running(ctx, d.Container) {
+		fmt.Fprintf(out, "\033[1;32m✓ %s already running.\033[0m\n", d.Name)
+		return nil
+	}
+	if code, err := p.Start(ctx, d.Container); err != nil || code != 0 {
+		return fmt.Errorf("Failed to start %s. Run: mpd --setup", d.Container)
+	}
+	fmt.Fprintf(out, "\033[1;32m✓ %s running.\033[0m\n", d.Name)
+	return nil
 }

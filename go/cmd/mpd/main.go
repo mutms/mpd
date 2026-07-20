@@ -45,7 +45,7 @@ func main() {
 
 	root.AddCommand(versionCmd(), netCmd(), listCmd(), showCmd(), runtimeCmd(), dbCmd(),
 		projectStartCmd(), projectStopCmd(), projectDeleteCmd(), projectConfigureCmd(),
-		projectCreateCmd(), checkHooksCmd())
+		projectCreateCmd(), checkHooksCmd(), startVMCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
@@ -458,4 +458,22 @@ func projectCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.GitBranch, "git-branch", "", "Branch to clone")
 	cmd.Flags().StringVar(&opts.GitDepth, "git-depth", "", "Shallow-clone depth")
 	return cmd
+}
+
+// startVMCmd mirrors Swift's `mpd --start`: bring the environment up
+// after a boot. Named `up` in the Go CLI to avoid colliding with
+// `mpd start <project>`; the flag/verb split is settled at the flag day.
+func startVMCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "up",
+		Short: "Start mpd services and restore running projects",
+		Args:  cobra.NoArgs,
+		RunE: func(c *cobra.Command, args []string) error {
+			d, err := projectDeps()
+			if err != nil {
+				return err
+			}
+			return cli.Start(c.Context(), c.OutOrStdout(), d, state.Dir)
+		},
+	}
 }

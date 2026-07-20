@@ -156,7 +156,7 @@ extension Mpd.Service.Portal {
                    "docker.io/library/debian:trixie",
                    "bash", "-c", aptCmd]
             ) == 0 else { throw RuntimeError("Failed to start \(containerName).") }
-            ok("Portal running.")
+            ok("portal running.")
             return
         }
 
@@ -164,7 +164,7 @@ extension Mpd.Service.Portal {
             guard Mpd.Podman.startQuietly(containerName) == 0 else {
                 throw RuntimeError("Failed to start \(containerName).")
             }
-            ok("Portal running.")
+            ok("portal running.")
             return
         }
 
@@ -174,13 +174,13 @@ extension Mpd.Service.Portal {
             }
             ok("Portal reloaded dynamic service vhosts.")
         } else {
-            ok("Already running.")
+            ok("portal already running.")
         }
     }
 
     /// Start the portal container (for --start). Requires container to exist.
     static func start() throws {
-        step("Service: Portal")
+        step("Service: portal")
         guard Mpd.Podman.exists(containerName) else {
             throw RuntimeError("\(containerName) not found. Run: mpd --setup")
         }
@@ -188,9 +188,9 @@ extension Mpd.Service.Portal {
             guard Mpd.Podman.startQuietly(containerName) == 0 else {
                 throw RuntimeError("Failed to start \(containerName). Run: mpd --setup")
             }
-            ok("Portal running.")
+            ok("portal running.")
         } else {
-            ok("Already running.")
+            ok("portal already running.")
         }
     }
 

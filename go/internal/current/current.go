@@ -17,7 +17,11 @@ package current
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/state"
@@ -100,4 +104,59 @@ func (o Observer) DB(ctx context.Context, containerName string) State {
 		return Running
 	}
 	return Stopped
+}
+
+// Snapshot is the live-state view written to current-state.json.
+//
+// Out-of-process consumers — the portal container, in-runtime tools —
+// have no podman access and so cannot compute `current` themselves.
+// This file is how they see it. It is strictly observation: never mixed
+// with the `requested` files, which are strictly intent.
+type Snapshot struct {
+	RefreshedAt string           `json:"refreshedAt"`
+	Runtimes    map[string]State `json:"runtimes"`
+	Projects    map[string]State `json:"projects"`
+	Databases   map[string]State `json:"databases"`
+}
+
+// Refresh recomputes the snapshot and writes it to stateDir.
+//
+// Called from every listing and lifecycle verb, so a consumer reading
+// the file sees something recent without needing its own refresh path.
+func (o Observer) Refresh(ctx context.Context, stateDir string, s state.Store, now time.Time) error {
+	snap := Snapshot{
+		RefreshedAt: now.UTC().Format("2006-01-02T15:04:05Z"),
+		Runtimes:    map[string]State{},
+		Projects:    map[string]State{},
+		Databases:   map[string]State{},
+	}
+
+	entries, err := os.ReadDir(filepath.Join(stateDir, "runtimes"))
+	if err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				snap.Runtimes[e.Name()] = o.Runtime(ctx, e.Name())
+			}
+		}
+	}
+	for _, p := range s.Projects() {
+		snap.Projects[p.Name] = o.Project(ctx, p)
+	}
+	for _, item := range o.p.Ps(ctx, "label=mpd.type=db") {
+		id := item.Label("mpd.name")
+		if id == "" {
+			continue
+		}
+		if item.State == "running" {
+			snap.Databases[id] = Running
+		} else {
+			snap.Databases[id] = Stopped
+		}
+	}
+
+	data, err := json.MarshalIndent(snap, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(stateDir, "current-state.json"), append(data, '\n'), 0o644)
 }
