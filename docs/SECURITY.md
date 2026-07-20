@@ -24,6 +24,89 @@ binary; for host-side concerns (CA trust import, route + DNS) see
 Rationale: prevents UID/ownership drift and reduces risk of
 permission-related breakage or accidental data loss.
 
+## What is being protected
+
+**The workstation — not the VM.**
+
+mpd exists to run other people's code: cloned Moodle branches, plugins
+from the tracker, `composer install` post-scripts, npm lifecycle hooks,
+and AI agents with a shell and passwordless sudo. That is the *job*, not
+a risk to be engineered away. The VM and its containers are therefore
+deliberately expendable: they are where random code from the internet is
+allowed to run, and they are meant to absorb the damage when it
+misbehaves.
+
+Two consequences run through everything below:
+
+- **Relaxations inside the VM are not oversights.** Passwordless sudo in
+  containers, dev-grade DB credentials, no isolation between runtimes, a
+  shared data volume — these buy ergonomics inside a boundary that is
+  already assumed to be hostile.
+- **The boundary that matters is VM → workstation.** That direction is
+  one-way by construction: the CA private key never enters a VM (only
+  the certificate does), SSH runs workstation → VM with no keys pointing
+  back, and no container port is published to the workstation's own
+  network.
+
+### Where the isolation actually comes from
+
+Ranked, weakest first:
+
+1. **Podman containers — no security value.** Runtimes have
+   passwordless sudo, share one data volume, sit on one network with no
+   isolation between them, and are provisioned by scripts that run as
+   root during bootstrap. Containers exist here for *reproducibility and
+   convenience*, not confinement. Do not reason about them as a security
+   boundary; nothing in mpd's design tries to make them one, and
+   hardening them would not change the picture while sudo is
+   passwordless by design.
+2. **The hypervisor VM — the basic protection.** Parallels, Apple
+   Virtualization, UTM, KVM: this is the first boundary that means
+   anything. It is what stands between a malicious `postinstall` script
+   and the workstation's filesystem, keychain, and SSH keys. Everything
+   in "What is being protected" above rests on this layer, not on the
+   container layer.
+3. **A dedicated host — the real safety.** Running the VM on separate
+   physical hardware (Proxmox) removes the shared-kernel and
+   shared-hypervisor attack surface entirely. A hypervisor escape on the
+   workstation reaches the workstation; on a dedicated box it reaches a
+   machine that holds nothing of value.
+
+### Prior art: GitHub's self-hosted runner guidance
+
+The same reasoning, reached independently for the same problem —
+executing untrusted code on infrastructure you own. GitHub's
+[secure-use reference](https://docs.github.com/en/actions/reference/security/secure-use)
+says self-hosted runners "do not have guarantees around running in
+ephemeral clean virtual machines, and can be persistently compromised by
+untrusted code in a workflow", and directs you to ask "what sensitive
+information resides on the machine" (naming private SSH keys and API
+tokens) and whether it "has network access to sensitive services",
+concluding that "the amount of sensitive information in this environment
+should be kept to a minimum".
+
+Three things follow for mpd, because its runtimes are *pets* — long
+lived, upgraded in place, never recreated (see `docs/ROADMAP.md`):
+
+- **Assume persistent compromise.** A runtime that executes a malicious
+  postinstall keeps it. Nothing resets it between projects, and mpd
+  offers no scrubbing step. If you suspect one, delete the runtime.
+- **Keep credentials out of the VM.** This is why the CA private key
+  never leaves the workstation, and why it is worth resisting the
+  temptation to park API tokens in `mpd-vm.env` for convenience.
+- **`ssh -A` is the one live credential path in.** Agent forwarding
+  gives anything running as the dev user in that container use of your
+  key for the session — including a `git clone` you didn't start. It is
+  listed under "Intentional compromises" below for exactly this reason.
+  Forward it when you need it, not by default.
+
+**So moving the VM further from the workstation is a security
+improvement**, even though it exposes the VM more. Proxmox puts the
+untrusted environment on a different physical machine: the workstation
+gains isolation, the VM gains exposure (a LAN, not a NAT'd host-only
+network). That is the right trade — it hardens the asset that matters at
+the expense of the asset designed to be thrown away.
+
 ## Trust boundaries
 
 ```
@@ -56,8 +139,9 @@ therefore whatever network the VM sits on:
   machine owns. Nothing on the wider LAN can reach it.
 - **LAN-hosted hypervisor** (Proxmox) — the VM is on the local
   network, so any machine on that LAN can install the same route and
-  reach the containers. This is **accepted**: mpd treats a trusted
-  home/office LAN as inside the boundary.
+  reach the containers. This is **accepted, and on balance preferred**:
+  the untrusted environment moves off the workstation entirely. What is
+  exposed is a machine whose whole purpose is to run untrusted code.
 
 No container port is published beyond the VM in either case, and
 authentication of individual endpoints is per-service — SSH keys for
@@ -68,7 +152,9 @@ neighbour who adds the route gets the portal and the DBs, not a shell.
 everything — SSH into runtimes, read/write all source code, admin
 access to all databases, root via passwordless sudo inside containers.
 
-**Who is not trusted**: anyone else.
+**Who is not trusted**: anyone else — *and* everything the developer
+runs inside a VM. Project code, dependencies, and agents are untrusted
+guests that happen to be given a comfortable cage.
 
 ## Network access control
 
@@ -233,11 +319,14 @@ natively via `podman1`.
 
 ## What mpd does NOT protect against
 
-- **Malicious code in projects**: if you clone a repo with a
-  malicious `composer install` post-script or npm lifecycle hook, it
-  runs with full access to `/srv/` and the network. This is the same
-  risk as running `composer install` on your Mac — mpd adds no
-  sandbox.
+- **Malicious code in projects, *within the VM***: a repo with a
+  malicious `composer install` post-script or npm lifecycle hook runs
+  with full access to `/srv/` and the network, and can reach every
+  other container. mpd adds no sandbox *inside* the VM — the VM is the
+  sandbox. Compared with running `composer install` directly on your
+  workstation this is a large improvement; compared with a hardened
+  per-project jail it is no protection at all. Assume anything that
+  executes in a runtime owns the whole VM.
 - **Compromised runtime containers**: containers have passwordless
   sudo and network access. A compromised container can reach all other
   containers and all data in the volume.
