@@ -33,9 +33,20 @@ die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
 # not interactive, so there is nobody to retry by hand.
 MPD_APT_LOCK_TIMEOUT="${MPD_APT_LOCK_TIMEOUT:-300}"
 
-# apt-get wrapper: non-interactive, waits for the lock. Use everywhere
-# instead of calling apt-get directly.
+# Retries for failed/stalled downloads. Set explicitly rather than
+# relying on the compiled-in default, which `apt-config dump` doesn't
+# report — so on a given image you cannot tell whether you get 0 or 3.
+#
+# Bootstrap pulls `swiftlang` at ~400 MB, an order of magnitude larger
+# than anything else it fetches, which makes it the one most likely to
+# meet a CDN hiccup mid-transfer. Without retries a single stalled
+# connection fails the whole step; with them apt reconnects and resumes.
+MPD_APT_RETRIES="${MPD_APT_RETRIES:-3}"
+
+# apt-get wrapper: non-interactive, waits for the lock, retries stalled
+# fetches. Use everywhere instead of calling apt-get directly.
 apt_get() {
     sudo env DEBIAN_FRONTEND=noninteractive \
-        apt-get -o DPkg::Lock::Timeout="${MPD_APT_LOCK_TIMEOUT}" "$@"
+        apt-get -o DPkg::Lock::Timeout="${MPD_APT_LOCK_TIMEOUT}" \
+                -o Acquire::Retries="${MPD_APT_RETRIES}" "$@"
 }

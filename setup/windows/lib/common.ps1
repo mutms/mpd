@@ -6,8 +6,16 @@ $SwitchName     = "mpd"
 $SwitchSubnet   = "10.164.0"
 $GwIp           = "10.164.0.1"
 $PrefixLen      = 24
-$ContainerSubnet = "10.163.0.0/24"
-$DnsmasqIp      = "10.163.0.3"
+# Container network (per-VM). Each mpd VM owns one /24 and one DNS zone,
+# both keyed on its id: VM 150 serves 10.163.150.0/24 and the zone
+# 150.mpd.test. Disjoint subnets and disjoint zones are what let several
+# VMs be reachable from this host at once.
+#
+# The VM id is the last octet of the VM's IP on the mpd switch --
+# bootstrap/30-networking.sh pins <switch>.<NNN> and writes
+# MPD_VM_ID=<NNN> from the same value.
+$MpdSubnetPrefix = "10.163"
+$MpdRootDomain   = "mpd.test"
 $VmNamePrefix   = "mpd-"
 $CloudBase      = "https://cloud.debian.org/images/cloud/trixie/20260501-2465"
 $CloudFile      = "debian-13-genericcloud-amd64-20260501-2465.tar.xz"
@@ -32,12 +40,45 @@ function Get-MpdVMs {
         Sort-Object Name
 }
 
+# Per-VM network facts, derived from the VM's id. Returns an object rather
+# than setting globals so two VMs can be described in the same scope.
+function Get-MpdNet {
+    param([Parameter(Mandatory)][int]$Octet)
+    $label = "{0:D3}" -f $Octet
+    [PSCustomObject]@{
+        Octet          = $Octet
+        Label          = $label
+        Subnet         = "$MpdSubnetPrefix.$Octet.0"
+        Prefix         = "$MpdSubnetPrefix.$Octet.0/24"
+        Mask           = "255.255.255.0"
+        DnsmasqIp      = "$MpdSubnetPrefix.$Octet.3"
+        Zone           = "$label.$MpdRootDomain"
+        NrptNamespace  = ".$label.$MpdRootDomain"
+    }
+}
+
+# Same fact from the VM's IP, whose last octet is the VM id.
+function Get-MpdNetFromVmIp {
+    param([Parameter(Mandatory)][string]$VmIp)
+    $last = ($VmIp -split "\.")[-1]
+    if ($last -notmatch "^\d+$") { throw "cannot derive VM id from IP '$VmIp'" }
+    Get-MpdNet -Octet ([int]$last)
+}
+
+# Octets of every mpd VM currently routed on this host. The third octet of
+# a 10.163.x.0/24 route IS the VM id, so the route table enumerates them
+# directly. Several may be routed at once -- that is the design.
+function Get-RoutedVmOctets {
+    Get-NetRoute -ErrorAction SilentlyContinue |
+        Where-Object { $_.DestinationPrefix -match "^$([regex]::Escape($MpdSubnetPrefix))\.(\d+)\.0/24$" } |
+        ForEach-Object { [int]($_.DestinationPrefix -split "\.")[2] } |
+        Sort-Object -Unique
+}
+
 function Get-CurrentVmOctet {
-    $route = Get-NetRoute -DestinationPrefix $ContainerSubnet -ErrorAction SilentlyContinue |
-             Select-Object -First 1
-    if (-not $route) { return $null }
-    if ($route.NextHop -match "$([regex]::Escape($SwitchSubnet))\.(\d+)") { return [int]$Matches[1] }
-    return $null
+    $octets = @(Get-RoutedVmOctets)
+    if ($octets.Count -eq 0) { return $null }
+    return $octets[0]
 }
 
 function Get-VmSshUser {

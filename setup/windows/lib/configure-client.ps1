@@ -3,9 +3,10 @@
 # Idempotent: safe to run multiple times.
 #
 # What it does:
-#   1. Adds a persistent route so Windows reaches the container subnet (10.163.0.0/24)
-#      through the VM.
-#   2. Adds an NRPT rule so Windows resolves *.mpd.test via dnsmasq inside the VM.
+#   1. Adds a persistent route so Windows reaches this VM's container subnet
+#      (10.163.<NNN>.0/24) through the VM.
+#   2. Adds an NRPT rule so Windows resolves *.<NNN>.mpd.test via dnsmasq
+#      inside the VM.
 #   3. Imports the mpd CA certificate from %USERPROFILE%\.mpd-virt\ca\ (generated
 #      by setup.cmd via WSL openssl) into the Windows trusted root store.
 #
@@ -18,11 +19,25 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$ContainerSubnet  = "10.163.0.0"
-$ContainerPrefix  = "10.163.0.0/24"
+# Per-VM addressing: subnet and DNS zone are both keyed on the VM id,
+# which is the last octet of the VM's IP. Two VMs therefore get disjoint
+# routes and disjoint NRPT namespaces, and both stay reachable at once.
+#
+# Kept standalone (rather than dot-sourcing common.ps1) because this
+# script is invoked directly by setup.cmd with -RunAsAdministrator.
+$MpdSubnetPrefix  = "10.163"
+$MpdRootDomain    = "mpd.test"
+
+$VmOctet = ($VmIp -split "\.")[-1]
+if ($VmOctet -notmatch "^\d+$") { throw "cannot derive VM id from IP '$VmIp'" }
+$VmLabel = "{0:D3}" -f [int]$VmOctet
+
+$ContainerSubnet  = "$MpdSubnetPrefix.$VmOctet.0"
+$ContainerPrefix  = "$MpdSubnetPrefix.$VmOctet.0/24"
 $ContainerMask    = "255.255.255.0"
-$DnsmasqIp        = "10.163.0.3"
-$NrptNamespace    = ".mpd.test"
+$DnsmasqIp        = "$MpdSubnetPrefix.$VmOctet.3"
+$Zone             = "$VmLabel.$MpdRootDomain"
+$NrptNamespace    = ".$Zone"
 $MpdUserDir       = Join-Path $env:USERPROFILE ".mpd-virt"
 $CaPemPath        = Join-Path $MpdUserDir "ca\rootCA.pem"
 
@@ -112,4 +127,4 @@ try {
 # ── Done ──────────────────────────────────────────────────────────────────────
 
 Write-Host ""
-Write-Host "Windows client configured. Open https://mpd.test to reach the portal."
+Write-Host "Windows client configured. Open https://$Zone to reach the portal."

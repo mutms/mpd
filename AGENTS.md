@@ -21,7 +21,7 @@ the user sits and where `mpd` runs:
   Ubuntu and Hyper-V on Windows are speculative). Defaults to
   headless; GNOME is installed and toggleable on demand via
   `gnome-start` / `gnome-stop` (persistent across reboots). User stays
-  on their host: host browser visits `*.mpd.test` directly via
+  on their host: host browser visits `*.<NNN>.mpd.test` directly via
   a static route + CA trust; host terminal SSHes into the VM to use the
   `mpd` CLI.
 
@@ -215,7 +215,7 @@ Almost everything is a tool. The verb set is fixed and tiny — `create`,
 `configure`, `start`, `stop`, `delete`, `show` — all Swift, all in the
 control plane. Project-type-specific functionality (cron, phpunit,
 composer, …) is exposed inside the runtime container where SSH sessions
-and AI agents run; you reach it via PATH after `ssh user@<runtime>.runtime.mpd.test`.
+and AI agents run; you reach it via PATH after `ssh user@<runtime>.runtime.<NNN>.mpd.test`.
 
 If you find yourself writing a verb whose body is essentially
 `podman exec <container> <tool>`, you're writing a redundant verb.
@@ -371,7 +371,7 @@ not found." Internal sudo on specific operations is the right shape.
 
 1. Rebuild the runtime: `mpd --runtime-delete <rt>` then recreate via
    project create (or `mpd --runtime-create=<rt>`).
-2. SSH in: `ssh user@<rt>.runtime.mpd.test`.
+2. SSH in: `ssh user@<rt>.runtime.<NNN>.mpd.test`.
 3. `which <new-tool>` resolves to the expected path under `/srv/tools/`.
 4. Run with no project context (negative test) — should fail
    gracefully with an actionable message.

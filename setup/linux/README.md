@@ -183,7 +183,7 @@ Asks for confirmation (`Type YES`), then runs in order:
    sql:~/.pki/nssdb` (Chromium / Chrome / Edge).
 2. **Removes host networking + trust via the sudo recipe affordance**
    — same `(a)` / `(b)` pattern as setup.sh. Drops:
-   - persistent route to `10.163.0.0/24`
+   - persistent route to that VM's `10.163.<NNN>.0/24`
    - `/etc/systemd/resolved.conf.d/mpd-test.conf`
    - `/usr/local/share/ca-certificates/mpd-test.crt` (and reloads
      the system trust bundle)
@@ -219,7 +219,7 @@ The IP is recorded in `conf/platform.env` inside the VM
 (`MPD_VM_IP=...`) and in `/var/lib/mpd-virt/<vmname>.env` on the host.
 
 The active VM is tracked via the persistent route: the kernel route
-to `10.163.0.0/24` (the container subnet) points at the VM's IP, so
+to `10.163.<NNN>.0/24` (that VM's container subnet) points at its IP, so
 `start.sh` can detect the current VM after a host reboot.
 
 ## Multiple VMs side-by-side
@@ -261,7 +261,7 @@ Two options:
   ad-hoc transfers.
 - **scp/ssh via fileaccess** — preferred for project backups. The
   `mpd-service-fileaccess` container exposes `/srv/backups/` as an
-  SSH/scp endpoint at `fileaccess.service.mpd.test`.
+  SSH/scp endpoint at `fileaccess.service.<NNN>.mpd.test`.
 
 Never print private keys to terminal output. Canonical secrets
 stay in the VM's `/var/lib/mpd/conf/`.

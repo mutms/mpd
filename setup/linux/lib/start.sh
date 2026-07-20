@@ -26,6 +26,10 @@ vm_name="${VM_NAME_PREFIX}${octet}"
 vm_ip="${BRIDGE_SUBNET}.${octet}"
 vm_user=$(get_vm_ssh_user "$vm_name")
 
+# This VM's subnet / zone / resolver drop-in. Must precede any use of
+# CONTAINER_SUBNET_PREFIX, DNSMASQ_IP, DNS_DOMAIN or RESOLVED_DROPIN_FILE.
+mpd_net_from_vm_ip "$vm_ip"
+
 if ! vm_exists "$vm_name"; then
     echo "VM '${vm_name}' not found in libvirt. Run setup.sh to create or reconfigure."
     exit 1

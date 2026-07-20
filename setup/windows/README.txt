@@ -77,8 +77,8 @@ Then:
      inside the VM, installs Swift and build tools, builds mpd, and
      runs "mpd --setup" (CA certificate, container network, services).
   6. Configures Windows networking: static route to the container
-     subnet, DNS rule for *.mpd.test, and imports the mpd CA
-     certificate so browsers trust https://mpd.test without warnings.
+     subnet, DNS rule for *.<NNN>.mpd.test, and imports the mpd CA
+     certificate so browsers trust https://<NNN>.mpd.test without warnings.
   7. Pre-warms the demo stack: builds the PHP runtime image and creates
      a postgres:latest DB container inside the VM so the first
      "demo moodle v5.2.0" doesn't pay the build/pull cost.
@@ -93,7 +93,7 @@ When setup finishes:
   * An "mpd VM" shortcut appears on your desktop. Double-click it to
     open a terminal connected to the VM.
 
-  * https://mpd.test opens in your Windows browser and shows the mpd
+  * https://<NNN>.mpd.test opens in your Windows browser and shows the mpd
     portal (project list, Adminer database UI, etc.).
 
   * The shell greets you with a short welcome message and a hint to
@@ -129,7 +129,7 @@ uninstall.cmd
 
 Lists what will be removed, asks you to press Enter to proceed, then:
 
-  1. Removes the NRPT DNS rule for *.mpd.test.
+  1. Removes the NRPT DNS rules for every mpd zone (*.<NNN>.mpd.test).
   2. Removes the persistent route to the container subnet.
   3. Removes the mpd CA certificate from the trusted root store.
   4. Removes the Hyper-V switch, NAT rule, and host IP.
@@ -155,7 +155,7 @@ unknown address that the script cannot predict.
 The static IP is recorded in the VM as conf/platform.env (MPD_VM_IP).
 
 The active VM is tracked via the persistent route: the route to
-10.163.0.0/24 (the container subnet) points to the VM's IP, so
+10.163.<NNN>.0/24 (that VM's container subnet) points to its IP, so
 start.cmd can detect the current VM even after a host reboot.
 
 Note: the Hyper-V 'mpd' switch subnet (10.164.0.0/24) is fixed and
@@ -230,7 +230,7 @@ The simplest path is scp:
   scp yourname@10.164.0.158:~/file.txt "C:\Users\yourname\Downloads\"
 
 For bulk transfers, the mpd fileaccess service exposes /srv/backups/
-inside the VM as an SSH endpoint at fileaccess.service.mpd.test after
+inside the VM as an SSH endpoint at fileaccess.service.<NNN>.mpd.test after
 "mpd --setup" has run.
 
 Do not copy private keys or the caroot/ directory out of the VM.

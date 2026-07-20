@@ -61,7 +61,7 @@ Real possibilities, not committed work.
 
 - **Runtime SSH banner** — install a branded `/etc/motd` inside each
   runtime container (php, node, util) so users see a welcome message
-  and tool hints when they SSH into `<rt>.runtime.mpd.test`. Common
+  and tool hints when they SSH into `<rt>.runtime.<NNN>.mpd.test`. Common
   content in `assets/runtime-base/motd` (installed by `bootstrap.sh`),
   runtime-specific additions in `assets/runtimes/<rt>/motd` (appended
   by `build.sh`). Written directly to `/etc/motd` — no PAM/update-motd.d
@@ -141,13 +141,13 @@ Real possibilities, not committed work.
   user's separate workstation. Since the user already runs one CF
   Zero Trust client to reach Proxmox, mpd reuses it: a `cloudflared`
   connector inside the VM advertises the container CIDR
-  (`10.163.0.0/24`, dnsmasq `10.163.0.3`) as a private route; CA
+  (`10.163.<NNN>.0/24`, dnsmasq `10.163.<NNN>.3`) as a private route; CA
   trust is unchanged. Keeps mpd's client-side contract
   transport-agnostic — three facts — (1) a route to
-  `10.163.0.0/24` exists, (2) `*.mpd.test` resolves to those IPs,
+  `10.163.<NNN>.0/24` exists, (2) the VM's zone resolves to those IPs,
   (3) the mpd CA is trusted — and mpd should *document/emit* these
   rather than program the user's VPN client. In practice a scoped
-  `sudo ip route add 10.163.0.0/24 …` beats fighting WARP
+  `sudo ip route add 10.163.<NNN>.0/24 …` beats fighting WARP
   split-tunnel when a work VPN is up at the same time — both want
   to own routes, and a single-/24 static route coexists cleanly.
   Caveats: the route needs a next-hop/iface that actually carries
@@ -170,7 +170,7 @@ Real possibilities, not committed work.
   persistent Debian VM permanently.** (mpd's model depends on a
   persistent systemd/SSH host, podman **pods** with shared IPC/shm
   (behat/Chromium `--shm-size`), and one shared network + local DNS
-  (`10.163.0.0/24`, `*.mpd.test`) — none of which fit
+  (`10.163.<NNN>.0/24`, the VM's zone) — none of which fit
   one-micro-VM-per-container anyway.) The convergence matters for
   **ergonomics only**: mpd's `create/start/stop/delete/show` already
   map onto that grammar, so mpd feels familiar to anyone fluent in

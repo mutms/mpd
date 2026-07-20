@@ -10,8 +10,8 @@ $vms = @(Get-MpdVMs)
 Write-Host ""
 Write-Host "This will remove host-level mpd configuration:"
 Write-Host "  - Hyper-V switch '$SwitchName' and its NAT rule"
-Write-Host "  - Persistent route to the container subnet"
-Write-Host "  - NRPT rule for *.mpd.test"
+Write-Host "  - Persistent routes to every mpd container subnet"
+Write-Host "  - NRPT rules for every mpd zone (*.<NNN>.mpd.test)"
 Write-Host "  - mpd CA certificate from the trusted root store"
 Write-Host "  - $MpdUserDir (helper scripts, CA, current.env)"
 Write-Host "  - 'Host mpd-vm' block from ~/.ssh/config"
@@ -26,18 +26,24 @@ Read-Host "Press Enter to proceed, or Ctrl-C to abort"
 
 # ── Remove NRPT rule ──────────────────────────────────────────────────────────
 
-$nrpt = Get-DnsClientNrptRule | Where-Object { $_.Namespace -eq ".mpd.test" }
-if ($nrpt) {
-    $nrpt | Remove-DnsClientNrptRule -Force
-    Write-Host "NRPT rule removed."
+# Every per-VM zone (".150.mpd.test"), plus the flat ".mpd.test" rule
+# from before per-VM zones. Uninstall is machine-wide, so it clears all
+# of them rather than one VM's.
+$nrpt = Get-DnsClientNrptRule |
+        Where-Object { $_.Namespace -match "^\.(\d{3}\.)?$([regex]::Escape($MpdRootDomain))$" }
+foreach ($rule in $nrpt) {
+    $rule | Remove-DnsClientNrptRule -Force
+    Write-Host "NRPT rule $($rule.Namespace) removed."
 }
 
 # ── Remove persistent route ───────────────────────────────────────────────────
 
-$route = Get-NetRoute -DestinationPrefix $ContainerSubnet -ErrorAction SilentlyContinue
-if ($route) {
-    $route | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
-    Write-Host "Container subnet route removed."
+# Any 10.163.x.0/24 route is an mpd container subnet, whatever the VM id.
+$routes = Get-NetRoute -ErrorAction SilentlyContinue |
+          Where-Object { $_.DestinationPrefix -match "^$([regex]::Escape($MpdSubnetPrefix))\.\d+\.0/24$" }
+foreach ($r in $routes) {
+    $r | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
+    Write-Host "Route to $($r.DestinationPrefix) removed."
 }
 
 # ── Remove CA certificate ─────────────────────────────────────────────────────

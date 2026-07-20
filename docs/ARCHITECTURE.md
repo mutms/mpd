@@ -87,7 +87,7 @@ check-privilege-boundary`.
 Bootstrap-stage shell scripts under
 `setup/{macos,linux}/lib/` run on the dev host
 (not in a container or VM) and need `sudo` for a fixed set of operations
-— route to the container subnet, DNS resolver pointing `*.mpd.test` at
+— route to the container subnet, DNS resolver pointing the VM's zone at
 the in-VM dnsmasq, system-trust import of the mpd CA, plus
 platform-specific extras (Firefox enterprise policy + cert under
 `/etc/firefox/policies/` on Ubuntu, mpd CA into the System keychain on
@@ -176,7 +176,7 @@ Directory ownership split:
 - `bin/` — local built binaries (`bin/mpd`); executable path checks depend on this.
 - `/var/lib/mpd/conf/` — persistent local trust/network material:
   - `caroot/` — root CA keypair/fingerprint
-  - `service/` — service TLS cert/key (`mpd.test`)
+  - `service/` — service TLS cert/key (the VM's zone apex, `<NNN>.mpd.test`)
   - `temp/` — short-lived cert operation files
   - `platform.env` — platform identity (see §9)
 - `/var/lib/mpd/` (other subdirs) — state/cache (machine metadata, runtime/project state, transient runtime files)
@@ -588,7 +588,7 @@ MPD_INSTANCE_SUFFIX=<-suffix>   # e.g. "-161"; empty for the unsuffixed instance
 at `mpd --setup` from the VM hostname (`mpd-<X>`), with the leading
 dash included (or empty when there's no suffix). Used as the hostname suffix
 on runtime **pods** (`mpd-runtime-<rt>-<X>`), so SSH'ing into
-`<rt>.runtime.mpd.test` gives a bash prompt that makes the instance
+`<rt>.runtime.<NNN>.mpd.test` gives a bash prompt that makes the instance
 unambiguous. DNS names are unaffected — they still resolve by IP via
 dnsmasq. Hand-edit to override; the next `mpd --setup` will overwrite back
 to the auto-derived value.
@@ -634,7 +634,7 @@ Read/write contract:
   currently a Moodle-only concern; other project types keep state in
   the source tree (so `git` is their backup mechanism).
 - **Fileaccess is the exit/entry point.** From the dev's laptop:
-  `scp fileaccess.service.mpd.test:/srv/backups/<file> .` pulls a backup
+  `scp fileaccess.service.<NNN>.mpd.test:/srv/backups/<file> .` pulls a backup
   off; reverse direction stages a restore. The `mpd-service-fileaccess`
   container drops interactive ssh sessions into `/srv/backups/` so the
   human-facing path is one `cd` away.
@@ -652,23 +652,28 @@ Wipe contract:
 ## 11) Networking, DNS, and TLS (Summary)
 
 - Laptop ↔ VM transport is the hypervisor's own network plus a
-  persistent static route for the container subnet `10.163.0.0/24`
+  persistent static route for the container subnet `10.163.<NNN>.0/24`
   via the VM's IP (installed by the host-side `mpd-virt` orchestrator,
   separate repo). No tunnel.
+- Addressing is per-VM: `<NNN>` is the VM's `MPD_VM_ID`, used as both the
+  third octet of the subnet and the first label of the DNS zone, so
+  several VMs are reachable from one workstation at once. `Mpd.Net`
+  (`mpd/Net.swift`) is the single source of truth; nothing else should
+  contain `10.163.` or `mpd.test` as a literal.
 - dnsmasq inside the VM serves `*.mpd.test`; the host gets a *scoped*
-  resolver entry pointing that domain at `10.163.0.3`
-  (`/etc/resolver/mpd.test` on macOS, NRPT on Windows, a
+  resolver entry pointing the VM's zone at `10.163.<NNN>.3`
+  (`/etc/resolver/<NNN>.mpd.test` on macOS, NRPT on Windows, a
   systemd-resolved drop-in on Linux).
 - All TLS certs (per-project, per-runtime, services) are signed by
   the local `mpd` CA generated on the host and pushed into the VM.
 
 Always-on infra services:
 
-- `dnsmasq` — DNS for `*.mpd.test`
-- `portal` — read-only status site at `https://mpd.test/`
-- `adminer` — DB management UI at `https://adminer.service.mpd.test/`
+- `dnsmasq` — DNS for `*.mpd.test`, authoritative for this VM's zone
+- `portal` — read-only status site at `https://<NNN>.mpd.test/`
+- `adminer` — DB management UI at `https://adminer.service.<NNN>.mpd.test/`
 - `fileaccess` — `podman exec` target for volume tool ops, plus pubkey-only
-  ssh/scp at `fileaccess.service.mpd.test`, the single transit point for
+  ssh/scp at `fileaccess.service.<NNN>.mpd.test`, the single transit point for
   project backups (`/srv/backups/` is a data-volume subdirectory)
 
 Per-runtime sidecars (attached to the runtime pod, not global):
@@ -678,8 +683,8 @@ Per-runtime sidecars (attached to the runtime pod, not global):
   any runtime.
 - `mailpit` — declared by PHP runtime defaults. **One instance per runtime**,
   shared by all projects on it (the SMTP black hole is per-pod). Canonical
-  UI at `https://mail.<runtime>.mpd.test/`; per-project shortcut URLs
-  `https://mail.<project>.mpd.test/` 302-redirect to the canonical with
+  UI at `https://mail.<runtime>.<NNN>.mpd.test/`; per-project shortcut URLs
+  `https://mail.<project>.<NNN>.mpd.test/` 302-redirect to the canonical with
   `?q=<project>.mpd.test`, so the user lands on a filtered view of the
   shared inbox. Runtime-level URL meta lives at
   `/srv/meta/_runtime-<rt>/` (a pseudo-project that flows through the same
@@ -702,7 +707,7 @@ Windows is the awkward case. The built-in NRPT mechanism
 clients (notably Chromium's async resolver) and interacts poorly with
 corporate VPN clients. The recommended fallback is to install a small
 local DNS forwarder on the laptop, point the system resolver at `127.0.0.1`,
-and let the forwarder split queries by domain (`*.mpd.test → 10.163.0.3`,
+and let the forwarder split queries by domain (`*.<NNN>.mpd.test → 10.163.<NNN>.3`,
 everything else → system upstream).
 
 **Recommended tool: Acrylic DNS Proxy** — Windows-only, MSI installer with

@@ -1,8 +1,33 @@
 # Proposal: per-VM DNS zone and container subnet
 
-**Status:** proposed, not scheduled
+**Status:** **implemented** (2026-07-20) — kept as the design record
 **Scope:** in-VM `mpd` binary + host-side `mpd-virt` (lockstep change)
 **Migration:** none — flag day, delete and recreate VMs
+
+> **Landed.** Both halves ship: `Mpd.Net` (`mpd/Net.swift`) in this repo
+> and `MpdVirt.Net` in `mpd-virt-macos`, plus the `setup/linux` and
+> `setup/windows` client bundles. Verified with two concurrent VMs (150
+> and 180) reachable from one Mac at the same time — the outcome this
+> proposal existed to deliver.
+>
+> Deviations from the plan below, all deliberate:
+>
+> - **`vm.service.<zone>` is kept**, not retired. The zone now proves
+>   which VM answered, so the record is redundant for that purpose, but
+>   it is a cheap independent diagnostic and it catches host-side
+>   registry IP drift.
+> - **Route persistence (LaunchDaemon) is deferred.** The manual
+>   `route add` stays until it proves annoying enough to automate.
+> - **Two extra fixes were needed** that the plan didn't anticipate:
+>   the service certificate had no SAN-drift detection (so it kept a
+>   cert for the old zone), and `--setup` never reconciled stale
+>   per-runtime dnsmasq records. Both are now handled.
+> - **`mpd --setup` refuses** when the existing Podman network's subnet
+>   disagrees with the VM's id, rather than reporting success on a
+>   network it cannot change in place.
+>
+> Canonical description of the shipped behavior:
+> [`docs/NETWORKING.md`](../NETWORKING.md).
 
 ## Problem
 

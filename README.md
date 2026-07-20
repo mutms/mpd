@@ -121,7 +121,8 @@ bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/sandbox/
 `wget` because Debian's base install ships it; `curl` isn't always
 present.)
 
-Open Firefox-ESR inside the VM and browse to https://mpd.test/.
+Open Firefox-ESR inside the VM and browse to https://000.mpd.test/
+(the sandbox VM's zone apex — see docs/NETWORKING.md).
 
 ### 2. `mpd VM` (host reaches into a Linux VM)
 

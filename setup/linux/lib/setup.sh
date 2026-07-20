@@ -302,6 +302,10 @@ done
 VM_NAME="${VM_NAME_PREFIX}${VM_OCTET}"
 VM_IP="${BRIDGE_SUBNET}.${VM_OCTET}"
 
+# This VM's subnet / zone / resolver drop-in, keyed on its id. Everything
+# downstream (route, resolver, printed URLs) reads these.
+mpd_net_from_vm_ip "$VM_IP"
+
 # ============================================================
 # Stage 3 — Branch on selection
 # ============================================================
@@ -442,7 +446,7 @@ if [ ${#needs[@]} -gt 0 ]; then
     ;; esac
     case " ${needs[*]} " in *" resolver "*)
         cmds+=("sudo install -d -m 0755 ${RESOLVED_DROPIN_DIR}")
-        cmds+=("printf '[Resolve]\\nDNS=${DNSMASQ_IP}\\nDomains=~mpd.test\\n' | sudo tee ${RESOLVED_DROPIN_FILE} >/dev/null")
+        cmds+=("printf '[Resolve]\\nDNS=${DNSMASQ_IP}\\nDomains=~${DNS_DOMAIN}\\n' | sudo tee ${RESOLVED_DROPIN_FILE} >/dev/null")
         cmds+=("sudo chmod 0644 ${RESOLVED_DROPIN_FILE}")
         cmds+=("sudo systemctl restart systemd-resolved")
     ;; esac

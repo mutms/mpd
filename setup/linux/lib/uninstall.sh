@@ -24,6 +24,13 @@ done < <(get_mpd_vms)
 # remove_nssdb. Re-callable so we can re-detect after the dev runs the
 # recipe in another terminal.
 
+# Uninstall is machine-wide, so unlike the per-VM scripts it can't derive
+# one subnet and one drop-in from a single VM IP: several VMs may be
+# routed at once, each with its own /24 and its own resolver file. Both
+# lists are discovered from the host itself, which also catches VMs whose
+# libvirt domain is long gone but whose host wiring was left behind.
+routed_subnets=()
+resolver_files=()
 remove_route=0
 remove_resolver=0
 remove_systrust=0
@@ -31,17 +38,28 @@ remove_firefox=0
 remove_nssdb=0
 
 detect_host_targets() {
+    routed_subnets=()
+    resolver_files=()
     remove_route=0
     remove_resolver=0
     remove_systrust=0
     remove_firefox=0
     remove_nssdb=0
 
-    if [ -n "$(ip route show "$CONTAINER_SUBNET_PREFIX" 2>/dev/null)" ]; then
-        remove_route=1
-    fi
+    local octet f
+    while IFS= read -r octet; do
+        [ -n "$octet" ] || continue
+        routed_subnets+=("${MPD_SUBNET_PREFIX}.${octet}.0/24")
+    done < <(get_routed_vm_octets)
+    [ ${#routed_subnets[@]} -gt 0 ] && remove_route=1
 
-    [ -f "$RESOLVED_DROPIN_FILE" ] && remove_resolver=1
+    # Per-VM drop-ins (mpd-150.conf …) plus the pre-per-VM-zone file.
+    for f in "${RESOLVED_DROPIN_DIR}"/mpd-[0-9][0-9][0-9].conf \
+             "${RESOLVED_DROPIN_DIR}/mpd-test.conf"; do
+        [ -f "$f" ] && resolver_files+=("$f")
+    done
+    [ ${#resolver_files[@]} -gt 0 ] && remove_resolver=1
+
     [ -f "$SYSTEM_TRUST_CERT" ]   && remove_systrust=1
     { [ -f "$FIREFOX_POLICIES_FILE" ] || [ -f "$FIREFOX_POLICIES_CERT" ]; } \
         && remove_firefox=1
@@ -70,8 +88,12 @@ echo
 echo "This will undo mpd-vm setup on this host."
 echo
 echo "Host networking and trust to remove:"
-[ "$remove_route" = 1 ]    && echo "    - persistent route to ${CONTAINER_SUBNET_PREFIX}"
-[ "$remove_resolver" = 1 ] && echo "    - ${RESOLVED_DROPIN_FILE}"
+if [ "$remove_route" = 1 ]; then
+    for sn in "${routed_subnets[@]}"; do echo "    - route to ${sn}"; done
+fi
+if [ "$remove_resolver" = 1 ]; then
+    for f in "${resolver_files[@]}"; do echo "    - ${f}"; done
+fi
 [ "$remove_systrust" = 1 ] && echo "    - ${SYSTEM_TRUST_CERT} (system trust)"
 [ "$remove_firefox" = 1 ]  && echo "    - Firefox policy + cert in ${FIREFOX_POLICIES_DIR}/"
 [ "$remove_nssdb" = 1 ]    && echo "    - mpd CA cert in ~/.pki/nssdb (Chromium)"
@@ -126,10 +148,14 @@ if [ "$remove_route" = 1 ] || [ "$remove_resolver" = 1 ] \
    || [ "$remove_systrust" = 1 ] || [ "$remove_firefox" = 1 ]; then
     cmds=()
     if [ "$remove_route" = 1 ]; then
-        cmds+=("sudo ip route del ${CONTAINER_SUBNET_PREFIX}")
+        for sn in "${routed_subnets[@]}"; do
+            cmds+=("sudo ip route del ${sn}")
+        done
     fi
     if [ "$remove_resolver" = 1 ]; then
-        cmds+=("sudo rm -f ${RESOLVED_DROPIN_FILE}")
+        for f in "${resolver_files[@]}"; do
+            cmds+=("sudo rm -f ${f}")
+        done
         cmds+=("sudo systemctl restart systemd-resolved")
     fi
     if [ "$remove_systrust" = 1 ]; then
@@ -152,13 +178,17 @@ if [ "$remove_route" = 1 ] || [ "$remove_resolver" = 1 ] \
     else
         sudo -v || die "sudo authentication failed."
         if [ "$remove_route" = 1 ]; then
-            sudo ip route del "$CONTAINER_SUBNET_PREFIX" 2>/dev/null || true
-            echo "Container subnet route removed."
+            for sn in "${routed_subnets[@]}"; do
+                sudo ip route del "$sn" 2>/dev/null || true
+                echo "Route to ${sn} removed."
+            done
         fi
         if [ "$remove_resolver" = 1 ]; then
-            sudo rm -f "$RESOLVED_DROPIN_FILE"
+            for f in "${resolver_files[@]}"; do
+                sudo rm -f "$f"
+                echo "${f} removed."
+            done
             sudo systemctl restart systemd-resolved 2>/dev/null || true
-            echo "${RESOLVED_DROPIN_FILE} removed."
         fi
         if [ "$remove_systrust" = 1 ]; then
             sudo rm -f "$SYSTEM_TRUST_CERT"

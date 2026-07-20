@@ -20,12 +20,44 @@ LIBVIRT_NETWORK="default"                 # libvirt's stock NAT network on virbr
 BRIDGE_SUBNET="192.168.122"               # virbr0 fixed by libvirt
 BRIDGE_GATEWAY="${BRIDGE_SUBNET}.1"
 
-CONTAINER_SUBNET_PREFIX="10.163.0.0/24"
-CONTAINER_PROBE_IP="10.163.0.3"           # any IP in the subnet — used for `ip route get`
-DNSMASQ_IP="10.163.0.3"
-DNS_DOMAIN="mpd.test"
+# --- Container network (per-VM) ---
+# Each mpd VM owns one /24 and one DNS zone, both keyed on its ID: VM 150
+# serves 10.163.150.0/24 and the zone 150.mpd.test. That is what lets a
+# workstation reach several VMs at once — the routes are to disjoint /24s
+# and the resolver drop-ins cover disjoint domains.
+#
+# The VM ID is the last octet of the VM's IP: bootstrap/30-networking.sh
+# pins <bridge>.<NNN> and writes MPD_VM_ID=<NNN> from the same value.
+MPD_SUBNET_PREFIX="10.163"
+MPD_ROOT_DOMAIN="mpd.test"
 
+# Placeholders — real values come from mpd_net_from_vm_ip below. Anything
+# using these must call it first; they are deliberately empty so a missed
+# call fails loudly instead of silently targeting some default VM.
+CONTAINER_SUBNET_PREFIX=""
+CONTAINER_PROBE_IP=""                     # any IP in the subnet — used for `ip route get`
+DNSMASQ_IP=""
+DNS_DOMAIN=""
+
+# The CA is shared by every VM: it is name-constrained to the root domain,
+# which permits any depth beneath it, so one trust operation covers every
+# VM's zone. Not per-VM, deliberately.
 CA_SUBJECT_MATCH="mpd.test local development CA"
+
+# Derive this VM's network facts from its IP. Call once, early, in any
+# script that touches the route, the resolver drop-in, or the zone.
+mpd_net_from_vm_ip() {
+    local vm_ip="$1" octet label
+    octet="${vm_ip##*.}"
+    [[ "$octet" =~ ^[0-9]+$ ]] && [ "$octet" -le 254 ] \
+        || die "cannot derive VM id from IP '${vm_ip}'"
+    label=$(printf '%03d' "$octet")
+    CONTAINER_SUBNET_PREFIX="${MPD_SUBNET_PREFIX}.${octet}.0/24"
+    CONTAINER_PROBE_IP="${MPD_SUBNET_PREFIX}.${octet}.3"
+    DNSMASQ_IP="${CONTAINER_PROBE_IP}"
+    DNS_DOMAIN="${label}.${MPD_ROOT_DOMAIN}"
+    RESOLVED_DROPIN_FILE="${RESOLVED_DROPIN_DIR}/mpd-${label}.conf"
+}
 
 # Trust-store paths (Linux)
 SYSTEM_TRUST_DIR="/usr/local/share/ca-certificates"
@@ -33,7 +65,10 @@ SYSTEM_TRUST_CERT="${SYSTEM_TRUST_DIR}/mpd-test.crt"
 NSSDB_DIR="${HOME}/.pki/nssdb"
 NSSDB_CERT_NICKNAME="mpd-rootCA"
 RESOLVED_DROPIN_DIR="/etc/systemd/resolved.conf.d"
-RESOLVED_DROPIN_FILE="${RESOLVED_DROPIN_DIR}/mpd-test.conf"
+# Per-VM: mpd-150.conf, mpd-180.conf, … Each names only its own zone in
+# `Domains=`, so several coexist without fighting over *.mpd.test.
+# Set by mpd_net_from_vm_ip.
+RESOLVED_DROPIN_FILE=""
 FIREFOX_POLICIES_DIR="/etc/firefox/policies"
 FIREFOX_POLICIES_FILE="${FIREFOX_POLICIES_DIR}/policies.json"
 # Cert lives alongside policies.json so snap Firefox can read it. Snap's
@@ -121,17 +156,24 @@ extract_octet() {
     return 0
 }
 
-# --- Active VM detection ---
-# `ip route show 10.163.0.0/24` returns the explicit route line if present,
-# empty otherwise. The gateway IP is the VM IP.
+# --- Routed VM detection ---
+# Every routed mpd VM shows up as a 10.163.<NNN>.0/24 entry whose third
+# octet IS the VM id, so the route table alone enumerates them — no need
+# to map a gateway back to a VM.
+#
+# Several VMs can be routed at once by design. `get_current_vm_octet`
+# returns the lowest, for callers that just want "a" VM to talk to;
+# `get_routed_vm_octets` returns all of them.
+get_routed_vm_octets() {
+    ip route show 2>/dev/null | awk -v pfx="${MPD_SUBNET_PREFIX}." '
+        index($1, pfx) == 1 {
+            split($1, a, ".")
+            print a[3]
+        }' | sort -n | uniq
+}
+
 get_current_vm_octet() {
-    local out gw
-    out=$(ip route show "$CONTAINER_SUBNET_PREFIX" 2>/dev/null) || return 0
-    [ -z "$out" ] && return 0
-    gw=$(awk '$1 == "'$CONTAINER_SUBNET_PREFIX'" { for (i=2;i<=NF;i++) if ($i=="via") { print $(i+1); exit } }' <<<"$out")
-    if [[ "$gw" =~ ^${BRIDGE_SUBNET//./\\.}\.([0-9]+)$ ]]; then
-        echo "${BASH_REMATCH[1]}"
-    fi
+    get_routed_vm_octets | head -1
 }
 
 # SSH user for a VM. Lookup order: state file, ssh config, host login fallback.
@@ -440,14 +482,14 @@ apply_route() {
     sudo ip route replace "$CONTAINER_SUBNET_PREFIX" via "$target_ip"
 }
 
-# systemd-resolved drop-in for *.mpd.test → dnsmasq inside the VM.
+# systemd-resolved drop-in for *.<zone> → dnsmasq inside that VM.
 # Both the desired-content function and the file content go through
 # `$()` in needs_update so trailing-newline handling stays symmetric.
 resolver_dropin_desired() {
     cat <<EOF
 [Resolve]
 DNS=${DNSMASQ_IP}
-Domains=~mpd.test
+Domains=~${DNS_DOMAIN}
 EOF
 }
 

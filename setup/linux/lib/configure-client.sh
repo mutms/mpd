@@ -3,8 +3,8 @@
 # Idempotent: safe to run multiple times.
 #
 # Steps:
-#   1. Route to container subnet (10.163.0.0/24) via the VM's IP.
-#   2. systemd-resolved drop-in for *.mpd.test → dnsmasq inside the VM.
+#   1. Route to this VM's container subnet (10.163.<NNN>.0/24) via its IP.
+#   2. systemd-resolved drop-in for *.<NNN>.mpd.test → dnsmasq inside it.
 #   3. System trust bundle /usr/local/share/ca-certificates/mpd-test.crt
 #      (curl, wget, etc.).
 #   4. Firefox policies /etc/firefox/policies/policies.json (snap and apt
@@ -46,6 +46,10 @@ done
 
 [ -n "$VM_IP" ]   || die "Missing --vm-ip"
 [ -n "$VM_USER" ] || die "Missing --vm-user"
+
+# This VM's subnet / zone / resolver drop-in — everything below is keyed
+# on the VM id derived from VM_IP, so several VMs configure independently.
+mpd_net_from_vm_ip "$VM_IP"
 
 cleanup() {
     sudo -k 2>/dev/null || true
@@ -143,7 +147,7 @@ build_sudo_cmds() {
     fi
     if [ "$need_resolver" = 1 ]; then
         cmds+=("sudo install -d -m 0755 ${RESOLVED_DROPIN_DIR}")
-        cmds+=("printf '[Resolve]\\nDNS=${DNSMASQ_IP}\\nDomains=~mpd.test\\n' | sudo tee ${RESOLVED_DROPIN_FILE} >/dev/null")
+        cmds+=("printf '[Resolve]\\nDNS=${DNSMASQ_IP}\\nDomains=~${DNS_DOMAIN}\\n' | sudo tee ${RESOLVED_DROPIN_FILE} >/dev/null")
         cmds+=("sudo chmod 0644 ${RESOLVED_DROPIN_FILE}")
         cmds+=("sudo systemctl restart systemd-resolved")
     fi
@@ -245,4 +249,4 @@ elif [ -n "$cert_source" ]; then
 fi
 
 echo
-echo "    Linux client configured. Open https://mpd.test in Firefox or Chromium."
+echo "    Linux client configured. Open https://${DNS_DOMAIN} in Firefox or Chromium."

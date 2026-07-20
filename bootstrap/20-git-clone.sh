@@ -51,12 +51,16 @@ need_install=()
 dpkg -s git              >/dev/null 2>&1 || need_install+=(git)
 dpkg -s ca-certificates  >/dev/null 2>&1 || need_install+=(ca-certificates)
 if [ ${#need_install[@]} -gt 0 ]; then
-    # -o DPkg::Lock::Timeout: apt-get (unlike `apt`) has no default
-    # lock wait, so a desktop template's packagekitd checking for
-    # updates makes this fail outright. Inlined rather than shared:
-    # this script is wgettable and runs before the repo exists.
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update -qq
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends \
+    # -o DPkg::Lock::Timeout: apt-get (unlike `apt`) has no default lock
+    # wait, so a desktop template's packagekitd checking for updates makes
+    # this fail outright. -o Acquire::Retries: recover a stalled fetch
+    # instead of failing the step. Inlined rather than shared: this script
+    # is wgettable and runs before the repo exists.
+    APT_OPTS="-o DPkg::Lock::Timeout=300 -o Acquire::Retries=3"
+    # shellcheck disable=SC2086
+    sudo env DEBIAN_FRONTEND=noninteractive apt-get $APT_OPTS update -qq
+    # shellcheck disable=SC2086
+    sudo env DEBIAN_FRONTEND=noninteractive apt-get $APT_OPTS install -y --no-install-recommends \
         "${need_install[@]}"
     ok "installed: ${need_install[*]}"
 else

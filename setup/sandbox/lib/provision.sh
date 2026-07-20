@@ -41,6 +41,13 @@ export PATH="${REPO_DIR}/bin:${PATH}"
 # --- VS Code (Microsoft official apt repo) -----------------------------
 # Sandbox-specific: gives the in-VM GNOME desktop an IDE so the story
 # is complete (terminal + browser + IDE, all inside the VM, no host hop).
+# -o DPkg::Lock::Timeout: apt-get (unlike `apt`) has no default lock wait,
+# and a sandbox VM is a full GNOME desktop — packagekitd is running by
+# definition here. -o Acquire::Retries: survive a stalled download.
+# Inlined: this script doesn't source bootstrap/00-common.sh.
+# shellcheck disable=SC2034  # used unquoted below, intentionally word-split
+APT_OPTS="-o DPkg::Lock::Timeout=300 -o Acquire::Retries=3"
+
 step "VS Code"
 if command -v code >/dev/null 2>&1; then
     ok "VS Code already installed ($(code --version | head -n1))"
@@ -53,9 +60,9 @@ else
     if [ ! -f /etc/apt/sources.list.d/vscode.list ]; then
         echo "deb [arch=amd64,arm64,armhf signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/code stable main" \
             | sudo tee /etc/apt/sources.list.d/vscode.list >/dev/null
-        sudo env DEBIAN_FRONTEND=noninteractive apt-get update -qq
+        sudo env DEBIAN_FRONTEND=noninteractive apt-get $APT_OPTS update -qq
     fi
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y code
+    sudo env DEBIAN_FRONTEND=noninteractive apt-get $APT_OPTS install -y code
     ok "Installed: VS Code"
 fi
 
@@ -126,14 +133,14 @@ cat <<EOF
 
 Open Firefox in this VM and browse to:
 
-    https://mpd.test/
+    https://000.mpd.test/
 
 You'll also find an "mpd" launcher and a "Visual Studio Code"
 launcher in GNOME Activities (and on your Desktop, if desktop icons
 are on). Click "mpd" any time to drop into the interactive TUI.
 
 For VS Code: install the "Remote - SSH" extension on first launch,
-then connect to user@php.runtime.mpd.test and open
+then connect to user@php.runtime.000.mpd.test and open
 /srv/projects/<your-project>/. The runtime container lives in this
 same VM, so the connection is local — no host↔VM hop.
 
@@ -147,7 +154,7 @@ Or by hand:
     mpd configure moodle52 MPD_DB=postgres:18
     mpd start moodle52
 
-Then browse to:  https://moodle52.mpd.test/
+Then browse to:  https://moodle52.000.mpd.test/
 
 ================================================================
 EOF

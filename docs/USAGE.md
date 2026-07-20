@@ -69,8 +69,8 @@ orchestrator (own repo); see its README for the host-side flow.
 ## Hooking up your laptop (laptop-driven platforms only)
 
 The laptop-driven platforms (macos, linux, windows)
-reach the container subnet (`10.163.0.0/24`) over a static route to
-the VM, with split DNS pointing `*.mpd.test` at dnsmasq. **Each
+reach that VM's container subnet (`10.163.<NNN>.0/24`) over a static route to
+the VM, with split DNS pointing that VM's zone at its dnsmasq. **Each
 platform's bootstrap script applies all of this on the host
 automatically** — `setup.command`, `setup.sh`, or `setup.cmd` does
 the route + resolver + CA trust in one shot. You normally don't have
@@ -80,7 +80,7 @@ for recovery) live in [NETWORKING.md](NETWORKING.md).
 The **sandbox platform has no laptop side** — mpd lives entirely
 inside the VM, so there's no host route, no host resolver drop-in, and
 no host CA trust to set up. Open Firefox inside the VM and browse to
-`https://mpd.test/`.
+`https://<NNN>.mpd.test/`.
 
 ## First project — Moodle
 
@@ -120,12 +120,12 @@ mpd configure moodle51
 mpd start moodle51
 ```
 
-From your laptop, open `https://moodle51.mpd.test/`. Real cert (signed
+From your laptop, open `https://moodle51.<NNN>.mpd.test/`. Real cert (signed
 by the local CA), no warnings. Outbound mail: visit
-`https://mail.moodle51.mpd.test/` and you land on the runtime's shared
+`https://mail.moodle51.<NNN>.mpd.test/` and you land on the runtime's shared
 Mailpit UI with this project's mail pre-filtered (302-redirect to
-`mail.<runtime>.mpd.test/?q=moodle51.mpd.test`). If the project has a
-`kind: behat` URL declared, `https://behat.moodle51.mpd.test/` is
+`mail.<runtime>.<NNN>.mpd.test/?q=moodle51.<NNN>.mpd.test`). If the project has a
+`kind: behat` URL declared, `https://behat.moodle51.<NNN>.mpd.test/` is
 wired automatically.
 
 VM-wide defaults (Moodle admin password, Behat preferences, Cloudflare
@@ -141,29 +141,29 @@ documented in
 
 This is where the AI-friendly part comes alive. Once a project is
 running, the runtime container has a real SSH endpoint at
-`<runtime>.runtime.mpd.test`. From your laptop, with the static route
+`<runtime>.runtime.<NNN>.mpd.test`. From your laptop, with the static route
 and DNS resolver in place:
 
 ```bash
-ssh -A user@php.runtime.mpd.test
+ssh -A user@php.runtime.<NNN>.mpd.test
 ```
 
 You land in the runtime as your local user (UID matched), with
 passwordless sudo, agent-forwarded git auth, and the project tree at
 `/srv/projects/<project>/`. From there:
 
-- **VS Code Remote-SSH** → connect to `php.runtime.mpd.test`, open
+- **VS Code Remote-SSH** → connect to `php.runtime.<NNN>.mpd.test`, open
   `/srv/projects/<project>/`. Language server, debugger, terminals
   all run inside the runtime.
 - **PHPStorm Gateway** → same endpoint, same shape.
-- **Claude Code over SSH** → `ssh -A user@php.runtime.mpd.test` and
+- **Claude Code over SSH** → `ssh -A user@php.runtime.<NNN>.mpd.test` and
   start a session inside the runtime. The agent reads/writes files,
   runs composer / phpunit / behat, pushes to GitHub via your
   forwarded agent key.
 
 ### IDE connection details from the portal
 
-Open `https://mpd.test/`, click **details** on a running project, and
+Open `https://<NNN>.mpd.test/`, click **details** on a running project, and
 the popover shows an *Open in IDE* section:
 
 - **VS Code** → one-click `vscode://` Remote-SSH link with host +
@@ -185,7 +185,7 @@ If you're inside the VM (e.g. a GNOME terminal in a desktop-in-VM
 setup), use the VM-local SSH key instead of `-A`:
 
 ```bash
-ssh user@php.runtime.mpd.test       # uses ~/.ssh/id_ed25519, no -A needed
+ssh user@php.runtime.<NNN>.mpd.test       # uses ~/.ssh/id_ed25519, no -A needed
 ```
 
 `mpd --setup` populates each runtime's `authorized_keys` with two key
@@ -203,7 +203,7 @@ GitHub/GitLab/private remotes via **SSH agent forwarding** (`ssh -A`):
 ```bash
 ssh-add ~/.ssh/id_ed25519           # load the key into your laptop's agent
                                     # (once per laptop session)
-ssh -A user@php.runtime.mpd.test    # -A forwards the agent socket in
+ssh -A user@php.runtime.<NNN>.mpd.test    # -A forwards the agent socket in
 cd /srv/projects/moodle51
 git push origin main                # forwarded agent signs; the remote
                                     # sees your laptop's key
