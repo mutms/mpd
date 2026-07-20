@@ -1,0 +1,153 @@
+// Package vm holds the operations mpd performs on the VM itself, as
+// opposed to on containers.
+//
+// Everything here touches host state: /etc, the system trust store, the
+// dev user's home directory, systemd. It is the half of `mpd --setup`
+// that podman knows nothing about. Container-side setup lives in
+// internal/service.
+//
+// Paths are absolute and VM-wide rather than derived from $HOME: the mpd
+// VM is a single-purpose appliance, so code, assets and state live in
+// FHS-standard system locations and the dev user simply owns them.
+package vm
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/user"
+	"strings"
+
+	"github.com/mutms/mpd/go/internal/exec"
+)
+
+// Fixed VM-wide paths. See AGENTS.md §"Fixed in-VM paths".
+const (
+	// MpdDir is the git checkout: code, assets, built binary.
+	MpdDir = "/opt/mpd"
+	// AssetsDir is bind-mounted read-only into every mpd container at
+	// this same path, so asset lookups resolve identically either side.
+	AssetsDir = MpdDir + "/assets"
+	// BinDir holds the built binary.
+	BinDir = MpdDir + "/bin"
+
+	// VarLibDir is the persistent state root.
+	VarLibDir = "/var/lib/mpd"
+	// ConfDir holds the CA, the service cert and platform.env. PRIVATE —
+	// never bind-mounted into a container.
+	ConfDir = VarLibDir + "/conf"
+	// EnvDir holds mpd-vm.env, the user's VM-wide overrides.
+	EnvDir = VarLibDir + "/env"
+	// SkelDir holds user-managed dotfiles overlaid onto new runtimes.
+	SkelDir = VarLibDir + "/skel"
+	// StateDir holds mpd-managed operational state.
+	StateDir = VarLibDir + "/state"
+
+	// CARootDir holds the local CA. ServiceDir holds the cert the portal
+	// serves the zone apex with. TempDir is openssl scratch space.
+	CARootDir  = ConfDir + "/caroot"
+	ServiceDir = ConfDir + "/service"
+	TempDir    = ConfDir + "/temp"
+
+	// DnsmasqDir is the source of truth for DNS fragments, bind-mounted
+	// read-only into the dnsmasq container as a DIRECTORY so adds and
+	// removes are visible inside immediately.
+	DnsmasqDir = StateDir + "/dnsmasq.d"
+	// FileAccessHostKeysDir persists the fileaccess service's SSH host
+	// keys, so its fingerprint survives a container rebuild.
+	FileAccessHostKeysDir = StateDir + "/fileaccess/hostkeys"
+
+	// CACertPath and CAKeyPath are the CA's PEM files.
+	CACertPath = CARootDir + "/rootCA.pem"
+	CAKeyPath  = CARootDir + "/rootCA-key.pem"
+
+	// TrustStorePath is where the CA lands in the system trust store.
+	TrustStorePath = "/usr/local/share/ca-certificates/mpd-local.crt"
+
+	// BinaryPath is the installed binary, hardcoded into the rendered
+	// systemd unit so `cat mpd.service` shows the real path.
+	BinaryPath = BinDir + "/mpd"
+
+	// Label names the execution environment in setup output.
+	Label = "mpd VM (Debian Trixie)"
+)
+
+// DataVolume is the podman volume holding /srv inside every container.
+const DataVolume = "mpd-data-volume"
+
+// Identity is the dev user mpd runs as and provisions containers for.
+type Identity struct {
+	User string
+	UID  string
+}
+
+// DetectIdentity reports the invoking user. mpd always runs as the dev
+// user (never root, never via sudo -u — see AGENTS.md §"Mandatory
+// privilege rule"), so this is simply who we are.
+func DetectIdentity() Identity {
+	id := Identity{UID: fmt.Sprint(os.Getuid())}
+	if u, err := user.Current(); err == nil {
+		id.User = u.Username
+	}
+	return id
+}
+
+// Home is the dev user's home directory. Used only for genuinely
+// per-user concerns — SSH keys, shell config, systemd user units.
+// Nothing mpd-owned lives here.
+func Home() string {
+	if h, err := os.UserHomeDir(); err == nil {
+		return h
+	}
+	return ""
+}
+
+// AssetsPath returns the assets directory, failing loudly if the
+// checkout looks incomplete rather than letting a missing path surface
+// later as a confusing container error.
+func AssetsPath() (string, error) {
+	if _, err := os.Stat(AssetsDir + "/runtime-base"); err != nil {
+		return "", fmt.Errorf("Assets not found at %s — clone mpd to /opt/mpd.", AssetsDir)
+	}
+	return AssetsDir, nil
+}
+
+// Fingerprint is a short content hash of a file, used as a container
+// label so a changed CA forces the service containers that embedded it
+// to be rebuilt. Empty for a missing or unreadable file, which callers
+// treat as "no opinion" rather than as a mismatch.
+//
+// 16 hex characters of SHA-256: this is a change detector, not a
+// security boundary, and a label that fits on one line is easier to read
+// in `podman inspect`.
+func Fingerprint(ctx context.Context, path string) string {
+	if _, err := os.Stat(path); err != nil {
+		return ""
+	}
+	res, err := exec.Capture(ctx, exec.Cmd{Name: "sha256sum", Args: []string{path}})
+	if err != nil || res.Code != 0 {
+		return ""
+	}
+	hex, _, _ := strings.Cut(res.Stdout, " ")
+	if len(hex) < 16 {
+		return ""
+	}
+	return hex[:16]
+}
+
+// EnsureDir creates a directory (and parents) with the given mode,
+// refusing when the path exists as something other than a directory —
+// a symlink or stray file there would otherwise fail much later, inside
+// a container, with a far less obvious message.
+func EnsureDir(path string, mode os.FileMode) error {
+	if info, err := os.Stat(path); err == nil {
+		if !info.IsDir() {
+			return fmt.Errorf("Path exists but is not a directory: %s", path)
+		}
+		return os.Chmod(path, mode)
+	}
+	if err := os.MkdirAll(path, mode); err != nil {
+		return err
+	}
+	return os.Chmod(path, mode)
+}

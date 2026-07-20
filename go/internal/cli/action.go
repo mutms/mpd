@@ -58,7 +58,7 @@ func Start(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) e
 	}
 
 	fmt.Fprintln(out, "\n\033[1m==> DNS resolution\033[0m")
-	verifyDNS(ctx, out, d)
+	verifyDNS(ctx, out, d.Net, d.Podman)
 
 	// Restore runtimes that had running projects. Failure warns rather
 	// than aborts: one broken runtime should not stop the others coming
@@ -98,24 +98,23 @@ func Start(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) e
 // verifyDNS checks that the VM's own resolver answers for the zone apex
 // through dnsmasq. Reports rather than fails: a VM with broken DNS is
 // still worth having started, and the message says what to inspect.
-func verifyDNS(ctx context.Context, out io.Writer, d ProjectDeps) {
-	dnsIP := d.Net.IP(net.HostDnsmasq)
-	if !dnsmasqReachable(ctx, d.Podman) {
-		fmt.Fprintf(out, "DNS check: dnsmasq at %s:53 not reachable within 8s.\n", dnsIP)
+func verifyDNS(ctx context.Context, out io.Writer, n net.Net, p *podman.Client) {
+	if !dnsmasqReachable(ctx, p) {
+		fmt.Fprintf(out, "DNS check: dnsmasq at %s:53 not reachable within 8s.\n", n.IP(net.HostDnsmasq))
 		fmt.Fprintf(out, "  Inspect with: sudo podman logs %s\n", dnsmasq.Container)
 		return
 	}
-	got := resolveHost(ctx, d.Net.Zone())
-	if got == d.Net.IP(net.HostPortal) {
-		fmt.Fprintf(out, "\033[1;32m✓ DNS: %s → %s\033[0m\n", d.Net.Zone(), got)
+	got := resolveHost(ctx, n.Zone())
+	if got == n.IP(net.HostPortal) {
+		fmt.Fprintf(out, "\033[1;32m✓ DNS: %s → %s\033[0m\n", n.Zone(), got)
 		return
 	}
 	if got == "" {
 		fmt.Fprintln(out, "DNS check: no result — system resolver not pointing at dnsmasq")
 	} else {
-		fmt.Fprintf(out, "DNS check: got %s, expected %s\n", got, d.Net.IP(net.HostPortal))
+		fmt.Fprintf(out, "DNS check: got %s, expected %s\n", got, n.IP(net.HostPortal))
 	}
-	fmt.Fprintf(out, "  Verify: resolvectl status; getent hosts %s\n", d.Net.Zone())
+	fmt.Fprintf(out, "  Verify: resolvectl status; getent hosts %s\n", n.Zone())
 }
 
 func dnsmasqReachable(ctx context.Context, p *podman.Client) bool {

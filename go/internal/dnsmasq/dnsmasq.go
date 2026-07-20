@@ -10,6 +10,8 @@ package dnsmasq
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -66,6 +68,108 @@ func (m Manager) EnsureDatabaseRecords(ctx context.Context) (bool, error) {
 	}
 
 	return m.writeIfChanged("databases.conf", strings.Join(lines, "\n")+"\n")
+}
+
+// ServiceRecord is one name mpd publishes for an infra service.
+type ServiceRecord struct {
+	Host string
+	IP   string
+}
+
+// EnsureServiceRecords rewrites services.conf and reports whether it
+// changed.
+//
+// The apex gets a `host-record` while everything else gets `address=`:
+// dnsmasq's `address=/domain/ip` matches the domain AND all its
+// subdomains, so using it for the zone apex would make every
+// unrecognised name under the zone resolve to the portal — including
+// project and runtime names whose own records had not been written yet.
+func (m Manager) EnsureServiceRecords(records []ServiceRecord, vmIP string) (bool, error) {
+	lines := []string{"# mpd managed service DNS records"}
+	for _, r := range records {
+		if r.Host == m.n.Zone() {
+			lines = append(lines, "host-record="+r.Host+","+r.IP)
+		} else {
+			lines = append(lines, "address=/"+r.Host+"/"+r.IP)
+		}
+	}
+
+	// vm.service.<zone> answers with the VM's OWN address rather than a
+	// container's, so the host-side orchestrator can confirm it is
+	// talking to this VM's dnsmasq and not another's. Skipped on sandbox
+	// VMs, which are on DHCP and have no address to publish.
+	if vmIP != "" {
+		lines = append(lines, "host-record="+m.n.VMServiceRecord()+","+vmIP)
+	}
+
+	return m.writeIfChanged("services.conf", strings.Join(lines, "\n")+"\n")
+}
+
+// managedFragments are rewritten from scratch on every reconcile, so
+// PruneOutOfZone must leave them alone.
+var managedFragments = map[string]bool{"services.conf": true, "databases.conf": true}
+
+// PruneOutOfZone deletes fragments that serve names outside this VM's
+// zone, reporting whether anything went.
+//
+// Per-runtime and per-project records are written at create time and
+// never revisited. After a VM's ID changes they keep answering for the
+// old zone at addresses on the old subnet — names that resolve to
+// somewhere nothing listens. The entities they describe have to be
+// recreated to get correct records anyway, so a stale fragment has no
+// value and its half-working DNS is actively confusing.
+func (m Manager) PruneOutOfZone(out io.Writer) bool {
+	entries, err := os.ReadDir(m.dir)
+	if err != nil {
+		return false
+	}
+	removed := false
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".conf") || managedFragments[name] {
+			continue
+		}
+		path := filepath.Join(m.dir, name)
+		body, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		hosts := recordHosts(string(body))
+		if len(hosts) == 0 || !anyOutOfZone(m.n, hosts) {
+			continue
+		}
+		if os.Remove(path) != nil {
+			continue
+		}
+		removed = true
+		fmt.Fprintf(out, "  Removed stale DNS record file %s (not in %s)\n", name, m.n.Zone())
+	}
+	return removed
+}
+
+// recordHosts extracts the host from each `address=/<host>/<ip>` line.
+func recordHosts(body string) []string {
+	var hosts []string
+	for _, raw := range strings.Split(body, "\n") {
+		rest, found := strings.CutPrefix(strings.TrimSpace(raw), "address=/")
+		if !found {
+			continue
+		}
+		host, _, _ := strings.Cut(rest, "/")
+		if host != "" {
+			hosts = append(hosts, host)
+		}
+	}
+	return hosts
+}
+
+func anyOutOfZone(n net.Net, hosts []string) bool {
+	for _, h := range hosts {
+		if !n.IsInZone(h) {
+			return true
+		}
+	}
+	return false
 }
 
 // Restart restarts dnsmasq so it picks up conf.d changes.

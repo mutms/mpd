@@ -45,7 +45,8 @@ func main() {
 
 	root.AddCommand(versionCmd(), netCmd(), listCmd(), showCmd(), runtimeCmd(), dbCmd(),
 		projectStartCmd(), projectStopCmd(), projectDeleteCmd(), projectConfigureCmd(),
-		projectCreateCmd(), checkHooksCmd(), startVMCmd(), stopVMCmd(), restartVMCmd())
+		projectCreateCmd(), checkHooksCmd(), startVMCmd(), stopVMCmd(), restartVMCmd(),
+		setupCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
@@ -491,6 +492,23 @@ func stopVMCmd() *cobra.Command {
 				return err
 			}
 			return cli.Stop(c.Context(), c.OutOrStdout(), d, state.Dir)
+		},
+	}
+}
+
+// setupCmd mirrors Swift's `mpd --setup`.
+//
+// Unlike every other verb it does NOT resolve addressing up front:
+// setting up is how a VM with a missing or broken MPD_VM_ID gets
+// repaired, so the resolve happens inside, after the identity step has
+// had its chance to fix it.
+func setupCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "setup",
+		Short: "Prepare this VM: certificates, network, services, DNS",
+		Args:  cobra.NoArgs,
+		RunE: func(c *cobra.Command, args []string) error {
+			return cli.Setup(c.Context(), c.OutOrStdout())
 		},
 	}
 }

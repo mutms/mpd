@@ -117,6 +117,42 @@ func (s Store) Runtime(name string) (Runtime, bool) {
 	return r, true
 }
 
+// RuntimeNames lists the runtimes that have a state directory, sorted.
+//
+// The cache, not podman: this is what mpd believes exists, and the
+// difference from what podman reports is exactly what a cache rebuild
+// has to reconcile.
+func (s Store) RuntimeNames() []string {
+	entries, err := os.ReadDir(filepath.Join(s.dir, "runtimes"))
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// Config is VM-wide operator config, detected once at `mpd --setup`.
+type Config struct {
+	UID  string `json:"uid"`
+	User string `json:"user"`
+}
+
+// Config reads config.json; a missing file yields the zero value.
+func (s Store) Config() Config {
+	var c Config
+	readJSON(filepath.Join(s.dir, "config.json"), &c)
+	return c
+}
+
+// SaveConfig writes config.json.
+func (s Store) SaveConfig(c Config) error { return s.writeJSON("config.json", c) }
+
 // ProjectsByRuntime counts projects per runtime name.
 func ProjectsByRuntime(projects []Project) map[string]int {
 	counts := map[string]int{}

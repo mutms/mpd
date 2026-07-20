@@ -27,8 +27,33 @@ type Descriptor struct {
 	// dns overrides the default "<name>.service.<zone>" when non-empty;
 	// the portal answers at the zone apex instead.
 	dns func(n net.Net) string
+	// aliases lists every name that must resolve to this service, when
+	// more than the canonical one does. Nil means just DNS().
+	aliases func(n net.Net) []string
 	// accessHint renders the human-facing "how do I reach this" column.
 	accessHint func(n net.Net) string
+	// Proxy, when set, means this service is not reached at its own
+	// address: its names resolve to the portal, which terminates TLS and
+	// proxies to the address below. Adminer works this way — it speaks
+	// plain HTTP and has no certificate of its own.
+	Proxy *PortalProxy
+}
+
+// PortalProxy describes an upstream the portal reverse-proxies to.
+type PortalProxy struct {
+	// Scheme is the upstream protocol; empty means http.
+	Scheme string
+	// Port is the upstream port on the service's own address.
+	Port int
+}
+
+// UpstreamURL is what the rendered vhost proxies to.
+func (p PortalProxy) UpstreamURL(ip string) string {
+	scheme := p.Scheme
+	if scheme == "" {
+		scheme = "http"
+	}
+	return fmt.Sprintf("%s://%s:%d", scheme, ip, p.Port)
 }
 
 // All returns every service descriptor, in registry order.
@@ -48,8 +73,21 @@ func All() []Descriptor {
 			HostOctet: net.HostPortal,
 			// The portal is the zone apex, not a *.service name.
 			dns: func(n net.Net) string { return n.Zone() },
+			// Both names answer: the apex is what a developer types,
+			// portal.service.<zone> is what the uniform service naming
+			// makes them expect to work.
+			aliases: func(n net.Net) []string { return []string{n.Zone(), n.Service("portal")} },
 			accessHint: func(n net.Net) string {
 				return fmt.Sprintf("https://%s/", n.Zone())
+			},
+		},
+		{
+			Name:      "adminer",
+			Container: "mpd-service-adminer",
+			HostOctet: net.HostAdminer,
+			Proxy:     &PortalProxy{Port: 8080},
+			accessHint: func(n net.Net) string {
+				return fmt.Sprintf("https://%s/", n.Service("adminer"))
 			},
 		},
 		{
@@ -58,14 +96,6 @@ func All() []Descriptor {
 			HostOctet: net.HostFileaccess,
 			accessHint: func(n net.Net) string {
 				return fmt.Sprintf("ssh / scp at %s (pubkey-only, internal)", n.Service("fileaccess"))
-			},
-		},
-		{
-			Name:      "adminer",
-			Container: "mpd-service-adminer",
-			HostOctet: net.HostAdminer,
-			accessHint: func(n net.Net) string {
-				return fmt.Sprintf("https://%s/", n.Service("adminer"))
 			},
 		},
 	}
@@ -82,8 +112,53 @@ func (d Descriptor) DNS(n net.Net) string {
 	return n.Service(d.Name)
 }
 
+// Aliases lists every name that must resolve to this service.
+func (d Descriptor) Aliases(n net.Net) []string {
+	if d.aliases != nil {
+		return d.aliases(n)
+	}
+	return []string{d.DNS(n)}
+}
+
 // AccessHint is the human-facing "how do I reach this" string.
 func (d Descriptor) AccessHint(n net.Net) string { return d.accessHint(n) }
+
+// DNSRecord is one name mpd publishes for a service.
+type DNSRecord struct {
+	Host string
+	IP   string
+}
+
+// DNSRecords is every service name mpd publishes, in registry order.
+//
+// A proxied service's names point at the PORTAL's address, not its own:
+// the portal is what terminates TLS for it, so resolving straight to the
+// service would reach a plain-HTTP port with no certificate.
+func DNSRecords(n net.Net) []DNSRecord {
+	var out []DNSRecord
+	portalIP := n.IP(net.HostPortal)
+	for _, d := range All() {
+		target := d.IP(n)
+		if d.Proxy != nil {
+			target = portalIP
+		}
+		for _, alias := range d.Aliases(n) {
+			out = append(out, DNSRecord{Host: alias, IP: target})
+		}
+	}
+	return out
+}
+
+// Proxied returns the services the portal reverse-proxies for.
+func Proxied() []Descriptor {
+	var out []Descriptor
+	for _, d := range All() {
+		if d.Proxy != nil {
+			out = append(out, d)
+		}
+	}
+	return out
+}
 
 // Find returns the descriptor with the given name.
 func Find(name string) (Descriptor, bool) {

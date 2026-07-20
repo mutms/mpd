@@ -6,7 +6,7 @@ import (
 	"github.com/mutms/mpd/go/internal/net"
 )
 
-func vm(t *testing.T, octet int) net.Net {
+func testNet(t *testing.T, octet int) net.Net {
 	t.Helper()
 	n, err := net.New(octet)
 	if err != nil {
@@ -16,7 +16,7 @@ func vm(t *testing.T, octet int) net.Net {
 }
 
 func TestNamesAndAddresses(t *testing.T) {
-	n := vm(t, 150)
+	n := testNet(t, 150)
 	want := map[string]struct{ ip, dns string }{
 		"dnsmasq":    {"10.163.150.3", "dnsmasq.service.150.mpd.test"},
 		"portal":     {"10.163.150.4", "150.mpd.test"}, // apex, not *.service
@@ -42,7 +42,7 @@ func TestNamesAndAddresses(t *testing.T) {
 // stop resolving to the portal.
 func TestPortalIsTheZoneApex(t *testing.T) {
 	for _, octet := range []int{0, 150, 222} {
-		n := vm(t, octet)
+		n := testNet(t, octet)
 		d, _ := Find("portal")
 		if d.DNS(n) != n.Zone() {
 			t.Errorf("VM %d: portal DNS = %q, want zone apex %q", octet, d.DNS(n), n.Zone())
@@ -51,7 +51,7 @@ func TestPortalIsTheZoneApex(t *testing.T) {
 }
 
 func TestDescriptorsAreVMIndependent(t *testing.T) {
-	a, b := vm(t, 150), vm(t, 222)
+	a, b := testNet(t, 150), testNet(t, 222)
 	for _, d := range All() {
 		if d.IP(a) == d.IP(b) {
 			t.Errorf("%s has the same IP on two VMs (%s)", d.Name, d.IP(a))

@@ -178,6 +178,47 @@ the shared contract is the state files, podman labels, and container
 names, and it is only safe while exactly one implementation is
 authoritative.
 
+### Status (2026-07-21)
+
+Ported and verified byte-for-byte against the Swift binary: `list` (all
+four), `show`, `runtime` show/create/start/stop/delete, `db`
+create/start/stop/delete, `project` create/configure/start/stop/delete,
+`net`, `version`, `check-hooks`, `--start`, `--stop`, `--restart`, plus
+`internal/hooks` and `internal/sidecar`.
+
+Harnesses: `make go-difftest` (12 read-only comparisons) and
+`make go-mutatetest` (17 state comparisons). Both must stay green.
+
+`--setup` is now ported too (`internal/cli/setup.go`, `internal/vm/`,
+`internal/service/`). Verified on VM 150 in two ways:
+
+- **Idempotent path** — `mpd --setup` then `gompd setup` on a settled VM
+  produce byte-identical transcripts.
+- **Reset path** — the migration reset, run for real:
+
+  ```
+  sudo podman rm -af
+  sudo podman pod rm -af
+  sudo podman network rm mpd-internal
+  gompd setup
+  ```
+
+  Rebuilt the network, all four service containers, the DNS records and
+  the VM metadata in 5 seconds, recovered the project list from the data
+  volume, and left the portal answering 200 over HTTPS at the zone apex
+  with a valid certificate (`curl` without `-k`).
+
+Two deliberate divergences from Swift, both documented at their call
+sites:
+
+- **Service registry order** drives the line order of `services.conf`.
+  Go's registry was reordered to match Swift's so the file comes out
+  byte-identical and neither binary restarts dnsmasq after the other.
+- **The Firefox policy JSON** is rendered by Go's marshaller
+  (`"key": value`) rather than Foundation's (`"key" : value`). Both are
+  valid and Firefox reads either, but each binary rewrites the other's
+  file once. Self-corrects at the flag day.
+
 ### Phase 3 — `--setup`, on a fresh VM
 
 Port `--setup` / `--start` / `--stop` / `--restart`. Validate by

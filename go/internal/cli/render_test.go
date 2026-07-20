@@ -38,7 +38,7 @@ func TestStatusLabelIsPlainWhenNotATerminal(t *testing.T) {
 	}
 }
 
-func vm(t *testing.T, octet int) net.Net {
+func testNet(t *testing.T, octet int) net.Net {
 	t.Helper()
 	n, err := net.New(octet)
 	if err != nil {
@@ -60,7 +60,7 @@ func TestListServices(t *testing.T) {
 	  {"Names":["mpd-service-fileaccess"],"State":"exited"}
 	]`
 	var buf bytes.Buffer
-	ListServices(context.Background(), &buf, vm(t, 150), stubPodman(ps))
+	ListServices(context.Background(), &buf, testNet(t, 150), stubPodman(ps))
 	out := buf.String()
 
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")

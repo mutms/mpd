@@ -345,6 +345,73 @@ func (c *Client) VolumeRemove(ctx context.Context, name string) (int, error) {
 	return res.Code, nil
 }
 
+// VolumeExists reports whether a named volume is present.
+func (c *Client) VolumeExists(ctx context.Context, name string) bool {
+	res, err := c.run(ctx, []string{"volume", "exists", name})
+	return err == nil && res.Code == 0
+}
+
+// VolumeCreate creates a named volume.
+func (c *Client) VolumeCreate(ctx context.Context, name string) (int, error) {
+	res, err := c.run(ctx, []string{"volume", "create", name})
+	if err != nil {
+		return -1, err
+	}
+	return res.Code, nil
+}
+
+// --- Networks ---------------------------------------------------------
+
+// NetworkExists reports whether a podman network is defined.
+func (c *Client) NetworkExists(ctx context.Context, name string) bool {
+	res, err := c.run(ctx, []string{"network", "exists", name})
+	return err == nil && res.Code == 0
+}
+
+// NetworkCreate creates a bridge network with a fixed subnet and the DNS
+// servers containers on it should use.
+//
+// The DNS servers are set on the network rather than per container, so
+// every container that attaches — runtimes, sidecars, service containers,
+// DB containers — resolves mpd names without each create having to
+// remember a --dns flag.
+func (c *Client) NetworkCreate(ctx context.Context, name, subnet string, dnsServers []string) (int, error) {
+	args := []string{"network", "create", "--subnet", subnet}
+	for _, s := range dnsServers {
+		args = append(args, "--dns", s)
+	}
+	args = append(args, name)
+	res, err := c.run(ctx, args)
+	if err != nil {
+		return -1, err
+	}
+	return res.Code, nil
+}
+
+// RemoveIfOutdated removes a container whose labels no longer match what
+// mpd would create today, so the caller's "create if missing" step
+// rebuilds it.
+//
+// This is how service containers pick up a changed image, mount set, or
+// CA: each carries a revision label and a CA-fingerprint label, and a
+// mismatch on either means the running container is stale. A container
+// that matches on every checked label is left alone — that is the common
+// case on a repeat `--setup`, and rebuilding it would be pure churn.
+//
+// Reports whether anything was removed.
+func (c *Client) RemoveIfOutdated(ctx context.Context, name string, labels map[string]string) bool {
+	if !c.Exists(ctx, name) {
+		return false
+	}
+	for key, want := range labels {
+		if c.Label(ctx, name, key) != want {
+			c.Remove(ctx, name)
+			return true
+		}
+	}
+	return false
+}
+
 // VolumeWrite pipes data into a shell command running against the data
 // volume — how mpd puts file contents there without a host bind mount.
 //
