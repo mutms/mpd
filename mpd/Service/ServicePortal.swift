@@ -1,7 +1,8 @@
 // mpd — Mpd.Service.Portal namespace
 // Portal status dashboard: container lifecycle.
-// Container: mpd-service-portal at 10.163.0.4
-// Serves https://mpd.test/ and dynamic HTTPS reverse proxy vhosts for selected services.
+// Container: mpd-service-portal at Mpd.Net.ip(.portal) — .4 of the VM's /24
+// Serves the zone apex (https://mpd.test/) and dynamic HTTPS reverse proxy
+// vhosts for selected services.
 // debian:trixie with apache2 + php installed inline (apachectl -D FOREGROUND).
 // SECURITY: strictly read-only — never executes commands or accepts user input.
 
@@ -12,10 +13,10 @@ extension Mpd.Service.Portal {
     static let descriptor = Mpd.ServiceDescriptor(
         name: "portal",
         containerName: "mpd-service-portal",
-        ip: "10.163.0.4",
-        dns: "mpd.test",
-        accessHint: "https://mpd.test/",
-        dnsAliases: ["mpd.test", "portal.service.mpd.test"],
+        ip: Mpd.Net.ip(Mpd.Net.Host.portal),
+        dns: Mpd.Net.zone,
+        accessHint: "https://\(Mpd.Net.zone)/",
+        dnsAliases: [Mpd.Net.zone, Mpd.Net.service("portal")],
         setup: nil,
         start: nil,
         stop: nil
@@ -37,7 +38,7 @@ extension Mpd.Service.Portal {
     static func setup() throws {
         let fm = FileManager.default
 
-        step("Service: portal at https://mpd.test")
+        step("Service: portal at https://\(Mpd.Net.zone)")
 
         // Remove outdated container (version, CA fingerprint → rebuild)
         let caFP = Mpd.VM.fileFingerprint("\(Mpd.VM.confCARootDir)/rootCA.pem")

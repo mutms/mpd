@@ -135,7 +135,7 @@ extension Mpd.Runtime {
                                     mailpitAttached: desiredRoles.contains("mailpit"))
     }
 
-    /// Manage the runtime-level mailpit URL — `mail.<runtime>.mpd.test/` —
+    /// Manage the runtime-level mailpit URL — `mail.<runtime>.<zone>/` —
     /// that the mailpit sidecar exposes. Stored under a pseudo-project named
     /// `_runtime-<runtime>` so it flows through the existing per-project
     /// meta plumbing (Caddy globs `/srv/meta/*/urls.json`, reads cert at
@@ -143,12 +143,12 @@ extension Mpd.Runtime {
     /// The leading underscore guarantees no collision with a real project
     /// (project names must start with a lowercase letter).
     ///
-    /// Per-project mail URLs (`mail.<project>.mpd.test/`) are 302 shortcuts
-    /// to this canonical URL with `?q=<project>.mpd.test` applied — see
+    /// Per-project mail URLs (`mail.<project>.<zone>/`) are 302 shortcuts
+    /// to this canonical URL with `?q=<project>.<zone>` applied — see
     /// `assets/runtimes/php/project_types/moodle/scripts/configure.sh`.
     private static func reconcileMailpitRuntimeMeta(runtime: String, mailpitAttached: Bool) {
         let pseudoProject = "_runtime-\(runtime)"
-        let host = "mail.\(runtime).mpd.test"
+        let host = Mpd.Net.host("mail.\(runtime)")
 
         if mailpitAttached {
             let urls = [ProjectURL(
@@ -170,7 +170,7 @@ extension Mpd.Runtime {
                 input: payload
             )
 
-            // Cert covers `mail.<runtime>.mpd.test`.
+            // Cert covers `mail.<runtime>.<zone>`.
             try? Mpd.Project.ensureProjectCert(project: pseudoProject, urls: urls)
 
             // dnsmasq record so the host resolves to the runtime IP.
@@ -191,8 +191,8 @@ extension Mpd.Runtime {
     /// Caddy frontdoor sidecar — terminates TLS, routes by `urls.json`.
     /// Opt-in via `defaultSidecars: ["frontdoor"]` in a runtime's
     /// configuration.json. PHP and node declare it (they serve project
-    /// URLs at `*.mpd.test`). util doesn't, since cftunnel and similar
-    /// utility project types don't expose `.mpd.test` URLs.
+    /// URLs in the zone). util doesn't, since cftunnel and similar
+    /// utility project types don't expose in-zone URLs.
     static func frontdoorSidecarSpec() -> SidecarSpec {
         SidecarSpec(
             role: "frontdoor",

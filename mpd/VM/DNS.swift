@@ -43,13 +43,17 @@ extension Mpd.VM.DNS {
         ok("systemd-resolved is active.")
     }
 
-    /// Add the `*.mpd.test` rule to systemd-resolved. Single drop-in,
-    /// idempotent. `reload` (not `restart`) so per-link DNS state resolved
-    /// is already serving doesn't drop during the reconfigure.
+    /// Point systemd-resolved at dnsmasq for the whole root domain. Single
+    /// drop-in, idempotent. `reload` (not `restart`) so per-link DNS state
+    /// resolved is already serving doesn't drop during the reconfigure.
+    ///
+    /// Deliberately the root domain, not this VM's zone: a VM has exactly
+    /// one dnsmasq and no business resolving another VM's zone, so NXDOMAIN
+    /// for a foreign zone is the correct in-VM answer.
     static func configureDNSResolver() throws {
         let serviceIP = Mpd.Service.Dnsmasq.ip
         let confPath = "/etc/systemd/resolved.conf.d/mpd.conf"
-        let content = "[Resolve]\nDNS=\(serviceIP)\nDomains=~mpd.test\n"
+        let content = "[Resolve]\nDNS=\(serviceIP)\nDomains=~\(Mpd.Net.rootDomain)\n"
 
         let alreadyMatches = (try? String(contentsOfFile: confPath, encoding: .utf8)) == content
         try writeRootOwnedFile(path: confPath, content: content)
@@ -60,7 +64,7 @@ extension Mpd.VM.DNS {
                 throw RuntimeError("systemctl reload systemd-resolved failed.")
             }
         }
-        ok("DNS resolver configured (systemd-resolved → \(serviceIP) for mpd.test).")
+        ok("DNS resolver configured (systemd-resolved → \(serviceIP) for \(Mpd.Net.rootDomain)).")
     }
 
     private static func systemctlIsActive(_ unit: String) -> Bool {
@@ -113,13 +117,13 @@ extension Mpd.VM.DNS {
         }
 
         let (rc, out) = Mpd.VM.capture(
-            ["bash", "-c", "getent hosts mpd.test 2>/dev/null | awk '{print $1}'"],
+            ["bash", "-c", "getent hosts \(Mpd.Net.zone) 2>/dev/null | awk '{print $1}'"],
             suppressStderr: true)
         if rc == 0 && out == serviceIP {
-            ok("DNS: mpd.test → \(serviceIP)")
+            ok("DNS: \(Mpd.Net.zone) → \(serviceIP)")
         } else {
             print("DNS check: \(out.isEmpty ? "no result — system resolver not pointing at dnsmasq" : "got \(out), expected \(serviceIP)")")
-            print("  Verify: resolvectl status; getent hosts mpd.test")
+            print("  Verify: resolvectl status; getent hosts \(Mpd.Net.zone)")
         }
     }
 

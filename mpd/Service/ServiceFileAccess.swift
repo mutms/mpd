@@ -1,6 +1,6 @@
 // mpd — Mpd.Service.FileAccess namespace
 // File access service: long-running container with the data volume mounted.
-// Container: mpd-service-fileaccess at 10.163.0.5
+// Container: mpd-service-fileaccess at Mpd.Net.ip(.fileaccess) — .5 of the VM's /24
 //
 // Two access paths:
 //
@@ -30,8 +30,8 @@ extension Mpd.Service.FileAccess {
 
     static let descriptor = Mpd.ServiceDescriptor(
         name: "fileaccess",
-        ip: "10.163.0.5",
-        accessHint: "ssh / scp at fileaccess.service.mpd.test (pubkey-only, internal)",
+        ip: Mpd.Net.ip(Mpd.Net.Host.fileaccess),
+        accessHint: "ssh / scp at \(Mpd.Net.service("fileaccess")) (pubkey-only, internal)",
         setup: setup,
         start: start,
         stop: stop

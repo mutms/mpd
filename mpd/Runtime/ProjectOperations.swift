@@ -128,7 +128,7 @@ extension Mpd.Project {
             entry.databaseVersion = parsed.version
             entry.databaseId = Mpd.Runtime.DB.shortName(engine: parsed.engine, version: parsed.version)
 
-            // Refresh dnsmasq's databases.conf so `<db>.db.mpd.test` resolves
+            // Refresh dnsmasq's databases.conf so `<db>.db.<zone>` resolves
             // from inside runtime containers.
             Mpd.Runtime.DB.rebuildStateCache(quiet: true)
             try? Mpd.Service.Dnsmasq.ensureReadyForServiceResolution()

@@ -189,15 +189,19 @@ extension Mpd.Project {
 
     // MARK: - dnsmasq per-project records
 
-    /// Extract unique `*.mpd.test` hostnames from a project's URL list, sorted.
-    /// Used for both cert SAN generation and dnsmasq record writing — single
-    /// source of truth so the two sets can never drift.
+    /// Extract unique hostnames inside this VM's zone from a project's URL
+    /// list, sorted. Used for both cert SAN generation and dnsmasq record
+    /// writing — single source of truth so the two sets can never drift.
+    ///
+    /// Filtering on the zone (not just the root domain) is what keeps mpd
+    /// from issuing a local cert and a DNS record for a URL that names some
+    /// other VM's project.
     private static func mpdHosts(from urls: [ProjectURL]) -> [String] {
         var seen = Set<String>()
         for u in urls {
             guard let parsed = URL(string: u.url),
                   let host = parsed.host,
-                  host == "mpd.test" || host.hasSuffix(".mpd.test")
+                  Mpd.Net.isInZone(host)
             else { continue }
             seen.insert(host)
         }
@@ -205,7 +209,7 @@ extension Mpd.Project {
     }
 
     /// Write dnsmasq conf for a project: one `address=` line per unique
-    /// `*.mpd.test` host in the project's URL list, all pointing at the
+    /// in-zone host in the project's URL list, all pointing at the
     /// runtime IP. Removes the conf if the URL list yields no hosts.
     static func writeDnsmasqRecord(project: String, urls: [ProjectURL], runtimeIP: String) {
         let hosts = mpdHosts(from: urls)
@@ -230,7 +234,7 @@ extension Mpd.Project {
 
     // MARK: - Per-project TLS cert
 
-    /// Generate a per-project TLS cert covering every `*.mpd.test` host in the
+    /// Generate a per-project TLS cert covering every in-zone host in the
     /// project's URL list. No-op when the URL list yields no hosts (project
     /// has no HTTPS surface, e.g. a bare/util project).
     static func ensureProjectCert(project: String, urls: [ProjectURL]) throws {
@@ -242,7 +246,7 @@ extension Mpd.Project {
         // (`cert.sans`) at generation time and compare it here — a bare
         // `test -f cert.pem` would keep a stale cert forever, so enabling
         // behat (or any host-adding change) on an existing project would
-        // never widen the cert and its `behat.<project>.mpd.test` SNI would
+        // never widen the cert and its `behat.<project>.<zone>` SNI would
         // fail the TLS handshake. Missing signature (pre-upgrade certs)
         // counts as a mismatch, forcing a one-time regeneration.
         let sansSignature = sans.joined(separator: "\n")
@@ -321,7 +325,7 @@ extension Mpd.Project {
         // `caddy reload` keeps serving the old cert for the same SNI). Only a
         // full process restart clears the cache. So a running frontdoor would
         // keep presenting the pre-regeneration cert — e.g. after enabling
-        // behat, the widened `behat.<project>.mpd.test` SAN would be on disk
+        // behat, the widened `behat.<project>.<zone>` SAN would be on disk
         // but never served. Restart the frontdoor now that the new cert is in
         // place. Skipped when it isn't running (initial create/start, or
         // runtimes without a frontdoor): it reads the current cert on start.

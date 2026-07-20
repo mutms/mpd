@@ -54,7 +54,7 @@ extension Mpd.Action.Start {
 
         \u{001B}[1;32m✓ mpd started.\u{001B}[0m
 
-          https://mpd.test/
+          https://\(Mpd.Net.zone)/
           mpd list              show all projects
           mpd start <project>   start a project
         """)

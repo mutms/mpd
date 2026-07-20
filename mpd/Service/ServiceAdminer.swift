@@ -1,6 +1,6 @@
 // mpd — Mpd.Service.Adminer namespace
 // Adminer database management UI: container lifecycle.
-// Container: mpd-service-adminer at 10.163.0.6
+// Container: mpd-service-adminer at Mpd.Net.ip(.adminer) — .6 of the VM's /24
 // UI backend :8080 (HTTPS exposed via portal reverse proxy). Always-on infra service.
 
 import Foundation
@@ -9,8 +9,8 @@ extension Mpd.Service.Adminer {
 
     static let descriptor = Mpd.ServiceDescriptor(
         name: "adminer",
-        ip: "10.163.0.6",
-        accessHint: "https://adminer.service.mpd.test/",
+        ip: Mpd.Net.ip(Mpd.Net.Host.adminer),
+        accessHint: "https://\(Mpd.Net.service("adminer"))/",
         portalProxy: .init(upstreamPort: 8080),
         setup: setup,
         start: start,
@@ -36,7 +36,7 @@ extension Mpd.Service.Adminer {
     /// Build the local adminer image if it isn't already present. We use a
     /// Debian-based build instead of `docker.io/library/adminer` (Alpine):
     /// libpq+musl on Alpine fails to resolve multi-label hostnames like
-    /// `postgres-latest.db.mpd.test`, surfacing as
+    /// `postgres-latest.db.<zone>`, surfacing as
     /// `SQLSTATE[08006] could not translate host name ...`.
     private static func ensureImage() throws {
         guard !Mpd.Podman.imageExists(imageTag) else { return }

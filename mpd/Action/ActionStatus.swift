@@ -31,11 +31,11 @@ extension Mpd.Action.Status {
             let item = runtimes.first { $0.Labels?["mpd.name"] == n }
             let running = item?.State == "running"
             let status = running ? "running" : "stopped"
-            print("\n\(n)  \(status)  ssh \(n).runtime.mpd.test")
+            print("\n\(n)  \(status)  ssh \(Mpd.Net.runtime(n))")
 
             let projs = (projectsByRuntime[n] ?? []).sorted(by: { $0.name < $1.name })
             for p in projs {
-                let url = p.requested == .running ? "   https://\(p.name).mpd.test/" : ""
+                let url = p.requested == .running ? "   https://\(Mpd.Net.host(p.name))/" : ""
                 print("  \(p.name)   \(p.requested)\(url)")
             }
         }

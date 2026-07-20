@@ -27,7 +27,8 @@ extension Mpd.Runtime.DB {
         "/srv/dbs/\(shortName(engine: engine, version: version))"
     }
 
-    /// Allocate the lowest free DB IP in the dedicated `10.163.0.30–99` range.
+    /// Allocate the lowest free DB IP in the dedicated `.30–.99` range of
+    /// this VM's /24 (`Mpd.Net.dbHostRange`).
     /// IPs are pinned at create time via Podman's `--network mpd-internal:ip=`,
     /// so once allocated they stay stable for the container's lifetime. Slots
     /// vacated by `--db-delete` are reusable.
@@ -44,16 +45,15 @@ extension Mpd.Runtime.DB {
             } else {
                 return nil
             }
-            let parts = ipString.split(separator: ".")
-            guard parts.count == 4,
-                  parts[0] == "10", parts[1] == "163", parts[2] == "0",
-                  let last = Int(parts[3]) else { return nil }
-            return last
+            // Only addresses inside *this* VM's /24 consume a slot — a
+            // container left over from a different subnet must not.
+            return Mpd.Net.hostOctet(of: ipString)
         })
-        for octet in 30...99 where !used.contains(octet) {
-            return "10.163.0.\(octet)"
+        for host in Mpd.Net.dbHostRange where !used.contains(host) {
+            return Mpd.Net.ip(host)
         }
-        throw RuntimeError("DB IP pool exhausted (10.163.0.30–99). Delete unused DB containers first.")
+        throw RuntimeError("DB IP pool exhausted (\(Mpd.Net.ip(Mpd.Net.dbHostRange.lowerBound))–"
+            + "\(Mpd.Net.dbHostRange.upperBound)). Delete unused DB containers first.")
     }
 
     // MARK: - Tag parsing
@@ -328,7 +328,7 @@ extension Mpd.Runtime.DB {
     // MARK: - State cache rebuild
 
     /// Walk live DB containers and rewrite the registered-databases state file.
-    /// Called whenever DB containers come/go so `<db>.db.mpd.test` resolution
+    /// Called whenever DB containers come/go so `<db>.db.<zone>` resolution
     /// and other consumers see a current view.
     static func rebuildStateCache(quiet: Bool = false) {
         let containers = Mpd.Podman.ps(filter: "label=mpd.type=db")

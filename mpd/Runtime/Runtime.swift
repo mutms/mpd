@@ -142,7 +142,7 @@ extension Mpd.Runtime {
 
             if let item {
                 ip = item.Labels?["mpd.ip"] ?? Mpd.Podman.containerIP(item.Names.first ?? "")
-                dns = "\(name).runtime.mpd.test"
+                dns = Mpd.Net.runtime(name)
                 // Persisted intent (requested) drives reconciliation; live
                 // observation (current) drives display of what is.
                 requestedStr = Mpd.Runtime.State.loadRuntimeStateEntry(name)?.requested ?? "-"
@@ -176,8 +176,8 @@ extension Mpd.Runtime {
 
         print("Name:       \(name)")
         print("IP:         \(ip.isEmpty ? "(unknown)" : ip)")
-        print("SSH:        ssh \(name).runtime.mpd.test")
-        print("URL:        https://\(name).runtime.mpd.test")
+        print("SSH:        ssh \(Mpd.Net.runtime(name))")
+        print("URL:        https://\(Mpd.Net.runtime(name))")
         print("Requested:  \(requestedStr)")
         print("Current:    \(currentStr)")
         if projects.isEmpty {
@@ -185,7 +185,7 @@ extension Mpd.Runtime {
         } else {
             for (i, entry) in projects.enumerated() {
                 let prefix = i == 0 ? "Projects:   " : "            "
-                let url = entry.requested == .running ? "  → https://\(entry.name).mpd.test/" : ""
+                let url = entry.requested == .running ? "  → https://\(Mpd.Net.host(entry.name))/" : ""
                 var info = "\(entry.name)  \(entry.requested)  \(entry.type)"
                 if !entry.databaseEngine.isEmpty { info += "  [\(entry.databaseEngine):\(entry.databaseVersion)]" }
                 print("\(prefix)\(info)\(url)")
@@ -240,14 +240,14 @@ extension Mpd.Runtime {
 
         // Create runtime pod. DNS is configured at the network level — see
         // `Mpd.Podman.networkCreate` in ActionSetup,
-        // where `--dns 10.163.0.3` (dnsmasq) is set on `mpd-internal`. All
+        // where `--dns <dnsmasq IP>` is set on `mpd-internal`. All
         // containers attached to the network use that for resolution; no
         // per-pod or per-container `--dns` needed.
         // Pod hostname is `mpd-<NNN>-<runtime>` — same as the pod name and
         // the SSH alias the user types from the Mac (`ssh mpd-159-php`),
         // so bash's default `\h` prompt makes the VM unambiguous when
         // SSH'd in. Set on the pod (not the container) because pod members
-        // share the UTS namespace. DNS (`<runtime>.runtime.mpd.test`) is
+        // share the UTS namespace. DNS (`<runtime>.runtime.<zone>`) is
         // unaffected — it resolves by IP via dnsmasq.
         let runtimeHostname = runtimePodName(name)
 
@@ -337,7 +337,7 @@ extension Mpd.Runtime {
 
         // dnsmasq
         step("Writing dnsmasq conf.d entry")
-        let confContent = "address=/\(name).runtime.mpd.test/\(runtimeIP)\n"
+        let confContent = "address=/\(Mpd.Net.runtime(name))/\(runtimeIP)\n"
         try confContent.write(toFile: "\(Mpd.VM.dnsmasqDir)/\(name).conf",
                               atomically: true, encoding: .utf8)
         Mpd.Podman.restart(Mpd.Service.Dnsmasq.containerName)
@@ -360,7 +360,7 @@ extension Mpd.Runtime {
         // Wait for sshd inside the runtime to bind. The container reports
         // "running" once systemd is up, but services boot async — sshd usually
         // lands a few seconds later. Without this wait, an immediate
-        // `ssh user@<rt>.runtime.mpd.test` hits "Connection refused" and
+        // `ssh user@<rt>.runtime.<zone>` hits "Connection refused" and
         // looks like a setup failure to the user. Silent on the fast path;
         // prints a one-liner if it actually has to wait noticeably.
         try waitForRuntimeSSHD(ip: runtimeIP)
@@ -369,7 +369,7 @@ extension Mpd.Runtime {
         ok("Runtime '\(name)' is ready.")
         print("""
           IP:   \(runtimeIP)
-          SSH:  ssh \(name).runtime.mpd.test
+          SSH:  ssh \(Mpd.Net.runtime(name))
         """)
     }
 
@@ -618,7 +618,7 @@ extension Mpd.Runtime {
         // Renew project certs — delete existing, ensureProjectCert regenerates
         let projects = Mpd.Runtime.State.loadProjects().projects
         for proj in projects where !proj.name.isEmpty {
-            print("  Renewing cert for \(proj.name).mpd.test")
+            print("  Renewing cert for \(Mpd.Net.host(proj.name))")
             _ = Mpd.Podman.volumeToolOutput(
                 command: ["rm", "-f", "/srv/meta/\(proj.name)/cert.pem", "/srv/meta/\(proj.name)/key.pem"],
                 suppressStderr: true
@@ -626,7 +626,7 @@ extension Mpd.Runtime {
             try? Mpd.Project.ensureProjectCert(project: proj.name, urls: proj.urls)
         }
 
-        // Reinstall CA into running runtime trust stores so `curl https://*.mpd.test`
+        // Reinstall CA into running runtime trust stores so `curl https://*.<zone>`
         // from inside containers continues to validate cleanly.
         let caPath = "\(Mpd.VM.confCARootDir)/rootCA.pem"
         let runtimes = allContainers().compactMap { $0.Labels?["mpd.name"] }.filter { !$0.isEmpty }

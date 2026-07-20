@@ -4,6 +4,8 @@
 //
 // Top-level Mpd statics: dataVolume name, internalSubnet, ServiceDescriptor.
 //
+//   Mpd.Net.*                      addressing: subnet, IPs, DNS zone         → Net.swift
+//
 //   Mpd.Action.{Setup,Start,Stop,Restart,Status}   verb entry points          → Action/*.swift
 //
 //   Mpd.VM.*                       VM host operations + path constants        → VM/VM.swift
@@ -39,7 +41,7 @@ enum Mpd {
 
     /// Podman network shared by all containers — single /24, plenty of room for
     /// the handful of services + DBs + runtimes mpd actually creates.
-    /// Address layout (all 10.163.0.x):
+    /// Composed by `Mpd.Net`, which owns the whole address layout:
     ///   .1            gateway (Podman bridge)
     ///   .3            dnsmasq
     ///   .4            portal
@@ -49,7 +51,7 @@ enum Mpd {
     ///                 pinned at create time; vacated slots are reusable)
     ///   .100+         runtimes (php=.100, node=.101, util=.102) — see each
     ///                 runtime's configuration.json
-    static let internalSubnet = "10.163.0.0/24"
+    static var internalSubnet: String { Net.subnet }
 
     // MARK: - Namespaces
 
@@ -76,6 +78,9 @@ enum Mpd {
     enum Project {}
 
     enum Podman {}
+
+    /// Addressing — container subnet + `*.mpd.test` zone. See Net.swift.
+    enum Net {}
 
     /// Shell-completion candidate emitter — see `Mpd.Completion.emit(cword:words:)`.
     enum Completion {}
@@ -160,7 +165,7 @@ enum Mpd {
             stop: (() throws -> Void)?
         ) {
             let resolvedContainer = containerName ?? "mpd-service-\(name)"
-            let resolvedDNS = dns ?? "\(name).service.mpd.test"
+            let resolvedDNS = dns ?? Net.service(name)
             let resolvedAliases = dnsAliases ?? [resolvedDNS]
             self.init(
                 name: name,

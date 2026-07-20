@@ -1,6 +1,6 @@
 // mpd — Mpd.Service.Dnsmasq namespace
 // dnsmasq DNS resolver: container lifecycle.
-// Container: mpd-service-dnsmasq at 10.163.0.3
+// Container: mpd-service-dnsmasq at Mpd.Net.ip(.dnsmasq) — .3 of the VM's /24
 // Config file: assets/services/dnsmasq/dnsmasq.conf (bind-mounted read-only).
 // Per-runtime overrides in /var/lib/mpd/state/dnsmasq.d/ (bind-mounted read-only).
 // Restart with `podman restart` after conf.d changes — SIGHUP does NOT reload conf-dir.
@@ -12,10 +12,10 @@ extension Mpd.Service.Dnsmasq {
     static let descriptor = Mpd.ServiceDescriptor(
         name: "dnsmasq",
         containerName: "mpd-service-dnsmasq",
-        ip: "10.163.0.3",
-        dns: "dnsmasq.service.mpd.test",
-        accessHint: "DNS resolver (10.163.0.3:53)",
-        dnsAliases: ["dnsmasq.service.mpd.test"],
+        ip: Mpd.Net.ip(Mpd.Net.Host.dnsmasq),
+        dns: Mpd.Net.service("dnsmasq"),
+        accessHint: "DNS resolver (\(Mpd.Net.ip(Mpd.Net.Host.dnsmasq)):53)",
+        dnsAliases: [Mpd.Net.service("dnsmasq")],
         setup: nil,
         start: nil,
         stop: nil
@@ -154,7 +154,7 @@ extension Mpd.Service.Dnsmasq {
     /// to verify a specific external host should probe that host directly.
     /// Non-fatal: warns and returns on timeout.
     static func waitUntilReady(maxSeconds: Double = 5.0) {
-        let probe = ["nslookup", "mpd.test", "127.0.0.1"]
+        let probe = ["nslookup", Mpd.Net.zone, "127.0.0.1"]
         let interval: Double = 0.25
         let attempts = max(1, Int(maxSeconds / interval))
         for _ in 0..<attempts {
@@ -170,20 +170,23 @@ extension Mpd.Service.Dnsmasq {
         var lines: [String] = ["# mpd managed service DNS records"]
         for record in Mpd.serviceDNSRecords {
             // dnsmasq `address=/domain/ip` matches domain + subdomains.
-            // Use host-record for apex-only mpd.test to avoid wildcard fallback.
-            if record.host == "mpd.test" {
+            // Use host-record for the apex alone to avoid wildcard fallback.
+            if record.host == Mpd.Net.zone {
                 lines.append("host-record=\(record.host),\(record.ip)")
             } else {
                 lines.append("address=/\(record.host)/\(record.ip)")
             }
         }
 
-        // `vm.service.mpd.test` → this VM's own IP (NOT a container IP).
+        // `vm.service.<zone>` → this VM's own IP (NOT a container IP).
         // Lets the host-side orchestrator (mpd-virt diag) verify it's
         // talking to THIS VM's dnsmasq by checking the answer matches
         // the expected MPD_VM_IP. Skipped on sandbox VMs (vmIP is empty).
+        //
+        // PHASE 2: retire this record. Once the zone itself carries the VM
+        // ID, `<id>.mpd.test` resolving at all is the same proof.
         if let identity = try? Mpd.VM.Platform.load(), !identity.vmIP.isEmpty {
-            lines.append("host-record=vm.service.mpd.test,\(identity.vmIP)")
+            lines.append("host-record=\(Mpd.Net.service("vm")),\(identity.vmIP)")
         }
 
         let content = lines.joined(separator: "\n") + "\n"
@@ -204,7 +207,7 @@ extension Mpd.Service.Dnsmasq {
             let containerName = db.containerName.isEmpty ? "mpd-db-\(db.databaseId)" : db.containerName
             let ip = Mpd.Podman.containerIP(containerName)
             guard !ip.isEmpty else { continue }
-            lines.append("address=/\(db.databaseId).db.mpd.test/\(ip)")
+            lines.append("address=/\(Mpd.Net.db(db.databaseId))/\(ip)")
         }
         let content = lines.joined(separator: "\n") + "\n"
 

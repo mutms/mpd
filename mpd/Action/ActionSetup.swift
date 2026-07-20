@@ -205,7 +205,7 @@ extension Mpd.Action.Setup {
 
     /// Import the mpd CA into the dev user's NSS DB at ~/.pki/nssdb/.
     /// Chromium (and Chrome, Edge, etc.) read this DB on Linux for SSL trust;
-    /// without this step, https://mpd.test/ shows a security warning even
+    /// without this step, the portal shows a security warning even
     /// though the CA is in the OS trust store, because Linux browsers don't
     /// read /etc/ssl/certs/ directly. Idempotent: certutil -A overwrites if
     /// the nickname already exists. Requires libnss3-tools (provides certutil).
@@ -399,7 +399,7 @@ extension Mpd.Action.Setup {
             try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: serviceDir)
 
             try Mpd.VM.Certificate.generateCert(
-                sans: ["mpd.test"],
+                sans: [Mpd.Net.zone],
                 certPath: serviceCert,
                 keyPath: serviceKey,
                 caKeyPath: caKeyPem,
@@ -411,7 +411,7 @@ extension Mpd.Action.Setup {
             ok("Services cert already exists in \(serviceDir)")
         }
 
-        step("Root Certificate Authority for mpd.test in system trust store")
+        step("Root Certificate Authority for \(Mpd.Net.rootDomain) in system trust store")
         Mpd.VM.Certificate.trustCA(caPath: caRootPem)
 
         step("Trust mpd CA in user's NSS DB (Chromium)")
@@ -420,7 +420,7 @@ extension Mpd.Action.Setup {
         step("Trust mpd CA in Firefox (enterprise policy)")
         Mpd.VM.Certificate.installFirefoxPolicy(caPath: caRootPem)
 
-        step("DNS resolver for mpd.test")
+        step("DNS resolver for \(Mpd.Net.rootDomain)")
         try Mpd.VM.DNS.configureDNSResolver()
 
         step("Podman network")

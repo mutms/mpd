@@ -73,7 +73,7 @@ extension Mpd.Project {
             throw RuntimeError(
                 "Unknown verb '\(verb)'. Valid verbs: create, configure, start, stop, delete, show.\n" +
                 "Project-type-specific operations are tools — SSH into the runtime " +
-                "(`ssh user@<runtime>.runtime.mpd.test`) and run them on PATH.")
+                "(`ssh user@<runtime>.runtime.\(Mpd.Net.zone)`) and run them on PATH.")
         }
     }
 }

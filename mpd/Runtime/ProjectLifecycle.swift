@@ -83,7 +83,7 @@ extension Mpd.Project {
                         print("\(prefix)\(u.label)\(pad)  \(u.url)")
                     }
                 }
-                print("SSH:            ssh \(rt).runtime.mpd.test")
+                print("SSH:            ssh \(Mpd.Net.runtime(rt))")
                 print("Directory:      /srv/projects/\(project)")
                 // Project-type-specific resolved settings (from mpd.env). Generic
                 // dump — Swift doesn't interpret these, just surfaces them so the
@@ -421,6 +421,6 @@ extension Mpd.Project {
         print("")
         print("Project-type-specific operations (mdl-cron, phpunit, composer, …) are tools,")
         print("not host-side verbs. SSH into the runtime and run them on PATH:")
-        print("  ssh user@<runtime>.runtime.mpd.test")
+        print("  ssh user@<runtime>.runtime.\(Mpd.Net.zone)")
     }
 }

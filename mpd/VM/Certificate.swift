@@ -56,7 +56,7 @@ extension Mpd.VM.Certificate {
     ) throws {
         let csr = "\(certsDir)/tmp.csr"
         let extFile = "\(certsDir)/tmp.ext"
-        let cn = sans.first ?? "mpd.test"
+        let cn = sans.first ?? Mpd.Net.zone
         let sanList = sans.map { "DNS:\($0)" }.joined(separator: ", ")
 
         let extContent = """
@@ -161,7 +161,7 @@ extension Mpd.VM.Certificate {
 
         // Build the policy dict and serialize with sortedKeys so the
         // file content is deterministic (byte-comparable across runs).
-        // Homepage policy: nudge users to the portal (`https://mpd.test/`)
+        // Homepage policy: nudge users to the portal (the zone apex)
         // — the single entry point that lists every project — but leave
         // Locked=false so a user who picks a project-specific homepage
         // (e.g. their main moodle) keeps that preference.
@@ -169,7 +169,7 @@ extension Mpd.VM.Certificate {
             "policies": [
                 "Certificates": ["Install": [certPathInPolicy]],
                 "Homepage": [
-                    "URL": "https://mpd.test/",
+                    "URL": "https://\(Mpd.Net.zone)/",
                     "Locked": false,
                     "StartPage": "homepage",
                 ],

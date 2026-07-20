@@ -135,7 +135,7 @@ extension Mpd {
             let databaseId = item.Labels?["mpd.name"] ?? "\(engine)-\(version.replacingOccurrences(of: ".", with: "-"))"
             let database = "\(engine):\(version)"
             let status = item.State == "running" ? "running" : "stopped"
-            let dns = "\(databaseId).db.mpd.test"
+            let dns = Mpd.Net.db(databaseId)
             let projectsList = projectMap[databaseId]?.sorted().joined(separator: ", ") ?? "-"
             return (database: database, status: status, dns: dns, projects: projectsList)
         }.sorted { $0.database < $1.database }
