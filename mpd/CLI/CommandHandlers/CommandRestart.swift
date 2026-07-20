@@ -5,7 +5,9 @@ import Foundation
 
 extension GlobalCommand {
     func handleRestart() throws {
-        print("\n\u{001B}[1mmpd --restart\u{001B}[0m\n")
+        // No banner: --start and --stop print none, and the action itself
+        // already announces "Rebooting VM". A header on one of three
+        // sibling commands is just noise.
         try Mpd.Action.Restart.execute()
     }
 }

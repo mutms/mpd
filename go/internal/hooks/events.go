@@ -38,8 +38,6 @@ type Project struct {
 	// Empty engine means the project has none, so database-audience
 	// events fire nowhere — normal, not an error.
 	DBEngine, DBVersion string
-	// Type and TypeRuntime scope type-level hook assets.
-	Type, TypeRuntime string
 }
 
 func (pr Project) env() map[string]string {
@@ -103,27 +101,15 @@ func MpdPreStop(ctx context.Context, p *podman.Client) Event {
 	}
 }
 
-// EnginesFor lets a caller scope mpd-pre-stop discovery per engine:
-// assets live at databases/<engine>/hooks/, so one Event value cannot
-// cover several engines at once. Callers fire one event per engine.
-func EnginesFor(ev Event, engine string) Event {
-	ev.DBEngine = engine
-	return ev
-}
-
 func projectEvent(ctx context.Context, name string, pr Project, p *podman.Client,
 	audiences []AudienceKind, onFailure FailureMode) Event {
 
 	return Event{
-		Name:               name,
-		Revision:           1,
-		Audiences:          audiences,
-		OnFailure:          onFailure,
-		Env:                pr.env(),
-		Runtime:            pr.Runtime,
-		DBEngine:           pr.DBEngine,
-		ProjectType:        pr.Type,
-		ProjectTypeRuntime: pr.TypeRuntime,
+		Name:      name,
+		Revision:  1,
+		Audiences: audiences,
+		OnFailure: onFailure,
+		Env:       pr.env(),
 		Containers: func(a AudienceKind) []string {
 			switch a {
 			case AudienceRuntime:

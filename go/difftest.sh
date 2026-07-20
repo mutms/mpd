@@ -44,7 +44,24 @@ declare -a PAIRED=(
     # caches. Safe to run twice, so it belongs here rather than in
     # mutatetest.
     "--start|up"
+    # --stop and --restart are safe here only because the harness runs
+    # with MPD_STOP_DOES_NOT_SHUTDOWN_VM set (see below): without it they
+    # would power the VM off mid-suite.
+    "--stop|down"
+    "--restart|reboot"
 )
+
+# Neither binary may actually power the VM off during a test run.
+export MPD_STOP_DOES_NOT_SHUTDOWN_VM=1
+
+# Settle the environment before comparing.
+#
+# `--start` is read-MOSTLY, not read-only: it starts whatever is down. If
+# something is stopped when the suite begins, the Swift run starts it and
+# the Go run then correctly reports "already running" — a difference that
+# is an artifact of running the command twice, not a divergence. Starting
+# once up front makes both invocations see the same settled state.
+"$SWIFT" --start >/dev/null 2>&1 || true
 
 for bin in "$SWIFT" "$GO"; do
     [ -x "$bin" ] || { echo "missing binary: $bin (run: make install go-build)" >&2; exit 1; }

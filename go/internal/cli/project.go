@@ -187,21 +187,18 @@ func findProject(s state.Store, name string) (state.Project, bool) {
 	return state.Project{}, false
 }
 
-// hookProject builds the hook-facing view of a project, resolving the
-// type's asset location so type-level hooks are discoverable.
+// hookProject builds the hook-facing view of a project.
+//
+// No project-type fields: hook discovery reads the container's labels,
+// and runtime-audience events have no type-level layer in v1.
 func hookProject(entry state.Project, container string, d ProjectDeps) hooks.Project {
-	pr := hooks.Project{
+	return hooks.Project{
 		Name:             entry.Name,
 		Runtime:          entry.RuntimeName,
 		RuntimeContainer: container,
 		DBEngine:         entry.DatabaseEngine,
 		DBVersion:        entry.DatabaseVersion,
 	}
-	if cfg, ok := d.Assets.ProjectTypeConfig(entry.Type); ok {
-		pr.Type = cfg.AssetsType
-		pr.TypeRuntime = cfg.AssetsRuntime
-	}
-	return pr
 }
 
 // ProjectDelete removes a project and everything scoped to it.

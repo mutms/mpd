@@ -45,7 +45,7 @@ func main() {
 
 	root.AddCommand(versionCmd(), netCmd(), listCmd(), showCmd(), runtimeCmd(), dbCmd(),
 		projectStartCmd(), projectStopCmd(), projectDeleteCmd(), projectConfigureCmd(),
-		projectCreateCmd(), checkHooksCmd(), startVMCmd())
+		projectCreateCmd(), checkHooksCmd(), startVMCmd(), stopVMCmd(), restartVMCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
@@ -474,6 +474,34 @@ func startVMCmd() *cobra.Command {
 				return err
 			}
 			return cli.Start(c.Context(), c.OutOrStdout(), d, state.Dir)
+		},
+	}
+}
+
+// stopVMCmd mirrors `mpd --stop`; `down` avoids colliding with
+// `mpd stop <project>`.
+func stopVMCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "down",
+		Short: "Power off the VM (pre-stop hooks fire during shutdown)",
+		Args:  cobra.NoArgs,
+		RunE: func(c *cobra.Command, args []string) error {
+			d, err := projectDeps()
+			if err != nil {
+				return err
+			}
+			return cli.Stop(c.Context(), c.OutOrStdout(), d, state.Dir)
+		},
+	}
+}
+
+func restartVMCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "reboot",
+		Short: "Reboot the VM",
+		Args:  cobra.NoArgs,
+		RunE: func(c *cobra.Command, args []string) error {
+			return cli.Restart(c.Context(), c.OutOrStdout(), state.Dir)
 		},
 	}
 }

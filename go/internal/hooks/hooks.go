@@ -96,14 +96,6 @@ type Event struct {
 	Containers func(AudienceKind) []string
 	// ServiceName scopes AudienceService to one service's assets.
 	ServiceName string
-	// Runtime scopes runtime-audience discovery to that runtime's assets.
-	Runtime string
-	// DBEngine scopes database-audience discovery to that engine's assets.
-	DBEngine string
-	// ProjectType scopes discovery to a project type's assets.
-	ProjectType string
-	// ProjectTypeRuntime is the runtime owning ProjectType's assets.
-	ProjectTypeRuntime string
 }
 
 // Fire runs every hook for an event, honouring its failure mode.
@@ -137,7 +129,7 @@ func Fire(ctx context.Context, out io.Writer, ev Event, verb string, p *podman.C
 func fireOne(ctx context.Context, out io.Writer, ev Event, audience AudienceKind,
 	container, verb string, p *podman.Client) error {
 
-	scripts := discover(ev, audience)
+	scripts := discover(ctx, p, ev, audience, container)
 	if len(scripts) == 0 {
 		return nil
 	}
@@ -205,25 +197,31 @@ type Script struct {
 // discover finds the hook scripts for an event on one audience, in
 // layer order.
 //
+// Which assets apply comes from the CONTAINER's own labels, not from the
+// event. mpd-pre-stop fires on every running database at once and those
+// may be different engines, so a single engine carried on the event
+// would send postgres's hooks into mariadb. The container knows what it
+// is; ask it.
+//
 // Only `*.sh` is considered. Without that filter every file in the
 // directory gets handed to bash — an editor backup, a `.bak`, a stray
 // `.swp`, a README. See docs/HOOKS.md.
-func discover(ev Event, audience AudienceKind) []Script {
+func discover(ctx context.Context, p *podman.Client, ev Event, audience AudienceKind, container string) []Script {
 	var dirs []string
 
 	switch audience {
 	case AudienceRuntime:
+		// base + per-runtime only. There is deliberately NO project-type
+		// layer for runtime-audience events: adding one would fire hooks
+		// the Swift implementation never fired (docs/HOOKS.md v1).
 		dirs = append(dirs, filepath.Join(assetsDir, "runtime-base", "hooks", ev.Name+".d"))
-		if ev.Runtime != "" {
-			dirs = append(dirs, filepath.Join(assetsDir, "runtimes", ev.Runtime, "hooks", ev.Name+".d"))
-		}
-		if ev.ProjectType != "" && ev.ProjectTypeRuntime != "" {
-			dirs = append(dirs, filepath.Join(assetsDir, "runtimes", ev.ProjectTypeRuntime,
-				"project_types", ev.ProjectType, "hooks", ev.Name+".d"))
+		if runtime := containerLabel(ctx, p, container, "mpd.name"); runtime != "" {
+			dirs = append(dirs, filepath.Join(assetsDir, "runtimes", runtime, "hooks", ev.Name+".d"))
 		}
 	case AudienceDatabase:
-		if ev.DBEngine != "" {
-			dirs = append(dirs, filepath.Join(assetsDir, "databases", ev.DBEngine, "hooks", ev.Name+".d"))
+		// Per-engine only; DB images are stock, so there is no base layer.
+		if engine := containerLabel(ctx, p, container, "mpd.db.engine"); engine != "" {
+			dirs = append(dirs, filepath.Join(assetsDir, "databases", engine, "hooks", ev.Name+".d"))
 		}
 	case AudienceService:
 		if ev.ServiceName != "" {
@@ -253,4 +251,13 @@ func discover(ev Event, audience AudienceKind) []Script {
 		}
 	}
 	return scripts
+}
+
+// containerLabel reads a label, tolerating a nil client so discovery can
+// be exercised in tests without podman.
+func containerLabel(ctx context.Context, p *podman.Client, container, key string) string {
+	if p == nil || container == "" {
+		return ""
+	}
+	return p.Label(ctx, container, key)
 }
