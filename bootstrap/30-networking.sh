@@ -141,8 +141,8 @@ need_install=()
 dpkg -s systemd-resolved >/dev/null 2>&1 || need_install+=(systemd-resolved)
 dpkg -s libnss-resolve   >/dev/null 2>&1 || need_install+=(libnss-resolve)
 if [ ${#need_install[@]} -gt 0 ]; then
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get update -qq
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    apt_get update -qq
+    apt_get install -y --no-install-recommends \
         "${need_install[@]}"
     ok "installed: ${need_install[*]}"
 else
@@ -271,7 +271,8 @@ DNS=${gateway}
             APPLY="$APPLY sudo systemctl enable --now systemd-networkd systemd-resolved >/dev/null;"
             APPLY="$APPLY sudo ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf;"
             APPLY="$APPLY sudo systemctl disable --now NetworkManager >/dev/null 2>&1 || true;"
-            APPLY="$APPLY sudo env DEBIAN_FRONTEND=noninteractive apt-get -y purge \
+            APPLY="$APPLY sudo env DEBIAN_FRONTEND=noninteractive apt-get \
+-o DPkg::Lock::Timeout=${MPD_APT_LOCK_TIMEOUT} -y purge \
 network-manager network-manager-gnome >/dev/null 2>&1 || true;"
         fi
         APPLY="$APPLY sudo networkctl reload;"

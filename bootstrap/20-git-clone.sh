@@ -51,8 +51,12 @@ need_install=()
 dpkg -s git              >/dev/null 2>&1 || need_install+=(git)
 dpkg -s ca-certificates  >/dev/null 2>&1 || need_install+=(ca-certificates)
 if [ ${#need_install[@]} -gt 0 ]; then
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get update -qq
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    # -o DPkg::Lock::Timeout: apt-get (unlike `apt`) has no default
+    # lock wait, so a desktop template's packagekitd checking for
+    # updates makes this fail outright. Inlined rather than shared:
+    # this script is wgettable and runs before the repo exists.
+    sudo env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update -qq
+    sudo env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends \
         "${need_install[@]}"
     ok "installed: ${need_install[*]}"
 else

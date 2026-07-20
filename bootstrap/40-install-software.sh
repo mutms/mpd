@@ -85,8 +85,8 @@ done
 if [ ${#missing[@]} -eq 0 ]; then
     ok "all ${#ALL_PKGS[@]} packages already installed"
 else
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get update -qq
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    apt_get update -qq
+    apt_get install -y --no-install-recommends \
         "${missing[@]}"
     ok "installed ${#missing[@]} package(s): ${missing[*]}"
 fi
