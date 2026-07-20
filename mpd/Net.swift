@@ -19,8 +19,9 @@
 // The VM's own ID (`MPD_VM_ID` — a 3-digit value in [100, 254] for managed
 // VMs, `000` for sandbox) is therefore the discriminator in both halves:
 // subnet `10.163.<id>.0/24`, zone `<id>.mpd.test`. It is a valid octet by
-// construction, so it is used directly. See
-// docs/proposals/per-vm-addressing.md.
+// construction, so it is used directly. Full model — including why both
+// halves are required and why the bare apex no longer resolves — in
+// docs/NETWORKING.md.
 //
 // ── Addressing ─────────────────────────────────────────────────────────
 // VM 222 gets subnet `10.163.222.0/24` and zone `222.mpd.test`; VM 150 gets
