@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -129,4 +130,68 @@ func DNSRecords(name string, urls []state.ProjectURL, runtimeIP string, n net.Ne
 // Exec runs a project script inside its runtime as the dev user.
 func Exec(ctx context.Context, p *podman.Client, container, user string, command ...string) (int, error) {
 	return p.ExecAsUser(ctx, container, user, command...)
+}
+
+// WriteMeta writes /srv/meta/<project>/project.json — the ground-truth
+// project identity readable from inside containers.
+//
+// Written BEFORE a project type's configure.sh runs, because
+// source-mpd-env.sh reads runtime and type from it to locate the
+// matching mpd-defaults.env layers. Written again afterwards, once
+// configure.sh has produced URLs and DB fields.
+func WriteMeta(ctx context.Context, p *podman.Client, uid string, entry state.Project) error {
+	meta := map[string]any{
+		"name":            entry.Name,
+		"type":            entry.Type,
+		"runtime":         entry.RuntimeName,
+		"databaseId":      entry.DatabaseID,
+		"databaseEngine":  entry.DatabaseEngine,
+		"databaseVersion": entry.DatabaseVersion,
+		"requested":       entry.Requested,
+		"webRoot":         "/srv/projects/" + entry.Name,
+	}
+	// Always emit urls, possibly empty, so consumers need not distinguish
+	// "absent" from "present but empty" — they are the same thing.
+	urls := make([]map[string]any, 0, len(entry.URLs))
+	for _, u := range entry.URLs {
+		urls = append(urls, map[string]any{"label": u.Label, "kind": u.Kind, "url": u.URL})
+	}
+	meta["urls"] = urls
+
+	data, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return err
+	}
+	return p.VolumeWrite(ctx, uid, fmt.Sprintf(
+		"mkdir -p /srv/meta/%s && cat > /srv/meta/%s/project.json", entry.Name, entry.Name), data)
+}
+
+// ReadURLs returns the URL list a project type's configure.sh wrote to
+// /srv/meta/<project>/urls.json. An absent or unparseable file yields
+// none — "no URLs" is a valid project state, not an error.
+func ReadURLs(ctx context.Context, p *podman.Client, uid, name string) []state.ProjectURL {
+	raw, ok := p.VolumeRead(ctx, "/srv/meta/"+name+"/urls.json", uid)
+	if !ok {
+		return nil
+	}
+	var urls []state.ProjectURL
+	if err := json.Unmarshal([]byte(raw), &urls); err != nil {
+		return nil
+	}
+	return urls
+}
+
+// ReadEffective returns what a project type's configure.sh resolved into
+// /srv/meta/<project>/effective.json — most importantly dbTag, which is
+// how the layered mpd.env cascade reaches Swift/Go.
+func ReadEffective(ctx context.Context, p *podman.Client, uid, name string) map[string]any {
+	raw, ok := p.VolumeRead(ctx, "/srv/meta/"+name+"/effective.json", uid)
+	if !ok {
+		return nil
+	}
+	var eff map[string]any
+	if err := json.Unmarshal([]byte(raw), &eff); err != nil {
+		return nil
+	}
+	return eff
 }

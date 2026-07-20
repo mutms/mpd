@@ -16,6 +16,8 @@ import (
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/project"
+	"github.com/mutms/mpd/go/internal/runtime"
+	"github.com/mutms/mpd/go/internal/sidecar"
 	"github.com/mutms/mpd/go/internal/state"
 )
 
@@ -304,5 +306,69 @@ func restoreRunningProjects(ctx context.Context, out io.Writer, runtime, contain
 	if changed {
 		return dns.Restart(ctx)
 	}
+	return nil
+}
+
+// RuntimeCreate provisions a new runtime and everything that hangs off
+// it: DNS record, state, sidecars, and any projects already assigned to
+// it.
+//
+// The provisioning itself lives in internal/runtime; this is the
+// orchestration around it, which is why the two are separate — the
+// container work is testable without the DNS and state plumbing.
+func RuntimeCreate(ctx context.Context, out io.Writer, name string, p *podman.Client,
+	s state.Store, dns dnsmasq.Manager, o current.Observer, n net.Net,
+	a assets.Tree, devUser, uid, home string) error {
+
+	container := o.RuntimeContainer(name)
+	pod := podName(o, name)
+
+	runtimeIP, err := runtime.Create(ctx, out, runtime.CreateOptions{
+		Name:      name,
+		Pod:       pod,
+		Container: container,
+		DevUser:   devUser,
+		UID:       uid,
+		Home:      home,
+		Net:       n,
+		Assets:    a,
+	}, p)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(out, "\n\033[1m==> Writing dnsmasq conf.d entry\033[0m")
+	if _, err := dns.WriteRecord(name, "address=/"+n.Runtime(name)+"/"+runtimeIP+"\n"); err != nil {
+		return err
+	}
+	if err := dns.Restart(ctx); err != nil {
+		return err
+	}
+
+	if err := s.SaveRuntime(state.Runtime{
+		Name: name, RuntimeID: name, IP: runtimeIP, Requested: "running",
+	}); err != nil {
+		return err
+	}
+
+	// Sidecars: runtime defaults now, URL-derived ones later. At create
+	// time no project has published URLs yet, so selenium and friends
+	// cannot be known — the project verbs re-reconcile when they land.
+	fmt.Fprintln(out, "\n\033[1m==> Attaching runtime sidecars\033[0m")
+	if err := sidecar.Reconcile(ctx, out, pod, sidecar.Desired(name, s, a), p); err != nil {
+		return err
+	}
+
+	// A recreated runtime may already have projects assigned to it.
+	if err := restoreRunningProjects(ctx, out, name, container, runtimeIP, p, s, dns, n, devUser, uid); err != nil {
+		return err
+	}
+	if err := waitForSSHD(ctx, out, runtimeIP); err != nil {
+		return err
+	}
+
+	fmt.Fprintln(out, "")
+	Ok(out, "Runtime '%s' is ready.", name)
+	fmt.Fprintf(out, "  IP:   %s\n  SSH:  ssh %s\n", runtimeIP, n.Runtime(name))
 	return nil
 }

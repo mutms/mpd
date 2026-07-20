@@ -392,3 +392,64 @@ func (c *Client) ExecWithOptions(ctx context.Context, container string, options 
 	args = append(args, command...)
 	return c.stream(ctx, args)
 }
+
+// PodExists reports whether a pod exists.
+func (c *Client) PodExists(ctx context.Context, pod string) bool {
+	res, err := c.run(ctx, []string{"pod", "exists", pod})
+	return err == nil && res.Code == 0
+}
+
+// ImageExists reports whether an image is present locally.
+func (c *Client) ImageExists(ctx context.Context, image string) bool {
+	res, err := c.run(ctx, []string{"image", "exists", image})
+	return err == nil && res.Code == 0
+}
+
+// PullQuiet fetches an image without streaming layer progress. Used for
+// sidecars, where the pull is incidental to the operation the user asked
+// for rather than the point of it.
+func (c *Client) PullQuiet(ctx context.Context, image string) (int, error) {
+	res, err := c.run(ctx, []string{"pull", "-q", image})
+	if err != nil {
+		return -1, err
+	}
+	return res.Code, nil
+}
+
+// BuildImage builds an image from a context directory.
+func (c *Client) BuildImage(ctx context.Context, tag, contextDir string) (int, error) {
+	return c.stream(ctx, []string{"build", "-t", tag, contextDir})
+}
+
+// ExecCapture runs a command inside a container and captures its output.
+func (c *Client) ExecCapture(ctx context.Context, container string, command ...string) (exec.Result, error) {
+	args := append([]string{"exec", container}, command...)
+	return c.run(ctx, args)
+}
+
+// Mounts every mpd-created container gets, at identical absolute paths
+// inside and out so asset and env lookups resolve the same either side.
+var (
+	// EnvMountRO carries user-editable VM-wide overrides. Mounted as a
+	// DIRECTORY, not a file, so vim/nano atomic-rename writes on the VM
+	// propagate into running containers — a file mount would pin the old
+	// inode.
+	EnvMountRO = []string{"-v", "/var/lib/mpd/env:/var/lib/mpd/env:ro"}
+	// SkelMountRO carries user-managed dotfile defaults for new runtimes.
+	SkelMountRO = []string{"-v", "/var/lib/mpd/skel:/var/lib/mpd/skel:ro"}
+)
+
+// PodCreate creates a pod.
+func (c *Client) PodCreate(ctx context.Context, args []string) (int, error) {
+	return c.stream(ctx, append([]string{"pod", "create"}, args...))
+}
+
+// Copy copies between host and container (`podman cp`); either side may
+// be `container:/path`.
+func (c *Client) Copy(ctx context.Context, src, dst string) (int, error) {
+	res, err := c.run(ctx, []string{"cp", src, dst})
+	if err != nil {
+		return -1, err
+	}
+	return res.Code, nil
+}

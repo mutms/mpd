@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // Dir is the bind-mounted asset tree, identical on the VM and inside
@@ -134,4 +135,92 @@ func (t Tree) findProjectType(name string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// ProjectTypeSidecars lists sidecar roles a project type requires.
+func (t Tree) ProjectTypeSidecars(name string) ([]string, bool) {
+	runtime, found := t.findProjectType(name)
+	if !found {
+		return nil, false
+	}
+	data, err := os.ReadFile(filepath.Join(t.dir, "runtimes", runtime,
+		"project_types", name, "configuration.json"))
+	if err != nil {
+		return nil, false
+	}
+	var raw struct {
+		Sidecars []string `json:"sidecars"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, false
+	}
+	return raw.Sidecars, true
+}
+
+// DefaultRuntimeForType returns the runtime a project type runs on.
+func (t Tree) DefaultRuntimeForType(name string) (string, bool) {
+	return t.findProjectType(name)
+}
+
+// HasFile reports whether a path exists under the asset tree.
+func (t Tree) HasFile(rel string) bool {
+	_, err := os.Stat(filepath.Join(t.dir, rel))
+	return err == nil
+}
+
+// AllProjectTypes lists every project type across all runtimes, sorted.
+func (t Tree) AllProjectTypes() []string {
+	var types []string
+	for _, rt := range t.RuntimeNames() {
+		entries, err := os.ReadDir(filepath.Join(t.dir, "runtimes", rt, "project_types"))
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			if t.HasFile(filepath.Join("runtimes", rt, "project_types", e.Name(), "configuration.json")) {
+				types = append(types, e.Name())
+			}
+		}
+	}
+	sort.Strings(types)
+	return types
+}
+
+// DetectTypeFromName infers a project type from the project's name:
+// an exact match on a type name, else a `-<suffix>` match for types that
+// opt in by declaring nameSuffix.
+//
+// Only opt-in types participate in suffix matching — a generic type like
+// moodle must not absorb every name ending in "-moodle-ish".
+func (t Tree) DetectTypeFromName(name string) string {
+	types := t.AllProjectTypes()
+	for _, ty := range types {
+		if ty == name {
+			return ty
+		}
+	}
+	for _, ty := range types {
+		runtime, ok := t.findProjectType(ty)
+		if !ok {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(t.dir, "runtimes", runtime,
+			"project_types", ty, "configuration.json"))
+		if err != nil {
+			continue
+		}
+		var raw struct {
+			NameSuffix string `json:"nameSuffix"`
+		}
+		if err := json.Unmarshal(data, &raw); err != nil || raw.NameSuffix == "" {
+			continue
+		}
+		if strings.HasSuffix(name, "-"+raw.NameSuffix) {
+			return ty
+		}
+	}
+	return ""
 }

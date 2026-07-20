@@ -177,13 +177,26 @@ func (s Store) SaveDatabases(entries []Database) error {
 }
 
 // SaveProjects replaces projects.json.
+//
+// Empty slices are normalised to `[]` rather than left nil, at both
+// levels. A nil slice marshals to `null`, and consumers — the portal's
+// PHP, jq in shell tools — would then have to distinguish "key absent",
+// "null" and "empty array", which all mean the same thing. Emitting a
+// real empty array keeps that a non-question.
 func (s Store) SaveProjects(projects []Project) error {
 	if projects == nil {
 		projects = []Project{}
 	}
+	normalised := make([]Project, len(projects))
+	copy(normalised, projects)
+	for i := range normalised {
+		if normalised[i].URLs == nil {
+			normalised[i].URLs = []ProjectURL{}
+		}
+	}
 	return s.writeJSON("projects.json", struct {
 		Projects []Project `json:"projects"`
-	}{projects})
+	}{normalised})
 }
 
 func (s Store) writeJSON(name string, v any) error {
@@ -243,4 +256,16 @@ func (s Store) UpsertProject(p Project) error {
 		}
 	}
 	return s.SaveProjects(append(projects, p))
+}
+
+// DeleteProject removes a project record by name.
+func (s Store) DeleteProject(name string) error {
+	projects := s.Projects()
+	kept := projects[:0]
+	for _, p := range projects {
+		if p.Name != name {
+			kept = append(kept, p)
+		}
+	}
+	return s.SaveProjects(kept)
 }

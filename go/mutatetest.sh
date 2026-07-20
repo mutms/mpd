@@ -181,6 +181,9 @@ run_case "db delete (existing)" \
 # gotest1 is a `bare` project on the util runtime — no database, no web
 # server, so start/stop exercise the lifecycle without a heavy type.
 PROJ="${MPD_TEST_PROJECT:-gotest1}"
+# A throwaway project for create/delete. `bare` scaffolds without a git
+# clone, so these cases stay fast.
+DELPROJ="${MPD_TEST_DELETE_PROJECT:-gotestdel}"
 
 run_case "project start (from stopped)" \
     "$SWIFT stop $PROJ" \
@@ -202,10 +205,37 @@ run_case "project stop (already stopped)" \
     "stop $PROJ" \
     "stop $PROJ"
 
+run_case "project create (bare, from absent)" \
+    "$SWIFT delete $DELPROJ --yes" \
+    "create $DELPROJ --type=bare" \
+    "create $DELPROJ --type=bare"
+
+# Configure is the heaviest project verb: it runs the type's
+# configure.sh, resolves the layered env, and reconciles DB, URLs, cert
+# and sidecars from its output.
+run_case "project configure (no mutations)" \
+    "$SWIFT configure $PROJ" \
+    "configure $PROJ" \
+    "configure $PROJ"
+
+run_case "project delete (existing)" \
+    "$SWIFT delete $DELPROJ --yes >/dev/null 2>&1; $SWIFT create $DELPROJ --type=bare" \
+    "delete $DELPROJ --yes" \
+    "delete $DELPROJ --yes"
+
 # --- Runtime verbs ---------------------------------------------------
 # `util` is the cheapest runtime to rebuild if something goes wrong, and
 # gotest1 lives on it, so the "runtime has projects" path is exercised.
 RT="${MPD_TEST_RUNTIME:-util}"
+
+# The heaviest verb: pod + systemd container + two-phase bootstrap.
+# `node` is the cheapest real runtime to rebuild and holds no projects.
+RT_NEW="${MPD_TEST_NEW_RUNTIME:-node}"
+
+run_case "runtime create (from absent)" \
+    "$SWIFT --runtime-delete $RT_NEW --yes" \
+    "--runtime-create $RT_NEW" \
+    "runtime create $RT_NEW"
 
 run_case "runtime stop (from running)" \
     "$SWIFT --runtime-start $RT" \

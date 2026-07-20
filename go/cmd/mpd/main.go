@@ -16,6 +16,7 @@ import (
 	"github.com/mutms/mpd/go/internal/cli"
 	"github.com/mutms/mpd/go/internal/current"
 	"github.com/mutms/mpd/go/internal/dnsmasq"
+	"github.com/mutms/mpd/go/internal/hooks"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/state"
@@ -43,7 +44,8 @@ func main() {
 	}
 
 	root.AddCommand(versionCmd(), netCmd(), listCmd(), showCmd(), runtimeCmd(), dbCmd(),
-		projectStartCmd(), projectStopCmd())
+		projectStartCmd(), projectStopCmd(), projectDeleteCmd(), projectConfigureCmd(),
+		projectCreateCmd(), checkHooksCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
@@ -224,7 +226,29 @@ func runtimeCmd() *cobra.Command {
 		},
 	}
 
-	cmd.AddCommand(startCmd, stopCmd, deleteCmd)
+	createCmd := &cobra.Command{
+		Use:   "create <name>",
+		Short: "Provision a new runtime",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			n, p, s, dns, o, err := runtimeDeps()
+			if err != nil {
+				return err
+			}
+			user := os.Getenv("USER")
+			if user == "" {
+				user = "user"
+			}
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return err
+			}
+			return cli.RuntimeCreate(c.Context(), c.OutOrStdout(), args[0], p, s, dns, o, n,
+				assets.New(), user, devUID(), home)
+		},
+	}
+
+	cmd.AddCommand(createCmd, startCmd, stopCmd, deleteCmd)
 	return cmd
 }
 
@@ -361,4 +385,77 @@ func projectStopCmd() *cobra.Command {
 			return cli.ProjectStop(c.Context(), c.OutOrStdout(), args[0], d)
 		},
 	}
+}
+
+// checkHooksCmd mirrors Swift's `mpd --check-hooks`. Diagnostics are
+// warnings, never failures: an orphaned hook simply never fires, and
+// refusing to run over one would be worse than the problem.
+func checkHooksCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "check-hooks",
+		Short: "Cross-reference hook directories against the event catalogue",
+		Args:  cobra.NoArgs,
+		RunE: func(c *cobra.Command, args []string) error {
+			hooks.Diagnose(c.ErrOrStderr(), state.Dir)
+			return nil
+		},
+	}
+}
+
+func projectDeleteCmd() *cobra.Command {
+	var assumeYes bool
+	cmd := &cobra.Command{
+		Use:   "delete <project>",
+		Short: "Delete a project, its database, dataroot and source tree",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			d, err := projectDeps()
+			if err != nil {
+				return err
+			}
+			return cli.ProjectDelete(c.Context(), c.OutOrStdout(), c.InOrStdin(), args[0], d, assumeYes)
+		},
+	}
+	cmd.Flags().BoolVar(&assumeYes, "yes", false, "Skip the confirmation prompt")
+	return cmd
+}
+
+func projectConfigureCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "configure <project> [KEY=VALUE ...]",
+		Short: "Apply mpd.env changes and reconcile the project",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			d, err := projectDeps()
+			if err != nil {
+				return err
+			}
+			return cli.ProjectConfigure(c.Context(), c.OutOrStdout(), args[0], args[1:], d)
+		},
+	}
+}
+
+func projectCreateCmd() *cobra.Command {
+	var opts cli.CreateOptions
+	cmd := &cobra.Command{
+		Use:   "create <project>",
+		Short: "Scaffold a new project",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			d, err := projectDeps()
+			if err != nil {
+				return err
+			}
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return err
+			}
+			return cli.ProjectCreate(c.Context(), c.OutOrStdout(), args[0], opts, d, home)
+		},
+	}
+	cmd.Flags().StringVar(&opts.Type, "type", "", "Project type (default: inferred, else moodle)")
+	cmd.Flags().StringVar(&opts.GitRepo, "git-repo", "", "Clone this repository into the project")
+	cmd.Flags().StringVar(&opts.GitBranch, "git-branch", "", "Branch to clone")
+	cmd.Flags().StringVar(&opts.GitDepth, "git-depth", "", "Shallow-clone depth")
+	return cmd
 }

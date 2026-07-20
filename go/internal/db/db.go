@@ -10,6 +10,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"time"
@@ -41,6 +42,26 @@ func ShortName(engine, version string) string {
 // ContainerName builds the container name for an engine and version.
 func ContainerName(engine, version string) string {
 	return "mpd-db-" + ShortName(engine, version)
+}
+
+// ParseTag validates an MPD_DB tag without touching podman, for CLI
+// argument checking. Same rules as Resolve's engine:version form.
+func ParseTag(raw string) (engine, version string, err error) {
+	engine, version, found := strings.Cut(raw, ":")
+	if !found {
+		version = "latest"
+	}
+	if !knownEngine(engine) {
+		return "", "", unknownEngine(engine)
+	}
+	if version != "latest" {
+		if version == "" || version[0] < '0' || version[0] > '9' {
+			return "", "", fmt.Errorf(
+				"Invalid version '%s' for '%s'. Must be 'latest' or start with a digit "+
+					"(e.g. 17, 17.2, 17-bookworm).", version, engine)
+		}
+	}
+	return engine, version, nil
 }
 
 // Resolve turns user input into a Ref. Accepted forms:
@@ -318,6 +339,97 @@ func Ensure(ctx context.Context, ref Ref, p *podman.Client, n net.Net, uid strin
 			return err
 		}
 		fmt.Fprintf(out, "\033[1;32m✓ %s is running.\033[0m\n", ref.Container)
+	}
+	return nil
+}
+
+// Drop removes a project's database and user from a running engine.
+//
+// Per-project credentials are all the project name (user = password =
+// database), a documented dev-only choice — see docs/SECURITY.md.
+func Drop(ctx context.Context, out io.Writer, engine, container, dbName string, p *podman.Client) error {
+	fmt.Fprintf(out, "Dropping database and user '%s' from %s...\n", dbName, container)
+
+	switch engine {
+	case "postgres":
+		// Database first: a role still owning objects cannot be dropped.
+		codeDB := p.ExecQuietly(ctx, container, "psql", "-U", "postgres", "-c",
+			fmt.Sprintf(`DROP DATABASE IF EXISTS "%s";`, dbName))
+		p.ExecQuietly(ctx, container, "psql", "-U", "postgres", "-c",
+			fmt.Sprintf(`DROP ROLE IF EXISTS "%s";`, dbName))
+		if codeDB != 0 {
+			return fmt.Errorf("Failed to drop database '%s'.", dbName)
+		}
+	case "mariadb", "mysql":
+		sql := fmt.Sprintf("DROP DATABASE IF EXISTS `%s`;\nDROP USER IF EXISTS '%s'@'%%';", dbName, dbName)
+		client := "mariadb"
+		if engine == "mysql" {
+			client = "mysql"
+		}
+		if code := p.ExecQuietly(ctx, container, client, "-u", "root", "-proot", "-e", sql); code != 0 {
+			return fmt.Errorf("Failed to drop database '%s'.", dbName)
+		}
+	default:
+		return unknownEngine(engine)
+	}
+	return nil
+}
+
+// CreateFor creates a per-project user and database in a running engine.
+//
+// Idempotent: re-running on an existing project is a no-op, because
+// `mpd configure` runs it every time and must not fail on the second
+// call. User, password and database name are all the project name — a
+// documented dev-only choice (docs/SECURITY.md).
+func CreateFor(ctx context.Context, out io.Writer, engine, container, dbName string, p *podman.Client) error {
+	fmt.Fprintf(out, "Creating user and database '%s' in %s...\n", dbName, container)
+
+	switch engine {
+	case "postgres":
+		// Role first, idempotently: CREATE ROLE has no IF NOT EXISTS, so
+		// the check has to happen inside a DO block.
+		role := fmt.Sprintf(
+			`DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '%s') `+
+				`THEN CREATE ROLE "%s" LOGIN PASSWORD '%s'; `+
+				`ELSE ALTER ROLE "%s" WITH LOGIN PASSWORD '%s'; END IF; END $$;`,
+			dbName, dbName, dbName, dbName, dbName)
+		if code := p.ExecQuietly(ctx, container, "psql", "-U", "postgres", "-c", role); code != 0 {
+			return fmt.Errorf("Failed to ensure PostgreSQL role '%s'.", dbName)
+		}
+
+		// CREATE DATABASE cannot run inside a DO block or transaction, so
+		// probe first and only create when missing.
+		res, err := p.ExecCapture(ctx, container, "psql", "-U", "postgres", "-tAc",
+			fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname='%s';", dbName))
+		if err != nil || res.Code != 0 {
+			return fmt.Errorf("Failed to check PostgreSQL database '%s'.", dbName)
+		}
+		if strings.TrimSpace(res.Stdout) == "1" {
+			return nil
+		}
+		create := fmt.Sprintf(`CREATE DATABASE "%s" OWNER "%s";`, dbName, dbName)
+		if code := p.ExecQuietly(ctx, container, "psql", "-U", "postgres", "-c", create); code != 0 {
+			return fmt.Errorf("Failed to create database '%s'.", dbName)
+		}
+
+	case "mariadb", "mysql":
+		sql := fmt.Sprintf(
+			"CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;\n"+
+				"CREATE USER IF NOT EXISTS '%s'@'%%' IDENTIFIED BY '%s';\n"+
+				"GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%';\nFLUSH PRIVILEGES;",
+			dbName, dbName, dbName, dbName, dbName)
+		// MariaDB 12.x dropped the `mysql` CLI symlink — use the engine's
+		// own binary rather than assuming they are interchangeable.
+		cli := "mysql"
+		if engine == "mariadb" {
+			cli = "mariadb"
+		}
+		if code := p.ExecQuietly(ctx, container, cli, "-u", "root", "-proot", "-e", sql); code != 0 {
+			return fmt.Errorf("Failed to create database '%s'.", dbName)
+		}
+
+	default:
+		return unknownEngine(engine)
 	}
 	return nil
 }

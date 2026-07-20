@@ -39,6 +39,7 @@ COMMANDS=(
 declare -a PAIRED=(
     "--runtime util|runtime util"
     "--runtime nosuchruntime|runtime nosuchruntime"
+    "--check-hooks|check-hooks"
 )
 
 for bin in "$SWIFT" "$GO"; do
