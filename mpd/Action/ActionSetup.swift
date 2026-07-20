@@ -392,11 +392,25 @@ extension Mpd.Action.Setup {
             storedServiceFingerprint = ""
         }
 
+        // SAN drift. The service cert covers exactly the zone apex, and the
+        // zone changes when the VM's ID does — a cert issued for a previous
+        // zone still verifies against the CA, so nothing else here would
+        // notice, and every HTTPS hit on the portal would fail hostname
+        // verification. Same signature-file pattern the per-project certs use
+        // (Mpd.Project.ensureProjectCert).
+        let serviceSANs = [Mpd.Net.zone]
+        let serviceSANsPath = "\(serviceDir)/cert.sans"
+        let serviceSANsSignature = serviceSANs.joined(separator: "\n")
+        let storedServiceSANs = (try? String(contentsOfFile: serviceSANsPath, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let sansChanged = storedServiceSANs != serviceSANsSignature
+
         let caFingerprintChanged = storedServiceFingerprint != currentCAFingerprint
         let shouldGenerateServiceCert =
             !fm.fileExists(atPath: serviceCert) ||
             !fm.fileExists(atPath: serviceKey) ||
-            caFingerprintChanged
+            caFingerprintChanged ||
+            sansChanged
 
         if shouldGenerateServiceCert {
             var serviceIsDirectory: ObjCBool = false
@@ -409,14 +423,15 @@ extension Mpd.Action.Setup {
             try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: serviceDir)
 
             try Mpd.VM.Certificate.generateCert(
-                sans: [Mpd.Net.zone],
+                sans: serviceSANs,
                 certPath: serviceCert,
                 keyPath: serviceKey,
                 caKeyPath: caKeyPem,
                 caCertPath: caRootPem,
                 certsDir: certOpsDir)
             try currentCAFingerprint.write(toFile: serviceFingerprint, atomically: true, encoding: .utf8)
-            ok("Services certificate generated in \(serviceDir)")
+            try serviceSANsSignature.write(toFile: serviceSANsPath, atomically: true, encoding: .utf8)
+            ok("Services certificate generated in \(serviceDir) for \(serviceSANs.joined(separator: ", "))")
         } else {
             ok("Services cert already exists in \(serviceDir)")
         }
@@ -451,13 +466,14 @@ extension Mpd.Action.Setup {
                     per-VM addressing (or its MPD_VM_ID changed). Either recreate the \
                     VM, or migrate in place — destroys containers, keeps the data volume:
 
-                        mpd --stop
                         sudo podman rm -af
                         sudo podman network rm mpd-internal
                         mpd --setup
 
                     Then recreate runtimes and DB containers; /srv/ (projects, data,
-                    databases) is on the data volume and survives.
+                    databases) is on the data volume and survives. No reboot needed —
+                    `podman rm -af` stops the containers, and `mpd --setup` rebuilds
+                    the network, records, and certs in place.
                     """)
             }
             ok("Network 'mpd-internal' already exists (\(Mpd.internalSubnet)).")

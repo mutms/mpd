@@ -46,6 +46,19 @@ Real possibilities, not committed work.
   will need a way to upgrade mpd without re-provisioning. Shape TBD
   (standalone tool, `mpd --self-update`, or something else).
 
+- **In-place runtime upgrades** — runtime containers are treated as
+  pets, not cattle: a developer's `php` runtime accumulates installed
+  tools, shell history, SSH known_hosts, and half-finished work, so
+  "delete and recreate" is the wrong answer to a changed asset. The
+  four infra services use a `mpd.service.revision` label plus
+  `Mpd.Podman.removeIfOutdated` to force recreation; runtimes
+  deliberately have no such mechanism and should not grow one.
+  Instead they want upgrade scripts that run *inside* the existing
+  container and converge it — the same shape as
+  `bootstrap/70-update.sh` for the VM. Driven by ordinary asset and
+  tooling drift over a runtime's life, not by re-addressing: changing
+  an existing VM's ID is not a supported operation.
+
 - **Runtime SSH banner** — install a branded `/etc/motd` inside each
   runtime container (php, node, util) so users see a welcome message
   and tool hints when they SSH into `<rt>.runtime.mpd.test`. Common

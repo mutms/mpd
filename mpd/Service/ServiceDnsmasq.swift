@@ -66,6 +66,7 @@ extension Mpd.Service.Dnsmasq {
         guard fm.fileExists(atPath: dnsmasqConf) else {
             throw RuntimeError("dnsmasq.conf not found at \(dnsmasqConf)")
         }
+        let staleRemoved = pruneOutOfZoneRecords(in: dnsmasqDir)
         let serviceDNSChanged = try ensureServiceDNSRecords(in: dnsmasqDir)
         let databaseDNSChanged = try ensureDatabaseDNSRecords(in: dnsmasqDir)
 
@@ -92,7 +93,7 @@ extension Mpd.Service.Dnsmasq {
             waitUntilReady()
             ok("dnsmasq running.")
         } else {
-            if serviceDNSChanged || databaseDNSChanged {
+            if serviceDNSChanged || databaseDNSChanged || staleRemoved {
                 _ = Mpd.Podman.restart(containerName)
                 waitUntilReady()
                 if databaseDNSChanged {
@@ -121,6 +122,7 @@ extension Mpd.Service.Dnsmasq {
 
         let dnsmasqDir = Mpd.VM.dnsmasqDir
         try FileManager.default.createDirectory(atPath: dnsmasqDir, withIntermediateDirectories: true)
+        let staleRemoved = pruneOutOfZoneRecords(in: dnsmasqDir)
         let serviceDNSChanged = try ensureServiceDNSRecords(in: dnsmasqDir)
         let databaseDNSChanged = try ensureDatabaseDNSRecords(in: dnsmasqDir)
 
@@ -130,7 +132,7 @@ extension Mpd.Service.Dnsmasq {
             }
             waitUntilReady()
             if verbose { ok("dnsmasq running.") }
-        } else if serviceDNSChanged || databaseDNSChanged {
+        } else if serviceDNSChanged || databaseDNSChanged || staleRemoved {
             _ = Mpd.Podman.restart(containerName)
             waitUntilReady()
             if verbose {
@@ -162,6 +164,46 @@ extension Mpd.Service.Dnsmasq {
             Thread.sleep(forTimeInterval: interval)
         }
         print("Warning: dnsmasq did not become ready within \(Int(maxSeconds))s — DNS lookups may fail.")
+    }
+
+    /// Delete conf files that serve names outside this VM's zone.
+    ///
+    /// Per-runtime (`<rt>.conf`, `_runtime-<rt>.conf`) and per-project
+    /// (`<project>.conf`) records are written at create time and never
+    /// revisited, so after the VM's ID changes they keep answering for the
+    /// old zone at addresses on the old subnet — names that resolve to
+    /// somewhere nothing listens. The entities they describe have to be
+    /// recreated to get correct records anyway, so the stale file has no
+    /// value; leaving it only produces confusing half-working DNS.
+    ///
+    /// `services.conf` and `databases.conf` are excluded: mpd regenerates
+    /// both from scratch immediately after this runs.
+    ///
+    /// Returns true when anything was removed (caller restarts dnsmasq —
+    /// SIGHUP does not reload the conf dir).
+    @discardableResult
+    private static func pruneOutOfZoneRecords(in dnsmasqDir: String) -> Bool {
+        let managed: Set<String> = ["services.conf", "databases.conf"]
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(atPath: dnsmasqDir) else { return false }
+
+        var removedAny = false
+        for entry in entries where entry.hasSuffix(".conf") && !managed.contains(entry) {
+            let path = "\(dnsmasqDir)/\(entry)"
+            guard let body = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
+            // `address=/<host>/<ip>` — extract the host and test the zone.
+            let hosts = body.components(separatedBy: .newlines).compactMap { line -> String? in
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                guard trimmed.hasPrefix("address=/") else { return nil }
+                let parts = trimmed.dropFirst("address=/".count).split(separator: "/")
+                return parts.first.map(String.init)
+            }
+            guard !hosts.isEmpty, hosts.contains(where: { !Mpd.Net.isInZone($0) }) else { continue }
+            try? fm.removeItem(atPath: path)
+            removedAny = true
+            print("  Removed stale DNS record file \(entry) (not in \(Mpd.Net.zone))")
+        }
+        return removedAny
     }
 
     private static func ensureServiceDNSRecords(in dnsmasqDir: String) throws -> Bool {

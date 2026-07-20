@@ -26,7 +26,10 @@ extension Mpd.Service.Portal {
     static var ip: String { descriptor.ip }
 
     /// Bump when container setup/mount behavior changes.
-    static let revision = "10"
+    /// 11: apache.conf is now rendered per-VM into <stateDir>/portal/ and
+    ///     mounted from there — the mount source moved, so a surviving
+    ///     container would keep serving `ServerName mpd.test`.
+    static let revision = "11"
 
     // Label keys
     private static let revisionLabel = "mpd.service.revision"
