@@ -437,11 +437,6 @@ ssh_cmd "$VM_IP" "$VM_USER" \
     "bash /opt/mpd/bootstrap/50-build.sh" \
     || die "bootstrap/50 failed (make install)."
 ok "mpd binary built"
-
-step "Bootstrap 60: WireGuard (no-op when conf absent)"
-ssh_cmd "$VM_IP" "$VM_USER" \
-    "bash /opt/mpd/bootstrap/60-wireguard.sh" \
-    || die "bootstrap/60 failed."
 ok "Bootstrap complete"
 
 step "Uploading host CA into VM (mpd will reuse it)"

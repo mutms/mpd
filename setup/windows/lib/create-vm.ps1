@@ -214,10 +214,6 @@ Write-Step "Bootstrap 50: build mpd binary"
 Invoke-Ssh -User $VmUser -RemoteHost $VmIp `
     -Command "bash /opt/mpd/bootstrap/50-build.sh"
 Write-Ok "mpd binary built"
-
-Write-Step "Bootstrap 60: WireGuard (no-op when conf absent)"
-Invoke-Ssh -User $VmUser -RemoteHost $VmIp `
-    -Command "bash /opt/mpd/bootstrap/60-wireguard.sh"
 Write-Ok "Bootstrap complete"
 
 # ── 13. Run mpd --setup ───────────────────────────────────────────────────────

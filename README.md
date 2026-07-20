@@ -73,7 +73,7 @@ the source checkout and toolchain live.)
 | **Where you sit**    | Inside the VM (full GNOME desktop)                                                       | On your host (browser + SSH-into-VM)                                  |
 | **Host OS**          | Any (UTM, Parallels, Hyper-V, VirtualBox, virt-manager, VMware…)                         | macOS (primary) — Linux/Windows speculative                           |
 | **Bootstrap**        | Install Debian Trixie + GNOME, snapshot, run one script in the VM                        | `mpd-virt setup` (separate orchestrator binary on the host)           |
-| **Network**          | Internal to the VM (host untouched)                                                      | WireGuard tunnel host↔VM                                              |
+| **Network**          | Internal to the VM (host untouched)                                                      | Static route host→VM container subnet                                 |
 | **Best for**         | Experiments, AI-driven workloads (the VM is the wall; snapshot/revert is the safety net) | Daily-driver Moodle work — host browser/IDE see `*.mpd.test` directly |
 
 **Pick Sandbox if you're unsure or just want to try mpd out quickly.**
@@ -127,7 +127,7 @@ Open Firefox-ESR inside the VM and browse to https://mpd.test/.
 
 Pick this when you want your laptop's own browser/IDE to resolve
 `*.mpd.test` directly. The matched-host bootstrap configures the host
-side (static route + DNS resolver + CA trust + WireGuard) so the
+side (static route + DNS resolver + CA trust) so the
 laptop sees the VM's container subnet:
 
 | Host                          | Bootstrap                                                                          |
@@ -139,7 +139,7 @@ laptop sees the VM's container subnet:
 The `mpd-virt-macos` repo ships a `mpd-virt` host binary that drives
 Parallels Desktop Pro and UTM (via cloud-init), runs the in-VM
 bootstrap pipeline over SSH, and configures the macOS side (route, DNS
-resolver, CA trust, WireGuard) in one shot. Sibling `mpd-virt-linux` /
+resolver, CA trust) in one shot. Sibling `mpd-virt-linux` /
 `mpd-virt-windows` repos are planned along the same shape.
 
 ## What to expect, timing-wise
@@ -160,7 +160,7 @@ resolver, CA trust, WireGuard) in one shot. Sibling `mpd-virt-linux` /
 - `bin/` — local built binaries (`bin/mpd`)
 - `mpd/` — Swift control-plane sources (`Action/`, `VM/`, `Runtime/`, `Service/`, …)
 - `assets/` — runtime/service/sidecar definitions and shell scripts
-- `bootstrap/` — VM bring-up steps (passwordless sudo, repo clone, networking, apt, build, WireGuard)
+- `bootstrap/` — VM bring-up steps (passwordless sudo, repo clone, networking, apt, build)
 - `setup/` — per-platform host orchestration (sandbox + matched-host platforms)
 - `docs/` — full documentation tree
 - `/var/lib/mpd/` — runtime state at runtime (created by bootstrap, populated by `mpd --setup`)

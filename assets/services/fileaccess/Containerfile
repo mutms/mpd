@@ -10,7 +10,8 @@
 #   2. ssh / scp / sftp — for ad-hoc file access from the dev's laptop. Pubkey
 #      auth only, single user, no sudo, listening only on the internal podman
 #      network (no -p mapping), so the SSH endpoint is reachable from the
-#      laptop only via the WireGuard tunnel into the VM. See
+#      laptop only via the host's static route into the VM's container
+#      subnet. See
 #      docs/SECURITY.md.
 #
 # Host keys persist on the host under /var/lib/mpd/state/fileaccess/hostkeys/

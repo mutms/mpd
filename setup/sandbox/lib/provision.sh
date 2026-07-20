@@ -4,8 +4,8 @@
 # Take-over has already run bootstrap/10-passwordless-sudo.sh and
 # bootstrap/20-git-clone.sh, so the repo is cloned and `sudo -n` works.
 # This script:
-#   1. Runs the remaining bootstrap steps (30-60): networking, apt,
-#      build, optional WireGuard.
+#   1. Runs the remaining bootstrap steps (30-50): networking, apt,
+#      build.
 #   2. Installs sandbox-specific tooling (VS Code).
 #   3. Runs `mpd --setup` to bring up podman networks, services, CA.
 #   4. Pre-warms a PHP runtime + postgres for fast first `demo moodle`.
@@ -24,13 +24,12 @@ die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
 [ -d "${REPO_DIR}/.git" ] || die "Repo not cloned at ${REPO_DIR}. Run take-over-sandbox-vm.sh first."
 sudo -n true 2>/dev/null  || die "Passwordless sudo not configured. Run take-over-sandbox-vm.sh first."
 
-# --- Remaining bootstrap steps (30-60) --------------------------------
+# --- Remaining bootstrap steps (30-50) --------------------------------
 # Sandbox VM = octet 000 (DHCP, no static IP pin).
 
 bash "${REPO_DIR}/bootstrap/30-networking.sh" 0
 bash "${REPO_DIR}/bootstrap/40-install-software.sh"
 bash "${REPO_DIR}/bootstrap/50-build.sh"
-bash "${REPO_DIR}/bootstrap/60-wireguard.sh"
 
 # 50-build.sh prepends ~/.local/bin + /opt/mpd/bin to ~/.bashrc and also exports it
 # inside its own shell — but since we invoked it via `bash …` (a

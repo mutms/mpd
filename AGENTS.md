@@ -22,7 +22,7 @@ the user sits and where `mpd` runs:
   headless; GNOME is installed and toggleable on demand via
   `gnome-start` / `gnome-stop` (persistent across reboots). User stays
   on their host: host browser visits `*.mpd.test` directly via
-  WireGuard + CA trust; host terminal SSHes into the VM to use the
+  a static route + CA trust; host terminal SSHes into the VM to use the
   `mpd` CLI.
 
 `mpd` itself is a single Linux binary that runs **inside the VM**. The
@@ -46,7 +46,7 @@ chowns), all enforced at runtime — do not propose alternates.
   container at the same path, so `/opt/mpd/assets/...` resolves identically
   on the VM and inside containers.
 - `/var/lib/mpd/conf/` — persistent identity. CA + service cert,
-  `platform.env`, wireguard private key. PRIVATE — never bind-mounted
+  `platform.env`. PRIVATE — never bind-mounted
   into containers.
 - `/var/lib/mpd/env/` — user-editable env overrides. Holds `mpd-vm.env`
   only. Bind-mounted RO into every runtime container at the same path
@@ -116,7 +116,7 @@ across docs.
   live in the separate `mpd-virt-macos` repo under
   `docs/proposals/`.)*
 - `docs/USAGE.md` — day-to-day workflow (bootstrap → first project → SSH-into-runtime)
-- `docs/NETWORKING.md` — networking model (WireGuard via mpd-virt)
+- `docs/NETWORKING.md` — networking model (static route via mpd-virt)
 - `docs/SECURITY.md` — security model
 - macOS automation (Parallels / UTM) lives in the sibling `mpd-virt-macos` repo: <https://github.com/mutms/mpd-virt-macos>
 - `setup/linux/README.md` — Ubuntu host + libvirt/KVM automation

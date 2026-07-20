@@ -64,7 +64,7 @@ fi
 
 # --- Disable IPv6 -----------------------------------------------------
 # mpd is IPv4-only end-to-end (container subnet, dnsmasq's `*.mpd.test`
-# zone, WireGuard tunnel). Leaving IPv6 enabled means happy-eyeballs
+# zone). Leaving IPv6 enabled means happy-eyeballs
 # AAAA queries leak to public DNS and stalls show up as multi-second
 # `getaddrinfo` delays. Persisted via sysctl.d so the setting survives
 # reboots. Idempotent: same content = no-op rewrite.
@@ -72,7 +72,7 @@ fi
 step "Disabling IPv6 (mpd is IPv4-only)"
 
 IPV6_DROP_IN=/etc/sysctl.d/99-mpd-disable-ipv6.conf
-IPV6_BODY="# mpd: IPv4-only end-to-end (container subnet, dnsmasq, WG tunnel).
+IPV6_BODY="# mpd: IPv4-only end-to-end (container subnet, dnsmasq).
 net.ipv6.conf.all.disable_ipv6 = 1
 net.ipv6.conf.default.disable_ipv6 = 1
 net.ipv6.conf.lo.disable_ipv6 = 1
@@ -83,6 +83,34 @@ else
     printf '%s' "${IPV6_BODY}" | sudo install -m 644 /dev/stdin "${IPV6_DROP_IN}"
     sudo sysctl --load="${IPV6_DROP_IN}" >/dev/null
     ok "wrote + applied ${IPV6_DROP_IN}"
+fi
+
+# --- IPv4 forwarding --------------------------------------------------
+# The workstation reaches container IPs through a static route whose
+# next hop is this VM, so the VM kernel has to forward packets from its
+# external NIC into the podman1 bridge. Unconditional: sandbox VMs are
+# their own workstation and forwarding is harmless there.
+
+step "IPv4 forwarding"
+
+IP_FORWARD_DROP_IN=/etc/sysctl.d/99-mpd-forwarding.conf
+IP_FORWARD_BODY="# mpd: required so the kernel routes packets from the external NIC → podman1 → containers.
+net.ipv4.ip_forward = 1
+"
+if [ -f "${IP_FORWARD_DROP_IN}" ] && \
+   [ "$(sudo cat "${IP_FORWARD_DROP_IN}" 2>/dev/null || true)" = "${IP_FORWARD_BODY}" ]; then
+    ok "${IP_FORWARD_DROP_IN} already in place"
+else
+    printf '%s' "${IP_FORWARD_BODY}" | sudo install -m 644 /dev/stdin "${IP_FORWARD_DROP_IN}"
+    sudo sysctl --load="${IP_FORWARD_DROP_IN}" >/dev/null
+    ok "wrote + applied ${IP_FORWARD_DROP_IN}"
+fi
+
+# Retire the drop-in the old WireGuard step used to write, so a VM
+# bootstrapped before WireGuard removal doesn't keep a stale duplicate.
+if [ -f /etc/sysctl.d/99-mpd-wg.conf ]; then
+    sudo rm -f /etc/sysctl.d/99-mpd-wg.conf
+    ok "removed stale /etc/sysctl.d/99-mpd-wg.conf"
 fi
 
 # --- Hostname canonicalization ---------------------------------------

@@ -651,13 +651,14 @@ Wipe contract:
 
 ## 11) Networking, DNS, and TLS (Summary)
 
-- Laptop ↔ VM transport is WireGuard (configured by the host-side
-  `mpd-virt` orchestrator, separate repo). The tunnel's `AllowedIPs`
-  on the Mac peer includes the full container subnet `10.163.0.0/24`,
-  so containers are directly reachable while the tunnel is up.
-- dnsmasq inside the VM serves `*.mpd.test`; the WireGuard tunnel
-  config sets `DNS = 10.163.0.3` so the Mac resolves `*.mpd.test`
-  through dnsmasq while the tunnel is up.
+- Laptop ↔ VM transport is the hypervisor's own network plus a
+  persistent static route for the container subnet `10.163.0.0/24`
+  via the VM's IP (installed by the host-side `mpd-virt` orchestrator,
+  separate repo). No tunnel.
+- dnsmasq inside the VM serves `*.mpd.test`; the host gets a *scoped*
+  resolver entry pointing that domain at `10.163.0.3`
+  (`/etc/resolver/mpd.test` on macOS, NRPT on Windows, a
+  systemd-resolved drop-in on Linux).
 - All TLS certs (per-project, per-runtime, services) are signed by
   the local `mpd` CA generated on the host and pushed into the VM.
 
@@ -733,7 +734,7 @@ See detailed docs:
 - `mpd/TUI/` — interactive TUI
 - `mpd/Util/` — Podman gateway, JSONStateStore
 - `assets/` — runtime/type/service scripts/config/templates + `runtime-base/skel/`
-- `bootstrap/` — VM bring-up steps 10–60 (passwordless sudo, repo clone, networking, apt, build, WireGuard)
+- `bootstrap/` — VM bring-up steps 10–50 (passwordless sudo, repo clone, networking, apt, build)
 - `setup/` — per-platform host-side orchestration (sandbox, macos, linux, windows)
 - `docs/` — behavioral and architecture contracts
 

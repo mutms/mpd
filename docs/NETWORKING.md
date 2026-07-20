@@ -2,9 +2,9 @@
 
 How the host laptop reaches mpd's container subnet inside the VM.
 
-The host-side bits (WireGuard tunnel setup, route, CA trust) are
-configured by the **mpd-virt** orchestrator binary (separate repo) — not
-by the in-VM `mpd` binary. This document describes the topology and the
+The host-side bits (static route, scoped DNS, CA trust) are configured
+by the **mpd-virt** orchestrator binary (separate repo) — not by the
+in-VM `mpd` binary. This document describes the topology and the
 host↔VM↔containers data path; for the actual host commands see
 `mpd-virt`'s own documentation.
 
@@ -13,7 +13,7 @@ host↔VM↔containers data path; for the actual host commands see
 ```text
 Laptop (macOS — primary)
   |
-  | WireGuard tunnel  (10.164.0.0/30 point-to-point)
+  | hypervisor network + static route:  10.163.0.0/24 → <VM IP>
   |
 VM (Debian Trixie)              hostname: mpd-<octet>
   |
@@ -30,24 +30,31 @@ VM (Debian Trixie)              hostname: mpd-<octet>
      +-- runtime containers      10.163.0.100+ (full dev access via SSH)
 ```
 
-The VM runs `net.ipv4.ip_forward=1` so packets from the laptop transit
-the VM and reach containers via `podman1`.
+The VM runs `net.ipv4.ip_forward=1` (set by `bootstrap/30-networking.sh`)
+so packets from the laptop transit the VM and reach containers via
+`podman1`.
 
 ## How the laptop reaches containers
 
-mpd VM uses **WireGuard** between the laptop and the VM:
+There is no tunnel. The laptop already reaches the VM over the
+hypervisor's own network (Parallels Shared, libvirt default, Hyper-V
+Default Switch), and the container subnet hangs off that:
 
-- Tunnel point-to-point on `10.164.0.0/30` (Mac side `.1`, VM side `.2`).
-- `AllowedIPs` on the Mac peer includes `10.163.0.0/24` so the full
-  container subnet routes through the tunnel.
-- `DNS = 10.163.0.3` (dnsmasq) is set in the tunnel config, so
-  `*.mpd.test` resolves through the tunnel when it's up.
-- mpd's local CA is installed in the host's system trust store
-  (one-time at setup) so HTTPS just works.
+- **Route** — `10.163.0.0/24` via the VM's IP, installed on the host by
+  `mpd-virt` (persistent where the OS supports it; re-asserted on
+  `start` otherwise). This is what makes container IPs reachable.
+- **DNS** — a *scoped* resolver entry pointing `*.mpd.test` at dnsmasq
+  (`10.163.0.3`): `/etc/resolver/mpd.test` on macOS, an NRPT rule on
+  Windows, a systemd-resolved drop-in with `Domains=~mpd.test` on
+  Linux. Scoped, so only `.mpd.test` queries go to the VM — everything
+  else keeps using the host's normal resolvers.
+- **Trust** — mpd's local CA is installed in the host's system trust
+  store (one-time at setup) so HTTPS just works.
 
-WireGuard.app on macOS owns the route + DNS while the tunnel is up.
-**No `/etc/resolver/` file, no `sudo route add` step** — toggling the
-tunnel from WireGuard.app is the whole UX after first-time setup.
+Those three facts are the whole client contract, and they're identical
+on macOS, Linux, and Windows. A scoped route plus scoped DNS coexists
+cleanly with a corporate VPN; nothing has to be toggled on or off to
+use mpd.
 
 ## DNS forwarding upstream
 
@@ -89,21 +96,21 @@ The purpose is identity verification: `mpd-virt diag` on the Mac queries
 this name and compares the answer to the VM's known IP. A match proves
 the Mac is talking to **this specific VM's** dnsmasq — not some other
 resolver that happens to know about `*.mpd.test` (e.g. when juggling
-multiple VMs and the wrong WireGuard tunnel is active).
+multiple VMs and the host route points at the other one).
 
 ## SSH access to runtime containers
 
 Two parallel paths, both fine:
 
-**Via WireGuard tunnel** — direct container reachability while the
-tunnel is up:
+**Direct** — container names resolve and container IPs route, so:
 
 ```
 ssh user@php.runtime.mpd.test
 ```
 
-**Via SSH ProxyJump through the VM** — works whether or not WG is up,
-since the VM's address is reachable via the hypervisor's own network:
+**Via SSH ProxyJump through the VM** — works even without host-side
+route/DNS config, since the VM's address is reachable via the
+hypervisor's own network:
 
 ```
 # ~/.ssh/config:

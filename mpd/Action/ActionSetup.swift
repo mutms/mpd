@@ -76,7 +76,6 @@ extension Mpd.Action.Setup {
                     bash bootstrap/30-networking.sh <NNN>      # sandbox: 000; managed: 100..254
                     bash bootstrap/40-install-software.sh
                     bash bootstrap/50-build.sh
-                    bash bootstrap/60-wireguard.sh
                 """)
         }
     }

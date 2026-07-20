@@ -70,11 +70,9 @@ BUILD_PKGS=(
 )
 
 # qemu-guest-agent improves hypervisor↔guest integration on KVM/Parallels.
-# Harmless on hypervisors that ignore it. wireguard is the apt name for
-# the WG kernel module + wg-quick userspace; needed when mpd --setup finds
-# a pushed WG conf and configures wg-quick@mpd0.
+# Harmless on hypervisors that ignore it.
 EXTRA_PKGS=(
-    qemu-guest-agent wireguard
+    qemu-guest-agent
 )
 
 ALL_PKGS=("${RUNTIME_PKGS[@]}" "${BUILD_PKGS[@]}" "${EXTRA_PKGS[@]}")

@@ -21,7 +21,7 @@ In rough order of when you'll want them:
   forwarding, project backups. Applies to both modes once setup
   has completed.
 - [`NETWORKING.md`](NETWORKING.md) — host ↔ VM ↔ container routing
-  model for laptop-driven setups (WireGuard tunnel, DNS split,
+  model for laptop-driven setups (static route, scoped DNS,
   ProxyJump SSH config). Read when reachability isn't working or
   you're curious about the path packets take.
 - [`SECURITY.md`](SECURITY.md) — trust boundaries, threat model,
@@ -60,7 +60,7 @@ Quick reference; full contract in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 - `/opt/mpd/` — code, assets, built binary (`/opt/mpd/bin/mpd`).
   Owned by the dev user.
 - `/var/lib/mpd/conf/` — persistent identity: CA, service certs,
-  `platform.env`, WireGuard private key. PRIVATE — never bind-mounted
+  `platform.env`. PRIVATE — never bind-mounted
   into containers.
 - `/var/lib/mpd/env/mpd-vm.env` — user-editable VM-wide env
   overrides. Bind-mounted RO into every runtime container.

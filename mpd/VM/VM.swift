@@ -40,7 +40,7 @@ extension Mpd.VM {
     static var varLibDir: String { "/var/lib/mpd" }
 
     /// Persistent local trust material: /var/lib/mpd/conf/
-    /// Holds the CA + service cert + platform.env + wireguard private key.
+    /// Holds the CA + service cert + platform.env.
     /// PRIVATE — never bind-mounted into containers.
     static var confDir: String { "\(varLibDir)/conf" }
 

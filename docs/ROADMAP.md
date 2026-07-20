@@ -121,7 +121,7 @@ Real possibilities, not committed work.
 
 - **Proxmox host + single Cloudflare client** — support Proxmox VE as
   an "mpd VM" host platform, with Cloudflare Zero Trust (WARP +
-  `cloudflared`) as the network transport instead of WireGuard.
+  `cloudflared`) as the network transport for remote hosts.
   Proxmox is a headless remote hypervisor, so the `mpd-virt`
   orchestrator role drives it over its REST API / `qm`/`pvesh`, and
   the host-side CA-trust + `*.mpd.test` resolver bits land on the
@@ -129,19 +129,18 @@ Real possibilities, not committed work.
   Zero Trust client to reach Proxmox, mpd reuses it: a `cloudflared`
   connector inside the VM advertises the container CIDR
   (`10.163.0.0/24`, dnsmasq `10.163.0.3`) as a private route; CA
-  trust is unchanged. Reframes WireGuard as one transport impl
-  rather than a fixed dependency: mpd's client-side contract
-  collapses to three transport-agnostic facts — (1) a route to
+  trust is unchanged. Keeps mpd's client-side contract
+  transport-agnostic — three facts — (1) a route to
   `10.163.0.0/24` exists, (2) `*.mpd.test` resolves to those IPs,
   (3) the mpd CA is trusted — and mpd should *document/emit* these
   rather than program the user's VPN client. In practice a scoped
   `sudo ip route add 10.163.0.0/24 …` beats fighting WARP
-  split-tunnel when a second (work) WireGuard tunnel is up at the
-  same time — both want to own routes, and a single-/24 static
-  route coexists cleanly. Caveats: the route needs a next-hop/iface
-  that actually carries the /24 to the VM (tunnel still has to be
-  up), and it must be made persistent across reboots (NM dispatcher
-  / systemd-networkd / login hook). Distinct from the cftunnel ZT
+  split-tunnel when a work VPN is up at the same time — both want
+  to own routes, and a single-/24 static route coexists cleanly.
+  Caveats: the route needs a next-hop/iface that actually carries
+  the /24 to the VM (the ZT client still has to be up), and it must
+  be made persistent across reboots (NM dispatcher /
+  systemd-networkd / login hook). Distinct from the cftunnel ZT
   item above (that exposes *projects*; this is the *host↔VM*
   transport). No work scheduled.
 

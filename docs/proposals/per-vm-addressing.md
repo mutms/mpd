@@ -238,9 +238,10 @@ static route to `10.163.222.0/24` coexists cleanly with a work VPN in
 a way that fighting over `10.163.0.0/24` — or over the host's single
 WireGuard tunnel slot — never could.
 
-### 6. WireGuard removal, in-VM half
+### 6. WireGuard removal, in-VM half — **done**
 
-Owned by this repo:
+Owned by this repo. Landed ahead of the rest of this proposal as a
+standalone first step (nothing here depends on per-VM addressing):
 
 - Delete `bootstrap/60-wireguard.sh`; drop `wireguard` from
   `bootstrap/40-install-software.sh`; `wg-quick@mpd0` and

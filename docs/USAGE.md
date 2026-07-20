@@ -15,7 +15,7 @@ Pick the path that matches your host:
   repo). Swift CLI orchestrator `mpd-virt`: `clone` against a Parallels
   template VM or `create` against UTM via cloud-init, then the
   bootstrap pipeline runs over SSH and applies macOS networking (route,
-  resolver, CA trust, WireGuard). `mpd-virt diag` re-applies host
+  resolver, CA trust). `mpd-virt diag` re-applies host
   config when needed; `mpd-virt delete` / `uninstall` tear everything
   down. VM start / suspend / shutdown via `mpd-virt start|stop` or the
   hypervisor's GUI.
@@ -61,9 +61,9 @@ Idempotent — safe to re-run any time. Walks you through:
 
 (VM-side apt installs, network stack setup, hostname/IP canonicalization,
 `mpd` build, and `/opt/mpd/bin/` on PATH all happen earlier in the
-`bootstrap/30..60` steps and don't re-run here. See `bootstrap/README.md`.)
+`bootstrap/30..50` steps and don't re-run here. See `bootstrap/README.md`.)
 
-Host-side trust + WireGuard setup lives in the separate `mpd-virt`
+Host-side trust + networking setup lives in the separate `mpd-virt`
 orchestrator (own repo); see its README for the host-side flow.
 
 ## Hooking up your laptop (laptop-driven platforms only)
