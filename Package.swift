@@ -18,6 +18,9 @@ let package = Package(
             exclude: [
                 "bin", "bootstrap",
                 "assets", "setup",
+                // The Go implementation lives here during the port; SwiftPM
+                // must never scan it. See docs/proposals/go-port.md.
+                "go",
                 "docs", "README.md", "LICENSE", "Makefile", "CLAUDE.md", "AGENTS.md"
             ],
             sources: ["mpd"],
