@@ -62,15 +62,19 @@ for VER in $PHP_VERSIONS; do
 done
 
 echo "Installing PHP versions ${PHP_VERSIONS} + DB clients in one apt pass..."
-# golang-go provides the Go toolchain for `mudev`, the Go binary that manages
-# project checkouts inside the php runtime.
+# golang-go + make build `mudev`, the Go binary that manages project
+# checkouts inside the php runtime (see the mudev-install tool). `make`
+# alone, not build-essential: Go needs a C compiler only for cgo, and
+# mudev doesn't use it — build-essential would add ~200 MB to every php
+# runtime for nothing. If mudev ever needs cgo, add gcc here.
 # shellcheck disable=SC2086
 sudo apt-get install -y --no-install-recommends \
     $PKG_LIST \
     postgresql-client \
     mariadb-client \
     default-mysql-client \
-    golang-go
+    golang-go \
+    make
 
 # ── Per-version FPM configuration (file ops only — no apt) ────────────────────
 for VER in $PHP_VERSIONS; do

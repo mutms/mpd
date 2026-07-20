@@ -64,9 +64,11 @@ RUNTIME_PKGS=(
 
 # Build deps for `make install`. swiftlang ships the Swift toolchain on
 # Trixie. libnss3-tools provides `certutil` for the Chromium NSS trust DB
-# (used by mpd --setup later).
+# (used by mpd --setup later). golang-go is for the in-progress Go port of
+# mpd — the VM has to be able to build both toolchains during the
+# transition, so they coexist rather than one replacing the other.
 BUILD_PKGS=(
-    build-essential pkg-config make swiftlang libnss3-tools
+    build-essential pkg-config make swiftlang golang-go libnss3-tools
 )
 
 # qemu-guest-agent improves hypervisor↔guest integration on KVM/Parallels.
