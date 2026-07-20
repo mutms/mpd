@@ -95,6 +95,60 @@ extension Mpd.VM {
         return p.terminationStatus
     }
 
+    /// Exit code reported when a command is killed for exceeding its
+    /// deadline. 124 is what `timeout(1)` uses, so scripts and humans
+    /// reading logs already know what it means.
+    static let exitTimedOut: Int32 = 124
+
+    /// Run a command with a deadline, streaming output. Returns
+    /// `exitTimedOut` if the deadline passed.
+    ///
+    /// CAVEAT for `podman exec`: terminating the client does not
+    /// necessarily kill the process inside the container. The hook stops
+    /// blocking mpd, which is the point, but a runaway script may keep
+    /// running in the container until it finishes or the container stops.
+    @discardableResult
+    static func execWithTimeout(_ args: [String], timeout: TimeInterval,
+                                useSudo: Bool = false) -> Int32 {
+        guard let command = args.first, let resolvedCommand = binaryPaths[command] else {
+            return 127
+        }
+
+        let p = Process()
+        if useSudo {
+            let sudoPath = Mpd.VM.require("sudo")
+            p.executableURL = URL(fileURLWithPath: sudoPath)
+            p.arguments = ["-n", resolvedCommand] + Array(args.dropFirst())
+        } else {
+            p.executableURL = URL(fileURLWithPath: resolvedCommand)
+            p.arguments = Array(args.dropFirst())
+        }
+        p.standardInput = FileHandle.nullDevice
+
+        do { try p.run() } catch {
+            errPrint("Failed to launch \(command): \(error)")
+            return 1
+        }
+
+        // Poll rather than block: Process offers no wait-with-deadline,
+        // and a background watchdog would have to outlive this scope.
+        let deadline = Date().addingTimeInterval(timeout)
+        while p.isRunning {
+            if Date() >= deadline {
+                p.terminate()
+                // Give it a moment to die on SIGTERM before giving up on it.
+                let graceEnd = Date().addingTimeInterval(2)
+                while p.isRunning && Date() < graceEnd {
+                    Thread.sleep(forTimeInterval: 0.05)
+                }
+                return exitTimedOut
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        p.waitUntilExit()
+        return p.terminationStatus
+    }
+
     static func capture(_ args: [String], suppressStderr: Bool = false, useSudo: Bool = false) -> (Int32, String) {
         guard let command = args.first else {
             errPrint("Command not found or not executable: \(args.first ?? "(empty)")")

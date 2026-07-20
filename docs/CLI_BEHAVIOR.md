@@ -60,6 +60,13 @@ Operational flags include:
   end of `mpd --setup`.
 - runtime mutators: `--runtime-create`, `--runtime-start`, `--runtime-stop`, `--runtime-delete`, `--runtime`
 - db mutators: `--db-create`, `--db-start`, `--db-stop`, `--db-delete`
+  - `--db-delete` removes the container **and its data** under
+    `/srv/dbs/<databaseId>/`, matching `mpd delete <project>` (which
+    removes DB, dataroot, source and config together). A DB container is
+    shared by every project on that engine:version, so the prompt names
+    the projects that will lose data; `--yes` skips it. Nothing else
+    deletes that directory — `list dbs` enumerates containers, so a
+    container-only delete would leave data no mpd command can see.
 
 Listing is **a verb**, not a flag — `mpd list [projects|runtimes|services|dbs]`
 (default `projects`). Read-only entity queries; services are always-on

@@ -2,7 +2,7 @@
 # in-progress Go port. Both write into bin/. See docs/proposals/go-port.md.
 GO_DIR := $(CURDIR)/go
 
-.PHONY: build install clean go-build go-install go-test go-vet go-fmt go-fmt-check go-difftest go-tidy go-clean
+.PHONY: build install clean go-build go-install go-test go-vet go-fmt go-fmt-check go-difftest go-mutatetest go-tidy go-clean
 
 build:
 	swift build
@@ -47,6 +47,12 @@ go-fmt-check:
 # Requires both binaries: make install go-build
 go-difftest:
 	@bash $(GO_DIR)/difftest.sh
+
+# Verify mutating verbs: run each once per implementation from the same
+# starting state and compare the resulting state. DESTRUCTIVE — starts
+# and stops containers. Disposable VMs only.
+go-mutatetest:
+	@bash $(GO_DIR)/mutatetest.sh
 
 go-tidy:
 	cd $(GO_DIR) && go mod tidy

@@ -216,7 +216,13 @@ extension Mpd.Runtime.DB {
                     "-e", "POSTGRES_PASSWORD=postgres",
                     "-e", "PGDATA=\(srvPath)",
                     image,
-                    "postgres", "-c", "synchronous_commit=off", "-c", "full_page_writes=off",
+                    // synchronous_commit=off only risks losing the last
+                    // fraction of a second of commits on a crash — bounded,
+                    // no corruption. full_page_writes=off is deliberately NOT
+                    // set: it turns an unclean shutdown into a torn page
+                    // postgres cannot repair, and unclean shutdowns are a
+                    // routine event here (OOM, VM reset), not a rare one.
+                    "postgres", "-c", "synchronous_commit=off",
                 ]
             case "mariadb":
                 runArgs += [

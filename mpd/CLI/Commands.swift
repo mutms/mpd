@@ -80,12 +80,43 @@ extension GlobalCommand {
     }
 
     func handleDbDelete(_ input: String) throws {
-        let (_, _, cName) = try Mpd.Runtime.DB.resolve(input)
+        let (engine, version, cName) = try Mpd.Runtime.DB.resolve(input)
         guard Mpd.Podman.exists(cName) else { throw RuntimeError("DB container '\(cName)' does not exist.") }
-        guard yes || promptYesNo("Remove DB container '\(cName)'?") else { print("Aborted."); return }
+
+        // The data directory goes with the container — consistent with
+        // `mpd delete <project>`, which removes the DB, dataroot, source
+        // and config together.
+        let databaseId = Mpd.Runtime.DB.shortName(engine: engine, version: version)
+        let dataDir = Mpd.Runtime.DB.dataDir(engine: engine, version: version)
+
+        // A DB container is shared by every project using that
+        // engine:version, so this is rarely a one-project decision. Name
+        // the projects that lose their data rather than describing the
+        // blast radius abstractly.
+        let users = Mpd.Runtime.State.loadProjects().projects
+            .filter { $0.databaseId == databaseId }
+            .map { $0.name }
+            .sorted()
+
+        print("Container: \(cName)")
+        print("Data:      \(dataDir)/")
+        if users.isEmpty {
+            print("This will remove the container and every database in it.")
+        } else {
+            print("In use by: \(users.joined(separator: ", "))")
+            print("This will remove the container and every database in it — \(users.count) project(s) will lose their data.")
+        }
+
+        guard yes || promptYesNo("Remove DB container '\(cName)' and all its data?") else { print("Aborted."); return }
         Mpd.Podman.stop(cName)
         guard Mpd.Podman.remove(cName) == 0 else { throw RuntimeError("Failed to remove '\(cName)'.") }
-        ok("'\(cName)' removed.")
+        // After the container, so a failed removal doesn't orphan data
+        // whose owner still exists. Failure is reported, not swallowed —
+        // a destructive verb must not claim success for work it skipped.
+        guard Mpd.Podman.volumeToolRemoveAll(dataDir) else {
+            throw RuntimeError("Removed container '\(cName)' but failed to remove \(dataDir)/. Remove it by hand.")
+        }
+        ok("'\(cName)' and \(dataDir)/ removed.")
         syncDatabaseStateCache()
     }
 }

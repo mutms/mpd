@@ -180,6 +180,14 @@ extension Mpd.Podman {
         podmanShell([ "exec"] + options + [container] + args)
     }
 
+    /// Non-interactive exec with options and a deadline. Returns
+    /// `Mpd.VM.exitTimedOut` (124) when the deadline passes.
+    static func execWithTimeout(_ container: String, options: [String], _ args: [String],
+                                timeout: TimeInterval) -> Int32 {
+        Mpd.VM.execWithTimeout(["podman", "exec"] + options + [container] + args,
+                               timeout: timeout, useSudo: true)
+    }
+
     /// Non-interactive exec with all output suppressed.
     @discardableResult
     static func execQuietly(_ container: String, _ args: [String]) -> Int32 {
@@ -384,6 +392,19 @@ extension Mpd.Podman {
             return execInteractive(target, options: opts, command)
         }
         return exec(target, options: opts, command)
+    }
+
+    /// Delete a path on the data volume, as root, reporting failure.
+    ///
+    /// Root, not the dev user: DB engines write their files as their own
+    /// uid (postgres and mariadb both use 999) and `/srv/dbs` is
+    /// root-owned, so the dev user cannot unlink them. Running this as
+    /// the dev user fails on every file — silently, when the caller
+    /// discards the exit code, which is how a "removed" message gets
+    /// printed over data that is still on disk.
+    static func volumeToolRemoveAll(_ path: String) -> Bool {
+        let target = Mpd.Service.FileAccess.containerName
+        return exec(target, ["rm", "-rf", path]) == 0
     }
 
     static func volumeToolOutput(

@@ -28,6 +28,17 @@ COMMANDS=(
     "list runtimes"
     "list services"
     "list dbs"
+    "show gotest1"
+    "show nosuchproject"
+)
+
+# Verbs whose Swift and Go spellings differ during the port. Swift takes
+# `--runtime <name>`; the Go CLI is cobra-shaped (`runtime <name>`), and
+# the final rename will settle which one survives. Compared as a pair so
+# the divergence is deliberate and visible rather than untested.
+declare -a PAIRED=(
+    "--runtime util|runtime util"
+    "--runtime nosuchruntime|runtime nosuchruntime"
 )
 
 for bin in "$SWIFT" "$GO"; do
@@ -44,6 +55,20 @@ for cmd in "${COMMANDS[@]}"; do
         pass=$((pass + 1))
     else
         printf '  FAIL mpd %s\n' "$cmd"
+        printf '%s\n' "$diff_out" | sed 's/^/       /'
+        fail=$((fail + 1))
+    fi
+done
+
+for pair in "${PAIRED[@]}"; do
+    swift_args="${pair%%|*}"
+    go_args="${pair##*|}"
+    # shellcheck disable=SC2086
+    if diff_out=$(diff <("$SWIFT" $swift_args 2>&1) <("$GO" $go_args 2>&1)); then
+        printf '  ok   mpd %s  ==  gompd %s\n' "$swift_args" "$go_args"
+        pass=$((pass + 1))
+    else
+        printf '  FAIL mpd %s  vs  gompd %s\n' "$swift_args" "$go_args"
         printf '%s\n' "$diff_out" | sed 's/^/       /'
         fail=$((fail + 1))
     fi

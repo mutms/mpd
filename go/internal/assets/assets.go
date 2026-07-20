@@ -72,3 +72,66 @@ func (t Tree) RuntimeConfig(name string) (RuntimeConfig, bool) {
 	}
 	return cfg, true
 }
+
+// ProjectTypeConfig locates the assets that implement a project type.
+//
+// A type's scripts do not always live under the runtime it runs on:
+// `assetsType`/`assetsRuntime` let a type reuse another's scripts, so
+// callers must resolve through here rather than assuming
+// runtimes/<runtime>/project_types/<type>/.
+type ProjectTypeConfig struct {
+	// AssetsType is the directory holding the type's scripts.
+	AssetsType string `json:"assetsType"`
+	// AssetsRuntime is the runtime that owns that directory.
+	AssetsRuntime string
+	// StopSystemd is set when stopping the project needs an explicit
+	// `systemctl stop mpd-<project>` inside the runtime — types that run
+	// a dev server (astro) rather than serving through the frontdoor.
+	StopSystemd bool
+}
+
+// ProjectTypeConfig reads a project type's configuration.json, resolving
+// which runtime directory holds its scripts.
+func (t Tree) ProjectTypeConfig(name string) (ProjectTypeConfig, bool) {
+	runtime, found := t.findProjectType(name)
+	if !found {
+		return ProjectTypeConfig{}, false
+	}
+	cfg := ProjectTypeConfig{AssetsType: name, AssetsRuntime: runtime}
+
+	data, err := os.ReadFile(filepath.Join(t.dir, "runtimes", runtime,
+		"project_types", name, "configuration.json"))
+	if err != nil {
+		return cfg, true
+	}
+	var raw struct {
+		AssetsType string `json:"assetsType"`
+		Stop       struct {
+			SystemdStop bool `json:"systemdStop"`
+		} `json:"stop"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return cfg, true
+	}
+	cfg.StopSystemd = raw.Stop.SystemdStop
+	if raw.AssetsType == "" || raw.AssetsType == name {
+		return cfg, true
+	}
+	// The type delegates to another type's scripts; find who owns those.
+	cfg.AssetsType = raw.AssetsType
+	if owner, ok := t.findProjectType(raw.AssetsType); ok {
+		cfg.AssetsRuntime = owner
+	}
+	return cfg, true
+}
+
+// findProjectType returns the runtime whose project_types/ contains name.
+func (t Tree) findProjectType(name string) (string, bool) {
+	for _, runtime := range t.RuntimeNames() {
+		path := filepath.Join(t.dir, "runtimes", runtime, "project_types", name, "configuration.json")
+		if _, err := os.Stat(path); err == nil {
+			return runtime, true
+		}
+	}
+	return "", false
+}

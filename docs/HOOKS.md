@@ -29,7 +29,7 @@ That's it — the dispatcher discovers it on the next event firing.
 Example: graceful postgres shutdown when `mpd --stop` runs:
 
 ```
-assets/databases/postgres/hooks/mpd-pre-stop.d/10-graceful-stop
+assets/databases/postgres/hooks/mpd-pre-stop.d/10-graceful-stop.sh
 ```
 
 ```bash
@@ -80,13 +80,14 @@ crash recovery.
 
 - **Audience**: every running DB container on the host.
 - **Failure**: `.continue` — a stop must always complete.
-- **Timeout**: 120 s (declared; not yet enforced — see "Limitations").
+- **Timeout**: 120 s. Longer than the 30 s default because a database
+  flushing pending IO legitimately takes a while.
 - **Env vars**: just the standard set (no event-specific extras).
 
 Shipped scripts:
-- `assets/databases/postgres/hooks/mpd-pre-stop.d/10-graceful-stop`
-- `assets/databases/mariadb/hooks/mpd-pre-stop.d/10-graceful-stop`
-- `assets/databases/mysql/hooks/mpd-pre-stop.d/10-graceful-stop`
+- `assets/databases/postgres/hooks/mpd-pre-stop.d/10-graceful-stop.sh`
+- `assets/databases/mariadb/hooks/mpd-pre-stop.d/10-graceful-stop.sh`
+- `assets/databases/mysql/hooks/mpd-pre-stop.d/10-graceful-stop.sh`
 
 All three send SIGTERM to PID 1 (the daemon) and exit immediately;
 the kernel keeps the daemon running until smart shutdown completes,
@@ -155,9 +156,19 @@ assets/databases/<dbtype>/hooks/<event>.d/                   # → .database aud
 assets/services/<svc>/hooks/<event>.d/                       # → .service(name) audience
 ```
 
+**Scripts must be named `*.sh`.** Anything else in the directory is
+ignored — an editor backup (`10-foo.sh~`), a `.bak`, a stray `.swp`, or
+a README would otherwise be handed to bash and run. The extension makes
+"is this a hook?" answerable by looking. A hook that needs a compiled
+helper execs it from a one-line wrapper.
+
 Numeric prefixes (`10-`, `90-`) order scripts within a directory
 (run-parts style). Cross-layer order: strictly by layer
 (base → runtime → type), then alphabetical within each.
+
+Note this differs from mpd's *tools*, which are deliberately
+extensionless (`composer-install`, `mudev-install`): a tool is invoked
+as a command on PATH, a hook is only ever fed to bash.
 
 Event-name → directory name conversion: strip the `Event` prefix and
 kebab-case the rest. Examples:
@@ -166,8 +177,10 @@ kebab-case the rest. Examples:
 
 ## Hook script contract
 
-A hook is an executable script in `hooks/<event-name>.d/`, run inside
-the audience container as that container's default user.
+A hook is a `*.sh` script in `hooks/<event-name>.d/`, run inside the
+audience container as that container's default user. mpd invokes it as
+`bash <path>`, so the executable bit is not required — but the `.sh`
+suffix is.
 
 **Standard env vars** provided to every hook:
 
@@ -337,10 +350,18 @@ What's deferred from v1, called out so hook authors aren't surprised:
   `EventMpdPreStop` shut down one after another, not in parallel.
   Acceptable for a few containers; will revisit if total stop time
   becomes painful.
-- **No timeout enforcement.** Each event declares a `timeout` but the
-  dispatcher doesn't currently SIGTERM/SIGKILL on overshoot — hook
-  scripts run to completion or block. The contract is in the type
-  for forward-compat; enforcement comes later.
+- **A timed-out hook keeps running inside its container.** mpd enforces
+  the deadline by killing the `podman exec` client, which stops the hook
+  blocking mpd — the point of the timeout — but does not signal the
+  process inside the container. A runaway script keeps running there
+  until it finishes or the container stops. Verified, not assumed.
+
+  Deliberately not solved with a `pkill -f <script>` sweep: that means
+  running pattern-matched kills as root inside a container to recover
+  from a rare case, and the recovery mpd already has is blunter and
+  safer — restart the runtime, or the VM. Revisit only if a runaway hook
+  turns out to be a real recurring problem rather than a theoretical one.
+
 - **No `--verbose` streaming.** Hook stdout/stderr is captured and
   shown after-the-fact, not streamed. For debugging hangs, use
   `podman logs <container>` or shell into the container directly.

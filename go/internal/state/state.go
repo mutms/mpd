@@ -13,6 +13,7 @@ package state
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -150,4 +151,96 @@ func readJSON(path string, v any) bool {
 		return false
 	}
 	return json.Unmarshal(data, v) == nil
+}
+
+// --- Writing ----------------------------------------------------------
+//
+// Reads above are forgiving; writes are not. A half-written state file
+// is worse than a missing one — readers would act on it — so writes go
+// to a temp file and are renamed into place, and every failure is
+// reported rather than swallowed.
+//
+// Note the on-disk formatting differs from the Swift implementation
+// (Swift emits `"key" : value`, Go emits `"key": value`). Both are valid
+// JSON and every consumer parses rather than pattern-matches, so the two
+// binaries interoperate; only a byte-comparison of the files would see a
+// difference.
+
+// SaveDatabases replaces databases.json.
+func (s Store) SaveDatabases(entries []Database) error {
+	if entries == nil {
+		entries = []Database{}
+	}
+	return s.writeJSON("databases.json", struct {
+		Databases []Database `json:"databases"`
+	}{entries})
+}
+
+// SaveProjects replaces projects.json.
+func (s Store) SaveProjects(projects []Project) error {
+	if projects == nil {
+		projects = []Project{}
+	}
+	return s.writeJSON("projects.json", struct {
+		Projects []Project `json:"projects"`
+	}{projects})
+}
+
+func (s Store) writeJSON(name string, v any) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encoding %s: %w", name, err)
+	}
+	data = append(data, '\n')
+
+	path := filepath.Join(s.dir, name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("creating %s: %w", filepath.Dir(path), err)
+	}
+	// Pattern must be a bare filename: CreateTemp rejects separators, and
+	// `name` may be a relative path like "runtimes/php/meta.json".
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(name)+".*")
+	if err != nil {
+		return fmt.Errorf("creating temp file for %s: %w", name, err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return fmt.Errorf("writing %s: %w", name, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing %s: %w", name, err)
+	}
+	if err := os.Chmod(tmpName, 0o644); err != nil {
+		return fmt.Errorf("chmod %s: %w", name, err)
+	}
+	return os.Rename(tmpName, path)
+}
+
+// SaveRuntime writes one runtime's persisted intent.
+func (s Store) SaveRuntime(r Runtime) error {
+	return s.writeJSON(filepath.Join("runtimes", r.Name, "meta.json"), r)
+}
+
+// DeleteRuntime removes a runtime's state directory.
+func (s Store) DeleteRuntime(name string) error {
+	err := os.RemoveAll(filepath.Join(s.dir, "runtimes", name))
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// UpsertProject replaces a project record by name, or appends it.
+func (s Store) UpsertProject(p Project) error {
+	projects := s.Projects()
+	for i := range projects {
+		if projects[i].Name == p.Name {
+			projects[i] = p
+			return s.SaveProjects(projects)
+		}
+	}
+	return s.SaveProjects(append(projects, p))
 }

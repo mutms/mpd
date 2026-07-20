@@ -213,10 +213,19 @@ extension Mpd.Hooks {
         for script in scripts {
             let label = "[\(container)] \(eventName)/\(script.basename)"
             let started = Date()
-            let rc = Mpd.Podman.exec(container, options: podmanOptions, ["bash", script.containerPath])
+            // Enforced, not just declared: a hook that never returns
+            // would otherwise hang the verb that fired it — and for
+            // mpd-pre-stop, hang VM shutdown.
+            let rc = Mpd.Podman.execWithTimeout(container, options: podmanOptions,
+                                                ["bash", script.containerPath],
+                                                timeout: E.timeout)
             let elapsed = Int(Date().timeIntervalSince(started))
             if rc == 0 {
                 print("  \(label) ✓ (\(elapsed)s)")
+            } else if rc == Mpd.VM.exitTimedOut {
+                print("  \(label) ✗ timed out after \(Int(E.timeout))s")
+                throw RuntimeError(
+                    "Hook \(eventName) timed out on \(container) after \(Int(E.timeout))s")
             } else {
                 print("  \(label) ✗ exit \(rc) (\(elapsed)s)")
                 throw RuntimeError("Hook \(eventName) failed on \(container) (exit \(rc))")
@@ -289,6 +298,14 @@ extension Mpd.Hooks {
             guard fm.fileExists(atPath: hostDir) else { continue }
             let names = (try? fm.contentsOfDirectory(atPath: hostDir)) ?? []
             for n in names.sorted() {
+                // Only `*.sh`. Without an extension filter every file in
+                // the directory is executed — an editor backup
+                // (`10-foo.sh~`), a `.bak`, a stray `.swp`, or a README
+                // would all be run through bash. Requiring the extension
+                // makes "is this a hook?" answerable by looking, and a
+                // hook that needs a compiled helper just execs it from a
+                // one-line wrapper.
+                guard n.hasSuffix(".sh") else { continue }
                 let host = "\(hostDir)/\(n)"
                 var isDir: ObjCBool = false
                 guard fm.fileExists(atPath: host, isDirectory: &isDir),

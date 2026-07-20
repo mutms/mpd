@@ -7,12 +7,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/mutms/mpd/go/internal/assets"
 	"github.com/mutms/mpd/go/internal/cli"
 	"github.com/mutms/mpd/go/internal/current"
+	"github.com/mutms/mpd/go/internal/dnsmasq"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/state"
@@ -39,7 +42,8 @@ func main() {
 		},
 	}
 
-	root.AddCommand(versionCmd(), netCmd(), listCmd())
+	root.AddCommand(versionCmd(), netCmd(), listCmd(), showCmd(), runtimeCmd(), dbCmd(),
+		projectStartCmd(), projectStopCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
@@ -122,6 +126,239 @@ func listCmd() *cobra.Command {
 				cli.ListDatabases(ctx, out, n, p, s)
 			}
 			return nil
+		},
+	}
+}
+
+// devUID is the uid volume execs run as, so files written to the data
+// volume come out owned by the runtime user.
+func devUID() string {
+	return strconv.Itoa(os.Getuid())
+}
+
+func showCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <project>",
+		Short: "Show project details",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			n, err := net.Load(net.PlatformEnvPath)
+			if err != nil {
+				return err
+			}
+			p := podman.New()
+			cli.ShowProject(cmd.Context(), cmd.OutOrStdout(), args[0], state.New(), p,
+				current.NewObserver(n.VMID(), p), n, devUID())
+			return nil
+		},
+	}
+}
+
+func runtimeCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "runtime <name>",
+		Short: "Show runtime details and its projects",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			n, err := net.Load(net.PlatformEnvPath)
+			if err != nil {
+				return err
+			}
+			p := podman.New()
+			return cli.ShowRuntime(c.Context(), c.OutOrStdout(), args[0], state.New(), p,
+				current.NewObserver(n.VMID(), p), n)
+		},
+	}
+
+	var assumeYes bool
+
+	stopCmd := &cobra.Command{
+		Use:   "stop <name>",
+		Short: "Stop a running runtime",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			n, p, s, dns, o, err := runtimeDeps()
+			if err != nil {
+				return err
+			}
+			_ = n
+			return cli.RuntimeStop(c.Context(), c.OutOrStdout(), args[0], p, s, dns, o)
+		},
+	}
+
+	deleteCmd := &cobra.Command{
+		Use:   "delete <name>",
+		Short: "Stop and remove a runtime and its containers",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			n, p, s, dns, o, err := runtimeDeps()
+			if err != nil {
+				return err
+			}
+			_ = n
+			user := os.Getenv("USER")
+			if user == "" {
+				user = "user"
+			}
+			return cli.RuntimeDelete(c.Context(), c.OutOrStdout(), c.InOrStdin(), args[0],
+				p, s, dns, o, user, assumeYes)
+		},
+	}
+	deleteCmd.Flags().BoolVar(&assumeYes, "yes", false, "Skip the confirmation prompt")
+
+	startCmd := &cobra.Command{
+		Use:   "start <name>",
+		Short: "Start a stopped runtime and restore its projects",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			n, p, s, dns, o, err := runtimeDeps()
+			if err != nil {
+				return err
+			}
+			user := os.Getenv("USER")
+			if user == "" {
+				user = "user"
+			}
+			return cli.RuntimeStart(c.Context(), c.OutOrStdout(), args[0], p, s, dns, o, n,
+				user, devUID())
+		},
+	}
+
+	cmd.AddCommand(startCmd, stopCmd, deleteCmd)
+	return cmd
+}
+
+func runtimeDeps() (net.Net, *podman.Client, state.Store, dnsmasq.Manager, current.Observer, error) {
+	n, err := net.Load(net.PlatformEnvPath)
+	if err != nil {
+		return net.Net{}, nil, state.Store{}, dnsmasq.Manager{}, current.Observer{}, err
+	}
+	p := podman.New()
+	return n, p, state.New(), dnsmasq.New(state.Dir, n, p), current.NewObserver(n.VMID(), p), nil
+}
+
+// dbCmd groups the DB container verbs. Swift spells these as flags
+// (--db-start); the Go CLI uses subcommands, and difftest compares the
+// pair until the flag day settles it.
+func dbCmd() *cobra.Command {
+	cmd := &cobra.Command{Use: "db", Short: "Manage database containers"}
+
+	build := func(use, short string, run func(context.Context, *cobra.Command, string) error) *cobra.Command {
+		return &cobra.Command{
+			Use:   use,
+			Short: short,
+			Args:  cobra.ExactArgs(1),
+			RunE: func(c *cobra.Command, args []string) error {
+				return run(c.Context(), c, args[0])
+			},
+		}
+	}
+
+	var assumeYes bool
+
+	createCmd := build("create <engine:version>", "Create (or start) a DB container",
+		func(ctx context.Context, c *cobra.Command, arg string) error {
+			p, s, dns, err := dbDeps()
+			if err != nil {
+				return err
+			}
+			n, err := net.Load(net.PlatformEnvPath)
+			if err != nil {
+				return err
+			}
+			return cli.DBCreate(ctx, c.OutOrStdout(), arg, p, s, dns, n, devUID())
+		})
+
+	deleteCmd := build("delete <engine:version>", "Remove a DB container (keeps its data)",
+		func(ctx context.Context, c *cobra.Command, arg string) error {
+			p, s, dns, err := dbDeps()
+			if err != nil {
+				return err
+			}
+			return cli.DBDelete(ctx, c.OutOrStdout(), c.InOrStdin(), arg, p, s, dns, assumeYes)
+		})
+	deleteCmd.Flags().BoolVar(&assumeYes, "yes", false, "Skip the confirmation prompt")
+
+	cmd.AddCommand(
+		createCmd,
+		deleteCmd,
+		build("start <engine:version>", "Start a stopped DB container",
+			func(ctx context.Context, c *cobra.Command, arg string) error {
+				p, s, dns, err := dbDeps()
+				if err != nil {
+					return err
+				}
+				return cli.DBStart(ctx, c.OutOrStdout(), arg, p, s, dns)
+			}),
+		build("stop <engine:version>", "Stop a running DB container",
+			func(ctx context.Context, c *cobra.Command, arg string) error {
+				p, s, dns, err := dbDeps()
+				if err != nil {
+					return err
+				}
+				return cli.DBStop(ctx, c.OutOrStdout(), arg, p, s, dns)
+			}),
+	)
+	return cmd
+}
+
+func dbDeps() (*podman.Client, state.Store, dnsmasq.Manager, error) {
+	n, err := net.Load(net.PlatformEnvPath)
+	if err != nil {
+		return nil, state.Store{}, dnsmasq.Manager{}, err
+	}
+	p := podman.New()
+	return p, state.New(), dnsmasq.New(state.Dir, n, p), nil
+}
+
+func projectDeps() (cli.ProjectDeps, error) {
+	n, err := net.Load(net.PlatformEnvPath)
+	if err != nil {
+		return cli.ProjectDeps{}, err
+	}
+	p := podman.New()
+	user := os.Getenv("USER")
+	if user == "" {
+		user = "user"
+	}
+	return cli.ProjectDeps{
+		Podman:   p,
+		State:    state.New(),
+		Dnsmasq:  dnsmasq.New(state.Dir, n, p),
+		Observer: current.NewObserver(n.VMID(), p),
+		Assets:   assets.New(),
+		Net:      n,
+		DevUser:  user,
+		UID:      devUID(),
+	}, nil
+}
+
+func projectStartCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "start <project>",
+		Short: "Start a project",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			d, err := projectDeps()
+			if err != nil {
+				return err
+			}
+			return cli.ProjectStart(c.Context(), c.OutOrStdout(), args[0], d)
+		},
+	}
+}
+
+func projectStopCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "stop <project>",
+		Short: "Stop a project",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			d, err := projectDeps()
+			if err != nil {
+				return err
+			}
+			return cli.ProjectStop(c.Context(), c.OutOrStdout(), args[0], d)
 		},
 	}
 }
