@@ -1,4 +1,4 @@
 {
-  "ip": "10.163.0.101",
+  "ipOctet": 101,
   "defaultSidecars": ["frontdoor"]
 }

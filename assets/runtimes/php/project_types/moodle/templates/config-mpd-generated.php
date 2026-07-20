@@ -18,19 +18,19 @@ $CFG->dboptions = array(
     'dbpersist' => 0,
 );
 
-$CFG->wwwroot  = 'https://%%PROJECT%%.mpd.test';
+$CFG->wwwroot  = 'https://%%PROJECT%%.%%ZONE%%';
 
 // Cloudflare Tunnel support: when MPD_PHP_MOODLE_CFTUNNEL=1 in this
 // project's mpd.env (and MPD_UTIL_CFTUNNEL_DOMAIN is set in
 // /var/lib/mpd/env/mpd-vm.env), the configure step bakes the public tunnel
 // hostname here. Requests arriving with that Host get a wwwroot
 // rewrite so Moodle's generated URLs match the visitor; direct
-// .mpd.test access falls through unchanged. Empty string = feature
+// in-zone access falls through unchanged. Empty string = feature
 // disabled.
 //
 // cloudflared passes the public hostname through unchanged in HTTP_HOST
 // (no rewrite happens — verified via portal diag). Caddy frontdoor
-// gets the tunnel hostname added to the same vhost as the .mpd.test
+// gets the tunnel hostname added to the same vhost as the in-zone
 // hostname (same FPM backend), so it routes correctly.
 $mpdCftunnelHost = '%%CFTUNNEL_HOST%%';
 if ($mpdCftunnelHost !== '' && ($_SERVER['HTTP_HOST'] ?? '') === $mpdCftunnelHost) {
@@ -71,7 +71,7 @@ $CFG->cron_keepalive = '0'; // Cron keep alive is problematic, better always avo
 $CFG->phpunit_dataroot  = '/srv/data/%%PROJECT%%/dataroot_phpunit';
 $CFG->phpunit_prefix = 't_';
 
-$CFG->behat_wwwroot   = 'https://behat.%%PROJECT%%.mpd.test';
+$CFG->behat_wwwroot   = 'https://behat.%%PROJECT%%.%%ZONE%%';
 $CFG->behat_dataroot  = '/srv/data/%%PROJECT%%/dataroot_behat';
 $CFG->behat_prefix    = 'bht_';
 

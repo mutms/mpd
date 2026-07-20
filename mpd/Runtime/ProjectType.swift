@@ -84,16 +84,25 @@ struct ProjectType {
     }
 
     /// Read the fixed IP for a runtime from `assets/runtimes/<n>/configuration.json`.
-    /// One PHP runtime exists at a time, one Node runtime, etc. — IPs are intrinsic
-    /// to the runtime name, not allocated. Throws if the file or `ip` field is missing.
+    /// One PHP runtime exists at a time, one Node runtime, etc. — addresses are
+    /// intrinsic to the runtime name, not allocated.
+    ///
+    /// The asset declares only the **host octet** (`"ipOctet": 100`); the
+    /// subnet comes from `Mpd.Net`, so the same asset is correct on every VM.
+    /// Throws if the file or the `ipOctet` field is missing.
     static func runtimeIP(for runtimeName: String) throws -> String {
         guard let json = runtimeConfigJSON(runtimeName) else {
             throw RuntimeError("Runtime '\(runtimeName)' has no configuration.json in assets/runtimes/.")
         }
-        if let ip = json["ip"] as? String, !ip.isEmpty {
-            return ip
+        guard let octet = json["ipOctet"] as? Int else {
+            throw RuntimeError("Runtime '\(runtimeName)' configuration.json has no 'ipOctet' field.")
         }
-        throw RuntimeError("Runtime '\(runtimeName)' configuration.json has no 'ip' field.")
+        guard octet >= Mpd.Net.firstRuntimeHost, octet <= 254 else {
+            throw RuntimeError(
+                "Runtime '\(runtimeName)' configuration.json has ipOctet=\(octet); "
+                + "runtimes live at \(Mpd.Net.firstRuntimeHost)–254.")
+        }
+        return Mpd.Net.ip(octet)
     }
 
     /// Read the always-on sidecars for a runtime from its configuration.json

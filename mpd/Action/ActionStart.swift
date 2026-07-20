@@ -21,6 +21,10 @@ extension Mpd.Action.Start {
         // ops (rescan, certs, etc.) on later boots may want it available.
         try Mpd.Service.FileAccess.start()
 
+        // Refresh the published addressing before anything reads it — a VM
+        // whose ID changed since last boot must not leave stale URLs behind.
+        Mpd.VM.DataVolume.writeVMMeta()
+
         try Mpd.Service.Dnsmasq.start()
         try Mpd.Service.Portal.start()
         try Mpd.Service.Adminer.start()

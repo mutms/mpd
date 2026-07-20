@@ -101,4 +101,4 @@ EOF
     sudo systemctl reload "php${PHP_VER}-fpm" || sudo systemctl restart "php${PHP_VER}-fpm" || true
 fi
 
-echo "Project '${PROJECT_NAME}' initialised (PHP ${PHP_VER}, FPM 127.0.0.1:${FPM_PORT}) — https://${PROJECT_NAME}.mpd.test/"
+echo "Project '${PROJECT_NAME}' initialised (PHP ${PHP_VER}, FPM 127.0.0.1:${FPM_PORT}) — https://${PROJECT_NAME}.${MPD_ZONE}/"

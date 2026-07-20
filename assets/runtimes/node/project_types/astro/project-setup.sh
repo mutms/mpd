@@ -8,7 +8,7 @@
 # No Apache vhost — TLS termination + reverse-proxy live in the Caddy frontdoor
 # sidecar attached to the runtime pod. The sidecar reads urls.json (written by
 # configure.sh with backend.upstream pointing at this project's port) and
-# proxies HTTPS at <project-name>.mpd.test to 127.0.0.1:<port> via pod-shared
+# proxies HTTPS at <project-name>.<zone> to 127.0.0.1:<port> via pod-shared
 # netns. Per-project TLS certs at /srv/meta/<n>/cert.pem + key.pem (mpd writes them).
 # Reads the runtime name from /etc/mpd/runtime (written by bootstrap.sh).
 # Called by mpd create <project> / mpd start <project>.
@@ -78,7 +78,7 @@ After=network.target
 User=${DEV_USER}
 WorkingDirectory=${PROJECT_DIR}
 Environment=PATH=${NODE_BIN_DIR}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=${NODE_BIN_DIR}/npm run dev -- --host 0.0.0.0 --port ${PORT} --allowed-hosts ${PROJECT_NAME}.mpd.test ${RUNTIME_NAME}.runtime.mpd.test
+ExecStart=${NODE_BIN_DIR}/npm run dev -- --host 0.0.0.0 --port ${PORT} --allowed-hosts ${PROJECT_NAME}.${MPD_ZONE} ${RUNTIME_NAME}.runtime.${MPD_ZONE}
 Restart=on-failure
 RestartSec=5
 
@@ -93,4 +93,4 @@ sudo systemctl restart "${SERVICE_NAME}"
 echo ""
 echo "Dev server started for '${PROJECT_NAME}' on port ${PORT}"
 echo "Logs: mpd ${PROJECT_NAME} logs  (or: journalctl -u ${SERVICE_NAME} -f inside container)"
-echo "URL:  https://${PROJECT_NAME}.mpd.test/"
+echo "URL:  https://${PROJECT_NAME}.${MPD_ZONE}/"

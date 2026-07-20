@@ -60,13 +60,13 @@ fi
 
 # Publish URLs for portal/TUI/cert/dnsmasq + Phase 8 frontdoor sidecar.
 # Astro projects expose an HTTP dev server on a fixed local port — the
-# (future) Caddy frontdoor reverse-proxies HTTPS at <project>.mpd.test to it.
+# (future) Caddy frontdoor reverse-proxies HTTPS at <project>.<zone> to it.
 cat > "/srv/meta/${PROJECT_NAME}/urls.json" <<EOF
 [
   {
     "label": "main",
     "kind": "web",
-    "url": "https://${PROJECT_NAME}.mpd.test/",
+    "url": "https://${PROJECT_NAME}.${MPD_ZONE}/",
     "backend": {
       "type": "reverse-proxy",
       "upstream": "http://127.0.0.1:${PORT}"

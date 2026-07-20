@@ -10,25 +10,27 @@
 // a change there.
 //
 // ── Why this exists ────────────────────────────────────────────────────
-// Today every mpd VM builds the *same* address space: `10.163.0.0/24` with
+// mpd VMs used to build an identical address space: `10.163.0.0/24` with
 // dnsmasq on `.3`, and a flat `<name>.mpd.test` zone. That is fine for one
 // VM and breaks for two — the workstation can only route `10.163.0.0/24` to
-// one next hop, and `moodle45.mpd.test` names a project on either VM with
+// one next hop, and `moodle45.mpd.test` named a project on either VM with
 // nothing to tell them apart.
 //
-// The fix is to make the VM's own ID (`MPD_VM_ID`, already a 3-digit value
-// in [100, 254] for managed VMs and `000` for sandbox) the discriminator in
-// both halves: subnet `10.163.<id>.0/24`, zone `<id>.mpd.test`. See
+// The VM's own ID (`MPD_VM_ID` — a 3-digit value in [100, 254] for managed
+// VMs, `000` for sandbox) is therefore the discriminator in both halves:
+// subnet `10.163.<id>.0/24`, zone `<id>.mpd.test`. It is a valid octet by
+// construction, so it is used directly. See
 // docs/proposals/per-vm-addressing.md.
 //
-// ── Current phase ──────────────────────────────────────────────────────
-// **Phase 1 (this commit): values are unchanged.** `octet` is hardcoded to
-// 0 and `zone` to the bare root domain, so this module emits exactly what
-// the scattered literals used to. That makes the conversion of ~165 call
-// sites a verifiable no-op.
+// ── Addressing ─────────────────────────────────────────────────────────
+// VM 222 gets subnet `10.163.222.0/24` and zone `222.mpd.test`; VM 150 gets
+// `10.163.150.0/24` and `150.mpd.test`. The sandbox VM is `000` — not a
+// special case, just the zeroth VM, and it keeps the `10.163.0.0/24` that
+// every VM used before this change.
 //
-// **Phase 2 flips two properties** — `octet` and `zone` — and nothing else.
-// Both carry a PHASE 2 comment with the replacement body.
+// The host part of an address never moves: dnsmasq is always `.3`, the
+// portal always `.4`, runtimes always `.100+`. Only the third octet varies,
+// and it always equals the VM ID.
 
 import Foundation
 
@@ -66,47 +68,80 @@ extension Mpd.Net {
 
     // MARK: - Per-VM facts
 
-    /// Third octet of this VM's container subnet, and the label of its DNS
-    /// zone. Equals the VM's ID by construction.
-    ///
-    /// PHASE 2: `try Int(vmId) ?? { throw … }` — see `vmId` below.
-    static var octet: Int { 0 }
+    /// Third octet of this VM's container subnet. Equals the VM's ID.
+    static var octet: Int { identity.octet }
 
     /// This VM's DNS zone — the suffix every mpd-managed name ends with, and
-    /// the apex that resolves to the portal.
-    ///
-    /// PHASE 2: `"\(vmIdString).\(rootDomain)"` → e.g. `222.mpd.test`.
-    static var zone: String { rootDomain }
+    /// the apex that resolves to the portal. e.g. `222.mpd.test`.
+    static var zone: String { "\(identity.label).\(rootDomain)" }
 
-    /// The VM's 3-digit ID from `/var/lib/mpd/conf/platform.env`, cached for
-    /// the process. Nil when the identity file is absent or has no
-    /// `MPD_VM_ID` — i.e. before bootstrap has run.
+    /// The VM's 3-digit ID as written in the zone and derived from
+    /// `MPD_VM_ID`, normalised to three digits (`22` → `022`).
+    static var vmId: String { identity.label }
+
+    /// Resolved once per process from `/var/lib/mpd/conf/platform.env`.
     ///
-    /// Unused in phase 1. In phase 2 `octet` and `zone` derive from it, and
-    /// a nil here must be a hard error rather than a fallback to some
-    /// default VM: silently addressing the wrong subnet is worse than
-    /// refusing to start (see AGENTS.md, "prefer deterministic behavior over
-    /// convenience fallbacks").
-    static var vmId: String? {
-        if let cached = cachedVmId { return cached.value }
-        let value = (try? Mpd.VM.Platform.load())?.vmId
-        cachedVmId = (value?.isEmpty == false) ? Box(value) : Box(nil)
-        return cachedVmId?.value
+    /// A missing or malformed `MPD_VM_ID` is fatal, deliberately: every
+    /// address and every name mpd composes depends on it, so the failure
+    /// modes of guessing are "silently build the wrong subnet" and "answer
+    /// for another VM's zone". Refusing to run is the legible outcome (see
+    /// AGENTS.md — prefer deterministic behavior over convenience
+    /// fallbacks).
+    ///
+    /// Resolved lazily rather than as a `main.swift` preflight on purpose:
+    /// `mpd --setup` re-derives MPD_VM_ID from the VM hostname and rewrites
+    /// platform.env early in its run, so a VM with a hand-broken value can
+    /// still repair itself. A preflight would refuse before reaching that
+    /// step.
+    static var identity: (label: String, octet: Int) {
+        if let cached = cachedIdentity { return cached }
+        do {
+            let resolved = try resolveIdentity()
+            cachedIdentity = resolved
+            return resolved
+        } catch {
+            errPrint(error.localizedDescription)
+            exit(1)
+        }
     }
 
-    private final class Box { let value: String?; init(_ v: String?) { value = v } }
-    nonisolated(unsafe) private static var cachedVmId: Box?
+    /// Non-fatal form, for `main.swift`'s preflight and for tests: returns
+    /// the identity or throws a message naming the fix.
+    static func resolveIdentity() throws -> (label: String, octet: Int) {
+        let raw = (try Mpd.VM.Platform.load()).vmId
+        guard !raw.isEmpty else {
+            throw RuntimeError(identityErrorText("MPD_VM_ID is empty"))
+        }
+        guard let value = Int(raw), (0...254).contains(value) else {
+            throw RuntimeError(identityErrorText("MPD_VM_ID='\(raw)' is not an octet in [0, 254]"))
+        }
+        return (label: String(format: "%03d", value), octet: value)
+    }
+
+    private static func identityErrorText(_ problem: String) -> String {
+        """
+        Cannot determine this VM's identity — \(problem).
+
+        mpd derives its container subnet (10.163.<id>.0/24) and its DNS zone
+        (<id>.mpd.test) from MPD_VM_ID in \(Mpd.VM.Platform.path).
+        Re-run the bootstrap step that writes it:
+            bash /opt/mpd/bootstrap/30-networking.sh <NNN>   # sandbox: 000; managed: 100..254
+        """
+    }
+
+    nonisolated(unsafe) private static var cachedIdentity: (label: String, octet: Int)?
 
     // MARK: - Derived addressing
 
-    /// This VM's container subnet in CIDR form, e.g. `10.163.0.0/24`.
+    /// This VM's container subnet in CIDR form, e.g. `10.163.222.0/24`.
     /// Passed to `podman network create`.
     static var subnet: String { "\(subnetPrefix).\(octet).0/24" }
 
     /// The Podman bridge address — the VM itself as seen from containers.
     static var gateway: String { ip(Host.gateway) }
 
-    /// Compose a container address from its host octet: `ip(3)` → `10.163.0.3`.
+    /// Compose a container address from its host octet, e.g. on VM 222
+    /// `ip(Host.dnsmasq)` → `10.163.222.3`.
     static func ip(_ host: Int) -> String {
         precondition((0...255).contains(host), "host octet out of range: \(host)")
         return "\(subnetPrefix).\(octet).\(host)"
@@ -131,10 +166,9 @@ extension Mpd.Net {
 
     // MARK: - Derived naming
 
-    /// Qualify a name into this VM's zone:
-    ///   `host("php.runtime")`  → `php.runtime.mpd.test`
-    ///   `host("moodle45")`     → `moodle45.mpd.test`
-    /// (phase 2: `php.runtime.222.mpd.test`, `moodle45.222.mpd.test`)
+    /// Qualify a name into this VM's zone — on VM 222:
+    ///   `host("php.runtime")`  → `php.runtime.222.mpd.test`
+    ///   `host("moodle45")`     → `moodle45.222.mpd.test`
     ///
     /// Pass the *unqualified* left-hand part only — never a name that
     /// already ends in the zone.
@@ -144,21 +178,19 @@ extension Mpd.Net {
         return "\(name).\(zone)"
     }
 
-    /// A service's canonical name: `service("portal")` → `portal.service.mpd.test`.
+    /// A service's canonical name: `service("portal")` → `portal.service.<zone>`.
     static func service(_ name: String) -> String { host("\(name).service") }
 
-    /// A runtime's canonical name: `runtime("php")` → `php.runtime.mpd.test`.
+    /// A runtime's canonical name: `runtime("php")` → `php.runtime.<zone>`.
     static func runtime(_ name: String) -> String { host("\(name).runtime") }
 
-    /// A database's canonical name: `db("pg17")` → `pg17.db.mpd.test`.
+    /// A database's canonical name: `db("pg17")` → `pg17.db.<zone>`.
     static func db(_ name: String) -> String { host("\(name).db") }
 
     /// True when `name` is this VM's zone apex or a name beneath it — i.e.
-    /// something mpd is entitled to issue a cert and a DNS record for.
-    ///
-    /// Phase 2 makes this meaningfully narrower: a stray URL naming *another*
-    /// VM's zone stops matching, rather than being silently given a local
-    /// cert and DNS record here.
+    /// something mpd is entitled to issue a cert and a DNS record for. A
+    /// stray URL naming *another* VM's zone does not match, so it is never
+    /// silently given a local cert and DNS record here.
     static func isInZone(_ name: String) -> Bool {
         name == zone || name.hasSuffix(".\(zone)")
     }

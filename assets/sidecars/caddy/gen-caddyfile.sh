@@ -5,7 +5,7 @@
 # same project share one vhost block when their backends match), emits a Caddy
 # vhost per group. Backend types supported: php-fpm, reverse-proxy, redirect.
 # A pseudo-project `_runtime-<rt>` holds runtime-level URLs published by
-# sidecars (e.g. mailpit's canonical `mail.<rt>.mpd.test/`); it lives under
+# sidecars (e.g. mailpit's canonical `mail.<rt>.<zone>/`); it lives under
 # the same `/srv/meta/*/urls.json` glob and is rendered like any project.
 # Stdout is the rendered Caddyfile.
 set -euo pipefail
@@ -103,7 +103,7 @@ for meta in "${META_DIR}"/*/urls.json; do
         | map({hosts: [.[] | (.url | sub("^https?://"; "") | sub("/$"; "") | sub(":[0-9]+$"; ""))], backend: .[0].backend})
         | .[]
     ' "$meta" | while IFS= read -r group; do
-        # group: {hosts: ["a.mpd.test","behat.a.mpd.test"], backend: {...}}
+        # group: {hosts: ["a.<zone>","behat.a.<zone>"], backend: {...}}
         hosts=$(jq -r '.hosts | join(", ")' <<<"$group")
         backend=$(jq -c '.backend' <<<"$group")
         render_vhost "$project" "$hosts" "$backend"

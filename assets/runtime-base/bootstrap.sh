@@ -10,7 +10,7 @@
 #   - common dev tools + openssh-server installed
 #   - sshd configured (PermitRootLogin no, pubkey auth)
 #   - dev user created with matching UID and passwordless sudo
-#   - /etc/mpd/runtime identity, /etc/hosts self-record
+#   - /etc/mpd/runtime identity, /etc/hosts self-record (in this VM's zone)
 #   - /home/<user>/ seeded from skel (defaults + optional VM-host overrides)
 #   - /srv/{projects,data,dbs,tools} laid out with correct ownership
 #   - runtime-base tools symlinked into /srv/tools/_base/
@@ -22,6 +22,10 @@ set -euo pipefail
 CONTAINER_NAME="$1"
 EXTUSER="$2"
 EXTUID="$3"
+# This VM's DNS zone (e.g. 222.mpd.test) — passed in because the container
+# has no access to /var/lib/mpd/conf/platform.env and /srv/meta/vm.json is
+# not guaranteed to exist yet this early in provisioning.
+MPD_ZONE="$4"
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -43,7 +47,7 @@ systemctl enable ssh
 systemctl restart ssh || systemctl start ssh
 
 # --- Internal hostname ---
-echo "127.0.0.1  ${CONTAINER_NAME}.runtime.mpd.test" >> /etc/hosts
+echo "127.0.0.1  ${CONTAINER_NAME}.runtime.${MPD_ZONE}" >> /etc/hosts
 
 # --- Runtime identity (read by project scripts) ---
 mkdir -p /etc/mpd

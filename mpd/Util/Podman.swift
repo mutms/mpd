@@ -332,6 +332,16 @@ extension Mpd.Podman {
         podmanShell([ "network", "rm", name])
     }
 
+    /// The CIDR a Podman network was created with, e.g. `10.163.150.0/24`.
+    /// Empty when the network is absent or has no subnet. A network's subnet
+    /// is fixed at create time, so this is the authority on what addresses
+    /// containers on it will actually get — not what mpd currently computes.
+    static func networkSubnet(_ name: String) -> String {
+        podmanCapture(["network", "inspect", name, "--format",
+                 "{{range .Subnets}}{{.Subnet}}{{end}}"],
+                suppressStderr: true).1
+    }
+
     /// Read the container's IP address on the given Podman network.
     static func containerIP(_ name: String, network: String = "mpd-internal") -> String {
         // Use index notation — dot notation breaks on hyphenated network names.

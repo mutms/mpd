@@ -1,5 +1,5 @@
 <?php
-// mpd portal — served at https://mpd.test/ by mpd-service-portal (debian:trixie + apache2 + php)
+// mpd portal — served at this VM's zone apex by mpd-service-portal (debian:trixie + apache2 + php)
 // SECURITY: This page is READ-ONLY. It displays status information only.
 // Do NOT add any command execution, form handling, API endpoints, or user input processing.
 //
@@ -15,10 +15,57 @@
 //   version, containerName) used to resolve databaseId → engine.
 // - /srv/meta/<project>/project.json — ground-truth project identity
 //   (mpd-managed; read-only here).
+// - /mpd-state/vm.json — this VM's addressing (zone, subnet, service IPs),
+//   written by Swift's Mpd.VM.DataVolume.writeVMMeta(). Every hostname on
+//   this page is composed from `zone`, so a page served by VM 222 never
+//   shows VM 150's names.
 // - /opt/mpd/assets/runtimes — list of available runtime templates.
 
 function h(string $s): string {
     return htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
+}
+
+/**
+ * This VM's DNS zone (e.g. "222.mpd.test"), from /mpd-state/vm.json.
+ * Every hostname rendered by this page is built on it. Resolved once and
+ * memoised — the file is tiny but this is called for every project, DB,
+ * and runtime row.
+ *
+ * No fallback to a bare root domain: a portal that guessed the zone would
+ * hand out URLs pointing at whichever VM the visitor's route happens to
+ * reach. Showing an obviously-missing value is the safer failure.
+ */
+function zone(): string {
+    static $cached = null;
+    if ($cached !== null) return $cached;
+    $cached = '(unknown zone)';
+    $path = '/mpd-state/vm.json';
+    if (is_readable($path)) {
+        $data = json_decode((string)@file_get_contents($path), true);
+        if (is_array($data) && !empty($data['zone'])) $cached = (string)$data['zone'];
+    }
+    return $cached;
+}
+
+/**
+ * A service IP inside this VM's /24, from /mpd-state/vm.json's `subnet`.
+ * e.g. serviceIp(3) → "10.163.222.3". Falls back to an empty string when
+ * the file is unreadable, for the same reason zone() has no fallback.
+ */
+function serviceIp(int $host): string {
+    static $prefix = null;
+    if ($prefix === null) {
+        $prefix = '';
+        $path = '/mpd-state/vm.json';
+        if (is_readable($path)) {
+            $data = json_decode((string)@file_get_contents($path), true);
+            if (is_array($data) && !empty($data['subnet'])) {
+                $parts = explode('.', (string)$data['subnet']);
+                if (count($parts) >= 3) $prefix = "{$parts[0]}.{$parts[1]}.{$parts[2]}";
+            }
+        }
+    }
+    return $prefix === '' ? '' : "{$prefix}.{$host}";
 }
 
 /**
@@ -319,8 +366,8 @@ foreach ($allRuntimeNames as $name) {
     }
 
     // Runtime DNS hostname is the SSH target — there's no HTTPS service on
-    // *.runtime.mpd.test, so the hostname renders as plain text (not a link).
-    $runtimeDns = ($status === 'running') ? "{$name}.runtime.mpd.test" : '—';
+    // *.runtime.<zone>, so the hostname renders as plain text (not a link).
+    $runtimeDns = ($status === 'running') ? "{$name}.runtime." . zone() : '—';
 
     $runtimes[$name] = [
         'name' => $name,
@@ -367,10 +414,10 @@ ksort($databases);
 // sidecars attached to the runtime pod (see Mpd.Runtime.Sidecars). Their
 // status follows the runtime, not a global service descriptor.
 $services = [
-    ['name' => 'dnsmasq',    'ip' => '10.163.0.3', 'dns' => 'dnsmasq.service.mpd.test',    'access' => 'DNS resolver (10.163.0.3:53)', 'probePort' => 53],
-    ['name' => 'portal',     'ip' => '10.163.0.4', 'dns' => 'mpd.test',                     'access' => 'https://mpd.test/', 'probePort' => 443],
-    ['name' => 'fileaccess', 'ip' => '10.163.0.5', 'dns' => 'fileaccess.service.mpd.test', 'access' => 'ssh user@fileaccess.service.mpd.test (volume tool / backups)', 'probePort' => 22],
-    ['name' => 'adminer',    'ip' => '10.163.0.6', 'dns' => 'adminer.service.mpd.test',    'access' => 'https://adminer.service.mpd.test/', 'probePort' => 8080],
+    ['name' => 'dnsmasq',    'ip' => serviceIp(3), 'dns' => 'dnsmasq.service.' . zone(),    'access' => 'DNS resolver (' . serviceIp(3) . ':53)', 'probePort' => 53],
+    ['name' => 'portal',     'ip' => serviceIp(4), 'dns' => zone(),                          'access' => 'https://' . zone() . '/', 'probePort' => 443],
+    ['name' => 'fileaccess', 'ip' => serviceIp(5), 'dns' => 'fileaccess.service.' . zone(), 'access' => 'ssh user@fileaccess.service.' . zone() . ' (volume tool / backups)', 'probePort' => 22],
+    ['name' => 'adminer',    'ip' => serviceIp(6), 'dns' => 'adminer.service.' . zone(),    'access' => 'https://adminer.service.' . zone() . '/', 'probePort' => 8080],
 ];
 
 foreach ($services as $idx => $svc) {
@@ -541,11 +588,11 @@ foreach ($services as $svc) {
         $pDbId = $pDbEngine . '-' . str_replace('.', '-', $pDbVersion);
     }
     $pDbStatus = (string)($databases[$pDbId]['status'] ?? 'stopped');
-    $pDatabaseHost = $pDbId !== '' ? "{$pDbId}.db.mpd.test" : '';
+    $pDatabaseHost = $pDbId !== '' ? "{$pDbId}.db." . zone() : '';
     $projectDriver = $pDbEngine === 'postgres' ? 'pgsql' : 'server';
     $pAdminerDbUrl = '';
     if ($pDatabaseHost !== '' && $pName !== '' && $pDbStatus === 'running') {
-        $pAdminerDbUrl = "https://adminer.service.mpd.test/?{$projectDriver}={$pDatabaseHost}&username=" . rawurlencode($pName) . "&db=" . rawurlencode($pName);
+        $pAdminerDbUrl = "https://adminer.service." . zone() . "/?{$projectDriver}={$pDatabaseHost}&username=" . rawurlencode($pName) . "&db=" . rawurlencode($pName);
     }
 ?>
     <tr>
@@ -609,7 +656,7 @@ foreach ($services as $svc) {
             </ul>
         <?php endif; ?>
         <?php if ($running && $pRuntime !== '' && projectTypeAllowsIdeLinks($pType)):
-            $sshHost = "{$pRuntime}.runtime.mpd.test";
+            $sshHost = "{$pRuntime}.runtime." . zone();
             $devUser = devUser();
             $projectPath = "/srv/projects/{$pName}";
             $vscodeUrl = "vscode://vscode-remote/ssh-remote+{$devUser}@{$sshHost}{$projectPath}";
@@ -679,11 +726,11 @@ foreach ($services as $svc) {
     <?php
         $dbEngine = (string)($db['engine'] ?? '');
         $dbStatus = (string)($db['status'] ?? 'stopped');
-        $databaseHost = ((string)($db['databaseId'] ?? '')) . '.db.mpd.test';
+        $databaseHost = ((string)($db['databaseId'] ?? '')) . '.db.' . zone();
         $projectCount = count($db['projects'] ?? []);
         $driver = $dbEngine === 'postgres' ? 'pgsql' : 'server';
         $superuser = $dbEngine === 'postgres' ? 'postgres' : 'root';
-        $adminerUrl = "https://adminer.service.mpd.test/?{$driver}={$databaseHost}&username=" . rawurlencode($superuser);
+        $adminerUrl = "https://adminer.service." . zone() . "/?{$driver}={$databaseHost}&username=" . rawurlencode($superuser);
     ?>
     <tr>
         <td>

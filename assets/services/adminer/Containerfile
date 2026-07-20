@@ -4,7 +4,7 @@
 # Despite living under Docker Hub's `library/` namespace, that image is
 # user-contributed — Vrana (adminer's author) explicitly disclaims it —
 # and ships Alpine/musl. libpq's getaddrinfo() on musl fails to resolve
-# multi-label hostnames like `postgres-latest.db.mpd.test`, even when
+# multi-label hostnames like `postgres-latest.db.<zone>`, even when
 # shell `getent hosts` and PHP's `gethostbyname` succeed in the same
 # container. Building on glibc avoids the issue and keeps the supply
 # chain under our control.

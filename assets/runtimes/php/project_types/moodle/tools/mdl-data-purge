@@ -58,7 +58,7 @@ if [ -f "$EFFECTIVE_FILE" ]; then
     DB_ENGINE=$(jq -r '.dbEngine // empty' "$EFFECTIVE_FILE" 2>/dev/null || echo "")
     DATABASE_ID=$(jq -r '.databaseId // empty' "$EFFECTIVE_FILE" 2>/dev/null || echo "")
     if [ -n "$DB_ENGINE" ] && [ -n "$DATABASE_ID" ]; then
-        DBHOST="${DATABASE_ID}.db.mpd.test"
+        DBHOST="${DATABASE_ID}.db.${MPD_ZONE}"
         case "$DB_ENGINE" in
             postgres)
                 # Postgres rejects DROP DATABASE while sessions are connected.
@@ -124,5 +124,5 @@ Next steps:
      PHP version, Behat toggle, etc.
   2. From the host:  mpd ${PROJECT} configure
   3. Inside runtime: mdl-install
-     (or open https://${PROJECT}.mpd.test/ and use the install wizard)
+     (or open https://${PROJECT}.${MPD_ZONE}/ and use the install wizard)
 EOF

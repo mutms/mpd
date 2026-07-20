@@ -98,7 +98,8 @@ if [ -n "$DATABASE_ID" ] && \
     sed \
         -e "s|%%PROJECT%%|${PROJECT_NAME}|g" \
         -e "s|%%DBTYPE%%|${DBTYPE}|g" \
-        -e "s|%%DBHOST%%|${DATABASE_ID}.db.mpd.test|g" \
+        -e "s|%%DBHOST%%|${DATABASE_ID}.db.${MPD_ZONE}|g" \
+        -e "s|%%ZONE%%|${MPD_ZONE}|g" \
         -e "s|%%CFTUNNEL_HOST%%|${CFTUNNEL_HOST}|g" \
         /opt/mpd/assets/runtimes/php/project_types/moodle/templates/config-mpd-generated.php \
         > "${PROJECT_DIR}/config-mpd.php"
@@ -165,7 +166,7 @@ URLS='[
   {
     "label": "main",
     "kind": "web",
-    "url": "https://'"${PROJECT_NAME}"'.mpd.test/",
+    "url": "https://'"${PROJECT_NAME}"'.'"${MPD_ZONE}"'/",
     "backend": {
       "type": "php-fpm",
       "fastcgi": "'"${FPM_SOCK}"'",
@@ -178,7 +179,7 @@ if [ "$BEHAT" = "1" ]; then
   {
     "label": "behat",
     "kind": "behat",
-    "url": "https://behat.'"${PROJECT_NAME}"'.mpd.test/",
+    "url": "https://behat.'"${PROJECT_NAME}"'.'"${MPD_ZONE}"'/",
     "backend": {
       "type": "php-fpm",
       "fastcgi": "'"${FPM_SOCK}"'",
@@ -190,8 +191,8 @@ fi
 
 # Cloudflare Tunnel public hostname (when enabled). Same FPM backend
 # as main, so gen-caddyfile.sh's by-backend grouping merges them into
-# one Caddy vhost — the *.mpd.test cert presented at TLS handshake
-# (SNI = <project>.mpd.test from cloudflared's service URL) covers
+# one Caddy vhost — the in-zone cert presented at TLS handshake
+# (SNI = <project>.<zone> from cloudflared's service URL) covers
 # the connection; Caddy routes by Host once TLS is up.
 # `kind: "tunnel"` so the portal can render a distinct badge later.
 CFTUNNEL_PUBLIC_HOST=""
@@ -214,10 +215,10 @@ if [ "${MPD_PHP_MOODLE_CFTUNNEL:-}" = "1" ] && [ -n "${MPD_UTIL_CFTUNNEL_DOMAIN:
   }'
 fi
 # Per-project mail URL is a 302 shortcut to the runtime-level canonical
-# mailpit URL (mail.<runtime>.mpd.test/) with a search filter. The actual
+# mailpit URL (mail.<runtime>.<zone>/) with a search filter. The actual
 # mailbox is shared across all projects on this runtime — pretending each
 # project has its own mailbox via reverse-proxy was a UI lie. The query
-# string `q=<project>.mpd.test` filters to mail referencing this project's
+# string `q=<project>.<zone>` filters to mail referencing this project's
 # wwwroot, which Moodle embeds in every email. Cleared search reveals the
 # full inbox, making the shared scope visible in the address bar.
 RUNTIME_NAME=$(cat /etc/mpd/runtime)
@@ -225,10 +226,10 @@ URLS="${URLS}"',
   {
     "label": "mail",
     "kind": "mail",
-    "url": "https://mail.'"${PROJECT_NAME}"'.mpd.test/",
+    "url": "https://mail.'"${PROJECT_NAME}"'.'"${MPD_ZONE}"'/",
     "backend": {
       "type": "redirect",
-      "target": "https://mail.'"${RUNTIME_NAME}"'.mpd.test/?q='"${PROJECT_NAME}"'.mpd.test"
+      "target": "https://mail.'"${RUNTIME_NAME}"'.'"${MPD_ZONE}"'/?q='"${PROJECT_NAME}"'.'"${MPD_ZONE}"'"
     }
   }'
 URLS="${URLS}"'

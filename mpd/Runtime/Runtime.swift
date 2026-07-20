@@ -69,13 +69,11 @@ extension Mpd.Runtime {
     // MARK: - Container naming & discovery
 
     /// VM ID fragment used as the prefix for every pod/container/hostname.
-    /// "100"–"254" for managed VMs, "000" for sandbox. Resolved from
-    /// platform.env once per process. Empty if platform.env is missing —
-    /// in that case container names will look obviously broken
-    /// (`mpd--php`), which is the right signal.
-    static let vmId: String = {
-        (try? Mpd.VM.Platform.load().vmId) ?? ""
-    }()
+    /// "100"–"254" for managed VMs, "000" for sandbox. Same value that names
+    /// this VM's subnet and DNS zone, so it comes from `Mpd.Net` rather than
+    /// being re-read here — a container prefix that disagreed with the
+    /// addressing would be a genuinely confusing state.
+    static var vmId: String { Mpd.Net.vmId }
 
     /// Convert a runtime short name to its main container name.
     /// e.g. on VM "159" with runtime "php" → "mpd-159-php-main".
@@ -309,7 +307,7 @@ extension Mpd.Runtime {
         step("Bootstrapping runtime base")
         guard Mpd.Podman.exec(cName, ["bash",
                      "/opt/mpd/assets/runtime-base/bootstrap.sh",
-                     name, user, uid]) == 0
+                     name, user, uid, Mpd.Net.zone]) == 0
         else { throw RuntimeError("Runtime '\(name)' base bootstrap failed.") }
 
         step("Building '\(name)' runtime")

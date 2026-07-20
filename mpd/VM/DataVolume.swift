@@ -34,6 +34,40 @@ extension Mpd.VM.DataVolume {
 
     // MARK: - Public operations
 
+    /// Write `/srv/meta/vm.json` — this VM's addressing facts, published into
+    /// the data volume so container-side scripts can read them.
+    ///
+    /// Containers cannot read `/var/lib/mpd/conf/platform.env`: that directory
+    /// holds the CA key and is deliberately never bind-mounted. But every
+    /// container mounts the data volume at `/srv/`, so this is the one place
+    /// a runtime script can learn the zone it should be composing URLs in.
+    /// `assets/runtime-base/lib/source-mpd-env.sh` reads it and exports
+    /// `MPD_ZONE` / `MPD_VM_ID`.
+    ///
+    /// Rewritten on every `--setup` and `--start`, so a VM that changes ID
+    /// (hostname change, re-clone) converges on the next lifecycle command.
+    static func writeVMMeta() {
+        let meta: [String: Any] = [
+            "vmId":       Mpd.Net.vmId,
+            "zone":       Mpd.Net.zone,
+            "subnet":     Mpd.Net.subnet,
+            "gateway":    Mpd.Net.gateway,
+            "dnsmasqIp":  Mpd.Service.Dnsmasq.ip,
+        ]
+        guard let json = try? JSONSerialization.data(
+            withJSONObject: meta, options: [.prettyPrinted, .sortedKeys]) else { return }
+
+        // Two audiences, two mount namespaces, same bytes:
+        //  - runtime containers mount the data volume at /srv/ → /srv/meta/vm.json
+        //  - the portal mounts the state dir at /mpd-state RO → /mpd-state/vm.json
+        // Neither can see the other's path, and neither may see conf/.
+        _ = Mpd.Podman.volumeToolRunWithInput(
+            command: ["bash", "-c", "mkdir -p /srv/meta && cat > /srv/meta/vm.json"],
+            input: json
+        )
+        try? json.write(to: URL(fileURLWithPath: "\(Mpd.VM.stateDir)/vm.json"), options: .atomic)
+    }
+
     /// Read /srv/meta/*/project.json from the volume and rebuild the projects.json cache.
     static func rescan() throws {
         step("Scanning data volume for project metadata")

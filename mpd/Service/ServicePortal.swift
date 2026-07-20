@@ -1,7 +1,7 @@
 // mpd — Mpd.Service.Portal namespace
 // Portal status dashboard: container lifecycle.
 // Container: mpd-service-portal at Mpd.Net.ip(.portal) — .4 of the VM's /24
-// Serves the zone apex (https://mpd.test/) and dynamic HTTPS reverse proxy
+// Serves the zone apex (https://<id>.mpd.test/) and dynamic HTTPS reverse proxy
 // vhosts for selected services.
 // debian:trixie with apache2 + php installed inline (apachectl -D FOREGROUND).
 // SECURITY: strictly read-only — never executes commands or accepts user input.
@@ -101,6 +101,17 @@ extension Mpd.Service.Portal {
             atomically: true,
             encoding: .utf8)
 
+        // Render apache.conf for this VM. ServerName / the :80 redirect name
+        // the zone apex, which differs per VM, so the asset is a template and
+        // the rendered copy is what gets mounted.
+        let renderedApacheConf = "\(portalStateDir)/apache.conf"
+        guard let apacheTemplate = try? String(contentsOfFile: apacheConf, encoding: .utf8) else {
+            throw RuntimeError("portal/apache.conf unreadable at \(apacheConf)")
+        }
+        try apacheTemplate
+            .replacingOccurrences(of: "%%ZONE%%", with: Mpd.Net.zone)
+            .write(toFile: renderedApacheConf, atomically: true, encoding: .utf8)
+
         let proxyArtifactsChanged = try ensurePortalProxyArtifacts(
             vhostTemplatePath: vhostTemplate,
             portalStateDir: portalStateDir,
@@ -116,7 +127,7 @@ extension Mpd.Service.Portal {
                 "-v", "\(portalWWW):/var/www/html:ro",
                 "-v", "\(Mpd.dataVolume):/srv:ro",
                 "-v", "\(Mpd.VM.stateDir):/mpd-state:ro",
-                "-v", "\(apacheConf):/etc/apache2/sites-available/mpd-portal.conf:ro",
+                "-v", "\(renderedApacheConf):/etc/apache2/sites-available/mpd-portal.conf:ro",
                 "-v", "\(portalPhpIni):/tmp/mpd-portal.ini:ro",
                 "-v", "\(serviceCert):/etc/mpd/cert.pem:ro",
                 "-v", "\(serviceKey):/etc/mpd/key.pem:ro",

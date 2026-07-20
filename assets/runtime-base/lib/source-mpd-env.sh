@@ -87,3 +87,26 @@ _mpd_load_env_file "/var/lib/mpd/env/mpd-vm.env"
 _mpd_load_env_file "/srv/projects/${PROJECT_NAME}/mpd.env"
 
 unset -f _mpd_load_env_file
+
+# VM identity — NOT a layer. Exported last and unconditionally, so no env
+# file can override it: MPD_ZONE is a fact about which VM this is, not a
+# preference. A project that could set its own zone would get a cert and a
+# DNS record it isn't entitled to.
+#
+# Written by Swift (Mpd.VM.DataVolume.writeVMMeta) on every --setup/--start.
+# /var/lib/mpd/conf/platform.env — the original source — is deliberately not
+# mounted into containers, so the data volume is the only path in.
+_mpd_vm_meta="/srv/meta/vm.json"
+if [ -f "$_mpd_vm_meta" ] && command -v jq >/dev/null 2>&1; then
+    MPD_ZONE=$(jq -r '.zone // empty' "$_mpd_vm_meta" 2>/dev/null)
+    MPD_VM_ID=$(jq -r '.vmId // empty' "$_mpd_vm_meta" 2>/dev/null)
+    export MPD_ZONE MPD_VM_ID
+fi
+unset _mpd_vm_meta
+
+# Fail loudly rather than composing `https://project./` from an empty zone.
+if [ -z "${MPD_ZONE:-}" ]; then
+    echo "MPD_ZONE unavailable: /srv/meta/vm.json is missing, unreadable, or jq is not installed." >&2
+    echo "Run 'mpd --start' on the VM to republish it." >&2
+    return 1 2>/dev/null || exit 1
+fi

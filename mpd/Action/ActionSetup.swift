@@ -112,8 +112,18 @@ extension Mpd.Action.Setup {
         _ = Mpd.VM.exec(
             ["sudo", "bash", "-c", "chmod -x /etc/update-motd.d/* 2>/dev/null || true"]
         )
+        // The banner names the portal URL, which is per-VM — render %%ZONE%%
+        // before installing rather than shipping a VM-specific asset.
+        guard let template = try? String(contentsOfFile: source, encoding: .utf8) else {
+            throw RuntimeError("motd asset unreadable: \(source)")
+        }
+        let rendered = template.replacingOccurrences(of: "%%ZONE%%", with: Mpd.Net.zone)
+        let staged = "\(NSTemporaryDirectory())/mpd-motd"
+        try rendered.write(toFile: staged, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(atPath: staged) }
+
         guard Mpd.VM.exec(
-            ["sudo", "install", "-m", "644", source, "/etc/motd"]
+            ["sudo", "install", "-m", "644", staged, "/etc/motd"]
         ) == 0 else {
             throw RuntimeError("Failed to install /etc/motd from \(source).")
         }
@@ -425,6 +435,31 @@ extension Mpd.Action.Setup {
 
         step("Podman network")
         if Mpd.Podman.networkExists("mpd-internal") {
+            // A Podman network's subnet is fixed at create time. If it was
+            // created before per-VM addressing (or under a different VM ID),
+            // containers keep getting addresses from the OLD subnet while mpd
+            // composes DNS records and cert SANs from the new one — every name
+            // resolves to an address nothing listens on. Refuse rather than
+            // report success on a network that disagrees with us.
+            let actual = Mpd.Podman.networkSubnet("mpd-internal")
+            guard actual.isEmpty || actual == Mpd.internalSubnet else {
+                throw RuntimeError("""
+                    Podman network 'mpd-internal' is on \(actual), but this VM's \
+                    subnet is \(Mpd.internalSubnet).
+
+                    A network's subnet cannot be changed in place. This VM predates \
+                    per-VM addressing (or its MPD_VM_ID changed). Either recreate the \
+                    VM, or migrate in place — destroys containers, keeps the data volume:
+
+                        mpd --stop
+                        sudo podman rm -af
+                        sudo podman network rm mpd-internal
+                        mpd --setup
+
+                    Then recreate runtimes and DB containers; /srv/ (projects, data,
+                    databases) is on the data volume and survives.
+                    """)
+            }
             ok("Network 'mpd-internal' already exists (\(Mpd.internalSubnet)).")
         } else {
             guard Mpd.Podman.networkCreate(
@@ -448,6 +483,13 @@ extension Mpd.Action.Setup {
 
         step("File access service")
         try Mpd.Service.FileAccess.setup()
+
+        // Publish this VM's addressing into the volume for container-side
+        // scripts (see Mpd.VM.DataVolume.writeVMMeta). Needs fileaccess up —
+        // it is the volume-tool exec target.
+        step("VM metadata (/srv/meta/vm.json)")
+        Mpd.VM.DataVolume.writeVMMeta()
+        ok("zone \(Mpd.Net.zone), subnet \(Mpd.Net.subnet)")
 
         // /var/lib/mpd/skel/ — VM-host slot for user-managed dotfile
         // defaults that overlay assets/runtime-base/skel/ on every new

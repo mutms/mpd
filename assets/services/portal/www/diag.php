@@ -2,7 +2,7 @@
 // Tunnel/proxy diagnostic — dumps the request as Apache+PHP sees it.
 // Useful for verifying what cloudflared (or any proxy) sends upstream.
 // Drop into the portal container at /var/www/html/diag.php — any tunnel
-// route pointing at https://mpd.test/diag.php returns the dump.
+// route pointing at https://<zone>/diag.php returns the dump.
 
 die(); // remove this line when diagnosing cftunnel issues
 
