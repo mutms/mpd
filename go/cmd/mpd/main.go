@@ -177,7 +177,7 @@ func main() {
 	// own shims under assets/completions/, installed by --vm-setup.
 	root.CompletionOptions.DisableDefaultCmd = true
 
-	root.AddCommand(versionCmd(), netCmd(), listCmd())
+	root.AddCommand(versionCmd(), listCmd())
 	root.AddCommand(projectVerbCmds(&f)...)
 	root.SetHelpCommand(helpCmd())
 
@@ -356,47 +356,27 @@ func versionCmd() *cobra.Command {
 	}
 }
 
-// netCmd reports this VM's addressing — the diagnostic to reach for when
-// a name resolves to the wrong place.
-func netCmd() *cobra.Command {
+// listCmd is the read-only inspection surface. `network` sits here with
+// the collections rather than as its own top-level verb: everything a
+// developer inspects is then under one command, and `mpd list <TAB>`
+// offers it — a top-level `mpd net` was findable only by knowing it
+// existed.
+//
+// It reports this VM's addressing, which is the diagnostic to reach for
+// when a name resolves to the wrong place.
+func listCmd() *cobra.Command {
 	var platformEnv string
 	cmd := &cobra.Command{
-		Use:   "net",
-		Short: "Show this VM's container subnet and DNS zone",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			n, err := net.Load(platformEnv)
-			if err != nil {
-				return err
-			}
-			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "vm id       %s\n", n.VMID())
-			fmt.Fprintf(out, "zone        %s\n", n.Zone())
-			fmt.Fprintf(out, "subnet      %s\n", n.Subnet())
-			fmt.Fprintf(out, "gateway     %s\n", n.Gateway())
-			fmt.Fprintf(out, "dnsmasq     %s\n", n.IP(net.HostDnsmasq))
-			fmt.Fprintf(out, "portal      %s (the VM itself: mpd --web behind caddy)\n", n.Gateway())
-			fmt.Fprintf(out, "adminer     %s\n", n.IP(net.HostAdminer))
-			return nil
-		},
-	}
-	cmd.Flags().StringVar(&platformEnv, "platform-env", net.PlatformEnvPath,
-		"path to platform.env (override for testing)")
-	return cmd
-}
-
-func listCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:       "list [projects|runtimes|services|dbs]",
-		Short:     "List entities — projects (default), runtimes, services, or DB containers",
-		ValidArgs: []string{"projects", "runtimes", "services", "dbs"},
+		Use:       "list [projects|runtimes|services|dbs|network]",
+		Short:     "List entities — projects (default), runtimes, services, DB containers, or this VM's addressing",
+		ValidArgs: []string{"projects", "runtimes", "services", "dbs", "network"},
 		Args:      cobra.MatchAll(cobra.MaximumNArgs(1), cobra.OnlyValidArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			what := "projects"
 			if len(args) == 1 {
 				what = args[0]
 			}
-			n, err := net.Load(net.PlatformEnvPath)
+			n, err := net.Load(platformEnv)
 			if err != nil {
 				return err
 			}
@@ -413,10 +393,34 @@ func listCmd() *cobra.Command {
 				cli.ListServices(ctx, out, n, p, vm.UserUnitActive)
 			case "dbs":
 				cli.ListDatabases(ctx, out, n, p, s)
+			case "network":
+				fmt.Fprintf(out, "vm id       %s\n", n.VMID())
+				fmt.Fprintf(out, "zone        %s\n", n.Zone())
+				fmt.Fprintf(out, "subnet      %s\n", n.Subnet())
+				// The VM's own address, which is the one NOT on the
+				// container subnet — and the one you need to get back in.
+				// Empty on sandbox VMs, which take a DHCP lease.
+				host, _ := os.Hostname()
+				if id, err := vm.LoadPlatform(); err == nil && id.VMIP != "" {
+					fmt.Fprintf(out, "vm          %s (ssh %s, %s)\n",
+						id.VMIP, host, n.VMServiceRecord())
+				} else {
+					fmt.Fprintf(out, "vm          ssh %s (address is DHCP)\n", host)
+				}
+				fmt.Fprintf(out, "gateway     %s\n", n.Gateway())
+				fmt.Fprintf(out, "dnsmasq     %s\n", n.IP(net.HostDnsmasq))
+				fmt.Fprintf(out, "portal      %s (the VM itself: mpd --web behind caddy)\n", n.Gateway())
+				fmt.Fprintf(out, "adminer     %s\n", n.IP(net.HostAdminer))
 			}
 			return nil
 		},
 	}
+	// Kept from the old top-level `net` command: tests point it at a
+	// fixture platform.env rather than the VM's own.
+	cmd.Flags().StringVar(&platformEnv, "platform-env", net.PlatformEnvPath,
+		"path to platform.env (override for testing)")
+
+	return cmd
 }
 
 // projectVerbCmds builds the verb-first project grammar, one cobra
