@@ -95,12 +95,12 @@ cat > "$apps_shortcut" <<EOF
 [Desktop Entry]
 Type=Application
 Name=mpd
-Comment=Moodle Plugin Development — interactive TUI
-Exec=mpd --tui
-Icon=utilities-terminal
+Comment=Moodle Plugin Development — status of your projects
+Exec=xdg-open https://000.mpd.test/
+Icon=applications-internet
 Categories=Development;
-Terminal=true
-StartupNotify=false
+Terminal=false
+StartupNotify=true
 EOF
 chmod 0755 "$apps_shortcut"
 update-desktop-database "$apps_dir" >/dev/null 2>&1 || true
@@ -137,7 +137,7 @@ Open Firefox in this VM and browse to:
 
 You'll also find an "mpd" launcher and a "Visual Studio Code"
 launcher in GNOME Activities (and on your Desktop, if desktop icons
-are on). Click "mpd" any time to drop into the interactive TUI.
+are on). Click "mpd" any time to open the status page.
 
 For VS Code: install the "Remote - SSH" extension on first launch,
 then connect to user@php.runtime.000.mpd.test and open

@@ -148,10 +148,10 @@ works: `bash <(curl -sSL <url>)`.
     + adminer.
 12. Best-effort pre-warm: `mpd --runtime-create=php` and
     `mpd --db-create=postgres:latest`.
-13. Drops GNOME launchers (`~/.local/share/applications/mpd.desktop` for
-    `mpd --tui`, plus a desktop-icon copy of VS Code's launcher when
-    desktop icons are on) so the user has both an mpd icon and a
-    VS Code icon ready to click.
+13. Drops GNOME launchers (`~/.local/share/applications/mpd.desktop`,
+    which opens the status page at `https://000.mpd.test/`, plus a
+    desktop-icon copy of VS Code's launcher when desktop icons are on)
+    so the user has both an mpd icon and a VS Code icon ready to click.
 
 ## Optional: GNOME tweaks for macOS users
 

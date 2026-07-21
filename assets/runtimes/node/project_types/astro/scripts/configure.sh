@@ -58,7 +58,7 @@ else
     fi
 fi
 
-# Publish URLs for portal/TUI/cert/dnsmasq + Phase 8 frontdoor sidecar.
+# Publish URLs for portal/cert/dnsmasq + Phase 8 frontdoor sidecar.
 # Astro projects expose an HTTP dev server on a fixed local port — the
 # (future) Caddy frontdoor reverse-proxies HTTPS at <project>.<zone> to it.
 cat > "/srv/meta/${PROJECT_NAME}/urls.json" <<EOF

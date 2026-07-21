@@ -189,7 +189,7 @@ out as those stabilize.
 
 ## Behavioral invariants
 
-- CLI is non-interactive by default except explicit interactive actions (TUI, shells, interactive verbs).
+- CLI is non-interactive by default except explicit interactive actions (shells, interactive verbs, confirmation prompts).
 - Destructive operations require confirmation unless `--yes` is present.
 - Error messages should be actionable and include next command when possible.
 - Idempotent operations should return success when already in desired state.

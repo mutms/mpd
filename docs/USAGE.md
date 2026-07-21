@@ -335,7 +335,7 @@ care about.
 ## Day-to-day commands
 
 ```bash
-mpd                              # interactive TUI
+mpd                              # status (a bare mpd falls through to --vm-status)
 mpd --vm-status                     # text status of services + projects
 
 mpd --vm-start                      # reconcile current → requested (start runtimes/projects with state=running)
