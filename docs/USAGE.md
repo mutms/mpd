@@ -89,7 +89,7 @@ no host CA trust to set up. Open Firefox inside the VM and browse to
 Inside the VM, `demo` creates a fully installed Moodle site in one shot:
 
 ```bash
-demo moodle v5.2.0
+demo moodle v5.2.1
 ```
 
 This clones Moodle 5.2.0 from GitHub by tag, provisions the runtime, runs the

@@ -146,7 +146,7 @@ same VM, so the connection is local — no host↔VM hop.
 
 Create a Moodle project:
 
-    demo moodle v5.2.0
+    demo moodle v5.2.1
 
 Or by hand:
 

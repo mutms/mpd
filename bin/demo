@@ -12,7 +12,7 @@ FLAVOR="${1:-}"
 TAG="${2:-}"
 
 if [ -z "$FLAVOR" ] || [ -z "$TAG" ]; then
-    echo "Usage: demo <flavor> <tag>  (e.g. demo moodle v5.2.0)" >&2
+    echo "Usage: demo <flavor> <tag>  (e.g. demo moodle v5.2.1)" >&2
     exit 1
 fi
 
