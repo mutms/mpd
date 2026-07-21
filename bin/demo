@@ -1,73 +1,91 @@
 #!/bin/bash
-# demo — create and start a demo project in one command.
+# demo — one command from a recipe to a running, installed Moodle site.
 # Available on the mpd VM after `mpd --vm-setup` adds bin/ to PATH.
 #
-# Usage: demo <flavor> <tag>
-#   demo moodle v5.2.0
-#   demo mutms MuTMS-5.2.0-01
+# Usage: demo <recipe> <projectname>
+#   demo moodle/release/4.5.12 moodle45
+#   demo mutms/dev/5.2 mutms52
+#   demo /srv/extra/dev-recipes/mutms/dev/5.2.yaml mydev
+#
+# The recipe is mudev's: a Moodle branch plus a plugin set plus config,
+# resolved from /srv/extra/mdl-recipes/ by identifier, or read from a path.
+# `mudev clone` assembles the tree; mpd provisions and runs it.
+#
+# This is the composite command — create, configure, start and install in
+# one go. The individual verbs stay separate on purpose, so nothing else
+# has to guess when you wanted a database created for you.
 set -euo pipefail
 trap 'echo ""; echo "Interrupted."; exit 130' INT TERM
 
-FLAVOR="${1:-}"
-TAG="${2:-}"
+RECIPE="${1:-}"
+PROJECT="${2:-}"
 
-if [ -z "$FLAVOR" ] || [ -z "$TAG" ]; then
-    echo "Usage: demo <flavor> <tag>  (e.g. demo moodle v5.2.1)" >&2
+if [ -z "$RECIPE" ] || [ -z "$PROJECT" ]; then
+    echo "Usage: demo <recipe> <projectname>" >&2
+    echo "  e.g. demo moodle/release/4.5.12 moodle45" >&2
+    echo "" >&2
+    echo "Recipes available on this VM:" >&2
+    if [ -d /srv/extra/mdl-recipes ]; then
+        (cd /srv/extra/mdl-recipes && find . -name '*.yaml' -printf '  %P\n' 2>/dev/null |
+            sed 's/\.yaml$//' | sort | head -20) >&2
+    else
+        echo "  (none — /srv/extra/mdl-recipes is missing; run mpd --vm-setup)" >&2
+    fi
     exit 1
 fi
 
-case "$FLAVOR" in
-    moodle) REPO="https://github.com/moodle/moodle" ;;
-    mutms)  REPO="https://github.com/mutms/mutms" ;;
-    *)
-        echo "demo: unknown flavor '$FLAVOR'" >&2
-        echo "Known flavors: moodle, mutms" >&2
-        exit 1
-        ;;
-esac
-
-# Derive project name: flavor + all digit runs from the tag concatenated.
-# v5.2.0 → 520, MuTMS-5.2.0-01 → 52001
-DIGITS="$(echo "$TAG" | grep -oE '[0-9]+' | tr -d '\n')"
-if [ -z "$DIGITS" ]; then
-    echo "demo: cannot derive project name from '$TAG' (no digits found)" >&2
+command -v mudev >/dev/null 2>&1 || {
+    echo "demo: mudev is not on PATH. Run: mpd --vm-setup" >&2
     exit 1
-fi
+}
 
-PROJECT="${FLAVOR}${DIGITS}"
-RUNTIME="php"
-URL="https://${PROJECT}.mpd.test/"
+DIR="/srv/projects/${PROJECT}"
+
+# The zone is per-VM, so the URL cannot be a constant: VM 150 serves
+# 150.mpd.test. /srv/meta/vm.json is written by every `mpd --vm-setup`.
+ZONE="$(jq -r '.zone // empty' /srv/meta/vm.json 2>/dev/null || true)"
+[ -n "$ZONE" ] || ZONE="mpd.test"
+URL="https://${PROJECT}.${ZONE}/"
+
+ADMIN_PASS="Admin1234!"
+ADMIN_EMAIL="admin@example.com"
 
 echo ""
 
-if [ -d "/srv/projects/$PROJECT" ]; then
+if [ -d "$DIR" ]; then
+    # Already assembled: start it rather than rebuilding. This branch was
+    # unreachable before /srv was mounted on the VM — the test could never
+    # be true — so re-running used to fail with "Project already exists".
     echo "Project '$PROJECT' already exists -- starting..."
     mpd start "$PROJECT"
 else
-    echo "Creating $FLAVOR $TAG demo (clones repo + builds runtime -- a few minutes)..."
+    echo "Creating '$PROJECT' from recipe $RECIPE"
+    echo "(assembles the tree, builds the runtime, installs the database -- a few minutes)"
     echo ""
 
-    GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=advice.detachedHead GIT_CONFIG_VALUE_0=false \
-        mpd create "$PROJECT" \
-        --git-repo="$REPO" \
-        --git-branch="$TAG" \
-        --git-depth=1
+    mkdir -p "$DIR"
+    cd "$DIR"
 
-    mpd configure "$PROJECT"
+    # mudev assembles into the current directory; mpd verbs then take the
+    # project from that same directory, so neither needs the name twice.
+    mudev clone "$RECIPE"
 
-    mpd start "$PROJECT"
+    mpd create --type=moodle
+    mpd configure
+    mpd start
 
     echo ""
     echo "Installing database..."
-    ssh -q -o StrictHostKeyChecking=no -o BatchMode=yes \
-        "$USER@${RUNTIME}.runtime.mpd.test" \
-        "bash -l -c 'cd /srv/projects/${PROJECT} && mdl-install --agree-license --adminpass=Admin1234! --adminemail=admin@example.com'"
+    mpd run mdl-install \
+        --agree-license \
+        --adminpass="$ADMIN_PASS" \
+        --adminemail="$ADMIN_EMAIL"
 fi
 
 echo ""
-echo "  $FLAVOR $TAG is ready."
+echo "  '$PROJECT' is ready ($RECIPE)."
 echo ""
 echo "  URL:      $URL"
 echo "  Login:    admin"
-echo "  Password: Admin1234!"
+echo "  Password: $ADMIN_PASS"
 echo ""

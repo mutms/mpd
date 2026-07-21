@@ -75,7 +75,9 @@ PATH="$HOME/.local/bin:$PATH"
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 
-# --- Sane default working directory for SSH sessions ----------------------
-# Mpd runtimes are project-shaped: SSH-ing in lands the user in /srv/projects
-# so `cd <project>` is the next step instead of `cd /srv/projects && cd <p>`.
-cd /srv/projects 2>/dev/null || true
+# --- No default working directory ------------------------------------------
+# This file deliberately does NOT cd anywhere. It used to land SSH sessions
+# in /srv/projects as a convenience, which turned out to fight every tool
+# that sets its own directory: PhpStorm's remote sessions, and `podman exec
+# -w`, which the shell then silently overrode. A login shell that moves you
+# is a shell that lies to its caller.

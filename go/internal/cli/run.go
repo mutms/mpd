@@ -59,7 +59,7 @@ func Run(ctx context.Context, out io.Writer, d ProjectDeps, command []string) er
 		options = append(options, "-t")
 	}
 
-	code, err := d.Podman.ExecAttached(ctx, container, options, command...)
+	code, err := d.Podman.ExecAttached(ctx, container, options, loginShell(cwd, command)...)
 	if err != nil {
 		return err
 	}
@@ -112,6 +112,33 @@ func projectFromCwd(s state.Store, what string) (state.Project, string, error) {
 		resolved = filepath.Clean(cwd)
 	}
 	return entry, resolved, nil
+}
+
+// loginShell wraps the command so it runs with the environment an
+// interactive runtime session gets.
+//
+// `podman exec` starts no shell, so it inherits only the container's bare
+// PATH — /usr/bin and friends. Every mpd tool (mdl-install, phpunit,
+// composer-install, the php wrapper) is on PATH courtesy of the skel
+// ~/.bashrc, which reads them out of the assets tree. Without a login
+// shell `mpd run mdl-install` fails with "executable file not found",
+// while `mpd run php` happens to work only because build.sh also
+// symlinks php into /usr/local/bin. Forwarding a command that behaves
+// differently from the same command typed in the runtime would be a trap.
+//
+// The `cd` is not redundant with `-w`: that same .bashrc ends with
+// `cd /srv/projects` for interactive convenience, which would otherwise
+// silently relocate the command. We set the directory again after the
+// shell has finished initialising, and `exec` keeps the child's exit
+// status and signals ours.
+func loginShell(cwd string, command []string) []string {
+	args := []string{
+		"bash", "-lc",
+		`cd -- "$1" || exit 1; shift; exec "$@"`,
+		"mpd-run", // $0, and what bash reports in any error it prints
+		cwd,
+	}
+	return append(args, command...)
 }
 
 // stdinIsTerminal reports whether stdin is a character device, which is

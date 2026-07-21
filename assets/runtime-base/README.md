@@ -14,7 +14,7 @@ top of.
   assets tree — nothing is copied or symlinked.
 - **`Containerfile`** — base image definition (`mpd-debian-trixie-systemd`).
 - **`skel/`** — files copied into the dev user's `$HOME` at runtime
-  create (`/etc/skel/`-style). Ships a `.bashrc` with PATH + nvm + cd
+  create (`/etc/skel/`-style). Ships a `.bashrc` with PATH + nvm
   defaults and a `.ssh/known_hosts` pre-populated for common forges.
   User overrides go in `/var/lib/mpd/skel/` on the VM host.
 - **`tools/`** — executable tools available **in any runtime**. On PATH

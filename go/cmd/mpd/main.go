@@ -40,8 +40,7 @@ var version = "dev"
 // projectCommands is the verb-first half of the CLI: everything that
 // acts on one project.
 const projectCommands = `  show       [projectname]                     project details
-  create     [projectname] [--type=<type>] [--git-repo=<url>] [--git-branch=<branch>] [--git-depth=<n>]
-                                               (default type: moodle)
+  create     [projectname] [--type=<type>]     (default type: moodle)
   configure  [projectname] [KEY=VALUE ...]     (e.g. MPD_DB=postgres:18, MPD_PHP_VERSION=8.4;
                                                full set lives in /srv/projects/<projectname>/mpd.env)
   start      [projectname]
@@ -513,9 +512,6 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 		},
 	}
 	createCmd.Flags().StringVar(&opts.Type, "type", "", "Project type (default: inferred, else moodle)")
-	createCmd.Flags().StringVar(&opts.GitRepo, "git-repo", "", "Clone this repository into the project")
-	createCmd.Flags().StringVar(&opts.GitBranch, "git-branch", "", "Branch to clone")
-	createCmd.Flags().StringVar(&opts.GitDepth, "git-depth", "", "Shallow-clone depth")
 
 	runCmd := &cobra.Command{
 		Use:   "run [--] <command> [args...]",

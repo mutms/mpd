@@ -4,11 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/url"
 	"path/filepath"
 	"regexp"
-	"strings"
-	"time"
 
 	"github.com/mutms/mpd/go/internal/assets"
 	"github.com/mutms/mpd/go/internal/current"
@@ -473,10 +470,7 @@ var validProjectName = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
 
 // CreateOptions carries `project create`'s flags.
 type CreateOptions struct {
-	Type      string
-	GitRepo   string
-	GitBranch string
-	GitDepth  string
+	Type string
 }
 
 // ProjectCreate scaffolds a new project.
@@ -529,30 +523,6 @@ func ProjectCreate(ctx context.Context, out io.Writer, name string, opts CreateO
 		return fmt.Errorf("Failed to create /srv/projects/%s in runtime '%s'.", name, runtimeName)
 	}
 
-	if opts.GitRepo != "" {
-		// A runtime created moments ago has just had dnsmasq restarted
-		// under it, so the clone can race the resolver coming back. Wait
-		// for the git host to resolve from inside the container rather
-		// than letting the user meet a confusing clone failure.
-		if host := gitHost(opts.GitRepo); host != "" {
-			waitForHostResolves(ctx, out, d.Podman, container, d.DevUser, host)
-		}
-		fmt.Fprintf(out, "\n\033[1m==> Cloning %s\033[0m\n", opts.GitRepo)
-		// --progress because git's isatty check can fail through podman
-		// exec, leaving a large clone apparently frozen.
-		args := []string{"git", "clone", "--progress"}
-		if opts.GitBranch != "" {
-			args = append(args, "-b", opts.GitBranch)
-		}
-		if opts.GitDepth != "" {
-			args = append(args, "--depth="+opts.GitDepth)
-		}
-		args = append(args, opts.GitRepo, "/srv/projects/"+name)
-		if code, err := project.Exec(ctx, d.Podman, container, d.DevUser, args...); err != nil || code != 0 {
-			return fmt.Errorf("git clone failed.")
-		}
-	}
-
 	// The type's own scaffolding: seeds mpd.env from its template and
 	// excludes it from git. Optional — types without the script skip.
 	if cfg, ok := d.Assets.ProjectTypeConfig(typeName); ok {
@@ -599,58 +569,24 @@ func ensureRuntime(ctx context.Context, out io.Writer, name string, d ProjectDep
 	return nil
 }
 
-// gitHost extracts the host from a git URL, handling both URL form and
-// the scp-like user@host:path form git accepts.
-func gitHost(raw string) string {
-	if u, err := url.Parse(raw); err == nil && u.Host != "" {
-		return u.Hostname()
-	}
-	if at := strings.Index(raw, "@"); at >= 0 {
-		rest := raw[at+1:]
-		if colon := strings.Index(rest, ":"); colon > 0 {
-			host := rest[:colon]
-			if !strings.Contains(host, "/") {
-				return host
-			}
-		}
-	}
-	return ""
-}
-
-// waitForHostResolves polls until a hostname resolves inside the
-// container, up to ~15s. Non-fatal: the clone reports its own error if
-// DNS never comes back.
-func waitForHostResolves(ctx context.Context, out io.Writer, p *podman.Client,
-	container, user, host string) {
-
-	for i := 0; i < 30; i++ {
-		if code := p.ExecQuietly(ctx, container, "getent", "hosts", host); code == 0 {
-			return
-		}
-		if i == 0 {
-			fmt.Fprintf(out, "  Waiting for '%s' to resolve inside the runtime…\n", host)
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-}
-
-// ShowHelp prints the per-project verb reference.
+// ShowHelp prints the verb reference for one project — what `mpd help
+// <project>` answers.
 //
-// Ends by pointing at the runtime rather than listing more verbs, because
-// the project-type operations developers reach for next — mdl-cron,
-// phpunit, composer — are tools on PATH inside the runtime, not host-side
-// verbs. See AGENTS.md §"Authoring verbs and tools".
+// Per-project rather than generic because the useful form of "what can I
+// do here" names the project: the reader can copy any line as-is.
 func ShowHelp(out io.Writer, project string, n net.Net) {
 	fmt.Fprintf(out, "Usage: mpd <verb> %s [options...]\n", project)
 	fmt.Fprintln(out, "\nVerbs:")
 	fmt.Fprintf(out, "  show       %s                       project details (also: bare `mpd show %s`)\n", project, project)
-	fmt.Fprintf(out, "  create     %s [--type=<type>] [--git-repo=<url>] [--git-branch=<branch>] [--git-depth=<n>]\n", project)
-	fmt.Fprintln(out, "                                              (default type: moodle)")
+	fmt.Fprintf(out, "  create     %s [--type=<type>]       (default type: moodle)\n", project)
 	fmt.Fprintf(out, "  configure  %s [KEY=VALUE ...]       (e.g. MPD_DB=postgres:18, MPD_PHP_VERSION=8.4;\n", project)
 	fmt.Fprintf(out, "                                              full set lives in /srv/projects/%s/mpd.env)\n", project)
 	fmt.Fprintf(out, "  start      %s\n", project)
 	fmt.Fprintf(out, "  stop       %s\n", project)
 	fmt.Fprintf(out, "  delete     %s [--yes]\n", project)
+	fmt.Fprintln(out, "")
+	fmt.Fprintf(out, "Inside /srv/projects/%s/ (or any subdirectory) the name is optional:\n", project)
+	fmt.Fprintln(out, "  mpd start        mpd configure KEY=VALUE        mpd show")
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "Project-type-specific operations (mdl-cron, phpunit, composer, …) are tools,")
 	fmt.Fprintln(out, "not host-side verbs. SSH into the runtime and run them on PATH:")

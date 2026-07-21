@@ -143,7 +143,7 @@ func verbArgs(verb string) []string {
 	case "create":
 		// No --db here: project-type knobs live in mpd.env and are set
 		// through configure.
-		return []string{"--type=", "--git-repo=", "--git-branch=", "--git-depth=", "--yes"}
+		return []string{"--type=", "--yes"}
 	case "configure":
 		// Commonly-set keys; any MPD_* key is accepted.
 		return []string{"MPD_DB=", "MPD_PHP_VERSION=", "MPD_PHP_MOODLE_BEHAT=", "--yes"}
