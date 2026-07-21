@@ -55,11 +55,14 @@ step "Installing software via apt"
 # (missing on minimal Debian images, present on full installs).
 # bind9-dnsutils is the real package for dig/host on Trixie (dnsutils
 # is virtual; dpkg-query against the virtual name always reports
-# not-installed).
+# not-installed). Full `vim`, not `vim-tiny`: vim-tiny ships no
+# defaults.vim, so it starts in compatible mode where arrow keys insert
+# ABCD characters and backspace won't cross the insert point — the
+# runtime containers already install full vim, and the VM should match.
 RUNTIME_PKGS=(
     podman catatonit aardvark-dns uidmap nftables sudo openssl
     bash coreutils git iputils-ping ca-certificates systemd iproute2 jq
-    bind9-dnsutils traceroute tcpdump lsof curl less vim-tiny psmisc
+    bind9-dnsutils traceroute tcpdump lsof curl less vim psmisc
 )
 
 # Build deps for `make install`. golang-go builds the mpd binary.
