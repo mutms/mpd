@@ -1,9 +1,17 @@
-// Command mpd is the Go implementation of the mpd control plane.
+// Command mpd is the mpd control plane, run inside the mpd VM.
 //
-// During the port it is built as `bin/gompd` and installed alongside the
-// Swift `bin/mpd`; the two share state through the JSON files under
-// /var/lib/mpd/state/, podman labels, and container names. Only one of
-// them may write at a time. See docs/proposals/go-port.md.
+// Two grammars, deliberately:
+//
+//   - Project work is verb-first — `mpd start myproject`, `mpd create
+//     myproject --type=moodle`. It reads like git and is what a developer
+//     types dozens of times a day.
+//   - Everything that acts on the VM or its infrastructure is a flag —
+//     `mpd --vm-setup`, `mpd --runtime-create=php`, `mpd --db-start`.
+//
+// The split exists so `mpd stop myproject` and `mpd --vm-stop` can never
+// be confused for each other. A bare `mpd stop` acting on the VM next to
+// `mpd stop <project>` acting on a project is exactly the ambiguity the
+// `--vm-` prefix removes.
 package main
 
 import (
@@ -11,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/mutms/mpd/go/internal/assets"
 	"github.com/mutms/mpd/go/internal/cli"
@@ -20,37 +29,244 @@ import (
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/state"
+	"github.com/mutms/mpd/go/internal/vm"
 	"github.com/spf13/cobra"
 )
 
 // version is stamped at build time via -ldflags.
 var version = "dev"
 
+const usage = `mpd <options>
+mpd list       [projects|runtimes|services|dbs]   (default: projects)
+mpd help       <projectname>
+mpd create     <projectname> [--type=<type>] [--git-repo=<url>] [--git-branch=<branch>] [--git-depth=<n>]
+                              (default type: moodle)
+mpd configure  <projectname> [KEY=VALUE ...]
+                              (e.g. MPD_DB=postgres:18, MPD_PHP_VERSION=8.4)
+                              (full set lives in /srv/projects/<projectname>/mpd.env)
+mpd start      <projectname>
+mpd stop       <projectname>
+mpd delete     <projectname> [--yes]
+mpd show       <projectname>`
+
+// flags holds every global option. One struct rather than package-level
+// vars so the dispatch below reads as a single decision.
+type flags struct {
+	vmSetup   bool
+	vmStart   bool
+	vmStop    bool
+	vmRestart bool
+	vmStatus  bool
+
+	runtimeCreate string
+	runtimeStart  string
+	runtimeStop   string
+	runtimeDelete string
+	runtimeShow   string
+
+	dbCreate string
+	dbStart  string
+	dbStop   string
+	dbDelete string
+
+	checkHooks bool
+	yes        bool
+	debug      bool
+}
+
 func main() {
+	// `--complete` short-circuits before cobra: it is invoked on every Tab
+	// press by the shell shims, must never fail, and must not pay for
+	// building the command tree.
+	if len(os.Args) >= 3 && os.Args[1] == "--complete" {
+		cli.CompleteFromArgs(os.Stdout, os.Args[2:], state.New(), assets.New())
+		cli.ExitCompletion()
+	}
+
+	var f flags
 	root := &cobra.Command{
-		Use:   "mpd",
-		Short: "Moodle Plugin Development environment",
-		Long: "mpd — Moodle Plugin Development environment.\n\n" +
-			"Go implementation, in progress. Verbs land one at a time;\n" +
-			"see docs/proposals/go-port.md for what is ported so far.",
+		Use:           "mpd",
+		Short:         "mpd — Moodle Plugin Development Environment",
+		Long:          "mpd — Moodle Plugin Development Environment",
+		Example:       usage,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		// No bare-invocation TUI: the Swift TUI is not being ported, and
-		// its replacement is a web UI. Bare `mpd` will become `mpd list`
-		// once list lands; until then, show help.
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return cmd.Help()
+		Args:          cobra.ArbitraryArgs,
+		RunE: func(c *cobra.Command, args []string) error {
+			return dispatch(c, args, &f)
 		},
 	}
 
-	root.AddCommand(versionCmd(), netCmd(), listCmd(), showCmd(), runtimeCmd(), dbCmd(),
-		projectStartCmd(), projectStopCmd(), projectDeleteCmd(), projectConfigureCmd(),
-		projectCreateCmd(), checkHooksCmd(), startVMCmd(), stopVMCmd(), restartVMCmd(),
-		setupCmd())
+	// VM lifecycle. The `--vm-` prefix names what they act on, so none of
+	// them can be mistaken for the project verb of the same name.
+	root.Flags().BoolVar(&f.vmSetup, "vm-setup", false,
+		"Idempotent VM setup. Safe to run repeatedly. Adopts the current VM.")
+	root.Flags().BoolVar(&f.vmStart, "vm-start", false,
+		"Daily start: start services and restore running projects. No provisioning.")
+	root.Flags().BoolVar(&f.vmStop, "vm-stop", false,
+		"Graceful stop: fire pre-stop hooks, then power off the VM.")
+	root.Flags().BoolVar(&f.vmRestart, "vm-restart", false,
+		"Reboot the VM (graceful DB shutdown via the systemd unit; mpd auto-starts on boot).")
+	root.Flags().BoolVar(&f.vmStatus, "vm-status", false,
+		"Show context-aware status (text output).")
+
+	root.Flags().StringVar(&f.runtimeCreate, "runtime-create", "", "Provision a new runtime named `name`.")
+	root.Flags().StringVar(&f.runtimeStart, "runtime-start", "", "Start a stopped runtime `name`.")
+	root.Flags().StringVar(&f.runtimeStop, "runtime-stop", "", "Stop a running runtime `name`.")
+	root.Flags().StringVar(&f.runtimeDelete, "runtime-delete", "", "Stop and remove runtime `name` (prompts unless --yes).")
+	root.Flags().StringVar(&f.runtimeShow, "runtime", "", "Show runtime `name` and its projects.")
+
+	root.Flags().StringVar(&f.dbCreate, "db-create", "", "Create (or start) a DB container, e.g. `postgres:17`.")
+	root.Flags().StringVar(&f.dbStart, "db-start", "", "Start a stopped DB container `name`.")
+	root.Flags().StringVar(&f.dbStop, "db-stop", "", "Stop a running DB container `name`.")
+	root.Flags().StringVar(&f.dbDelete, "db-delete", "", "Remove a DB container `name` (prompts unless --yes).")
+
+	root.Flags().BoolVar(&f.checkHooks, "check-hooks", false,
+		"Cross-reference hook directories against the event catalogue. Also runs at the end of --vm-setup.")
+	root.Flags().BoolVar(&f.yes, "yes", false, "Skip confirmation prompts (for scripted use).")
+	root.Flags().BoolVar(&f.debug, "debug", false, "Print debug information.")
+
+	root.AddCommand(versionCmd(), netCmd(), listCmd())
+	root.AddCommand(projectVerbCmds(&f)...)
+	root.SetHelpCommand(helpCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
+	}
+}
+
+// dispatch runs whichever global flag was given.
+//
+// Order matches the flag groups above; at most one flag is acted on, and
+// a bare `mpd` with no flags falls through to status — the same fallback
+// the Swift implementation had, and a more useful answer than usage text.
+func dispatch(c *cobra.Command, args []string, f *flags) error {
+	ctx := c.Context()
+	out := c.OutOrStdout()
+
+	// A leftover positional here is a project verb typo or an unknown
+	// name; saying so beats silently printing status.
+	if len(args) > 0 {
+		return fmt.Errorf("unknown command %q\n\n%s", args[0], usage)
+	}
+
+	switch {
+	case f.vmSetup:
+		return cli.Setup(ctx, out)
+	case f.vmStart:
+		d, err := projectDeps()
+		if err != nil {
+			return err
+		}
+		return cli.Start(ctx, out, d, state.Dir)
+	case f.vmStop:
+		d, err := projectDeps()
+		if err != nil {
+			return err
+		}
+		return cli.Stop(ctx, out, d, state.Dir)
+	case f.vmRestart:
+		return cli.Restart(ctx, out, state.Dir)
+	case f.checkHooks:
+		hooks.Diagnose(c.ErrOrStderr(), state.Dir)
+		return nil
+	}
+
+	if name := firstNonEmpty(f.runtimeCreate, f.runtimeStart, f.runtimeStop,
+		f.runtimeDelete, f.runtimeShow); name != "" {
+		return runtimeAction(ctx, out, c, f, name)
+	}
+	if name := firstNonEmpty(f.dbCreate, f.dbStart, f.dbStop, f.dbDelete); name != "" {
+		return dbAction(ctx, out, c, f, name)
+	}
+
+	// No flag given (or only --vm-status): show status.
+	n, err := net.Load(net.PlatformEnvPath)
+	if err != nil {
+		return err
+	}
+	cli.Status(ctx, out, state.New(), podman.New(), n, devUID())
+	return nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func runtimeAction(ctx context.Context, out interface{ Write([]byte) (int, error) },
+	c *cobra.Command, f *flags, name string) error {
+
+	n, p, s, dns, o, err := runtimeDeps()
+	if err != nil {
+		return err
+	}
+	switch {
+	case f.runtimeCreate != "":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		return cli.RuntimeCreate(ctx, out, name, p, s, dns, o, n, assets.New(), devUser(), devUID(), home)
+	case f.runtimeStart != "":
+		return cli.RuntimeStart(ctx, out, name, p, s, dns, o, n, devUser(), devUID())
+	case f.runtimeStop != "":
+		return cli.RuntimeStop(ctx, out, name, p, s, dns, o)
+	case f.runtimeDelete != "":
+		return cli.RuntimeDelete(ctx, out, c.InOrStdin(), name, p, s, dns, o, devUser(), f.yes)
+	default:
+		return cli.ShowRuntime(ctx, out, name, s, p, o, n)
+	}
+}
+
+func dbAction(ctx context.Context, out interface{ Write([]byte) (int, error) },
+	c *cobra.Command, f *flags, name string) error {
+
+	p, s, dns, err := dbDeps()
+	if err != nil {
+		return err
+	}
+	switch {
+	case f.dbCreate != "":
+		n, err := net.Load(net.PlatformEnvPath)
+		if err != nil {
+			return err
+		}
+		return cli.DBCreate(ctx, out, name, p, s, dns, n, devUID())
+	case f.dbStart != "":
+		return cli.DBStart(ctx, out, name, p, s, dns)
+	case f.dbStop != "":
+		return cli.DBStop(ctx, out, name, p, s, dns)
+	default:
+		return cli.DBDelete(ctx, out, c.InOrStdin(), name, p, s, dns, f.yes)
+	}
+}
+
+// helpCmd replaces cobra's built-in `help`, because `mpd help
+// <project>` is a project verb: it prints that project's verb reference.
+// With no argument it falls back to the normal command help, so `mpd
+// help` still does what every CLI's `help` does.
+func helpCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "help [project]",
+		Short: "Show the verb reference for a project, or general help",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return c.Root().Help()
+			}
+			n, err := net.Load(net.PlatformEnvPath)
+			if err != nil {
+				return err
+			}
+			cli.ShowHelp(c.OutOrStdout(), args[0], n)
+			return nil
+		},
 	}
 }
 
@@ -66,10 +282,8 @@ func versionCmd() *cobra.Command {
 	}
 }
 
-// netCmd reports this VM's addressing. It is the first real verb because
-// it exercises the whole identity path end to end — read platform.env,
-// derive the subnet and zone — and because its output can be compared
-// directly against what the Swift binary and /srv/meta/vm.json say.
+// netCmd reports this VM's addressing — the diagnostic to reach for when
+// a name resolves to the wrong place.
 func netCmd() *cobra.Command {
 	var platformEnv string
 	cmd := &cobra.Command{
@@ -98,7 +312,6 @@ func netCmd() *cobra.Command {
 	return cmd
 }
 
-// listCmd mirrors the Swift `mpd list [projects|runtimes|services|dbs]`.
 func listCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:       "list [projects|runtimes|services|dbs]",
@@ -133,124 +346,114 @@ func listCmd() *cobra.Command {
 	}
 }
 
-// devUID is the uid volume execs run as, so files written to the data
-// volume come out owned by the runtime user.
-func devUID() string {
-	return strconv.Itoa(os.Getuid())
-}
+// projectVerbCmds builds the verb-first project grammar, one cobra
+// command per verb, each taking the project name as its first argument:
+// `mpd start myproject`.
+//
+// They are registered on the root command, so the verb is what cobra
+// resolves — which is why a project may never be named after one. The
+// verb set is reserved at create time (see cli.ProjectVerbs).
+func projectVerbCmds(f *flags) []*cobra.Command {
+	verbs := []*cobra.Command{}
 
-func showCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "show <project>",
-		Short: "Show project details",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			n, err := net.Load(net.PlatformEnvPath)
-			if err != nil {
-				return err
-			}
-			p := podman.New()
-			cli.ShowProject(cmd.Context(), cmd.OutOrStdout(), args[0], state.New(), p,
-				current.NewObserver(n.VMID(), p), n, devUID())
-			return nil
-		},
-	}
-}
-
-func runtimeCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "runtime <name>",
-		Short: "Show runtime details and its projects",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(c *cobra.Command, args []string) error {
-			n, err := net.Load(net.PlatformEnvPath)
-			if err != nil {
-				return err
-			}
-			p := podman.New()
-			return cli.ShowRuntime(c.Context(), c.OutOrStdout(), args[0], state.New(), p,
-				current.NewObserver(n.VMID(), p), n)
-		},
+	simple := func(use, short string, run func(context.Context, *cobra.Command, string, cli.ProjectDeps) error) *cobra.Command {
+		return &cobra.Command{
+			Use:   use,
+			Short: short,
+			Args:  cobra.ExactArgs(1),
+			RunE: func(c *cobra.Command, args []string) error {
+				d, err := projectDeps()
+				if err != nil {
+					return err
+				}
+				return run(c.Context(), c, args[0], d)
+			},
+		}
 	}
 
-	var assumeYes bool
-
-	stopCmd := &cobra.Command{
-		Use:   "stop <name>",
-		Short: "Stop a running runtime",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(c *cobra.Command, args []string) error {
-			n, p, s, dns, o, err := runtimeDeps()
-			if err != nil {
-				return err
-			}
-			_ = n
-			return cli.RuntimeStop(c.Context(), c.OutOrStdout(), args[0], p, s, dns, o)
-		},
-	}
+	verbs = append(verbs,
+		simple("start <project>", "Start a project",
+			func(ctx context.Context, c *cobra.Command, name string, d cli.ProjectDeps) error {
+				return cli.ProjectStart(ctx, c.OutOrStdout(), name, d)
+			}),
+		simple("stop <project>", "Stop a project",
+			func(ctx context.Context, c *cobra.Command, name string, d cli.ProjectDeps) error {
+				return cli.ProjectStop(ctx, c.OutOrStdout(), name, d)
+			}),
+		simple("show <project>", "Show project details",
+			func(ctx context.Context, c *cobra.Command, name string, d cli.ProjectDeps) error {
+				cli.ShowProject(ctx, c.OutOrStdout(), name, d.State, d.Podman, d.Observer, d.Net, d.UID)
+				return nil
+			}),
+	)
 
 	deleteCmd := &cobra.Command{
-		Use:   "delete <name>",
-		Short: "Stop and remove a runtime and its containers",
+		Use:   "delete <project>",
+		Short: "Delete a project, its database, dataroot and source tree",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
-			n, p, s, dns, o, err := runtimeDeps()
+			d, err := projectDeps()
 			if err != nil {
 				return err
 			}
-			_ = n
-			user := os.Getenv("USER")
-			if user == "" {
-				user = "user"
-			}
-			return cli.RuntimeDelete(c.Context(), c.OutOrStdout(), c.InOrStdin(), args[0],
-				p, s, dns, o, user, assumeYes)
+			return cli.ProjectDelete(c.Context(), c.OutOrStdout(), c.InOrStdin(), args[0], d, f.yes)
 		},
 	}
-	deleteCmd.Flags().BoolVar(&assumeYes, "yes", false, "Skip the confirmation prompt")
+	deleteCmd.Flags().BoolVar(&f.yes, "yes", false, "Skip the confirmation prompt")
 
-	startCmd := &cobra.Command{
-		Use:   "start <name>",
-		Short: "Start a stopped runtime and restore its projects",
-		Args:  cobra.ExactArgs(1),
+	configureCmd := &cobra.Command{
+		Use:   "configure <project> [KEY=VALUE ...]",
+		Short: "Apply mpd.env changes and reconcile the project",
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
-			n, p, s, dns, o, err := runtimeDeps()
+			d, err := projectDeps()
 			if err != nil {
 				return err
 			}
-			user := os.Getenv("USER")
-			if user == "" {
-				user = "user"
-			}
-			return cli.RuntimeStart(c.Context(), c.OutOrStdout(), args[0], p, s, dns, o, n,
-				user, devUID())
+			return cli.ProjectConfigure(c.Context(), c.OutOrStdout(), args[0], args[1:], d)
 		},
 	}
 
+	var opts cli.CreateOptions
 	createCmd := &cobra.Command{
-		Use:   "create <name>",
-		Short: "Provision a new runtime",
+		Use:   "create <project>",
+		Short: "Scaffold a new project",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
-			n, p, s, dns, o, err := runtimeDeps()
+			d, err := projectDeps()
 			if err != nil {
 				return err
-			}
-			user := os.Getenv("USER")
-			if user == "" {
-				user = "user"
 			}
 			home, err := os.UserHomeDir()
 			if err != nil {
 				return err
 			}
-			return cli.RuntimeCreate(c.Context(), c.OutOrStdout(), args[0], p, s, dns, o, n,
-				assets.New(), user, devUID(), home)
+			return cli.ProjectCreate(c.Context(), c.OutOrStdout(), args[0], opts, d, home)
 		},
 	}
+	createCmd.Flags().StringVar(&opts.Type, "type", "", "Project type (default: inferred, else moodle)")
+	createCmd.Flags().StringVar(&opts.GitRepo, "git-repo", "", "Clone this repository into the project")
+	createCmd.Flags().StringVar(&opts.GitBranch, "git-branch", "", "Branch to clone")
+	createCmd.Flags().StringVar(&opts.GitDepth, "git-depth", "", "Shallow-clone depth")
 
-	cmd.AddCommand(createCmd, startCmd, stopCmd, deleteCmd)
-	return cmd
+	verbs = append(verbs, deleteCmd, configureCmd, createCmd)
+
+	return verbs
+}
+
+// devUID is the uid volume execs run as, so files written to the data
+// volume come out owned by the runtime user.
+func devUID() string { return strconv.Itoa(os.Getuid()) }
+
+// devUser is the account name project scripts run as inside a runtime.
+func devUser() string {
+	if id := vm.DetectIdentity(); id.User != "" {
+		return id.User
+	}
+	if u := strings.TrimSpace(os.Getenv("USER")); u != "" {
+		return u
+	}
+	return "user"
 }
 
 func runtimeDeps() (net.Net, *podman.Client, state.Store, dnsmasq.Manager, current.Observer, error) {
@@ -260,71 +463,6 @@ func runtimeDeps() (net.Net, *podman.Client, state.Store, dnsmasq.Manager, curre
 	}
 	p := podman.New()
 	return n, p, state.New(), dnsmasq.New(state.Dir, n, p), current.NewObserver(n.VMID(), p), nil
-}
-
-// dbCmd groups the DB container verbs. Swift spells these as flags
-// (--db-start); the Go CLI uses subcommands, and difftest compares the
-// pair until the flag day settles it.
-func dbCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "db", Short: "Manage database containers"}
-
-	build := func(use, short string, run func(context.Context, *cobra.Command, string) error) *cobra.Command {
-		return &cobra.Command{
-			Use:   use,
-			Short: short,
-			Args:  cobra.ExactArgs(1),
-			RunE: func(c *cobra.Command, args []string) error {
-				return run(c.Context(), c, args[0])
-			},
-		}
-	}
-
-	var assumeYes bool
-
-	createCmd := build("create <engine:version>", "Create (or start) a DB container",
-		func(ctx context.Context, c *cobra.Command, arg string) error {
-			p, s, dns, err := dbDeps()
-			if err != nil {
-				return err
-			}
-			n, err := net.Load(net.PlatformEnvPath)
-			if err != nil {
-				return err
-			}
-			return cli.DBCreate(ctx, c.OutOrStdout(), arg, p, s, dns, n, devUID())
-		})
-
-	deleteCmd := build("delete <engine:version>", "Remove a DB container (keeps its data)",
-		func(ctx context.Context, c *cobra.Command, arg string) error {
-			p, s, dns, err := dbDeps()
-			if err != nil {
-				return err
-			}
-			return cli.DBDelete(ctx, c.OutOrStdout(), c.InOrStdin(), arg, p, s, dns, assumeYes)
-		})
-	deleteCmd.Flags().BoolVar(&assumeYes, "yes", false, "Skip the confirmation prompt")
-
-	cmd.AddCommand(
-		createCmd,
-		deleteCmd,
-		build("start <engine:version>", "Start a stopped DB container",
-			func(ctx context.Context, c *cobra.Command, arg string) error {
-				p, s, dns, err := dbDeps()
-				if err != nil {
-					return err
-				}
-				return cli.DBStart(ctx, c.OutOrStdout(), arg, p, s, dns)
-			}),
-		build("stop <engine:version>", "Stop a running DB container",
-			func(ctx context.Context, c *cobra.Command, arg string) error {
-				p, s, dns, err := dbDeps()
-				if err != nil {
-					return err
-				}
-				return cli.DBStop(ctx, c.OutOrStdout(), arg, p, s, dns)
-			}),
-	)
-	return cmd
 }
 
 func dbDeps() (*podman.Client, state.Store, dnsmasq.Manager, error) {
@@ -342,10 +480,6 @@ func projectDeps() (cli.ProjectDeps, error) {
 		return cli.ProjectDeps{}, err
 	}
 	p := podman.New()
-	user := os.Getenv("USER")
-	if user == "" {
-		user = "user"
-	}
 	return cli.ProjectDeps{
 		Podman:   p,
 		State:    state.New(),
@@ -353,173 +487,7 @@ func projectDeps() (cli.ProjectDeps, error) {
 		Observer: current.NewObserver(n.VMID(), p),
 		Assets:   assets.New(),
 		Net:      n,
-		DevUser:  user,
+		DevUser:  devUser(),
 		UID:      devUID(),
 	}, nil
-}
-
-func projectStartCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "start <project>",
-		Short: "Start a project",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(c *cobra.Command, args []string) error {
-			d, err := projectDeps()
-			if err != nil {
-				return err
-			}
-			return cli.ProjectStart(c.Context(), c.OutOrStdout(), args[0], d)
-		},
-	}
-}
-
-func projectStopCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "stop <project>",
-		Short: "Stop a project",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(c *cobra.Command, args []string) error {
-			d, err := projectDeps()
-			if err != nil {
-				return err
-			}
-			return cli.ProjectStop(c.Context(), c.OutOrStdout(), args[0], d)
-		},
-	}
-}
-
-// checkHooksCmd mirrors Swift's `mpd --check-hooks`. Diagnostics are
-// warnings, never failures: an orphaned hook simply never fires, and
-// refusing to run over one would be worse than the problem.
-func checkHooksCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "check-hooks",
-		Short: "Cross-reference hook directories against the event catalogue",
-		Args:  cobra.NoArgs,
-		RunE: func(c *cobra.Command, args []string) error {
-			hooks.Diagnose(c.ErrOrStderr(), state.Dir)
-			return nil
-		},
-	}
-}
-
-func projectDeleteCmd() *cobra.Command {
-	var assumeYes bool
-	cmd := &cobra.Command{
-		Use:   "delete <project>",
-		Short: "Delete a project, its database, dataroot and source tree",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(c *cobra.Command, args []string) error {
-			d, err := projectDeps()
-			if err != nil {
-				return err
-			}
-			return cli.ProjectDelete(c.Context(), c.OutOrStdout(), c.InOrStdin(), args[0], d, assumeYes)
-		},
-	}
-	cmd.Flags().BoolVar(&assumeYes, "yes", false, "Skip the confirmation prompt")
-	return cmd
-}
-
-func projectConfigureCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "configure <project> [KEY=VALUE ...]",
-		Short: "Apply mpd.env changes and reconcile the project",
-		Args:  cobra.MinimumNArgs(1),
-		RunE: func(c *cobra.Command, args []string) error {
-			d, err := projectDeps()
-			if err != nil {
-				return err
-			}
-			return cli.ProjectConfigure(c.Context(), c.OutOrStdout(), args[0], args[1:], d)
-		},
-	}
-}
-
-func projectCreateCmd() *cobra.Command {
-	var opts cli.CreateOptions
-	cmd := &cobra.Command{
-		Use:   "create <project>",
-		Short: "Scaffold a new project",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(c *cobra.Command, args []string) error {
-			d, err := projectDeps()
-			if err != nil {
-				return err
-			}
-			home, err := os.UserHomeDir()
-			if err != nil {
-				return err
-			}
-			return cli.ProjectCreate(c.Context(), c.OutOrStdout(), args[0], opts, d, home)
-		},
-	}
-	cmd.Flags().StringVar(&opts.Type, "type", "", "Project type (default: inferred, else moodle)")
-	cmd.Flags().StringVar(&opts.GitRepo, "git-repo", "", "Clone this repository into the project")
-	cmd.Flags().StringVar(&opts.GitBranch, "git-branch", "", "Branch to clone")
-	cmd.Flags().StringVar(&opts.GitDepth, "git-depth", "", "Shallow-clone depth")
-	return cmd
-}
-
-// startVMCmd mirrors Swift's `mpd --start`: bring the environment up
-// after a boot. Named `up` in the Go CLI to avoid colliding with
-// `mpd start <project>`; the flag/verb split is settled at the flag day.
-func startVMCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "up",
-		Short: "Start mpd services and restore running projects",
-		Args:  cobra.NoArgs,
-		RunE: func(c *cobra.Command, args []string) error {
-			d, err := projectDeps()
-			if err != nil {
-				return err
-			}
-			return cli.Start(c.Context(), c.OutOrStdout(), d, state.Dir)
-		},
-	}
-}
-
-// stopVMCmd mirrors `mpd --stop`; `down` avoids colliding with
-// `mpd stop <project>`.
-func stopVMCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "down",
-		Short: "Power off the VM (pre-stop hooks fire during shutdown)",
-		Args:  cobra.NoArgs,
-		RunE: func(c *cobra.Command, args []string) error {
-			d, err := projectDeps()
-			if err != nil {
-				return err
-			}
-			return cli.Stop(c.Context(), c.OutOrStdout(), d, state.Dir)
-		},
-	}
-}
-
-// setupCmd mirrors Swift's `mpd --setup`.
-//
-// Unlike every other verb it does NOT resolve addressing up front:
-// setting up is how a VM with a missing or broken MPD_VM_ID gets
-// repaired, so the resolve happens inside, after the identity step has
-// had its chance to fix it.
-func setupCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "setup",
-		Short: "Prepare this VM: certificates, network, services, DNS",
-		Args:  cobra.NoArgs,
-		RunE: func(c *cobra.Command, args []string) error {
-			return cli.Setup(c.Context(), c.OutOrStdout())
-		},
-	}
-}
-
-func restartVMCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "reboot",
-		Short: "Reboot the VM",
-		Args:  cobra.NoArgs,
-		RunE: func(c *cobra.Command, args []string) error {
-			return cli.Restart(c.Context(), c.OutOrStdout(), state.Dir)
-		},
-	}
 }

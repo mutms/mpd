@@ -631,3 +631,26 @@ func waitForHostResolves(ctx context.Context, out io.Writer, p *podman.Client,
 		time.Sleep(500 * time.Millisecond)
 	}
 }
+
+// ShowHelp prints the per-project verb reference.
+//
+// Ends by pointing at the runtime rather than listing more verbs, because
+// the project-type operations developers reach for next — mdl-cron,
+// phpunit, composer — are tools on PATH inside the runtime, not host-side
+// verbs. See AGENTS.md §"Authoring verbs and tools".
+func ShowHelp(out io.Writer, project string, n net.Net) {
+	fmt.Fprintf(out, "Usage: mpd <verb> %s [options...]\n", project)
+	fmt.Fprintln(out, "\nVerbs:")
+	fmt.Fprintf(out, "  show       %s                       project details (also: bare `mpd show %s`)\n", project, project)
+	fmt.Fprintf(out, "  create     %s [--type=<type>] [--git-repo=<url>] [--git-branch=<branch>] [--git-depth=<n>]\n", project)
+	fmt.Fprintln(out, "                                              (default type: moodle)")
+	fmt.Fprintf(out, "  configure  %s [KEY=VALUE ...]       (e.g. MPD_DB=postgres:18, MPD_PHP_VERSION=8.4;\n", project)
+	fmt.Fprintf(out, "                                              full set lives in /srv/projects/%s/mpd.env)\n", project)
+	fmt.Fprintf(out, "  start      %s\n", project)
+	fmt.Fprintf(out, "  stop       %s\n", project)
+	fmt.Fprintf(out, "  delete     %s [--yes]\n", project)
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "Project-type-specific operations (mdl-cron, phpunit, composer, …) are tools,")
+	fmt.Fprintln(out, "not host-side verbs. SSH into the runtime and run them on PATH:")
+	fmt.Fprintf(out, "  ssh user@<runtime>.runtime.%s\n", n.Zone())
+}
