@@ -130,22 +130,31 @@ chmod 02777 /srv/data
 # /etc/profile.d/ drop-in is needed — and root deliberately has none of
 # these on PATH (see AGENTS.md "Mandatory privilege rule").
 #
-# PATH order at shell start: dotfile/loop order is base → runtime → types,
-# because `/srv/tools/*/` enumerates alphabetically and each iteration
-# prepends to PATH, so later entries win. To rank type tools above runtime
-# tools, runtime names are deliberately short (`php`) and type names tend
-# to sort after (`moodle`); the glob preserves that order.
+# PATH order at shell start is base → runtime → types (each prepends, so
+# types win). The shipped .bashrc ranks them explicitly, reading the
+# runtime's own name from /etc/mpd/runtime — it does not rely on the
+# alphabetical order of /srv/tools/*/, which ranks `php` above `moodle`
+# and gets the precedence exactly backwards.
+
+# Each /srv/tools/<n> entry is a symlink to the assets tools/ directory
+# itself, not a directory of per-file symlinks. Adding or removing a tool
+# under assets/ then takes effect immediately in every existing runtime —
+# no rebuild, nothing to re-link. `/srv/tools/*/` still matches, because
+# the glob resolves symlinks to directories.
+link_tools_dir() {
+    src="$1"; dst="$2"
+    # Replace a real directory left by an older per-file provisioning run.
+    if [ -d "$dst" ] && [ ! -L "$dst" ]; then
+        rm -rf "$dst"
+    fi
+    ln -sfn "$src" "$dst"
+}
 
 # Runtime-level tools.
 RUNTIME_TOOLS_SRC="/opt/mpd/assets/runtimes/php/tools"
 RUNTIME_TOOLS_DST="/srv/tools/php"
 if [ -d "$RUNTIME_TOOLS_SRC" ]; then
-    mkdir -p "$RUNTIME_TOOLS_DST"
-    for SCRIPT in "$RUNTIME_TOOLS_SRC"/*; do
-        [ -f "$SCRIPT" ] || continue
-        SCRIPT_NAME="$(basename "$SCRIPT")"
-        ln -sf "$SCRIPT" "$RUNTIME_TOOLS_DST/$SCRIPT_NAME"
-    done
+    link_tools_dir "$RUNTIME_TOOLS_SRC" "$RUNTIME_TOOLS_DST"
     echo "Installed runtime tools → ${RUNTIME_TOOLS_DST}"
 fi
 
@@ -155,14 +164,7 @@ for TYPE_DIR in "${ASSETS_RT}"/*/tools; do
     [ -d "$TYPE_DIR" ] || continue
     TYPE_NAME="$(basename "$(dirname "$TYPE_DIR")")"
     TOOLS_DIR="/srv/tools/${TYPE_NAME}"
-    mkdir -p "$TOOLS_DIR"
-    # Symlink each executable tool. tools/ should contain only executables;
-    # sourced helpers (like scripts/mpd-env.sh) live elsewhere by convention.
-    for SCRIPT in "$TYPE_DIR"/*; do
-        [ -f "$SCRIPT" ] || continue
-        SCRIPT_NAME="$(basename "$SCRIPT")"
-        ln -sf "$SCRIPT" "$TOOLS_DIR/$SCRIPT_NAME"
-    done
+    link_tools_dir "$TYPE_DIR" "$TOOLS_DIR"
     echo "Installed tools for '${TYPE_NAME}' → ${TOOLS_DIR}"
 done
 

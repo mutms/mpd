@@ -362,18 +362,24 @@ win over base tools win over system binaries:
 ```
 
 PATH is set by the dev user's `~/.bashrc` (shipped via skel —
-`assets/runtime-base/skel/.bashrc`), which globs every directory under
-`/srv/tools/` and prepends each to PATH in alphabetical order. The glob
-is self-extending: a new project type or runtime that drops a new
-`/srv/tools/<name>/` is picked up automatically, no `.bashrc` edit
-required.
+`assets/runtime-base/skel/.bashrc`), which prepends every directory under
+`/srv/tools/` in three explicit tiers: `_base` first, then the active
+runtime (read from `/etc/mpd/runtime`), then everything else — the
+project-type dirs. Each tier prepends, so the last one added ranks
+highest. The last tier is still a glob, so it is self-extending: a new
+project type that drops a `/srv/tools/<name>/` is picked up
+automatically, no `.bashrc` edit required.
 
-Order within the glob: alphabetical iteration with each entry prepending
-to PATH means later entries rank higher. `_base` sorts first (underscore
-is < lowercase), then runtimes (`php`, `node`, `util`), then project
-types whose names happen to sort after their runtime (`moodle` > `php`).
-The "by design" caveat: if a project type name collides earlier than its
-runtime, the ranking flips. Name your types accordingly.
+The tiers are explicit because **alphabetical order is not precedence
+order**. A single `/srv/tools/*/` glob ranks `php` above `moodle` —
+exactly backwards — since the runtime name happens to sort after the
+type name. Type names are not constrained to sort any particular way;
+the `.bashrc` decides the ranking, not the filesystem.
+
+Each `/srv/tools/<n>` entry is a symlink to the corresponding `tools/`
+directory under `assets/`, not a directory of per-file symlinks. Adding
+or deleting a tool in `assets/` therefore takes effect immediately in
+every existing runtime, with no rebuild and nothing to re-link.
 
 The dev user is the only login identity inside a runtime. **Root has
 none of the mpd tool dirs on PATH** — `sudo composer install` returns

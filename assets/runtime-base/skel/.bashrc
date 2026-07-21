@@ -25,13 +25,31 @@
 # tool dirs) goes on PATH. The glob is self-extending — runtimes/types that
 # create new tools dirs are picked up without editing this file.
 #
+# Precedence is base < runtime < project type (ARCHITECTURE.md §7), so a
+# type tool shadows a runtime tool of the same name. Each entry prepends,
+# so the *last* one added wins — hence base first, runtime second, types
+# last. Do not collapse this back into a single `/srv/tools/*/` glob:
+# alphabetical order is not the precedence order (`php` sorts after
+# `moodle`, which would rank the runtime above the project type).
+#
 # The dev user is the only login identity inside a runtime. Root has none
 # of this on PATH by design: `sudo composer install` returns "command not
 # found" so the operation is forced back to the dev user, which is the
 # correct privilege model for mpd tools (see AGENTS.md "Mandatory privilege
 # rule").
-for _d in /srv/tools/*/; do PATH="${_d%/}:$PATH"; done
-unset _d
+_mpd_rt="$(cat /etc/mpd/runtime 2>/dev/null || true)"
+for _d in /srv/tools/_base "/srv/tools/${_mpd_rt}"; do
+    [ -n "${_d#/srv/tools/}" ] && [ -d "$_d" ] && PATH="${_d}:$PATH"
+done
+# Whatever is left is a project-type tool dir — highest precedence.
+for _d in /srv/tools/*/; do
+    _d="${_d%/}"
+    case "$_d" in
+        /srv/tools/_base|"/srv/tools/${_mpd_rt}") continue ;;
+    esac
+    PATH="${_d}:$PATH"
+done
+unset _d _mpd_rt
 
 # --- User-installed CLIs ---------------------------------------------------
 # Claude Code, gh, and other tools that ship via personal `~/.local/bin`

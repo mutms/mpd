@@ -110,13 +110,15 @@ chmod 0755 /srv/dbs
 
 # --- Runtime-base tools shared across all runtimes ---
 # Tools that work in any Trixie-based runtime (claude-install, node-install,
-# …) live in /opt/mpd/assets/runtime-base/tools/. Symlink them into
-# /srv/tools/_base/. The dev user's ~/.bashrc (shipped via skel) globs
-# /srv/tools/*/ onto PATH automatically — no /etc/profile.d/ drop-in
-# needed, and root deliberately stays without these on PATH.
-mkdir -p /srv/tools/_base
-for SCRIPT in /opt/mpd/assets/runtime-base/tools/*; do
-    [ -f "$SCRIPT" ] || continue
-    SCRIPT_NAME="$(basename "$SCRIPT")"
-    ln -sf "$SCRIPT" "/srv/tools/_base/${SCRIPT_NAME}"
-done
+# …) live in /opt/mpd/assets/runtime-base/tools/. /srv/tools/_base is a
+# symlink to that directory, not a directory of per-file symlinks: adding
+# or deleting a tool in assets/ then takes effect immediately, with no
+# rebuild. The dev user's ~/.bashrc (shipped via skel) globs /srv/tools/*/
+# onto PATH automatically — the glob matches symlinked dirs — so no
+# /etc/profile.d/ drop-in is needed, and root deliberately stays without
+# these on PATH.
+# Replace a real directory left by an older per-file provisioning run.
+if [ -d /srv/tools/_base ] && [ ! -L /srv/tools/_base ]; then
+    rm -rf /srv/tools/_base
+fi
+ln -sfn /opt/mpd/assets/runtime-base/tools /srv/tools/_base
