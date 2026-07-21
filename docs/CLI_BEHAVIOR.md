@@ -147,12 +147,20 @@ Meaning:
 - these verbs are project-scoped (they are not available at no-project/global level)
 - they apply across project types unless a runtime/type explicitly overrides behavior
 
+**The project name is optional for every verb except `delete`.** Inside
+`/srv/projects/<name>/` — or any subdirectory of it — the verb acts on
+that project, so `mpd start` and `mpd start moodle45` are the same
+command from the right directory. An explicit name always wins. `delete`
+is excluded deliberately: it removes the source tree, so the inferred
+answer would routinely be the directory the caller is standing in.
+
 Project-focused universal verbs (recommended daily surface):
-- `create` is inert beyond clone+scaffold: accepts `--type`, `--git-repo`, `--git-branch`, `--git-depth`. `--git-depth=<n>` does a shallow clone (passed straight to `git clone --depth=`) — useful for big repos like Moodle. Caveat: shallow clones implicitly `--single-branch`, so cross-branch operations need `git fetch --unshallow` first. Project-type `project-create.sh` seeds `/srv/projects/<project>/mpd.env` from the type's `mpd-template.env` (existing mpd.env preserved). No DB is provisioned here; the project is registered with status `notConfigured`. Next step is `mpd configure <project>`.
+- `create` is inert beyond scaffolding: accepts `--type`. It does not fetch any source — `/srv` is mounted on the VM, so cloning is ordinary shell (`git clone`, or `mudev clone <recipe>`) done before or after, with the developer's own credentials. Project-type `project-create.sh` seeds `/srv/projects/<project>/mpd.env` from the type's `mpd-template.env` (existing mpd.env preserved, so scaffolding a directory that already holds a source tree is safe). No DB is provisioned here; the project is registered with status `notConfigured`. Next step is `mpd configure`.
 - `configure` takes any number of positional `KEY=VALUE` pairs matching `^MPD_[A-Z0-9_]+=.*$`. The control plane sanitises (reserved keys like `MPD_DB` get strict validation; others get a generic safe-charset check), then writes the line into `/srv/projects/<project>/mpd.env` (empty value deletes the line). Then runs the project-type `configure.sh` which sources the four-layer mpd.env (runtime defaults → type defaults → user-level → project) and emits `dbTag` / `urls` into `/srv/meta/<project>/{effective.json,urls.json}`. The control plane reads `dbTag`, re-sanitises, and provisions the DB container if non-empty (visible image-pull progress via `podman pull`, then `podman run -d`, then per-project DB creation). The full mpd.env model — file paths, sourcing order, sanitisation, reserved keys — is documented in [`ARCHITECTURE.md` §8 "Configuration model: mpd.env"](ARCHITECTURE.md#8-configuration-model-mpdenv).
 - `start`
 - `stop`
-- `delete`
+- `delete` — the one verb that always needs an explicit name
+- `run <command> [args...]` — runs a command inside the runtime that owns the current project, with the caller's working directory forwarded verbatim (`/srv` is the same path on the VM and in the container). The child's stdin, stdout, stderr and exit code are the caller's; a TTY is allocated only when stdin is one. The command runs through a login shell, so it sees exactly the PATH an interactive runtime session has — every project-type tool (`mdl-install`, `phpunit`, `composer`) resolves. Note the grammar: everything after `run` is the command, so this is the one verb whose second argument is not a project name.
 
 ## Project-type-specific operations are tools, not verbs
 

@@ -300,6 +300,29 @@ Don't duplicate. If a tool covers a capability, the verb is redundant.
 Convenience verbs that just `podman exec` into the runtime to run a
 tool with no host-side coordination should not exist.
 
+**`mpd run` is why that stays true.** One generic verb forwards any
+command into the runtime that owns the current project, so the pressure
+to add `mpd cron`, `mpd phpunit`, `mpd composer` — each a verb whose
+whole body would be an exec — never arises:
+
+```
+cd /srv/projects/moodle51 && mpd run mdl-cron
+```
+
+It runs the command through a login shell, so the forwarded command sees
+the same PATH as one typed inside the runtime; anything else would make
+`mpd run <tool>` and `<tool>` behave differently, which is precisely the
+trap a forwarder exists to avoid. The working directory is passed
+verbatim, since `/srv` is one tree at one path on both sides.
+
+An earlier design added VM-side *shims* — a `php` on the VM's PATH that
+forwarded through `mpd run`. Dropped: `mpd run php …` is clear enough,
+and claiming a bare upstream name on the VM would turn a wrong-terminal
+mistake into a silent forward instead of an immediate `command not
+found`. The VM deliberately has no PHP and no Node
+(`bootstrap/40-install-software.sh` installs neither); that absence is a
+useful signal and is worth keeping.
+
 ### Implementation: Go by default
 
 Verbs are **Go**: cobra commands in `go/cmd/mpd/main.go`, handlers in

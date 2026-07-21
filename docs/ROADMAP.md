@@ -128,7 +128,7 @@ Real possibilities, not committed work.
   management: `composer require moodle-local/<plugin>` becomes a
   first-class part of project setup, so `mpd quickstart moodle52
   --plugins=local_foo,mod_bar` provisions a Moodle install with
-  those plugins already wired in. The current `demo moodle v5.2.0`
+  those plugins already wired in. The current `demo <recipe> <project>`
   one-liner stays as the simple-case shortcut. Blocked on the
   composer install item above.
 

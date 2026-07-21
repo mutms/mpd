@@ -90,27 +90,37 @@ no host CA trust to set up. Open Firefox inside the VM and browse to
 Inside the VM, `demo` creates a fully installed Moodle site in one shot:
 
 ```bash
-demo moodle v5.2.1
+demo moodle/release/4.5.12 demo45
 ```
 
-This clones Moodle 5.2.0 from GitHub by tag, provisions the runtime, runs the
-database installer, and prints the URL and admin credentials when done.
+The first argument is a mudev recipe — a Moodle branch plus a plugin set
+plus config — resolved from `/srv/extra/mdl-recipes/` by identifier, or
+read from a path. The second is the project name. Run `demo` with no
+arguments to list the recipes present on this VM.
+
+`mudev clone` assembles the tree, then mpd provisions the runtime and
+database, installs Moodle, and prints the URL and admin credentials.
 Takes a few minutes. Idempotent — re-running just starts the existing
-project. Other supported flavors: `demo mutms <tag>`.
+project.
 
 ### Manual setup (full control)
 
 Inside the VM:
 
 ```bash
-# 1. Scaffold (clone + seed mpd.env from the type's template; no DB yet)
-mpd create moodle51 \
-  --git-repo=https://github.com/moodle/moodle.git \
-  --git-branch=MOODLE_501_STABLE
+# 1. Get the source. /srv is mounted on the VM, so this is ordinary shell —
+#    a mudev recipe, or any git clone you like.
+mkdir -p /srv/projects/moodle51 && cd /srv/projects/moodle51
+mudev clone moodle/release/5.1.5
+#    or: git clone -b MOODLE_501_STABLE https://github.com/moodle/moodle.git .
 
-# 2. (optional) override defaults before configure:
-#      mpd configure moodle51 MPD_DB=postgres:18
-#      mpd configure moodle51 MPD_PHP_VERSION=8.4
+# 2. Scaffold (seeds mpd.env from the type's template; no DB yet).
+#    No project name needed — it comes from the directory you are in.
+mpd create --type=moodle
+
+# 3. (optional) override defaults before configure:
+#      mpd configure MPD_DB=postgres:18
+#      mpd configure MPD_PHP_VERSION=8.4
 #    Or edit /srv/projects/moodle51/mpd.env directly.
 
 # 3. Configure — provisions the DB container, creates the DB,
@@ -137,6 +147,26 @@ The full layered
 configuration model — file paths, sourcing order, reserved keys — is
 documented in
 [`ARCHITECTURE.md` §8](ARCHITECTURE.md#8-configuration-model-mpdenv).
+
+## Running runtime commands from the VM
+
+`mpd run` forwards a command into the runtime that owns the project you
+are standing in, so a one-off does not need an SSH hop:
+
+```bash
+cd /srv/projects/moodle51
+mpd run php admin/cli/install_database.php --agree-license --adminpass=…
+mpd run mdl-cron
+mpd run composer install
+```
+
+Your working directory is forwarded as-is — `/srv` is the same tree at
+the same path on both sides — and the command runs with the runtime's
+own PATH, so every tool below is available. Exit codes propagate, so it
+composes in scripts. Outside `/srv/projects/<name>/` it refuses rather
+than guessing which project you meant.
+
+For a session rather than a command, SSH in.
 
 ## SSH into the runtime
 

@@ -150,7 +150,7 @@ resolver, CA trust) in one shot. Sibling `mpd-virt-linux` /
 - **First runtime build** after `mpd --vm-setup`: 3–5 minutes (apt
   installs for PHP/Node/etc. inside the runtime container).
 - **Subsequent project start** (`mpd start <project>`): a few seconds.
-- **`demo moodle v5.2.0`** (one-command fully-installed Moodle): a
+- **`demo moodle/release/4.5.12 demo45`** (one-command fully-installed Moodle): a
   few minutes the first time (runtime + DB + Moodle install in
   sequence); near-instant on re-runs (just starts the existing
   project).
