@@ -28,6 +28,43 @@ Debian Trixie VM from a matched host (macOS / Ubuntu / Windows
 respectively) — pick one of those when you want your laptop's own
 browser to resolve `*.mpd.test` directly.
 
+## Prepare the guest: disable in-guest automatic updates
+
+Applies to any Debian guest you **keep and reuse** — a sandbox VM, or a
+template you clone from. Run these inside the guest, once, while
+preparing it:
+
+```
+sudo systemctl mask packagekit packagekit-offline-update
+sudo systemctl disable --now unattended-upgrades
+```
+
+Two different things take the dpkg lock out from under a bootstrap:
+
+- **`packagekitd`** is started by an auto-login GNOME session and grabs
+  the lock just to *check* for updates — which lands exactly when a
+  freshly cloned or freshly installed VM is being bootstrapped.
+- **`unattended-upgrades`** runs on a timer and holds the lock far
+  longer, because it actually installs.
+
+Neither breaks a bootstrap: `bootstrap/00-common.sh` wraps every
+`apt-get` with `DPkg::Lock::Timeout=300` (override with
+`MPD_APT_LOCK_TIMEOUT`) plus `Acquire::Retries=3`, so a competing job
+stalls the run instead of failing it. Worth knowing that Debian's
+built-in 120-second default applies to `apt`, not `apt-get` — which is
+why the wrapper sets it explicitly.
+
+The reason to turn them off anyway is determinism, not speed. Every
+bootstrap runs `apt-get` itself, and a kept guest gets rebuilt when its
+hypervisor tooling changes (new Parallels Tools, say) — so a guest that
+*also* updates itself adds nondeterminism without adding currency, and
+can pull in package versions the image was never tested with. Nothing
+in mpd uses PackageKit.
+
+Cloud-init paths (`linux/`, `windows/`) build each VM from a minimal
+image with no desktop, so `packagekitd` never runs there — but
+`unattended-upgrades` may still be present.
+
 ## What's not here
 
 - **Cloud-provider-specific tooling** (Hetzner Cloud images, AWS AMIs,
