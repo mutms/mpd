@@ -20,18 +20,18 @@ Pick the path that matches your host:
   down. VM start / suspend / shutdown via `mpd-virt start|stop` or the
   hypervisor's GUI.
 - **Ubuntu 26.04 LTS + libvirt/KVM (automated)** —
-  [`setup/linux/`](../../setup/linux/README.md).
+  [`setup/linux/`](../setup/linux/README.md).
   `bash setup.sh` from a terminal: preflight (apt deps, libvirt group,
   KVM, default network) → libvirt-driven VM creation against `virbr0`
   → Linux host networking (route, systemd-resolved drop-in, system
   trust, Firefox policies, NSS DB) → desktop launcher in GNOME
   Activities. `start.sh` / `stop.sh` / `uninstall.sh` cover the lifecycle.
 - **Windows + Hyper-V (automated)** —
-  [`setup/windows/`](../../setup/windows/README.txt).
+  [`setup/windows/`](../setup/windows/README.txt).
   `setup.cmd` does the same end-to-end and also configures Windows
   networking (route, NRPT DNS, CA certificate import).
 - **Sandbox (graphical, any hypervisor)** —
-  [`setup/sandbox/`](../../setup/sandbox/README.md).
+  [`setup/sandbox/`](../setup/sandbox/README.md).
   You install Debian Trixie with the GNOME desktop in your hypervisor
   of choice (UTM / Parallels / Hyper-V / VirtualBox / virt-manager /
   VMware), snapshot, and run `bash take-over-sandbox-vm.sh` from inside
@@ -285,7 +285,7 @@ for project-type-specific operations whose bare name (`rebuild`,
 
 ## Project backups (today)
 
-Backup verbs are on the [roadmap](../ROADMAP.md). Today the workflow
+Backup verbs are on the [roadmap](ROADMAP.md). Today the workflow
 is:
 
 - Inside the runtime, write whatever bundle you want into

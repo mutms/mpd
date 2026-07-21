@@ -120,8 +120,11 @@ across docs.
 - `docs/ARCHITECTURE.md` — repo architecture, mode split, networking summary, **verb/tool contract (§7)**
 - `docs/HOOKS.md` — typed `Event` lifecycle hooks: events, audiences, asset-side `hooks/<event>.d/` scripts
 - `docs/ROADMAP.md` — committed near-term work
-- `docs/proposals/` — design docs for parked / exploratory ideas in
-  *this* repo (mpd binary, in-VM behavior)
+- `docs/proposals/` — where a design doc for a parked / exploratory
+  idea in *this* repo (mpd binary, in-VM behavior) goes. Create the
+  directory when you write one; it is absent when there are none, and a
+  proposal is deleted once it ships — the code and the canonical docs
+  become the record, and git keeps the reasoning.
 - *(Architecture proposals for the host-side `mpd-virt` orchestrator
   live in the separate `mpd-virt-macos` repo under
   `docs/proposals/`.)*
@@ -193,6 +196,13 @@ may invoke a script as root.
 - Prefer additive asset changes for runtime/project-type behavior; reserve
   Go edits for control-plane, state, networking, and orchestration.
 - Prefer deterministic behavior over convenience fallbacks.
+- **Never raise the `go` directive in `go/go.mod` above the Go that
+  Debian Trixie packages** (`golang-go`, currently 1.24.x), and check a
+  new dependency's own `go.mod` for the same. Go's default
+  `GOTOOLCHAIN=auto` would otherwise silently download a 210 MB
+  toolchain on every VM at build time. The Makefile pins
+  `GOTOOLCHAIN=local` so this fails loudly instead; if you hit that
+  failure, lower the directive or pick an older dependency version.
 - Avoid cross-file doc duplication; link to canonical owners.
 - For shell completion, edit `go/internal/cli/complete.go` — the shims
   under `assets/completions/` are stable forwarders and rarely need to

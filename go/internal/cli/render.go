@@ -1,17 +1,15 @@
 // Package cli renders mpd's terminal output.
 //
-// Output is a compatibility surface during the port: the Go binary is
-// verified by diffing its output against the implementation it replaced,
-// so column widths,
-// separator lengths and status wording are reproduced deliberately rather
-// than redesigned. Change them after the flag day, not before.
+// Column widths, separator lengths and status wording were reproduced
+// from the implementation this replaced, and verified by diffing the two
+// binaries' output. That constraint is gone now — they can be redesigned
+// — but keep them consistent across listings: the tables are meant to
+// line up with each other.
 package cli
 
 import (
 	"os"
 	"strings"
-
-	"golang.org/x/term"
 )
 
 // Column widths, shared by every listing so the tables line up.
@@ -44,8 +42,17 @@ const (
 // colorEnabled reports whether to emit ANSI colour: only for a real
 // terminal with a usable TERM. Piped output — including the differential
 // tests — stays plain.
+//
+// The character-device check stands in for an isatty(3) ioctl, which
+// would mean a cgo or golang.org/x/term dependency. x/term is not worth
+// it: its release train requires a newer Go than Debian Trixie ships, so
+// pulling it in makes every VM download a 210 MB toolchain to build mpd.
+// The one behavioural difference is that a character device which is not
+// a terminal — /dev/null, most obviously — reads as one here, and
+// colouring output nobody reads costs nothing.
 func colorEnabled() bool {
-	if !term.IsTerminal(int(os.Stdout.Fd())) {
+	info, err := os.Stdout.Stat()
+	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
 		return false
 	}
 	t := os.Getenv("TERM")

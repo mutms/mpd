@@ -45,9 +45,6 @@ Or you're an AI agent helping out:
 - [`HOOKS.md`](HOOKS.md) — typed `Event` lifecycle hooks: events,
   audiences, asset-side `hooks/<event>.d/` scripts. Read when
   adding a hook trigger or authoring a hook script.
-- [`proposals/`](proposals/) — design docs for parked exploratory
-  ideas. Each proposal is precise enough that a contributor can
-  implement it without re-deriving the design.
 
 ## Direction
 
