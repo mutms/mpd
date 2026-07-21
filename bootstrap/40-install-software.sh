@@ -86,15 +86,3 @@ else
         "${missing[@]}"
     ok "installed ${#missing[@]} package(s): ${missing[*]}"
 fi
-
-# --- podman-restart.service --------------------------------------------
-# `--restart=always` on containers only survives a host reboot when this
-# unit is enabled; without it the policy is silently ineffective.
-step "podman-restart.service"
-if systemctl is-enabled --quiet podman-restart.service 2>/dev/null \
-   && systemctl is-active --quiet podman-restart.service 2>/dev/null; then
-    ok "podman-restart.service already enabled + running"
-else
-    sudo systemctl enable --now podman-restart.service
-    ok "podman-restart.service enabled + started"
-fi

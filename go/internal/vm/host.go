@@ -158,6 +158,31 @@ func EnsurePackages(ctx context.Context, out io.Writer) error {
 	return nil
 }
 
+// EnablePodmanRestart enables the unit that restarts containers marked
+// --restart=always after a host reboot.
+//
+// Lives here rather than in bootstrap/40 because the unit ships with the
+// podman package, which mpd installs itself — enabling it in a script
+// that runs before mpd exists fails with "Unit podman-restart.service
+// does not exist".
+//
+// Without it, --restart=always is silently ineffective across reboots:
+// containers come back only when something starts them by hand.
+func EnablePodmanRestart(ctx context.Context, out io.Writer) error {
+	if unitIsActive(ctx, "podman-restart.service") {
+		return nil
+	}
+	ui.Step(out, "podman-restart.service")
+	if code, err := exec.Run(ctx, exec.Cmd{
+		Name: "systemctl", Args: []string{"enable", "--now", "podman-restart.service"},
+		Sudo: true,
+	}); err != nil || code != 0 {
+		return fmt.Errorf("Failed to enable podman-restart.service (exit %d).", code)
+	}
+	ui.OK(out, "podman-restart.service enabled.")
+	return nil
+}
+
 // RequireSystemdResolvedActive checks the one network-stack assumption
 // mpd makes. The platform bootstrap scripts are responsible for putting
 // the VM here; mpd only verifies and points at the fix.

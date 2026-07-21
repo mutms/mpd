@@ -229,6 +229,9 @@ func preflight(ctx context.Context, out io.Writer) error {
 	if err := vm.EnsurePackages(ctx, out); err != nil {
 		return err
 	}
+	if err := vm.EnablePodmanRestart(ctx, out); err != nil {
+		return err
+	}
 	if err := vm.RequireSystemdResolvedActive(ctx, out); err != nil {
 		return err
 	}
