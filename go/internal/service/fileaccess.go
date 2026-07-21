@@ -144,7 +144,8 @@ func ensureDataVolumeDirectories(ctx context.Context, p *podman.Client, uid stri
 		return
 	}
 	cmd := append([]string{"install", "-d", "-o", uid, "-g", uid, "-m", "0775"},
-		"/srv/projects", "/srv/data", "/srv/meta", "/srv/dbs", "/srv/backups")
+		"/srv/projects", "/srv/data", "/srv/meta", "/srv/dbs", "/srv/backups",
+		"/srv/extra")
 	_, _ = p.ExecWithOptions(ctx, FileAccessContainer, []string{"--user", "0:0"}, cmd...)
 }
 

@@ -11,6 +11,11 @@ set -euo pipefail
 #   /opt/dev-recipes  ← created empty, on purpose: private content the
 #                       dev drops in by hand, nothing to clone.
 #
+# SUPERSEDED: this tool is on its way out. Once /srv is mounted on the VM
+# and `mpd --vm-setup` provisions mudev + the index repos VM-side, both
+# mudev-install and mudev-install-dev are deleted — see
+# docs/proposals/vm-srv-mount.md. Left working in the meantime.
+#
 # Runs as the dev user inside the runtime; sudo only for creating the
 # /opt dirs, which are then chowned to the dev user so all git and build
 # operations afterwards are unprivileged.

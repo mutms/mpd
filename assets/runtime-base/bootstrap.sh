@@ -102,8 +102,8 @@ chmod 700 "${USER_HOME}/.ssh" 2>/dev/null || true
 # populates /srv/tools/<rt>/ and /srv/tools/<type>/. chown -R fixes
 # any stale subtree ownership left over from previous root-context
 # provisioning runs on this data volume.
-mkdir -p /srv/projects /srv/data /srv/dbs /srv/tools
-chown "${EXTUSER}:${EXTUSER}" /srv/projects /srv/data
+mkdir -p /srv/projects /srv/data /srv/dbs /srv/tools /srv/extra
+chown "${EXTUSER}:${EXTUSER}" /srv/projects /srv/data /srv/extra
 chown -R "${EXTUSER}:${EXTUSER}" /srv/tools
 chown root:root /srv/dbs
 chmod 0755 /srv/dbs

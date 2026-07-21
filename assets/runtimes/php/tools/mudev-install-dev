@@ -18,6 +18,11 @@ set -euo pipefail
 # nothing it already has, but always rebuilds and re-links, so
 # `mudev-install-dev` after a `git pull` is the way to pick up changes.
 #
+# SUPERSEDED: this tool is on its way out. Once /srv is mounted on the VM
+# and `mpd --vm-setup` provisions mudev + the index repos VM-side, both
+# mudev-install and mudev-install-dev are deleted — see
+# docs/proposals/vm-srv-mount.md. Left working in the meantime.
+#
 # NOTE ON PERSISTENCE: /opt lives in the container's own filesystem, not
 # on the /srv data volume. Runtime containers are pets — upgraded in
 # place, never recreated — so this survives restarts. It does not survive
