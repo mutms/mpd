@@ -133,6 +133,9 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 	args = append(args, podman.OptMountRO...)
 	args = append(args, podman.EnvMountRO...)
 	args = append(args, podman.SkelMountRO...)
+	if podman.MudevPresent() {
+		args = append(args, podman.MudevMountRO...)
+	}
 	args = append(args,
 		"-v", "mpd-data-volume:/srv",
 		// Explicit disk-backed /tmp. Without it, --systemd mode makes

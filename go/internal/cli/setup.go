@@ -121,6 +121,11 @@ func Setup(ctx context.Context, out io.Writer) error {
 	}
 	ui.OK(out, "%s/{projects,data,meta,dbs,backups,extra} ready.", srv.Dir)
 
+	ui.Step(out, "mudev toolchain")
+	if err := vm.EnsureMudev(ctx, out); err != nil {
+		return err
+	}
+
 	ui.Step(out, "VM metadata (/srv/meta/vm.json)")
 	if err := VMMeta(ctx, p, n, state.Dir); err != nil {
 		return err

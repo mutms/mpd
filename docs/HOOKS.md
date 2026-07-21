@@ -174,7 +174,7 @@ shipped `90-graceful-stop.sh` SIGTERMs the database engine, so
 `mpd-pre-stop` hooks needing a live database belong in 10–89.
 
 Note this differs from mpd's *tools*, which are deliberately
-extensionless (`composer-install`, `mudev-install`): a tool is invoked
+extensionless (`composer-install`, `node-install`): a tool is invoked
 as a command on PATH, a hook is only ever fed to bash.
 
 Event-name → directory name conversion: strip the `Event` prefix and

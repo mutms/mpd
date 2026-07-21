@@ -43,6 +43,7 @@ var binaries = map[string]string{
 	"install":                "/usr/bin/install",
 	"ip":                     "/usr/sbin/ip",
 	"loginctl":               "/usr/bin/loginctl",
+	"make":                   "/usr/bin/make",
 	"openssl":                "/usr/bin/openssl",
 	"ping":                   "/usr/bin/ping",
 	"podman":                 "/usr/bin/podman",

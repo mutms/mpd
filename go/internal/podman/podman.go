@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 
 	"github.com/mutms/mpd/go/internal/exec"
@@ -210,6 +211,27 @@ func (c *Client) ExecQuietly(ctx context.Context, container string, command ...s
 // path inside a container, so /opt/mpd/assets/... resolves identically on
 // the VM and inside every container mpd creates.
 var OptMountRO = []string{"-v", "/opt/mpd:/opt/mpd:ro"}
+
+// MudevMountRO shares the VM's mudev build with every runtime, at the
+// same path. Read-only on purpose: mudev is built once on the VM, where
+// Go and make live, and a runtime consumes the binary rather than
+// rebuilding its own copy.
+//
+// Only added when the source directory exists — podman would otherwise
+// create it root-owned, which is exactly the state that stops
+// vm.EnsureMudev cloning into it later.
+var MudevMountRO = []string{"-v", vmMudevDir + ":" + vmMudevDir + ":ro"}
+
+// vmMudevDir mirrors vm.MudevDir. Duplicated rather than imported: this
+// package sits below internal/vm and importing it would invert the
+// dependency direction.
+const vmMudevDir = "/opt/mudev"
+
+// MudevPresent reports whether the VM has a mudev build to share.
+func MudevPresent() bool {
+	info, err := os.Stat(vmMudevDir)
+	return err == nil && info.IsDir()
+}
 
 // Pull fetches an image, streaming layer progress.
 //

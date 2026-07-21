@@ -55,6 +55,12 @@ if [ -n "${_mpd_rt}" ]; then
 fi
 unset _d _mpd_rt _mpd_assets
 
+# mudev is built once on the VM (it needs Go and make) and bind-mounted
+# read-only into every runtime at the same path, so the binary is shared
+# rather than rebuilt per runtime. Guarded: a VM whose mudev has not been
+# provisioned simply has no mount here.
+[ -x /opt/mudev/bin/mudev ] && PATH="/opt/mudev/bin:$PATH"
+
 # --- User-installed CLIs ---------------------------------------------------
 # Claude Code, gh, and other tools that ship via personal `~/.local/bin`
 # installs (claude-install drops binaries here). Unguarded on purpose:
