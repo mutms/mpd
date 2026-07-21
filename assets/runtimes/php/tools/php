@@ -6,7 +6,7 @@
 # project tree or if no version is configured.
 #
 # Lives at /opt/mpd/assets/runtimes/php/tools/php (bind-mounted live).
-# Symlinked into /srv/tools/php/php and /usr/local/bin/php at runtime
+# On PATH from the assets tree, and symlinked to /usr/local/bin/php at runtime
 # provision time so it's reachable both via PATH and via absolute path.
 #
 # Optimization: when called from a tool chain that already sourced mpd.env

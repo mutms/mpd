@@ -17,7 +17,7 @@ CLI behavior assumes fixed paths:
   - `state/` — operational state: projects.json, runtimes/, dnsmasq.d/, etc.
 
 Project backups live inside the data volume at `/srv/backups/`, accessed
-from the laptop via fileaccess SSH/scp; see
+from the laptop with scp off the VM; see
 [ARCHITECTURE.md §10](ARCHITECTURE.md#10-backup-persistence).
 
 ## Contract level

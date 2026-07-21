@@ -53,10 +53,6 @@ const (
 	// read-only into the dnsmasq container as a DIRECTORY so adds and
 	// removes are visible inside immediately.
 	DnsmasqDir = StateDir + "/dnsmasq.d"
-	// FileAccessHostKeysDir persists the fileaccess service's SSH host
-	// keys, so its fingerprint survives a container rebuild.
-	FileAccessHostKeysDir = StateDir + "/fileaccess/hostkeys"
-
 	// CACertPath and CAKeyPath are the CA's PEM files.
 	CACertPath = CARootDir + "/rootCA.pem"
 	CAKeyPath  = CARootDir + "/rootCA-key.pem"

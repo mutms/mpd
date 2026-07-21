@@ -12,8 +12,7 @@
 #   - dev user created with matching UID and passwordless sudo
 #   - /etc/mpd/runtime identity, /etc/hosts self-record (in this VM's zone)
 #   - /home/<user>/ seeded from skel (defaults + optional VM-host overrides)
-#   - /srv/{projects,data,dbs,tools} laid out with correct ownership
-#   - runtime-base tools symlinked into /srv/tools/_base/
+#   - /srv/{projects,data,dbs,extra} laid out with correct ownership
 #
 # Runtime-specific layers (PHP, Node, …) are added on top by
 # assets/runtimes/<rt>/build.sh running as the dev user.
@@ -98,27 +97,8 @@ chown -R "${EXTUSER}:${EXTUSER}" "${USER_HOME}"
 chmod 700 "${USER_HOME}/.ssh" 2>/dev/null || true
 
 # --- Shared volume directories ---
-# /srv/tools is the dev-user-writable area where phase-2 build.sh
-# populates /srv/tools/<rt>/ and /srv/tools/<type>/. chown -R fixes
-# any stale subtree ownership left over from previous root-context
-# provisioning runs on this data volume.
-mkdir -p /srv/projects /srv/data /srv/dbs /srv/tools /srv/extra
+mkdir -p /srv/projects /srv/data /srv/dbs /srv/extra
 chown "${EXTUSER}:${EXTUSER}" /srv/projects /srv/data /srv/extra
-chown -R "${EXTUSER}:${EXTUSER}" /srv/tools
 chown root:root /srv/dbs
 chmod 0755 /srv/dbs
 
-# --- Runtime-base tools shared across all runtimes ---
-# Tools that work in any Trixie-based runtime (claude-install, node-install,
-# …) live in /opt/mpd/assets/runtime-base/tools/. /srv/tools/_base is a
-# symlink to that directory, not a directory of per-file symlinks: adding
-# or deleting a tool in assets/ then takes effect immediately, with no
-# rebuild. The dev user's ~/.bashrc (shipped via skel) globs /srv/tools/*/
-# onto PATH automatically — the glob matches symlinked dirs — so no
-# /etc/profile.d/ drop-in is needed, and root deliberately stays without
-# these on PATH.
-# Replace a real directory left by an older per-file provisioning run.
-if [ -d /srv/tools/_base ] && [ ! -L /srv/tools/_base ]; then
-    rm -rf /srv/tools/_base
-fi
-ln -sfn /opt/mpd/assets/runtime-base/tools /srv/tools/_base

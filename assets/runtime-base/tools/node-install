@@ -4,9 +4,9 @@
 # Default version is "lts"; pass an explicit version to override.
 # Runs as the dev user; no sudo required.
 #
-# Available in any runtime: bootstrap.sh symlinks runtime-base tools into
-# /srv/tools/_base/; the skel-shipped ~/.bashrc puts /srv/tools/*/ on
-# the dev user's PATH for every login shell. The php and node runtimes'
+# Available in any runtime: the skel-shipped ~/.bashrc puts this
+# directory (/opt/mpd/assets/runtime-base/tools) on the dev user's PATH
+# for every login shell. The php and node runtimes'
 # build.sh also invoke it directly during provisioning to seed the LTS
 # Node version.
 #

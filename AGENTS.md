@@ -60,12 +60,16 @@ chowns), all enforced at runtime — do not propose alternates.
   etc.). Last-write-wins: VM-host skel overrides shipped skel.
 - `/var/lib/mpd/state/` — mpd-managed operational state. `projects.json`,
   `databases.json`, `current-state.json`, `hooks-state.json`,
-  `runtimes/<n>/`, `dnsmasq.d/`, `fileaccess/hostkeys/`, `portal/`. The
+  `runtimes/<n>/`, `dnsmasq.d/`, `portal/`. The
   portal mounts the whole tree at `/mpd-state` RO; dnsmasq mounts
   `state/dnsmasq.d/` at `/etc/dnsmasq.d/` RO. Wipe to reset.
-- `/srv/` — only exists inside containers (Podman data volume). Holds
+- `/srv/` — the Podman data volume, bind-mounted onto the VM at `/srv` by
+  the `srv.mount` unit and mounted into every container at the same path,
+  so `/srv/projects/<name>` means the same thing on both sides. Holds
   per-project trees (projects/, data/, meta/), the database state (dbs/),
-  shared dev tools (tools/), and project backups (backups/).
+  third-party index repos (extra/), and project backups (backups/). mpd reads and writes it as ordinary files
+  from the VM; removal goes through `go/internal/srv`, which needs root
+  because database engines own their data files.
 
 `$HOME` is *not* used for anything mpd-owned; per-user concerns (SSH keys,
 shell config, NSS DB) stay in `$HOME` and are not mpd's responsibility.
@@ -82,11 +86,13 @@ The binary is Go, built from `go/` into `bin/mpd` by `make install`:
 - `go/internal/runtime/` — runtime provisioning and its state cache
 - `go/internal/project/` — project scaffolding, env mutation, certs, rescan
 - `go/internal/service/` — always-on infra services (dnsmasq, portal,
-  adminer, fileaccess)
+  adminer)
 - `go/internal/db/` — DB containers: tags, images, allocation, lifecycle
 - `go/internal/sidecar/` — per-runtime-pod sidecar reconciliation
 - `go/internal/hooks/` — typed `Event` lifecycle hooks + asset-side
   `hooks/<event>.d/` dispatch
+- `go/internal/srv/` — the data volume at `/srv`: reads, atomic writes,
+  privileged removal
 - `go/internal/state/` — the JSON state files under `/var/lib/mpd/state/`
 - `go/internal/current/` — observed (as opposed to requested) state
 - `go/internal/dnsmasq/` — DNS record fragments
@@ -146,9 +152,8 @@ review checklist in `docs/ARCHITECTURE.md` §"Mandatory Constraint".
 
 ## Mandatory privilege rule
 
-Applies to runtime containers, the mpd VM, and the fileaccess
-service — anywhere mpd ships shell code for a host with a dev user
-plus passwordless sudo.
+Applies to runtime containers and the mpd VM — anywhere mpd ships
+shell code for a host with a dev user plus passwordless sudo.
 
 1. **Scripts run as the dev user.** Every shell asset under
    `assets/` and `mpd-virt/` is invoked as the dev user. The
@@ -276,16 +281,17 @@ A tool is a single executable script under one of three locations,
 chosen by scope:
 
 - `assets/runtime-base/tools/` — works in **any** Trixie-based runtime
-  (php, node, util, future ones). bootstrap.sh symlinks these into
-  `/srv/tools/_base/` and adds that dir to PATH for every login shell.
-  Examples: `claude-install`, `node-install`.
-- `assets/runtimes/<runtime>/tools/` — runtime-wide. The runtime's
-  `build.sh` symlinks these into `/srv/tools/<runtime>/` and adds that
-  to PATH. Examples (php): `composer-install`, the `php` wrapper.
-- `assets/runtimes/<runtime>/project_types/<type>/tools/` — only
-  available when a project of that type is in the runtime. Symlinked
-  into `/srv/tools/<type>/`, which sits highest on PATH so a type
-  tool wins over a runtime or base tool of the same name.
+  (php, node, util, future ones). Examples: `claude-install`,
+  `node-install`.
+- `assets/runtimes/<runtime>/tools/` — runtime-wide, on PATH only in
+  that runtime. Examples (php): `composer-install`, the `php` wrapper.
+- `assets/runtimes/<runtime>/project_types/<type>/tools/` — the
+  runtime's project types, highest on PATH, so a type tool wins over a
+  runtime or base tool of the same name.
+
+All three are put on PATH by the skel `~/.bashrc` reading the assets
+tree directly at `/opt/mpd/assets/...`; the runtime picks its own branch
+from `/etc/mpd/runtime`. Nothing is copied or symlinked into `/srv`.
 
 Skeleton (any of the three locations):
 
@@ -316,10 +322,9 @@ PROJECT_NAME="$(basename "$PROJECT_DIR")"
 ...
 ```
 
-Tools are bind-mounted at `/opt/mpd/assets/runtimes/<rt>/...`, symlinked
-into `/srv/tools/<type>/`, and added to PATH at runtime provision time.
-Edits on the host (or VM) are immediately visible inside the runtime —
-no rebuild step.
+Tools are bind-mounted at `/opt/mpd/assets/runtimes/<rt>/...` and put on
+PATH from there by the skel `~/.bashrc`. Edits on the VM are immediately
+visible inside every runtime — no rebuild, nothing to re-link.
 
 #### Naming
 
@@ -389,16 +394,17 @@ $ composer-install
 Don't write tools that self-elevate (`if [ uid != 0 ]; then exec sudo
 "$0"; fi`) — running the entire script as root via wholesale
 escalation breaks least-privilege. Don't expect the caller to type
-`sudo toolname` either — sudo's `secure_path` doesn't include
-`/srv/tools/`, so the bare invocation through sudo would fail "command
-not found." Internal sudo on specific operations is the right shape.
+`sudo toolname` either — sudo's `secure_path` doesn't include the mpd
+tool dirs, so the bare invocation through sudo would fail "command not
+found." Internal sudo on specific operations is the right shape.
 
 #### Testing checklist for a new tool
 
 1. Rebuild the runtime: `mpd --runtime-delete <rt>` then recreate via
    project create (or `mpd --runtime-create=<rt>`).
 2. SSH in: `ssh user@<rt>.runtime.<NNN>.mpd.test`.
-3. `which <new-tool>` resolves to the expected path under `/srv/tools/`.
+3. `which <new-tool>` resolves to the expected path under
+   `/opt/mpd/assets/`.
 4. Run with no project context (negative test) — should fail
    gracefully with an actionable message.
 5. `cd /srv/projects/<project>/` and run again — should succeed.

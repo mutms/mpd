@@ -259,9 +259,9 @@ Two options:
 
 - **scp via the dev user** — `scp some.tar.gz mpd-158:~/` for
   ad-hoc transfers.
-- **scp/ssh via fileaccess** — preferred for project backups. The
-  `mpd-service-fileaccess` container exposes `/srv/backups/` as an
-  SSH/scp endpoint at `fileaccess.service.<NNN>.mpd.test`.
+- **scp off the VM** — preferred for project backups. The data volume
+  is mounted on the VM at `/srv`, so `/srv/backups/` is reachable over
+  the same SSH connection used for the `mpd` CLI.
 
 Never print private keys to terminal output. Canonical secrets
 stay in the VM's `/var/lib/mpd/conf/`.
@@ -274,7 +274,7 @@ into the VM:
 1. **Easiest**: rebuild the VM. `uninstall.sh` keeps your kept VMs
    safe; just `virsh undefine --remove-all-storage mpd-158`
    then re-run `setup.sh`. Local-only state in the VM is lost
-   (project sources, DBs, generated CA, fileaccess host keys); git
+   (project sources, DBs, generated CA); git
    remotes and laptop-side notes survive.
 
 2. **Single-user-mode recovery via `virsh console`**:

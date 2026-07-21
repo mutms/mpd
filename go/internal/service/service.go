@@ -16,6 +16,38 @@ import (
 	"github.com/mutms/mpd/go/internal/net"
 )
 
+// Revision labels let setup tell a container built by an older mpd from
+// one built by this mpd. Bump the relevant one whenever a service's
+// image, mounts, command or environment change: the label mismatch is
+// what makes `--vm-setup` rebuild the container instead of reporting an
+// out-of-date one as healthy.
+const (
+	RevisionLabel      = "mpd.service.revision"
+	CAFingerprintLabel = "mpd.ca.fingerprint"
+
+	adminerRevision = "7"
+	dnsmasqRevision = "9"
+	// 11: apache.conf is rendered per-VM into <stateDir>/portal/ and
+	// mounted from there — the mount source moved, so a surviving
+	// container would keep serving `ServerName mpd.test`.
+	portalRevision = "11"
+)
+
+// AdminerImage is the one service image mpd builds rather than pulls.
+const AdminerImage = "localhost/mpd-adminer:latest"
+
+// commonLabels are on every service container: mpd.managed marks it as
+// ours to reconcile, and the compose label groups the services together
+// in Podman Desktop and `podman ps` output.
+func commonLabels(name string) []string {
+	return []string{
+		"--label", "mpd.managed=true",
+		"--label", "mpd.type=service",
+		"--label", "mpd.name=" + name,
+		"--label", "com.docker.compose.project=mpd-service",
+	}
+}
+
 // Descriptor describes one always-on service.
 type Descriptor struct {
 	// Name is the short service name ("portal").
@@ -88,14 +120,6 @@ func All() []Descriptor {
 			Proxy:     &PortalProxy{Port: 8080},
 			accessHint: func(n net.Net) string {
 				return fmt.Sprintf("https://%s/", n.Service("adminer"))
-			},
-		},
-		{
-			Name:      "fileaccess",
-			Container: "mpd-service-fileaccess",
-			HostOctet: net.HostFileaccess,
-			accessHint: func(n net.Net) string {
-				return fmt.Sprintf("ssh / scp at %s (pubkey-only, internal)", n.Service("fileaccess"))
 			},
 		},
 	}

@@ -65,9 +65,10 @@ Quick reference; full contract in [`ARCHITECTURE.md`](ARCHITECTURE.md).
   new runtimes (`/etc/skel/`-style). Empty by default.
 - `/var/lib/mpd/state/` — mpd-managed operational state
   (projects.json, runtimes/, dnsmasq.d/, etc.). Wipe to reset.
-- `/srv/` — Podman data volume, only exists inside containers
-  (projects/, data/, meta/, dbs/, tools/, backups/).
+- `/srv/` — Podman data volume, mounted on the VM and in every
+  container at the same path (projects/, data/, meta/, dbs/, extra/,
+  backups/).
 
-Project backups live in `/srv/backups/` inside the data volume and
-are pulled off via fileaccess SSH/scp before wiping. Full contract:
+Project backups live in `/srv/backups/` on the data volume and are
+copied off the VM with scp before wiping. Full contract:
 [`ARCHITECTURE.md` §10](ARCHITECTURE.md#10-backup-persistence).

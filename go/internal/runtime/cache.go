@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/mutms/mpd/go/internal/podman"
+	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
 	"github.com/mutms/mpd/go/internal/ui"
 )
@@ -82,8 +84,8 @@ func ReconcileCertificates(ctx context.Context, out io.Writer, p *podman.Client,
 
 	for _, target := range projects {
 		fmt.Fprintf(out, "  Renewing cert for %s\n", target.Host)
-		_, _ = p.VolumeExec(ctx, "", "rm", "-f",
-			"/srv/meta/"+target.Name+"/cert.pem", "/srv/meta/"+target.Name+"/key.pem")
+		_ = os.Remove(srv.MetaFile(target.Name, "cert.pem"))
+		_ = os.Remove(srv.MetaFile(target.Name, "key.pem"))
 		if err := reissue(target.Name); err != nil {
 			ui.Warn(out, "could not reissue cert for %s: %v", target.Name, err)
 		}

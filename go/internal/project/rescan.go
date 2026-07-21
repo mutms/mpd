@@ -4,9 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"strings"
 
-	"github.com/mutms/mpd/go/internal/podman"
+	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
 	"github.com/mutms/mpd/go/internal/ui"
 )
@@ -22,16 +21,6 @@ type metaJSON struct {
 	DatabaseID      string `json:"databaseId"`
 }
 
-// collectScript concatenates every project.json on the volume into one
-// JSON array, so a rescan is a single exec rather than one per project.
-const collectScript = `result="["; first=1
-for f in /srv/meta/*/project.json; do
-    [ -f "$f" ] || continue
-    content=$(cat "$f")
-    [ $first -eq 1 ] && result="$result$content" && first=0 || result="$result,$content"
-done
-echo "${result}]"`
-
 // Rescan rebuilds projects.json from what is actually on the data
 // volume.
 //
@@ -41,18 +30,23 @@ echo "${result}]"`
 // (requested, runtimeName) is not on the volume, so an entry already in
 // the cache keeps its own; only genuinely new projects are added, as
 // stopped and unassigned.
-func Rescan(ctx context.Context, out io.Writer, p *podman.Client, s state.Store, uid string) error {
+func Rescan(ctx context.Context, out io.Writer, s state.Store) error {
 	ui.Step(out, "Scanning data volume for project metadata")
 
-	res, err := p.VolumeExec(ctx, uid, "bash", "-c", collectScript)
-	if err != nil || res.Code != 0 {
-		ui.Warn(out, "Could not scan data volume (volume may be empty).")
-		return nil
+	var found []metaJSON
+	for _, path := range srv.ProjectMetaFiles() {
+		raw, ok := srv.Read(path)
+		if !ok {
+			continue
+		}
+		var m metaJSON
+		if json.Unmarshal([]byte(raw), &m) != nil || m.Name == "" {
+			continue
+		}
+		found = append(found, m)
 	}
 
-	var found []metaJSON
-	body := strings.TrimSpace(res.Stdout)
-	if body == "" || body == "[]" || json.Unmarshal([]byte(body), &found) != nil {
+	if len(found) == 0 {
 		if err := s.SaveProjects(nil); err != nil {
 			return err
 		}

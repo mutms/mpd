@@ -20,14 +20,15 @@ import (
 //   - The keypair lets the VM SSH into its own runtimes. Without it the
 //     developer would need `ssh -A` from the workstation for every hop,
 //     which does not work from a terminal inside the VM's own desktop.
-//   - authorized_keys must EXIST because the fileaccess service
-//     bind-mounts it; a missing host file fails the container start with
-//     statfs ENOENT. Managed VMs get the file as a side effect of
-//     cloud-init injecting the workstation key, but a sandbox VM has no
-//     workstation side and may genuinely not have one.
+//   - ~/.ssh/authorized_keys is the SOURCE for what a runtime trusts:
+//     runtime.AuthorizedPublicKeys reads it, adds the VM's own id_*.pub,
+//     and installs the result into every runtime. A key missing here is a
+//     key that reaches no runtime. Managed VMs get the file as a side
+//     effect of cloud-init injecting the workstation key, but a sandbox
+//     VM has no workstation side and may genuinely not have one.
 //
 // No passphrase: the VM is the trust boundary, and the key only
-// authenticates VM→runtime and VM→fileaccess hops.
+// authenticates VM→runtime hops.
 func EnsureSSHKey(ctx context.Context, out io.Writer) error {
 	sshDir := filepath.Join(Home(), ".ssh")
 	if err := os.MkdirAll(sshDir, 0o700); err != nil {
@@ -52,7 +53,7 @@ func EnsureSSHKey(ctx context.Context, out io.Writer) error {
 				"Run `ssh-keygen -t ed25519` manually and re-run mpd --vm-setup.")
 		}
 		ui.OK(out, "Generated VM-local key at ~/.ssh/id_ed25519 "+
-			"(no passphrase, used for VM→runtime / VM→fileaccess SSH).")
+			"(no passphrase, used for VM→runtime SSH).")
 	}
 
 	return ensureAuthorizedKeys(out, sshDir, pubPath)
@@ -86,8 +87,8 @@ func ensureAuthorizedKeys(out io.Writer, sshDir, pubPath string) error {
 
 	pub, err := os.ReadFile(pubPath)
 	if err != nil {
-		// No VM pubkey — should not happen after ssh-keygen. The empty
-		// file is enough for the fileaccess mount, so leave it.
+		// No VM pubkey — should not happen after ssh-keygen. Nothing to
+		// append, so leave authorized_keys as it stands.
 		return nil
 	}
 	line := strings.TrimSpace(string(pub))

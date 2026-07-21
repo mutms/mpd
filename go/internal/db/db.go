@@ -17,6 +17,7 @@ import (
 
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
+	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
 )
 
@@ -302,7 +303,7 @@ func runArgs(ref Ref, ip string) ([]string, error) {
 func Ensure(ctx context.Context, ref Ref, p *podman.Client, n net.Net, uid string,
 	out interface{ Write([]byte) (int, error) }) error {
 
-	if err := p.VolumeMkdirAll(ctx, uid, "/srv/dbs"); err != nil {
+	if err := srv.MkdirAll(srv.DBs); err != nil {
 		return err
 	}
 

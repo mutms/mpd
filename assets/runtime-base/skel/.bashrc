@@ -21,35 +21,39 @@
 [ -f /etc/skel/.bashrc ] && . /etc/skel/.bashrc
 
 # --- mpd tool dirs on PATH -------------------------------------------------
-# Every dir under /srv/tools/ (base + the active runtime + per-project-type
-# tool dirs) goes on PATH. The glob is self-extending — runtimes/types that
-# create new tools dirs are picked up without editing this file.
+# Tools are read straight out of the assets tree, which is bind-mounted at
+# /opt/mpd in every container at the same path it has on the VM. There is
+# no copy and no symlink farm: editing a tool on the VM changes it here
+# immediately.
+#
+# Which dirs apply follows from the runtime's own name (/etc/mpd/runtime),
+# so a php runtime sees php + its project types and nothing else. The old
+# /srv/tools/ arrangement could not do that — /srv is one volume shared by
+# every runtime, so it accumulated every runtime's tools and put all of
+# them on PATH everywhere.
 #
 # Precedence is base < runtime < project type (ARCHITECTURE.md §7), so a
 # type tool shadows a runtime tool of the same name. Each entry prepends,
 # so the *last* one added wins — hence base first, runtime second, types
-# last. Do not collapse this back into a single `/srv/tools/*/` glob:
-# alphabetical order is not the precedence order (`php` sorts after
-# `moodle`, which would rank the runtime above the project type).
+# last.
 #
 # The dev user is the only login identity inside a runtime. Root has none
 # of this on PATH by design: `sudo composer install` returns "command not
 # found" so the operation is forced back to the dev user, which is the
 # correct privilege model for mpd tools (see AGENTS.md "Mandatory privilege
 # rule").
+_mpd_assets=/opt/mpd/assets
 _mpd_rt="$(cat /etc/mpd/runtime 2>/dev/null || true)"
-for _d in /srv/tools/_base "/srv/tools/${_mpd_rt}"; do
-    [ -n "${_d#/srv/tools/}" ] && [ -d "$_d" ] && PATH="${_d}:$PATH"
-done
-# Whatever is left is a project-type tool dir — highest precedence.
-for _d in /srv/tools/*/; do
-    _d="${_d%/}"
-    case "$_d" in
-        /srv/tools/_base|"/srv/tools/${_mpd_rt}") continue ;;
-    esac
-    PATH="${_d}:$PATH"
-done
-unset _d _mpd_rt
+
+[ -d "${_mpd_assets}/runtime-base/tools" ] && PATH="${_mpd_assets}/runtime-base/tools:$PATH"
+if [ -n "${_mpd_rt}" ]; then
+    [ -d "${_mpd_assets}/runtimes/${_mpd_rt}/tools" ] &&
+        PATH="${_mpd_assets}/runtimes/${_mpd_rt}/tools:$PATH"
+    for _d in "${_mpd_assets}/runtimes/${_mpd_rt}"/project_types/*/tools; do
+        [ -d "$_d" ] && PATH="${_d}:$PATH"
+    done
+fi
+unset _d _mpd_rt _mpd_assets
 
 # --- User-installed CLIs ---------------------------------------------------
 # Claude Code, gh, and other tools that ship via personal `~/.local/bin`

@@ -416,7 +416,6 @@ ksort($databases);
 $services = [
     ['name' => 'dnsmasq',    'ip' => serviceIp(3), 'dns' => 'dnsmasq.service.' . zone(),    'access' => 'DNS resolver (' . serviceIp(3) . ':53)', 'probePort' => 53],
     ['name' => 'portal',     'ip' => serviceIp(4), 'dns' => zone(),                          'access' => 'https://' . zone() . '/', 'probePort' => 443],
-    ['name' => 'fileaccess', 'ip' => serviceIp(5), 'dns' => 'fileaccess.service.' . zone(), 'access' => 'ssh user@fileaccess.service.' . zone() . ' (volume tool / backups)', 'probePort' => 22],
     ['name' => 'adminer',    'ip' => serviceIp(6), 'dns' => 'adminer.service.' . zone(),    'access' => 'https://adminer.service.' . zone() . '/', 'probePort' => 8080],
 ];
 

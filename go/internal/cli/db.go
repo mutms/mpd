@@ -12,6 +12,7 @@ import (
 	"github.com/mutms/mpd/go/internal/dnsmasq"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
+	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
 )
 
@@ -157,7 +158,7 @@ func DBDelete(ctx context.Context, out io.Writer, in io.Reader, input string,
 	}
 	// After the container: a failed removal must not leave data orphaned
 	// from an owner that still exists.
-	if err := p.VolumeRemoveAll(ctx, dataDir); err != nil {
+	if err := srv.Remove(ctx, dataDir); err != nil {
 		return err
 	}
 	Ok(out, "'%s' and %s/ removed.", ref.Container, dataDir)

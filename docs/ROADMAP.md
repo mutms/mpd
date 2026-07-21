@@ -9,8 +9,8 @@ the work.
 Concrete shape, a use case driving it.
 
 - **`mdl-backup` / `mdl-restore` (Moodle)** — one tar bundle per
-  project (dataroot + DB dump + config snapshot), pulled via the
-  fileaccess SSH endpoint. Moodle-only because the dataroot ↔ DB
+  project (dataroot + DB dump + config snapshot), copied off the VM
+  from `/srv/backups/`. Moodle-only because the dataroot ↔ DB
   coupling makes "snapshot the project" a real, named unit; other
   project types keep state in `git`.
 

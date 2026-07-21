@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"sort"
@@ -11,6 +10,7 @@ import (
 	"github.com/mutms/mpd/go/internal/current"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
+	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
 )
 
@@ -65,7 +65,7 @@ func ShowProject(ctx context.Context, out io.Writer, name string, s state.Store,
 		writeURLs(out, entry.URLs)
 		fmt.Fprintln(out, field("SSH:", "ssh "+n.Runtime(rt)))
 		fmt.Fprintln(out, field("Directory:", "/srv/projects/"+name))
-		writeSettings(ctx, out, name, p, uid)
+		writeSettings(out, name)
 		return
 	}
 
@@ -103,13 +103,9 @@ func writeURLs(out io.Writer, urls []state.ProjectURL) {
 // writeSettings surfaces what the project type's configure.sh resolved,
 // from /srv/meta/<project>/effective.json. mpd does not interpret these
 // — it shows them so the four-layer env cascade is inspectable.
-func writeSettings(ctx context.Context, out io.Writer, project string, p *podman.Client, uid string) {
-	raw, ok := p.VolumeRead(ctx, "/srv/meta/"+project+"/effective.json", uid)
-	if !ok {
-		return
-	}
+func writeSettings(out io.Writer, project string) {
 	var eff map[string]any
-	if err := json.Unmarshal([]byte(raw), &eff); err != nil || len(eff) == 0 {
+	if !srv.ReadMetaJSON(project, "effective.json", &eff) || len(eff) == 0 {
 		return
 	}
 	keys := make([]string, 0, len(eff))

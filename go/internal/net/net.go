@@ -44,11 +44,11 @@ const SubnetPrefix = "10.163"
 
 // Host octets with a fixed meaning inside every VM's /24.
 const (
-	HostGateway    = 1 // podman bridge — the VM itself
-	HostDnsmasq    = 3
-	HostPortal     = 4
-	HostFileaccess = 5
-	HostAdminer    = 6
+	HostGateway = 1 // podman bridge — the VM itself
+	HostDnsmasq = 3
+	HostPortal  = 4
+	// 5 is unassigned.
+	HostAdminer = 6
 )
 
 // DB containers take the lowest free octet in this range, pinned at

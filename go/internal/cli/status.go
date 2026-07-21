@@ -10,6 +10,7 @@ import (
 
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
+	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
 	"github.com/mutms/mpd/go/internal/vm"
 )
@@ -95,7 +96,7 @@ func Status(ctx context.Context, out io.Writer, s state.Store, p *podman.Client,
 	for _, pr := range projects {
 		known[pr.Name] = true
 	}
-	if unregistered := UnregisteredProjectDirs(ctx, p, known, uid); len(unregistered) > 0 {
+	if unregistered := UnregisteredProjectDirs(known); len(unregistered) > 0 {
 		fmt.Fprintln(out, "\nUnregistered project directories:")
 		for _, name := range unregistered {
 			fmt.Fprintf(out, "  %s→ mpd %s create\n", Col(name, 24), name)
@@ -111,13 +112,9 @@ func Status(ctx context.Context, out io.Writer, s state.Store, p *podman.Client,
 // They are real work someone did — a clone that never got registered, or
 // a project whose state entry was lost — so status names them and the
 // command that adopts them rather than ignoring them.
-func UnregisteredProjectDirs(ctx context.Context, p *podman.Client, known map[string]bool, uid string) []string {
-	res, err := p.VolumeExec(ctx, uid, "bash", "-c", "ls -1 /srv/projects/ 2>/dev/null || true")
-	if err != nil || res.Code != 0 {
-		return nil
-	}
+func UnregisteredProjectDirs(known map[string]bool) []string {
 	var out []string
-	for _, line := range strings.Split(res.Stdout, "\n") {
+	for _, line := range srv.ListProjects() {
 		name := strings.TrimSpace(line)
 		if name != "" && !known[name] {
 			out = append(out, name)

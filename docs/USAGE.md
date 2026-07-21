@@ -55,8 +55,9 @@ Idempotent — safe to re-run any time. Walks you through:
 - generating the local CA at `/var/lib/mpd/conf/caroot/`
 - installing the CA into the VM's system trust store + Firefox + NSS DB
 - creating the Podman network and data volume
-- bringing up the always-on infra services (dnsmasq, portal, Adminer,
-  fileaccess) inside the VM
+- mounting the data volume on the VM at `/srv`
+- bringing up the always-on infra services (dnsmasq, portal, Adminer)
+  inside the VM
 - a final DNS sanity check
 
 (VM-side apt installs, network stack setup, hostname/IP canonicalization,
@@ -291,10 +292,10 @@ is:
 
 - Inside the runtime, write whatever bundle you want into
   `/srv/backups/` (a data-volume subdirectory).
-- From your laptop, pull it off via fileaccess:
+- From your laptop, scp it off the VM — `/srv` is mounted there:
 
   ```bash
-  scp fileaccess.service.mpd.test:/srv/backups/<file> ~/Downloads/
+  scp <vm>:/srv/backups/<file> ~/Downloads/
   ```
 
 `/srv/backups/` is wiped when the data volume is wiped (`podman volume

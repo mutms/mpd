@@ -121,7 +121,6 @@ VM host (Debian Trixie)
   mpd-internal network (10.163.<NNN>.0/24)
     +-- mpd-service-dnsmasq    (10.163.<NNN>.3)
     +-- mpd-service-portal     (10.163.<NNN>.4)
-    +-- mpd-service-fileaccess (10.163.<NNN>.5)
     +-- mpd-service-adminer    (10.163.<NNN>.6)
     +-- DB containers          (10.163.<NNN>.30–.99)
     +-- runtime pods           (10.163.<NNN>.100+, with per-runtime sidecars)
@@ -145,7 +144,7 @@ therefore whatever network the VM sits on:
 
 No container port is published beyond the VM in either case, and
 authentication of individual endpoints is per-service — SSH keys for
-runtimes and fileaccess, none for the read-only portal. So a LAN
+runtimes, none for the read-only portal. So a LAN
 neighbour who adds the route gets the portal and the DBs, not a shell.
 
 **Who is trusted**: the developer. They have full access to
@@ -252,20 +251,17 @@ Two SSH endpoints, both pubkey-only:
   a user account matching the developer's username and UID; the public
   key from `~/.ssh/authorized_keys` is propagated into the container.
   Root login disabled.
-- **fileaccess service** (`fileaccess.service.<NNN>.mpd.test`) — file-transfer
-  endpoint only. Same user/UID as runtimes, **no sudo**, no
-  agent/TCP forwarding, no port mapping. Lands ssh sessions in
-  `/srv/backups/` (a data-volume subdirectory, the single transit
-  point for project backups).
+File transfer has no endpoint of its own. The data volume is mounted on
+the VM at `/srv`, so `/srv/backups/` is reached over the VM's own sshd —
+the connection the developer already has.
 
 Reachable via the routed container subnet or via SSH ProxyJump
-through the VM — no published ports on either endpoint.
+through the VM — no published ports.
 
 SSH agent forwarding (`ssh -A`) is optional for runtimes that need
 host-agent-backed git/auth inside the container. It passes the
 developer's key into the container for the session — the private key
-never touches the container filesystem. fileaccess does not need agent
-forwarding (it's not a shell environment).
+never touches the container filesystem.
 
 **Lost the laptop's private key?** The simplest recovery is to
 re-clone the template via `mpd-virt clone` and side-by-side it with

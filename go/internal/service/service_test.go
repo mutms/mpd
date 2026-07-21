@@ -18,10 +18,9 @@ func testNet(t *testing.T, octet int) net.Net {
 func TestNamesAndAddresses(t *testing.T) {
 	n := testNet(t, 150)
 	want := map[string]struct{ ip, dns string }{
-		"dnsmasq":    {"10.163.150.3", "dnsmasq.service.150.mpd.test"},
-		"portal":     {"10.163.150.4", "150.mpd.test"}, // apex, not *.service
-		"fileaccess": {"10.163.150.5", "fileaccess.service.150.mpd.test"},
-		"adminer":    {"10.163.150.6", "adminer.service.150.mpd.test"},
+		"dnsmasq": {"10.163.150.3", "dnsmasq.service.150.mpd.test"},
+		"portal":  {"10.163.150.4", "150.mpd.test"}, // apex, not *.service
+		"adminer": {"10.163.150.6", "adminer.service.150.mpd.test"},
 	}
 	for name, exp := range want {
 		d, ok := Find(name)

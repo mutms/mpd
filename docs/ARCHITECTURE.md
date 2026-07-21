@@ -84,7 +84,7 @@ Any PR that adds command execution must answer:
 ### Sister rule: privilege model
 
 A second mandatory rule governs **how** shell code runs inside runtime
-containers, the mpd VM, and fileaccess: scripts always run as
+containers and the mpd VM: scripts always run as
 the dev user; `sudo` is for individual privileged commands; whole
 scripts are never wrapped in `sudo`; identity-switching to a non-root
 user (`sudo -u <user>`, `runuser`, `su - <user>`) is forbidden. Full
@@ -332,9 +332,9 @@ assets/runtimes/<runtime>/project_types/<type>/tools/
                                        # type-only: only when a project of this type is in the runtime
 ```
 
-`runtime-base/tools/` is symlinked into `/srv/tools/_base/` by
-`bootstrap.sh`. The other two tiers are symlinked into `/srv/tools/<runtime>/`
-and `/srv/tools/<type>/` by the runtime's `build.sh`. PATH precedence
+All three tiers are read straight out of the assets tree, which is
+bind-mounted at `/opt/mpd` in every container at the same path it has on
+the VM. Nothing is copied and nothing is symlinked. PATH precedence
 across the three tiers is documented below.
 
 ### Lineage
@@ -355,31 +355,30 @@ Inside the runtime, PATH is set so type tools win over runtime tools
 win over base tools win over system binaries:
 
 ```
-/srv/tools/<every-project-type-active-in-the-runtime>/   ← type tools first
-/srv/tools/<runtime>/                                    ← runtime tools second
-/srv/tools/_base/                                        ← runtime-base tools third
-[normal system PATH]                                     ← system fallback
+/opt/mpd/assets/runtimes/<rt>/project_types/*/tools/   ← type tools first
+/opt/mpd/assets/runtimes/<rt>/tools/                   ← runtime tools second
+/opt/mpd/assets/runtime-base/tools/                    ← base tools third
+[normal system PATH]                                   ← system fallback
 ```
 
 PATH is set by the dev user's `~/.bashrc` (shipped via skel —
-`assets/runtime-base/skel/.bashrc`), which prepends every directory under
-`/srv/tools/` in three explicit tiers: `_base` first, then the active
-runtime (read from `/etc/mpd/runtime`), then everything else — the
-project-type dirs. Each tier prepends, so the last one added ranks
-highest. The last tier is still a glob, so it is self-extending: a new
-project type that drops a `/srv/tools/<name>/` is picked up
-automatically, no `.bashrc` edit required.
+`assets/runtime-base/skel/.bashrc`), which prepends the three tiers in
+order: base, then the runtime's own `tools/`, then each of its project
+types'. Each prepends, so the last added ranks highest. `<rt>` comes
+from `/etc/mpd/runtime`, so the runtime selects its own branch of the
+assets tree and the type tier is self-extending — a new project type
+with a `tools/` directory is picked up with no `.bashrc` edit.
 
-The tiers are explicit because **alphabetical order is not precedence
-order**. A single `/srv/tools/*/` glob ranks `php` above `moodle` —
-exactly backwards — since the runtime name happens to sort after the
-type name. Type names are not constrained to sort any particular way;
-the `.bashrc` decides the ranking, not the filesystem.
+**Reading the assets tree directly is what keeps runtimes isolated.**
+The previous arrangement symlinked every tier into `/srv/tools/`, but
+`/srv` is one volume shared by every runtime on the VM, so it
+accumulated the union of all of them: a php runtime had node's and
+cftunnel's tools on PATH. Deriving from `/etc/mpd/runtime` makes that
+impossible.
 
-Each `/srv/tools/<n>` entry is a symlink to the corresponding `tools/`
-directory under `assets/`, not a directory of per-file symlinks. Adding
-or deleting a tool in `assets/` therefore takes effect immediately in
-every existing runtime, with no rebuild and nothing to re-link.
+Edits are live either way: `/opt/mpd` is the same tree on the VM and in
+the container, so changing a tool takes effect in every existing runtime
+with no rebuild.
 
 The dev user is the only login identity inside a runtime. **Root has
 none of the mpd tool dirs on PATH** — `sudo composer install` returns
@@ -418,7 +417,7 @@ $ node-install
 
 Not `sudo composer-install`. There are two reasons:
 
-1. **`sudo`'s `secure_path` doesn't include `/srv/tools/`** — sudo
+1. **`sudo`'s `secure_path` doesn't include the mpd tool dirs** — sudo
    resets PATH to a locked-down default, so `sudo composer-install`
    would fail with "command not found" even though the dev's PATH has
    it. Internal sudo sidesteps this entirely.
@@ -638,9 +637,9 @@ shell script) have one well-defined path off the data volume, identical
 across modes.
 
 `/srv/backups` is a subdirectory of the `mpd-data-volume` data volume.
-Every container that mounts the volume — runtime pods, the fileaccess
-service, etc. — sees the same content there. There is no host bind-mount
-on either mode; the directory lives entirely inside the volume.
+Every container that mounts the volume sees the same content there, and
+so does the VM: `srv.mount` bind-mounts the volume onto `/srv`, so the
+path is identical on both sides.
 
 Read/write contract:
 
@@ -650,21 +649,19 @@ Read/write contract:
   DB dumps into `/srv/backups/` from inside the runtime. Backup is
   currently a Moodle-only concern; other project types keep state in
   the source tree (so `git` is their backup mechanism).
-- **Fileaccess is the exit/entry point.** From the dev's laptop:
-  `scp fileaccess.service.<NNN>.mpd.test:/srv/backups/<file> .` pulls a backup
-  off; reverse direction stages a restore. The `mpd-service-fileaccess`
-  container drops interactive ssh sessions into `/srv/backups/` so the
-  human-facing path is one `cd` away.
-- Authentication: pubkey-only. fileaccess reuses the user's existing
-  `~/.ssh/authorized_keys`, so the laptop's SSH key already works.
+- **The VM is the exit/entry point.** From the dev's laptop:
+  `scp <vm>:/srv/backups/<file> .` pulls a backup off; reverse direction
+  stages a restore. No dedicated endpoint and no extra host key — this
+  is the same SSH connection the developer already uses to reach the
+  `mpd` CLI, so it works in both modes and needs no static route.
 
 Wipe contract:
 
 - `podman volume rm mpd-data-volume` (or anything that wipes the Podman
   whole VM) deletes `/srv/backups/` along with everything else on the volume.
-- Before wiping, pull anything you want to keep via fileaccess.
-- This is intentional: fileaccess is the single transit point, so there's
-  exactly one place to remember.
+- Before wiping, copy anything you want to keep off the VM.
+- This is intentional: `/srv/backups/` is the single transit point, so
+  there's exactly one place to remember.
 
 ## 11) Networking, DNS, and TLS (Summary)
 
@@ -689,9 +686,7 @@ Always-on infra services:
 - `dnsmasq` — DNS for `*.mpd.test`, authoritative for this VM's zone
 - `portal` — read-only status site at `https://<NNN>.mpd.test/`
 - `adminer` — DB management UI at `https://adminer.service.<NNN>.mpd.test/`
-- `fileaccess` — `podman exec` target for volume tool ops, plus pubkey-only
-  ssh/scp at `fileaccess.service.<NNN>.mpd.test`, the single transit point for
-  project backups (`/srv/backups/` is a data-volume subdirectory)
+
 
 Per-runtime sidecars (attached to the runtime pod, not global):
 

@@ -22,7 +22,7 @@ if [ ! -f "${PROJECT_DIR}/package.json" ]; then
 fi
 
 # /srv/meta/<project>/ holds urls.json + effective.json plus
-# cert.pem/key.pem/project.json that mpd writes through the fileaccess container (which
+# cert.pem/key.pem/project.json that mpd writes from the VM (which
 # runs as the dev uid). /srv/meta is dev-owned, so plain mkdir works.
 mkdir -p "/srv/meta/${PROJECT_NAME}"
 

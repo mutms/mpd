@@ -19,6 +19,7 @@ import (
 	"github.com/mutms/mpd/go/internal/project"
 	"github.com/mutms/mpd/go/internal/runtime"
 	"github.com/mutms/mpd/go/internal/service"
+	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
 	"github.com/mutms/mpd/go/internal/ui"
 	"github.com/mutms/mpd/go/internal/vm"
@@ -46,8 +47,8 @@ const BaseImagePull = "docker.io/library/postgres:17"
 //     address, since all of them derive from the VM ID;
 //   - the CA before the service containers, whose rebuild is keyed on
 //     its fingerprint;
-//   - fileaccess before anything touching the data volume, because it is
-//     the exec target for all volume access;
+//   - the /srv mount before anything touching the data volume, since that
+//     is what makes the path exist on the VM;
 //   - dnsmasq and the portal after both, since they mount the CA-derived
 //     certificates.
 func Setup(ctx context.Context, out io.Writer) error {
@@ -112,12 +113,14 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 
-	ui.Step(out, "File access service")
-	if err := service.SetupFileAccess(ctx, out, p, n, user); err != nil {
+	// The volume root is root-owned, so this is what makes the tree
+	// writable by mpd at all.
+	ui.Step(out, "Data volume layout")
+	if err := srv.EnsureLayout(ctx, user.UID); err != nil {
 		return err
 	}
+	ui.OK(out, "%s/{projects,data,meta,dbs,backups,extra} ready.", srv.Dir)
 
-	// Needs fileaccess up: it is the volume-tool exec target.
 	ui.Step(out, "VM metadata (/srv/meta/vm.json)")
 	if err := VMMeta(ctx, p, n, state.Dir); err != nil {
 		return err
@@ -435,7 +438,7 @@ func reconcileCaches(ctx context.Context, out io.Writer, p *podman.Client, s sta
 	n net.Net, m dnsmasq.Manager, vmIP, uid string, caChanged bool) error {
 
 	ui.Step(out, "Rescanning data volume")
-	if err := project.Rescan(ctx, out, p, s, uid); err != nil {
+	if err := project.Rescan(ctx, out, s); err != nil {
 		return err
 	}
 

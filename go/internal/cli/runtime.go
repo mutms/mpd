@@ -18,6 +18,7 @@ import (
 	"github.com/mutms/mpd/go/internal/project"
 	"github.com/mutms/mpd/go/internal/runtime"
 	"github.com/mutms/mpd/go/internal/sidecar"
+	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
 )
 
@@ -115,7 +116,7 @@ func RuntimeDelete(ctx context.Context, out io.Writer, in io.Reader, name string
 	if _, err := dns.RemoveRecord("_runtime-" + name); err != nil {
 		return err
 	}
-	if err := p.VolumeRemoveAll(ctx, "/srv/meta/_runtime-"+name); err != nil {
+	if err := srv.Remove(ctx, srv.MetaDir("_runtime-"+name)); err != nil {
 		return err
 	}
 	// Orphaned projects' records: their URLs would resolve to a runtime

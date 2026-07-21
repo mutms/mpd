@@ -145,7 +145,7 @@ works: `bash <(curl -sSL <url>)`.
 10. Writes `/var/lib/mpd/conf/platform.env` with `MPD_PLATFORM=sandbox`.
 11. `mpd --vm-setup` — generates the CA, installs system trust + Firefox
     policies + `~/.pki/nssdb` import, brings up podman + dnsmasq + portal
-    + adminer + fileaccess.
+    + adminer.
 12. Best-effort pre-warm: `mpd --runtime-create=php` and
     `mpd --db-create=postgres:latest`.
 13. Drops GNOME launchers (`~/.local/share/applications/mpd.desktop` for

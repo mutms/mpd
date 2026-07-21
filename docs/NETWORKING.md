@@ -23,8 +23,6 @@ VM (Debian Trixie)              hostname: mpd-<NNN>
      |
      +-- mpd-service-dnsmasq     10.163.<NNN>.3   (DNS for *.<NNN>.mpd.test)
      +-- mpd-service-portal      10.163.<NNN>.4   (HTTPS read-only status)
-     +-- mpd-service-fileaccess  10.163.<NNN>.5   (data-volume podman-exec target;
-     |                                              SSH/scp endpoint for /srv/backups/)
      +-- mpd-service-adminer     10.163.<NNN>.6   (proxied via portal)
      +-- DB containers           10.163.<NNN>.30–.99
      +-- runtime containers      10.163.<NNN>.100+ (full dev access via SSH)

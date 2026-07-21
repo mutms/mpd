@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/project"
 	"github.com/mutms/mpd/go/internal/sidecar"
+	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
 )
 
@@ -275,11 +277,11 @@ func ProjectDelete(ctx context.Context, out io.Writer, in io.Reader, name string
 	}
 
 	for _, path := range []string{
-		"/srv/projects/" + name,
-		"/srv/data/" + name,
-		"/srv/meta/" + name,
+		srv.ProjectDir(name),
+		filepath.Join(srv.Dir, "data", name),
+		srv.MetaDir(name),
 	} {
-		if err := d.Podman.VolumeRemoveAll(ctx, path); err != nil {
+		if err := srv.Remove(ctx, path); err != nil {
 			return err
 		}
 	}
@@ -385,7 +387,7 @@ func ProjectConfigure(ctx context.Context, out io.Writer, name string, args []st
 
 	// dbTag comes from the layered env, so only configure.sh can resolve
 	// it — mpd reads the answer rather than duplicating the cascade.
-	effective := project.ReadEffective(ctx, d.Podman, d.UID, name)
+	effective := project.ReadEffective(name)
 	dbTag, _ := effective["dbTag"].(string)
 
 	if dbTag != "" {
@@ -421,7 +423,7 @@ func ProjectConfigure(ctx context.Context, out io.Writer, name string, args []st
 		entry.DatabaseEngine, entry.DatabaseVersion, entry.DatabaseID = "", "", ""
 	}
 
-	entry.URLs = project.ReadURLs(ctx, d.Podman, d.UID, name)
+	entry.URLs = project.ReadURLs(name)
 	if entry.Requested == "not-configured" && entry.Type != "" {
 		entry.Requested = "stopped"
 	}

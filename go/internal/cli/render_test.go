@@ -56,22 +56,21 @@ func stubPodman(psJSON string) *podman.Client {
 func TestListServices(t *testing.T) {
 	ps := `[
 	  {"Names":["mpd-service-dnsmasq"],"State":"running"},
-	  {"Names":["mpd-service-portal"],"State":"running"},
-	  {"Names":["mpd-service-fileaccess"],"State":"exited"}
+	  {"Names":["mpd-service-portal"],"State":"exited"}
 	]`
 	var buf bytes.Buffer
 	ListServices(context.Background(), &buf, testNet(t, 150), stubPodman(ps))
 	out := buf.String()
 
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
-	if len(lines) != 6 { // header + rule + 4 services
-		t.Fatalf("got %d lines, want 6:\n%s", len(lines), out)
+	if len(lines) != 5 { // header + rule + 3 services
+		t.Fatalf("got %d lines, want 5:\n%s", len(lines), out)
 	}
 	if !strings.HasPrefix(lines[0], "SERVICE") {
 		t.Errorf("header = %q", lines[0])
 	}
-	// Ordered by IP: dnsmasq .3, portal .4, fileaccess .5, adminer .6.
-	for i, want := range []string{"dnsmasq", "portal", "fileaccess", "adminer"} {
+	// Ordered by IP: dnsmasq .3, portal .4, adminer .6.
+	for i, want := range []string{"dnsmasq", "portal", "adminer"} {
 		if !strings.HasPrefix(lines[i+2], want) {
 			t.Errorf("row %d = %q, want it to start with %q", i, lines[i+2], want)
 		}
@@ -79,11 +78,11 @@ func TestListServices(t *testing.T) {
 	// A container podman didn't report is not-created; a non-running one
 	// is stopped. The distinction is what tells "never set up" from
 	// "set up and down".
-	if !strings.Contains(lines[4], "stopped") {
-		t.Errorf("fileaccess row = %q, want stopped", lines[4])
+	if !strings.Contains(lines[3], "stopped") {
+		t.Errorf("portal row = %q, want stopped", lines[3])
 	}
-	if !strings.Contains(lines[5], "not-created") {
-		t.Errorf("adminer row = %q, want not-created", lines[5])
+	if !strings.Contains(lines[4], "not-created") {
+		t.Errorf("adminer row = %q, want not-created", lines[4])
 	}
 	if !strings.Contains(out, "https://150.mpd.test/") {
 		t.Error("portal access hint should name the zone apex")

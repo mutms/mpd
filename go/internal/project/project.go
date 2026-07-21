@@ -5,7 +5,6 @@ package project
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -17,6 +16,7 @@ import (
 	"github.com/mutms/mpd/go/internal/cert"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
+	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
 )
 
@@ -63,11 +63,10 @@ func EnsureCert(ctx context.Context, out io.Writer, name string, urls []state.Pr
 	}
 	signature := strings.Join(sans, "\n")
 
-	existing, ok := p.VolumeRead(ctx,
-		fmt.Sprintf("/srv/meta/%s/cert.sans", name), uid)
+	existing, ok := srv.Read(srv.MetaFile(name, "cert.sans"))
 	if ok && strings.TrimSpace(existing) == signature {
 		// Only trust the signature when the cert it describes is present.
-		if _, hasCert := p.VolumeRead(ctx, fmt.Sprintf("/srv/meta/%s/cert.pem", name), uid); hasCert {
+		if _, hasCert := srv.Read(srv.MetaFile(name, "cert.pem")); hasCert {
 			return nil
 		}
 	}
@@ -93,24 +92,16 @@ func EnsureCert(ctx context.Context, out io.Writer, name string, urls []state.Pr
 		return err
 	}
 
-	// Temp-then-rename, because the Caddy frontdoor watches this
-	// directory and re-validates on every change: a half-written
-	// cert.pem fails validation, the reload is skipped, and Caddy keeps
-	// serving the previous cert until something restarts it.
-	if err := p.VolumeWrite(ctx, uid, fmt.Sprintf(
-		"mkdir -p /srv/meta/%s && cat > /srv/meta/%s/cert.pem.tmp && "+
-			"mv -f /srv/meta/%s/cert.pem.tmp /srv/meta/%s/cert.pem",
-		name, name, name, name), certData); err != nil {
+	// srv.Write renames into place, which the Caddy frontdoor depends on:
+	// it re-validates on every change, and a half-written cert.pem fails
+	// validation, skipping the reload.
+	if err := srv.Write(srv.MetaFile(name, "cert.pem"), certData, 0o644); err != nil {
 		return err
 	}
-	if err := p.VolumeWrite(ctx, uid, fmt.Sprintf(
-		"cat > /srv/meta/%s/key.pem.tmp && chmod 0600 /srv/meta/%s/key.pem.tmp && "+
-			"mv -f /srv/meta/%s/key.pem.tmp /srv/meta/%s/key.pem",
-		name, name, name, name), keyData); err != nil {
+	if err := srv.Write(srv.MetaFile(name, "key.pem"), keyData, 0o600); err != nil {
 		return err
 	}
-	return p.VolumeWrite(ctx, uid,
-		fmt.Sprintf("cat > /srv/meta/%s/cert.sans", name), []byte(signature))
+	return srv.Write(srv.MetaFile(name, "cert.sans"), []byte(signature), 0o644)
 }
 
 // DNSRecords returns the dnsmasq fragment for a project: one address
@@ -158,24 +149,15 @@ func WriteMeta(ctx context.Context, p *podman.Client, uid string, entry state.Pr
 	}
 	meta["urls"] = urls
 
-	data, err := json.MarshalIndent(meta, "", "  ")
-	if err != nil {
-		return err
-	}
-	return p.VolumeWrite(ctx, uid, fmt.Sprintf(
-		"mkdir -p /srv/meta/%s && cat > /srv/meta/%s/project.json", entry.Name, entry.Name), data)
+	return srv.WriteJSON(srv.MetaFile(entry.Name, "project.json"), meta)
 }
 
 // ReadURLs returns the URL list a project type's configure.sh wrote to
 // /srv/meta/<project>/urls.json. An absent or unparseable file yields
 // none — "no URLs" is a valid project state, not an error.
-func ReadURLs(ctx context.Context, p *podman.Client, uid, name string) []state.ProjectURL {
-	raw, ok := p.VolumeRead(ctx, "/srv/meta/"+name+"/urls.json", uid)
-	if !ok {
-		return nil
-	}
+func ReadURLs(name string) []state.ProjectURL {
 	var urls []state.ProjectURL
-	if err := json.Unmarshal([]byte(raw), &urls); err != nil {
+	if !srv.ReadMetaJSON(name, "urls.json", &urls) {
 		return nil
 	}
 	return urls
@@ -184,13 +166,9 @@ func ReadURLs(ctx context.Context, p *podman.Client, uid, name string) []state.P
 // ReadEffective returns what a project type's configure.sh resolved into
 // /srv/meta/<project>/effective.json — most importantly dbTag, which is
 // how the layered mpd.env cascade reaches mpd.
-func ReadEffective(ctx context.Context, p *podman.Client, uid, name string) map[string]any {
-	raw, ok := p.VolumeRead(ctx, "/srv/meta/"+name+"/effective.json", uid)
-	if !ok {
-		return nil
-	}
+func ReadEffective(name string) map[string]any {
 	var eff map[string]any
-	if err := json.Unmarshal([]byte(raw), &eff); err != nil {
+	if !srv.ReadMetaJSON(name, "effective.json", &eff) {
 		return nil
 	}
 	return eff

@@ -31,8 +31,8 @@ fi
 
 # /srv/meta/<project>/ holds urls.json + effective.json (read by mpd, the
 # caddy sidecar, and the FPM provisioner) plus cert.pem/key.pem/project.json
-# that mpd writes through the fileaccess container (--user <uid>:<uid>). /srv/meta is
-# dev-owned (mode 0775) by fileaccess provisioning, so plain mkdir works.
+# that mpd writes from the VM as the dev user. /srv/meta is dev-owned
+# (mode 0775) by volume provisioning, so plain mkdir works.
 mkdir -p "/srv/meta/${PROJECT_NAME}"
 
 # Layered config: /var/lib/mpd/env/mpd-vm.env (bind-mounted RO), then per-project
@@ -73,7 +73,7 @@ fi
 
 # --- Ensure Moodle data directories ---
 # Script runs as the dev user (projectExec --user <dev>); /srv/data is
-# dev-owned (set by fileaccess provisioning), so plain mkdir/chmod work.
+# dev-owned (set by volume provisioning), so plain mkdir/chmod work.
 for DIR in "$DATAROOT" "$BEHATDATAROOT" "$PHPUNITDATAROOT"; do
     mkdir -p "$DIR"
     chmod 02777 "$DIR"

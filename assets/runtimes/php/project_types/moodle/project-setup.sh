@@ -54,7 +54,7 @@ fi
 
 # --- Per-project data directories ---
 # Script runs as the dev user (projectExec --user <dev>); /srv/data is
-# dev-owned (set by fileaccess provisioning), so plain mkdir/chmod work.
+# dev-owned (set by volume provisioning), so plain mkdir/chmod work.
 for DIR in "$DATAROOT" "$BEHATDATAROOT" "$PHPUNITDATAROOT"; do
     mkdir -p "$DIR"
     chmod 02777 "$DIR"

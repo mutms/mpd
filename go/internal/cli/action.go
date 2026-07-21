@@ -13,6 +13,7 @@ import (
 
 	"github.com/mutms/mpd/go/internal/exec"
 	"github.com/mutms/mpd/go/internal/hooks"
+	"github.com/mutms/mpd/go/internal/srv"
 
 	"github.com/mutms/mpd/go/internal/dnsmasq"
 	"github.com/mutms/mpd/go/internal/net"
@@ -24,9 +25,8 @@ import (
 // Start brings the VM's mpd environment up: services, then any runtime
 // that had running projects before the last shutdown.
 //
-// Ordering: fileaccess first, because it is the data-volume exec target
-// every later step uses; then vm.json, so nothing reads stale addressing;
-// then the rest.
+// Ordering: vm.json first, so nothing reads stale addressing; then the
+// services.
 //
 // Deliberately not idempotent-by-creation: `--vm-start` starts what exists
 // and reports what does not. Creating things is `--vm-setup`'s job, and
@@ -34,11 +34,6 @@ import (
 func Start(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) error {
 	if _, err := os.Stat(stateDir); err != nil {
 		return fmt.Errorf("mpd is not set up yet. Run: mpd --vm-setup")
-	}
-
-	fileaccess, _ := service.Find("fileaccess")
-	if err := service.Start(ctx, out, fileaccess, d.Net, d.Podman); err != nil {
-		return err
 	}
 
 	// Republish addressing before anything reads it: a VM whose ID
@@ -152,7 +147,7 @@ func VMMeta(ctx context.Context, p *podman.Client, n net.Net, stateDir string) e
 	}
 	data = append(data, '\n')
 
-	if err := p.VolumeWrite(ctx, "", "mkdir -p /srv/meta && cat > /srv/meta/vm.json", data); err != nil {
+	if err := srv.Write(filepath.Join(srv.Meta, "vm.json"), data, 0o644); err != nil {
 		return err
 	}
 	return os.WriteFile(filepath.Join(stateDir, "vm.json"), data, 0o644)

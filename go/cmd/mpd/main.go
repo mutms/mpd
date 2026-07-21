@@ -343,7 +343,6 @@ func netCmd() *cobra.Command {
 			fmt.Fprintf(out, "gateway     %s\n", n.Gateway())
 			fmt.Fprintf(out, "dnsmasq     %s\n", n.IP(net.HostDnsmasq))
 			fmt.Fprintf(out, "portal      %s\n", n.IP(net.HostPortal))
-			fmt.Fprintf(out, "fileaccess  %s\n", n.IP(net.HostFileaccess))
 			fmt.Fprintf(out, "adminer     %s\n", n.IP(net.HostAdminer))
 			return nil
 		},

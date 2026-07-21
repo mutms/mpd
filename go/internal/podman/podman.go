@@ -14,7 +14,6 @@
 package podman
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -52,9 +51,6 @@ func (p PsItem) Label(key string) string {
 // tests can substitute a runner instead of shelling out.
 type Client struct {
 	run Runner
-	// input pipes data to a command's stdin — how file contents reach
-	// the data volume without a host-side bind mount.
-	input InputRunner
 	// stream runs a command with podman's own stdout/stderr passed
 	// through to ours. Lifecycle commands (start/stop/restart) print the
 	// container name, and that output is part of mpd's visible
@@ -65,9 +61,6 @@ type Client struct {
 // StreamRunner runs a podman invocation without capturing its output,
 // returning the exit code.
 type StreamRunner func(ctx context.Context, args []string) (int, error)
-
-// InputRunner runs a podman invocation with data piped to stdin.
-type InputRunner func(ctx context.Context, args []string, stdin []byte) (int, error)
 
 // Runner captures a podman invocation. Production uses internal/exec;
 // tests supply a stub, which is what makes everything above this package
@@ -83,11 +76,6 @@ func New() *Client {
 		stream: func(ctx context.Context, args []string) (int, error) {
 			return exec.Run(ctx, exec.Cmd{Name: "podman", Args: args, Sudo: true})
 		},
-		input: func(ctx context.Context, args []string, stdin []byte) (int, error) {
-			return exec.Run(ctx, exec.Cmd{
-				Name: "podman", Args: args, Sudo: true, Stdin: bytes.NewReader(stdin),
-			})
-		},
 	}
 }
 
@@ -97,10 +85,6 @@ func NewWith(r Runner) *Client {
 	return &Client{
 		run: r,
 		stream: func(ctx context.Context, args []string) (int, error) {
-			res, err := r(ctx, args)
-			return res.Code, err
-		},
-		input: func(ctx context.Context, args []string, _ []byte) (int, error) {
 			res, err := r(ctx, args)
 			return res.Code, err
 		},
@@ -185,73 +169,6 @@ func (c *Client) NetworkSubnet(ctx context.Context, name string) string {
 	return res.Stdout
 }
 
-// --- Data volume access ----------------------------------------------
-//
-// The /srv data volume is reached through the always-on
-// mpd-service-fileaccess container, which has it mounted. `podman exec`
-// into a running container is 5-10x faster than `podman run --rm` per
-// call, which matters because project create/configure does many small
-// volume operations.
-//
-// Execs run as the dev user's uid so files written here come out owned
-// by the runtime user, with no chown step afterwards.
-
-// FileAccessContainer is the always-on container holding the data volume.
-const FileAccessContainer = "mpd-service-fileaccess"
-
-// VolumeRead returns the contents of a file on the data volume, and
-// whether it could be read. A missing file is not an error — "no such
-// project metadata yet" is a normal state.
-func (c *Client) VolumeRead(ctx context.Context, path string, uid string) (string, bool) {
-	args := []string{"exec"}
-	args = append(args, userOptions(uid)...)
-	args = append(args, FileAccessContainer, "bash", "-c",
-		fmt.Sprintf("test -f %s && cat %s || true", path, path))
-	res, err := c.run(ctx, args)
-	if err != nil || res.Code != 0 || res.Stdout == "" {
-		return "", false
-	}
-	return res.Stdout, true
-}
-
-// VolumeRemoveAll deletes a path on the data volume, as root.
-//
-// Root, not the dev user: database engines write their files as their
-// own uid (postgres and mariadb both use 999) and /srv/dbs itself is
-// root-owned, so the dev user cannot unlink them. Running this as the
-// dev user fails on every file — silently, if the caller ignores the
-// exit code, which is how a "removed" message can be printed over data
-// that is still there.
-//
-// The exit code IS checked here, so a destructive verb cannot report
-// success for work it did not do.
-func (c *Client) VolumeRemoveAll(ctx context.Context, path string) error {
-	res, err := c.run(ctx, []string{"exec", FileAccessContainer, "rm", "-rf", path})
-	if err != nil {
-		return fmt.Errorf("removing %s: %w", path, err)
-	}
-	if res.Code != 0 {
-		return fmt.Errorf("removing %s: exit %d: %s", path, res.Code, res.Stderr)
-	}
-	return nil
-}
-
-// VolumeExec runs a command against the data volume and captures stdout.
-func (c *Client) VolumeExec(ctx context.Context, uid string, command ...string) (exec.Result, error) {
-	args := []string{"exec"}
-	args = append(args, userOptions(uid)...)
-	args = append(args, FileAccessContainer)
-	args = append(args, command...)
-	return c.run(ctx, args)
-}
-
-func userOptions(uid string) []string {
-	if uid == "" {
-		return nil
-	}
-	return []string{"--user", uid + ":" + uid}
-}
-
 // --- Lifecycle -------------------------------------------------------
 //
 // These stream podman's output rather than capturing it: `podman stop`
@@ -306,12 +223,6 @@ func (c *Client) Pull(ctx context.Context, image string) (int, error) {
 // Run creates and starts a container (`podman run`).
 func (c *Client) Run(ctx context.Context, args []string) (int, error) {
 	return c.stream(ctx, append([]string{"run"}, args...))
-}
-
-// VolumeMkdirAll creates a directory on the data volume.
-func (c *Client) VolumeMkdirAll(ctx context.Context, uid, path string) error {
-	_, err := c.VolumeExec(ctx, uid, "mkdir", "-p", path)
-	return err
 }
 
 // --- Pods -------------------------------------------------------------
@@ -427,26 +338,6 @@ func (c *Client) RemoveIfOutdated(ctx context.Context, name string, labels map[s
 		}
 	}
 	return false
-}
-
-// VolumeWrite pipes data into a shell command running against the data
-// volume — how mpd puts file contents there without a host bind mount.
-//
-// Callers write to a temp path and rename, because consumers watch these
-// directories: the Caddy frontdoor re-validates on every change, and a
-// half-written cert.pem fails validation and gets the reload skipped.
-func (c *Client) VolumeWrite(ctx context.Context, uid, script string, data []byte) error {
-	args := []string{"exec", "-i"}
-	args = append(args, userOptions(uid)...)
-	args = append(args, FileAccessContainer, "bash", "-c", script)
-	code, err := c.input(ctx, args, data)
-	if err != nil {
-		return err
-	}
-	if code != 0 {
-		return fmt.Errorf("writing to data volume failed (exit %d)", code)
-	}
-	return nil
 }
 
 // ExecAsUser runs a command inside a container as a named user or uid,

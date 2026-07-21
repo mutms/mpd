@@ -3,9 +3,9 @@
 # curl|bash installer. Lands the binary at ~/.local/bin/claude under the
 # invoking user. Idempotent: no-op if already installed.
 #
-# Available in any runtime: bootstrap.sh symlinks runtime-base tools into
-# /srv/tools/_base/; the skel-shipped ~/.bashrc puts /srv/tools/*/ on
-# the dev user's PATH for every login shell.
+# Available in any runtime: the skel-shipped ~/.bashrc puts this
+# directory (/opt/mpd/assets/runtime-base/tools) on the dev user's PATH
+# for every login shell.
 #
 # Usage:
 #   claude-install
