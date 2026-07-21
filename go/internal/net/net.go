@@ -11,7 +11,7 @@
 // Each VM owns one /24 and one DNS zone, both keyed on MPD_VM_ID: VM 150
 // serves 10.163.150.0/24 and the zone 150.mpd.test; the sandbox VM is
 // 000. The host part of an address never varies — dnsmasq is always .3,
-// the portal always .4, runtimes always .100+ — only the third octet
+// adminer always .6, runtimes always .100+ — only the third octet
 // moves, and it always equals the VM id. That is what lets a workstation
 // reach several VMs at once. See docs/NETWORKING.md.
 //
@@ -44,10 +44,11 @@ const SubnetPrefix = "10.163"
 
 // Host octets with a fixed meaning inside every VM's /24.
 const (
-	HostGateway = 1 // podman bridge — the VM itself
+	HostGateway = 1 // podman bridge — the VM itself, and the portal
 	HostDnsmasq = 3
-	HostPortal  = 4
-	// 5 is unassigned.
+	// 4 and 5 are unassigned: 4 was the portal container, which is now
+	// `mpd --web` on the VM behind caddy and therefore answers on the
+	// gateway; 5 was fileaccess, which no longer exists at all.
 	HostAdminer = 6
 )
 

@@ -18,12 +18,13 @@ Laptop (macOS — primary)
 VM (Debian Trixie)              hostname: mpd-<NNN>
   |
   Podman (rootful) bridge:  podman1  10.163.<NNN>.1/24
+   |                                  caddy on the VM binds here: the zone
+   |                                  apex (mpd --web) and adminer, both HTTPS
    |
    `mpd-internal` Podman network    10.163.<NNN>.0/24
      |
      +-- mpd-service-dnsmasq     10.163.<NNN>.3   (DNS for *.<NNN>.mpd.test)
-     +-- mpd-service-portal      10.163.<NNN>.4   (HTTPS read-only status)
-     +-- mpd-service-adminer     10.163.<NNN>.6   (proxied via portal)
+     +-- mpd-service-adminer     10.163.<NNN>.6   (plain HTTP; caddy fronts it)
      +-- DB containers           10.163.<NNN>.30–.99
      +-- runtime containers      10.163.<NNN>.100+ (full dev access via SSH)
 ```
@@ -60,8 +61,9 @@ use mpd.
 `<NNN>` above is the VM's `MPD_VM_ID` — the last octet of its static IP
 (`000` for a sandbox VM). It is the discriminator in **both** halves of
 the addressing: the third octet of the container subnet, and the first
-label of the DNS zone. Nothing else varies: dnsmasq is always `.3`, the
-portal always `.4`, runtimes always `.100+`.
+label of the DNS zone. Nothing else varies: dnsmasq is always `.3`,
+adminer `.6`, runtimes `.100+`, and the status page answers on the
+gateway `.1` because it runs on the VM rather than in a container.
 
 ```
 VM 150:  10.163.150.0/24   zone 150.mpd.test   moodle45.150.mpd.test
@@ -80,7 +82,8 @@ naming.
 The bare `mpd.test` apex does **not** resolve, deliberately: with two
 VMs up it could only mean one of them, and mpd prefers a name that fails
 to a name that silently picks. `<NNN>.mpd.test` is the apex, and it
-resolves to that VM's portal.
+resolves to that VM's gateway address, where caddy terminates TLS and
+proxies to `mpd --web` on loopback.
 
 One CA covers every VM — its name constraint (`permitted;DNS.0 =
 .mpd.test`) already permits arbitrary depth beneath the root domain, so

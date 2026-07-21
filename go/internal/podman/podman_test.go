@@ -22,7 +22,7 @@ func stub(out string, code int) (*Client, *[]string) {
 
 const psJSON = `[
   {"Names":["mpd-service-dnsmasq"],"State":"running","Labels":{"mpd.managed":"true"}},
-  {"Names":["mpd-service-portal"],"State":"exited","Labels":{"mpd.service.revision":"11"}},
+  {"Names":["mpd-service-adminer"],"State":"exited","Labels":{"mpd.service.revision":"7"}},
   {"Names":["mpd-150-php-main"],"State":"running","Labels":null}
 ]`
 
@@ -35,8 +35,8 @@ func TestPsParsesPodmanJSON(t *testing.T) {
 	if items[0].Name() != "mpd-service-dnsmasq" || items[0].State != "running" {
 		t.Errorf("first item = %+v", items[0])
 	}
-	if got := items[1].Label("mpd.service.revision"); got != "11" {
-		t.Errorf("label = %q, want %q", got, "11")
+	if got := items[1].Label("mpd.service.revision"); got != "7" {
+		t.Errorf("label = %q, want %q", got, "7")
 	}
 	// A container with no labels must not panic.
 	if got := items[2].Label("anything"); got != "" {

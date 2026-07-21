@@ -56,8 +56,9 @@ Idempotent — safe to re-run any time. Walks you through:
 - installing the CA into the VM's system trust store + Firefox + NSS DB
 - creating the Podman network and data volume
 - mounting the data volume on the VM at `/srv`
-- bringing up the always-on infra services (dnsmasq, portal, Adminer)
-  inside the VM
+- installing and configuring caddy, the VM's TLS frontdoor
+- starting `mpd --web`, the status page at `https://<NNN>.mpd.test/`
+- bringing up the always-on infra containers (dnsmasq, Adminer)
 - a final DNS sanity check
 
 (VM-side apt installs, network stack setup, hostname/IP canonicalization,
@@ -440,6 +441,10 @@ sudo podman network rm mpd-internal
 mpd --vm-setup                   # network + services + units, from scratch
 mpd --runtime-create=php         # runtimes are NOT recreated by `mpd start`:
                                  # it starts what exists and says so if it does not
+mpd --db-create=postgres:latest  # nor are DB containers. Their data survives in
+                                 # /srv/dbs/<id>/, so the databases come back with
+                                 # the container — but until it exists, every
+                                 # project answers "Database connection failed"
 mpd start <project>              # per project you want back up
 
 # Manual in-VM reset (no --uninstall verb on mpd):

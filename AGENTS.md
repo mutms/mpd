@@ -60,9 +60,8 @@ chowns), all enforced at runtime — do not propose alternates.
   etc.). Last-write-wins: VM-host skel overrides shipped skel.
 - `/var/lib/mpd/state/` — mpd-managed operational state. `projects.json`,
   `databases.json`, `current-state.json`, `hooks-state.json`,
-  `runtimes/<n>/`, `dnsmasq.d/`, `portal/`. The
-  portal mounts the whole tree at `/mpd-state` RO; dnsmasq mounts
-  `state/dnsmasq.d/` at `/etc/dnsmasq.d/` RO. Wipe to reset.
+  `runtimes/<n>/`, `dnsmasq.d/`. dnsmasq mounts `state/dnsmasq.d/` at
+  `/etc/dnsmasq.d/` RO. Wipe to reset.
 - `/srv/` — the Podman data volume, bind-mounted onto the VM at `/srv` by
   the `srv.mount` unit and mounted into every container at the same path,
   so `/srv/projects/<name>` means the same thing on both sides. Holds
@@ -85,8 +84,9 @@ The binary is Go, built from `go/` into `bin/mpd` by `make install`:
   platform.env, CA trust stores, resolver drop-in, motd, shutdown unit)
 - `go/internal/runtime/` — runtime provisioning and its state cache
 - `go/internal/project/` — project scaffolding, env mutation, certs, rescan
-- `go/internal/service/` — always-on infra services (dnsmasq, portal,
-  adminer)
+- `go/internal/service/` — always-on infra services (dnsmasq, adminer)
+- `go/internal/web/` — the status page `mpd --web` serves, behind the
+  VM's caddy
 - `go/internal/db/` — DB containers: tags, images, allocation, lifecycle
 - `go/internal/sidecar/` — per-runtime-pod sidecar reconciliation
 - `go/internal/hooks/` — typed `Event` lifecycle hooks + asset-side

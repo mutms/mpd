@@ -70,7 +70,7 @@ func TestVMRecordOnlyWhenTheVMHasAnAddress(t *testing.T) {
 // single command.
 func TestUnchangedWriteReportsNoChange(t *testing.T) {
 	m, _ := manager(t, 150)
-	records := []ServiceRecord{{Host: "portal.service.150.mpd.test", IP: "10.163.150.4"}}
+	records := []ServiceRecord{{Host: "portal.service.150.mpd.test", IP: "10.163.150.1"}}
 
 	changed, err := m.EnsureServiceRecords(records, "")
 	if err != nil || !changed {
@@ -99,7 +99,7 @@ func TestPruneRemovesOutOfZoneFragmentsOnly(t *testing.T) {
 	write("current.conf", "address=/current.150.mpd.test/10.163.150.101\n")
 	// Rewritten from scratch every reconcile — pruning them would be
 	// churn, and one of them legitimately carries the VM's own address.
-	write("services.conf", "address=/portal.service.100.mpd.test/10.163.100.4\n")
+	write("services.conf", "address=/portal.service.100.mpd.test/10.163.100.1\n")
 	write("databases.conf", "address=/pg.db.100.mpd.test/10.163.100.20\n")
 	// Not a fragment: dnsmasq only reads *.conf.
 	write("notes.txt", "address=/whatever.100.mpd.test/10.163.100.9\n")

@@ -246,7 +246,7 @@ Display layers show both columns side-by-side (`mpd list runtimes`,
 `requested=running, current=stopped` after a reboot but before
 `mpd --vm-start` — is legible from the listing alone.
 
-Out-of-process consumers (the portal container, in-runtime tools)
+Out-of-process consumers (in-runtime tools)
 don't have podman access, so they can't compute `current` themselves.
 mpd writes a snapshot to
 `/var/lib/mpd/state/current-state.json` (`CurrentStateSnapshot` —
@@ -255,7 +255,8 @@ timestamp). The snapshot is refreshed automatically by `mpd list`,
 `mpd --vm-status`, `mpd --vm-start` / `--vm-stop` / `--vm-restart`, `mpd --vm-setup`,
 and at every state-mutator save (`saveProjects`,
 `saveRuntimeStateEntry`, `deleteProject`, `deleteRuntimeStateEntry`).
-The portal bind-mounts the file at `/mpd-state/current-state.json` and
+The portal reads this through `current.Observer` in-process; in-runtime
+tools bind-mount the file at `/mpd-state/current-state.json` and
 prefers it over the persisted intent files for live status display.
 
 ## 6) Assets and Extension Contract
@@ -707,7 +708,12 @@ Wipe contract:
 Always-on infra services:
 
 - `dnsmasq` — DNS for `*.mpd.test`, authoritative for this VM's zone
-- `portal` — read-only status site at `https://<NNN>.mpd.test/`
+- the **portal** is not a container: `mpd --web` runs on the VM as the
+  user unit `mpd-web.service`, listening on `127.0.0.1:8099`, with
+  Debian's caddy in front of it on the bridge gateway terminating TLS for
+  the zone apex and for adminer. `--vm-setup` installs caddy, renders
+  `/etc/caddy/Caddyfile` and restarts the unit, so editing a template
+  needs only `make install && mpd --vm-setup`.
 - `adminer` — DB management UI at `https://adminer.service.<NNN>.mpd.test/`
 
 

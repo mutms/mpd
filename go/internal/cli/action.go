@@ -106,15 +106,23 @@ func verifyDNS(ctx context.Context, out io.Writer, n net.Net, p *podman.Client) 
 		fmt.Fprintf(out, "  Inspect with: sudo podman logs %s\n", dnsmasq.Container)
 		return
 	}
+	// The apex answers wherever the portal is — the registry knows, and
+	// hardcoding an octet here is what made this check wrong the moment
+	// the portal stopped being a container.
+	want := n.Gateway()
+	if d, ok := service.Find("portal"); ok {
+		want = d.IP(n)
+	}
+
 	got := resolveHost(ctx, n.Zone())
-	if got == n.IP(net.HostPortal) {
+	if got == want {
 		fmt.Fprintf(out, "\033[1;32m✓ DNS: %s → %s\033[0m\n", n.Zone(), got)
 		return
 	}
 	if got == "" {
 		fmt.Fprintln(out, "DNS check: no result — system resolver not pointing at dnsmasq")
 	} else {
-		fmt.Fprintf(out, "DNS check: got %s, expected %s\n", got, n.IP(net.HostPortal))
+		fmt.Fprintf(out, "DNS check: got %s, expected %s\n", got, want)
 	}
 	fmt.Fprintf(out, "  Verify: resolvectl status; getent hosts %s\n", n.Zone())
 }

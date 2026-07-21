@@ -54,6 +54,12 @@ Operational flags include:
   `sudo systemctl reboot` and lets the user-systemd `mpd.service` unit
   drive the chain (ExecStop=`mpd --vm-stop` on shutdown, ExecStart=
   `mpd --vm-start` on boot). User runs `mpd --vm-start` afterward to restore projects.
+- `--web` — run the status page in the foreground on `127.0.0.1:8099`.
+  Long-running, unlike every other flag here: the process *is* the
+  service. Started by the `mpd-web.service` user unit, which
+  `mpd --vm-setup` writes, enables and **restarts** on every run — so a
+  template change reaches the browser with `make install && mpd --vm-setup`.
+  Loopback only; caddy on the VM terminates TLS in front of it.
 - `--check-hooks` — cross-reference `assets/.../hooks/<event>.d/`
   directories against the Go `Event` catalogue and print warnings
   for orphans, removed audiences, and revision bumps. Also runs at the

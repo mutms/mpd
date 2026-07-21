@@ -117,10 +117,11 @@ Laptop (macOS)
 VM host (Debian Trixie)
   |
   net.ipv4.ip_forward=1; podman1 bridge (10.163.<NNN>.1/24)
+  |   caddy binds here (VM process, not a container): terminates TLS for
+  |   the zone apex → mpd --web on 127.0.0.1, and for adminer → .6
   |
   mpd-internal network (10.163.<NNN>.0/24)
     +-- mpd-service-dnsmasq    (10.163.<NNN>.3)
-    +-- mpd-service-portal     (10.163.<NNN>.4)
     +-- mpd-service-adminer    (10.163.<NNN>.6)
     +-- DB containers          (10.163.<NNN>.30–.99)
     +-- runtime pods           (10.163.<NNN>.100+, with per-runtime sidecars)
@@ -157,9 +158,11 @@ guests that happen to be given a comfortable cage.
 
 ## Network access control
 
-Only the **portal's `:443`** and (optionally) **dnsmasq's `:53`** are
-published on the VM via Podman port-publish. Everything else is
-reachable only by a host that routes that VM's `10.163.<NNN>.0/24` through it.
+Nothing is published on the VM's own LAN address. caddy binds only the
+podman bridge gateway `10.163.<NNN>.1`, and every container address is
+inside `10.163.<NNN>.0/24` — so the whole environment, status page
+included, is reachable only by a host that routes that subnet through
+the VM.
 
 The VM has `net.ipv4.ip_forward=1` (set by
 `bootstrap/30-networking.sh`) — needed to route between the VM's
@@ -169,23 +172,29 @@ an mpd VM on a network you don't trust.
 
 ## Portal security
 
-The portal at `https://<NNN>.mpd.test/` is a read-only status page served by
-`mpd-service-portal`. It displays project names, runtime status, URLs,
-and setup instructions. It accepts no user input and executes no
-commands.
+The portal at `https://<NNN>.mpd.test/` is a read-only status page
+rendered by `mpd --web` (`go/internal/web/`), a VM process listening on
+`127.0.0.1:8099`. caddy terminates TLS in front of it. It displays
+projects, runtimes, databases and services, and accepts no input.
 
-**Rules for portal code** (`assets/services/portal/*.php`):
+It shows each project's **database connection details**, which are
+guessable anyway — `db.CreateFor` derives user, password and database
+name from the project name (see "Database credentials" below).
 
-- No `exec()`, `system()`, `shell_exec()`, `passthru()`, `popen()`, or
-  backtick operators
-- No form handling, no `$_POST`, no `$_GET` processing that triggers
-  actions
+**Rules for portal code** (`go/internal/web/`):
+
+- No command execution, no form handling, no request parameters that
+  trigger actions
 - No API endpoints, no webhook receivers, no proxy functionality
-- Read from filesystem only (`/srv/meta/`, `/mpd-state/`) — never
+- Read state only (`state.Store`, `current.Observer`, `srv`) — never
   write
 - Display information only — never mutate state
 
-These constraints are documented in the PHP files themselves.
+The package doc states these constraints, and they hold regardless of
+authentication: a password would change who may look, not what the page
+is allowed to do. There is no authentication today; anything with a
+route to the container subnet — including project code running in a
+runtime, which reaches the gateway — can read it.
 
 ## TLS and the certificate authority
 

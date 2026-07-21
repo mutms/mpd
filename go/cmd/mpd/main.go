@@ -375,7 +375,7 @@ func netCmd() *cobra.Command {
 			fmt.Fprintf(out, "subnet      %s\n", n.Subnet())
 			fmt.Fprintf(out, "gateway     %s\n", n.Gateway())
 			fmt.Fprintf(out, "dnsmasq     %s\n", n.IP(net.HostDnsmasq))
-			fmt.Fprintf(out, "portal      %s\n", n.IP(net.HostPortal))
+			fmt.Fprintf(out, "portal      %s (the VM itself: mpd --web behind caddy)\n", n.Gateway())
 			fmt.Fprintf(out, "adminer     %s\n", n.IP(net.HostAdminer))
 			return nil
 		},
