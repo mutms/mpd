@@ -5,11 +5,10 @@ set -euo pipefail
 # Lays out four /opt directories, clones the public repos into three of
 # them, builds the `mudev` binary, and symlinks it onto PATH:
 #
-#   /opt/mudev        ← https://github.com/mutms/mudev.git        (built)
-#   /opt/mdl-plugins  ← https://github.com/mutms/mdl-plugins.git
-#   /opt/mdl-recipes  ← https://github.com/mutms/mdl-recipes.git
-#   /opt/dev-recipes  ← created empty, on purpose: private content the
-#                       dev drops in by hand, nothing to clone.
+#   /opt/mudev        ← git@github.com:mutms/mudev.git        (built)
+#   /opt/mdl-plugins  ← git@github.com:mutms/mdl-plugins.git
+#   /opt/mdl-recipes  ← git@github.com:mutms/mdl-recipes.git
+#   /opt/dev-recipes  ← git@github.com:mutms/dev-recipes.git (private)
 #
 # Runs as the dev user inside the runtime; sudo only for creating the
 # /opt dirs, which are then chowned to the dev user so all git and build
@@ -17,7 +16,7 @@ set -euo pipefail
 #
 # Idempotent, and *converging* rather than no-op: re-running fetches
 # nothing it already has, but always rebuilds and re-links, so
-# `mudev-install` after a `git pull` is the way to pick up changes.
+# `mudev-install-dev` after a `git pull` is the way to pick up changes.
 #
 # NOTE ON PERSISTENCE: /opt lives in the container's own filesystem, not
 # on the /srv data volume. Runtime containers are pets — upgraded in
@@ -26,26 +25,37 @@ set -euo pipefail
 # if the runtime is ever deleted; push your work.
 #
 # Usage:
-#   mudev-install
+#   mudev-install-dev
 
 DEV_USER="$(id -un)"
 DEV_GROUP="$(id -gn)"
 
-# Cloned over anonymous HTTPS — these are public repos, so no key, no
-# agent forwarding, nothing to set up first.
+# Repos are cloned over SSH, so the clone needs a key the container can
+# use. Two supported ways in (see docs/USAGE.md): `ssh -A` agent
+# forwarding from the laptop, or a key in ~/.ssh inside the runtime.
 REPOS=(
-    "mudev|https://github.com/mutms/mudev.git"
-    "mdl-plugins|https://github.com/mutms/mdl-plugins.git"
-    "mdl-recipes|https://github.com/mutms/mdl-recipes.git"
+    "mudev|git@github.com:mutms/mudev.git"
+    "mdl-plugins|git@github.com:mutms/mdl-plugins.git"
+    "mdl-recipes|git@github.com:mutms/mdl-recipes.git"
+    "dev-recipes|git@github.com:mutms/dev-recipes.git"
 )
-# Created but never cloned into — private material, dev-managed.
-EMPTY_DIRS=(dev-recipes)
 
 say()  { printf '==> %s\n' "$*"; }
 ok()   { printf '    ok: %s\n' "$*"; }
-die()  { printf 'mudev-install: %s\n' "$*" >&2; exit 1; }
+die()  { printf 'mudev-install-dev: %s\n' "$*" >&2; exit 1; }
 
-# --- Preflight: go and make must be available -------------------------------
+# --- Preflight: git over SSH must work -------------------------------
+# Fail here with something actionable rather than letting `git clone`
+# print "Permission denied (publickey)" four directories in.
+if [ -z "${SSH_AUTH_SOCK:-}" ] && ! ls "$HOME"/.ssh/id_* >/dev/null 2>&1; then
+    # Print the actual host to reconnect to, not a placeholder: the
+    # runtime knows its own name, and vm.json knows the VM's zone.
+    rt="$(cat /etc/mpd/runtime 2>/dev/null || echo '<rt>')"
+    zone="$(jq -r '.zone // "<zone>"' /srv/meta/vm.json 2>/dev/null || echo '<zone>')"
+    die "no SSH key and no forwarded agent — cannot clone from github.
+    Reconnect with agent forwarding:  ssh -A ${DEV_USER}@${rt}.runtime.${zone}
+    or drop a key into ~/.ssh inside this runtime."
+fi
 
 command -v go   >/dev/null 2>&1 || die "go not found — rebuild the php runtime (assets/runtimes/php/build.sh installs golang-go)."
 command -v make >/dev/null 2>&1 || die "make not found — rebuild the php runtime (assets/runtimes/php/build.sh installs make)."
@@ -54,7 +64,7 @@ command -v make >/dev/null 2>&1 || die "make not found — rebuild the php runti
 # sudo for the mkdir under /opt (root-owned), then hand ownership to the
 # dev user so nothing after this point needs privileges.
 say "Directories under /opt"
-for entry in "${REPOS[@]}" "${EMPTY_DIRS[@]}"; do
+for entry in "${REPOS[@]}"; do
     name="${entry%%|*}"
     dir="/opt/${name}"
     if [ -d "$dir" ]; then
@@ -74,6 +84,11 @@ for entry in "${REPOS[@]}" "${EMPTY_DIRS[@]}"; do
 done
 
 # --- Clones -----------------------------------------------------------
+# accept-new: trust github's host key on first contact rather than
+# hanging on an interactive prompt. Subsequent runs verify against
+# ~/.ssh/known_hosts as usual, so a changed key still fails loudly.
+export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o StrictHostKeyChecking=accept-new}"
+
 say "Repositories"
 for entry in "${REPOS[@]}"; do
     name="${entry%%|*}"
@@ -87,10 +102,6 @@ for entry in "${REPOS[@]}"; do
         git clone "$url" "$dir"
         ok "cloned ${name}"
     fi
-done
-
-for name in "${EMPTY_DIRS[@]}"; do
-    ok "/opt/${name} left empty (private content — nothing to clone)"
 done
 
 # --- Build + link -----------------------------------------------------

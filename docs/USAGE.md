@@ -251,7 +251,8 @@ either a human or an AI agent to invoke directly. Full taxonomy in
 | `composer`         | The Composer phar; installed at `/usr/local/bin/composer` by `composer-install` at provision time.                                                |
 | `composer-install` | Idempotent install of Composer to `/usr/local/bin/`. Re-runs no-op.                                                                               |
 | `composer-upgrade` | Force-reinstalls Composer (bypass idempotency). Use instead of `composer self-update` — the phar is root-owned and self-update can't write to it. |
-| `mudev-install`    | Lays out `/opt/{mudev,mdl-plugins,mdl-recipes,dev-recipes}`, clones the first three from GitHub over SSH, builds `mudev` with `make install`, and symlinks it into `~/.local/bin/`. `dev-recipes` is created empty on purpose (private content). Needs `ssh -A` or a key in the runtime's `~/.ssh`. Converging: re-run after a `git pull` to rebuild and re-link. |
+| `mudev-install`    | Lays out `/opt/{mudev,mdl-plugins,mdl-recipes,dev-recipes}`, clones the first three from GitHub over anonymous HTTPS (no key or agent forwarding needed), builds `mudev` with `make install`, and symlinks it into `~/.local/bin/`. `dev-recipes` is created empty on purpose — private content you drop in by hand. Converging: re-run after a `git pull` to rebuild and re-link. |
+| `mudev-install-dev`| Maintainer variant of the above: clones all four directories — including `dev-recipes` — over SSH with write access. Needs `ssh -A` or a key in the runtime's `~/.ssh`. Use `mudev-install` unless you have push rights on those repos. |
 
 **Project-type-level (Moodle — available when a Moodle project is in the runtime):**
 
