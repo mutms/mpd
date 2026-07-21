@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/mutms/mpd/go/internal/exec"
@@ -181,6 +182,97 @@ func EnablePodmanRestart(ctx context.Context, out io.Writer) error {
 	}
 	ui.OK(out, "podman-restart.service enabled.")
 	return nil
+}
+
+// DisableGitHooks stops git hooks running on the VM. Two mechanisms,
+// because one is not enough:
+//
+//  1. `git config --system core.hooksPath /dev/null`. Applies to every
+//     git invocation regardless of shell or environment; git looks for
+//     /dev/null/<hook>, gets ENOTDIR, and runs nothing. Surgical — it
+//     edits one key rather than overwriting /etc/gitconfig.
+//
+//  2. GIT_CONFIG_* in /etc/environment. Needed because (1) LOSES to a
+//     repository's own config, and the hooks worth stopping are exactly
+//     the self-installing kind: husky (docusaurus, moodledev) writes
+//     core.hooksPath into .git/config. These variables are applied as if
+//     passed with `-c`, which outranks repo config. /etc/environment
+//     rather than /etc/profile.d, because PAM applies it to `ssh vm
+//     <cmd>` too, and profile.d only fires for login shells.
+//
+// VM only: runtime containers have their own /etc and keep hooks
+// working, which is where a project's own tooling belongs. The VM has no
+// node to run a JavaScript pre-commit hook with in any case.
+//
+// Escape hatch, for running a hook deliberately:
+//
+//	GIT_CONFIG_COUNT=0 git commit ...
+func DisableGitHooks(ctx context.Context, out io.Writer) error {
+	if code, err := exec.Run(ctx, exec.Cmd{
+		Name: "git", Args: []string{"config", "--system", "core.hooksPath", "/dev/null"},
+		Sudo: true,
+	}); err != nil || code != 0 {
+		return fmt.Errorf("Failed to set system core.hooksPath (exit %d).", code)
+	}
+
+	changed, err := mergeEnvironment(ctx, map[string]string{
+		"GIT_CONFIG_COUNT":   "1",
+		"GIT_CONFIG_KEY_0":   "core.hooksPath",
+		"GIT_CONFIG_VALUE_0": "/dev/null",
+	})
+	if err != nil {
+		return err
+	}
+	if changed {
+		ui.OK(out, "git hooks disabled VM-wide (system config + /etc/environment).")
+	}
+	return nil
+}
+
+// mergeEnvironment sets keys in /etc/environment, leaving every other
+// line alone.
+//
+// Merged rather than written: /etc/environment belongs to the machine,
+// not to mpd, and a VM may well have entries from elsewhere.
+func mergeEnvironment(ctx context.Context, want map[string]string) (bool, error) {
+	const path = "/etc/environment"
+
+	existing, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return false, err
+	}
+
+	var kept []string
+	for _, line := range strings.Split(string(existing), "\n") {
+		key, _, isAssignment := strings.Cut(line, "=")
+		if isAssignment {
+			if _, ours := want[strings.TrimSpace(key)]; ours {
+				continue
+			}
+		}
+		if strings.TrimSpace(line) != "" {
+			kept = append(kept, line)
+		}
+	}
+
+	for _, key := range sortedKeys(want) {
+		kept = append(kept, key+"="+want[key])
+	}
+	body := strings.Join(kept, "\n") + "\n"
+
+	if string(existing) == body {
+		return false, nil
+	}
+	return WriteRootOwnedFile(ctx, path, body)
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // RequireSystemdResolvedActive checks the one network-stack assumption

@@ -149,6 +149,11 @@ func Setup(ctx context.Context, out io.Writer) error {
 	ui.Step(out, "Shell completion for mpd")
 	InstallCompletion(out)
 
+	ui.Step(out, "Git hooks (disabled on the VM)")
+	if err := vm.DisableGitHooks(ctx, out); err != nil {
+		return err
+	}
+
 	ui.Step(out, "Installing login banner (motd)")
 	if err := vm.InstallLoginBanner(ctx, out, n.Zone()); err != nil {
 		return err
