@@ -19,7 +19,7 @@ import (
 // `SQLSTATE[08006] could not translate host name`.
 func SetupAdminer(ctx context.Context, out io.Writer, p *podman.Client, n net.Net) error {
 	ui.Step(out, "Service: adminer")
-	if err := ensureBuiltImage(ctx, out, p, AdminerImage, "adminer"); err != nil {
+	if err := ensureBuiltImage(ctx, out, p, AdminerImage, "adminer", adminerRevision); err != nil {
 		return err
 	}
 

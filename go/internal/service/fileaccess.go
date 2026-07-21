@@ -56,7 +56,7 @@ func commonLabels(name string) []string {
 // on the VM, and `podman exec` into a running container is far cheaper
 // per call than `podman run --rm`.
 func SetupFileAccess(ctx context.Context, out io.Writer, p *podman.Client, n net.Net, id vm.Identity) error {
-	if err := ensureBuiltImage(ctx, out, p, FileAccessImage, "fileaccess"); err != nil {
+	if err := ensureBuiltImage(ctx, out, p, FileAccessImage, "fileaccess", fileaccessRevision); err != nil {
 		return err
 	}
 
@@ -149,15 +149,28 @@ func ensureDataVolumeDirectories(ctx context.Context, p *podman.Client, uid stri
 	_, _ = p.ExecWithOptions(ctx, FileAccessContainer, []string{"--user", "0:0"}, cmd...)
 }
 
-// ensureBuiltImage builds a service image from its assets directory if
-// it is not already present.
-func ensureBuiltImage(ctx context.Context, out io.Writer, p *podman.Client, tag, name string) error {
+// ensureBuiltImage builds a service image from its assets directory when
+// it is missing, or when the image present was built from an older
+// revision.
+//
+// Existence alone is not enough. The revision tracks the service's
+// Containerfile and entrypoint, so an image built before those changed is
+// stale even though it is present — and the staleness is invisible:
+// RemoveIfOutdated recreates the container, it comes up healthy, and it
+// runs the old entrypoint. Rebuilding on a label mismatch is what makes
+// bumping a revision mean anything for image changes.
+func ensureBuiltImage(ctx context.Context, out io.Writer, p *podman.Client, tag, name, revision string) error {
 	if p.ImageExists(ctx, tag) {
-		return nil
+		if p.ImageLabel(ctx, tag, RevisionLabel) == revision {
+			return nil
+		}
+		ui.Step(out, "Rebuilding %s image (revision changed)", name)
+		p.ImageRemove(ctx, tag)
 	}
 	contextDir := vm.AssetsDir + "/services/" + name
 	ui.Step(out, "Building %s image", name)
-	if code, err := p.BuildImage(ctx, tag, contextDir); err != nil || code != 0 {
+	if code, err := p.BuildImage(ctx, tag, contextDir,
+		map[string]string{RevisionLabel: revision}); err != nil || code != 0 {
 		return fmt.Errorf("Failed to build %s image from %s.", name, contextDir)
 	}
 	return nil

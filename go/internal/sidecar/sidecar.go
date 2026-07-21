@@ -256,7 +256,7 @@ func ensureImage(ctx context.Context, out io.Writer, spec Spec, p *podman.Client
 	}
 	contextDir := assets.Dir + "/" + spec.BuildContext
 	fmt.Fprintf(out, "\n\033[1m==> Building sidecar image '%s'\033[0m\n", spec.Image)
-	if code, err := p.BuildImage(ctx, spec.Image, contextDir); err != nil || code != 0 {
+	if code, err := p.BuildImage(ctx, spec.Image, contextDir, nil); err != nil || code != 0 {
 		return fmt.Errorf("Failed to build sidecar image '%s' from %s.", spec.Image, contextDir)
 	}
 	return nil

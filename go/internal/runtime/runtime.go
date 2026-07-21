@@ -101,7 +101,7 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 
 	if !p.ImageExists(ctx, BaseImage) {
 		fmt.Fprintf(out, "\n\033[1m==> Building base image '%s'\033[0m\n", BaseImage)
-		if code, err := p.BuildImage(ctx, BaseImage, assets.Dir+"/runtime-base"); err != nil || code != 0 {
+		if code, err := p.BuildImage(ctx, BaseImage, assets.Dir+"/runtime-base", nil); err != nil || code != 0 {
 			return "", fmt.Errorf("Failed to build base image '%s'.", BaseImage)
 		}
 	}

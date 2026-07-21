@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/mutms/mpd/go/internal/exec"
 )
@@ -483,9 +484,47 @@ func (c *Client) PullQuiet(ctx context.Context, image string) (int, error) {
 	return res.Code, nil
 }
 
-// BuildImage builds an image from a context directory.
-func (c *Client) BuildImage(ctx context.Context, tag, contextDir string) (int, error) {
-	return c.stream(ctx, []string{"build", "-t", tag, contextDir})
+// BuildImage builds an image from a context directory, stamping it with
+// the given labels.
+//
+// Labels are how a caller can later tell an image built from today's
+// Containerfile from one built months ago: an existence check cannot see
+// that the recipe changed.
+func (c *Client) BuildImage(ctx context.Context, tag, contextDir string, labels map[string]string) (int, error) {
+	args := []string{"build", "-t", tag}
+	for _, key := range sortedKeys(labels) {
+		args = append(args, "--label", key+"="+labels[key])
+	}
+	args = append(args, contextDir)
+	return c.stream(ctx, args)
+}
+
+// ImageLabel reads one label off a built image. Empty when the image is
+// missing or has no such label — both mean "not what we asked for".
+func (c *Client) ImageLabel(ctx context.Context, image, key string) string {
+	res, err := c.run(ctx, []string{
+		"image", "inspect", image, "--format", fmt.Sprintf("{{index .Labels %q}}", key),
+	})
+	if err != nil || res.Code != 0 {
+		return ""
+	}
+	return res.Stdout
+}
+
+// ImageRemove deletes an image by tag, ignoring "no such image".
+func (c *Client) ImageRemove(ctx context.Context, image string) {
+	_, _ = c.run(ctx, []string{"rmi", "-f", image})
+}
+
+// sortedKeys keeps generated arguments deterministic, so unchanged input
+// never produces a different command line.
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // ExecCapture runs a command inside a container and captures its output.
