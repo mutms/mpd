@@ -346,6 +346,22 @@ func (c *Client) VolumeRemove(ctx context.Context, name string) (int, error) {
 	return res.Code, nil
 }
 
+// VolumeMountpoint returns the host path backing a named volume.
+//
+// Asked rather than assumed: the layout under
+// /var/lib/containers/storage/volumes/ is podman's business, and mpd
+// bind-mounts this path onto /srv, so reading it back is the difference
+// between following podman and guessing at it.
+func (c *Client) VolumeMountpoint(ctx context.Context, name string) (string, bool) {
+	res, err := c.run(ctx, []string{
+		"volume", "inspect", name, "--format", "{{.Mountpoint}}",
+	})
+	if err != nil || res.Code != 0 || res.Stdout == "" {
+		return "", false
+	}
+	return res.Stdout, true
+}
+
 // VolumeExists reports whether a named volume is present.
 func (c *Client) VolumeExists(ctx context.Context, name string) bool {
 	res, err := c.run(ctx, []string{"volume", "exists", name})

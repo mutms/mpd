@@ -101,6 +101,17 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 
+	// Before anything touches /srv: this is what makes the path exist on
+	// the VM at all, and it must resolve to the same tree containers see.
+	ui.Step(out, "Data volume mounted at /srv")
+	source, ok := p.VolumeMountpoint(ctx, vm.DataVolume)
+	if !ok {
+		return fmt.Errorf("Could not read the mountpoint of volume '%s'.", vm.DataVolume)
+	}
+	if err := vm.MountDataVolume(ctx, out, source); err != nil {
+		return err
+	}
+
 	ui.Step(out, "File access service")
 	if err := service.SetupFileAccess(ctx, out, p, n, user); err != nil {
 		return err
