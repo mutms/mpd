@@ -52,6 +52,10 @@ func (p PsItem) Label(key string) string {
 // tests can substitute a runner instead of shelling out.
 type Client struct {
 	run Runner
+	// attach runs a command with the caller's stdin connected as well as
+	// stdout and stderr — for `mpd run`, where the child may be an
+	// interactive program.
+	attach StreamRunner
 	// stream runs a command with podman's own stdout/stderr passed
 	// through to ours. Lifecycle commands (start/stop/restart) print the
 	// container name, and that output is part of mpd's visible
@@ -77,6 +81,11 @@ func New() *Client {
 		stream: func(ctx context.Context, args []string) (int, error) {
 			return exec.Run(ctx, exec.Cmd{Name: "podman", Args: args, Sudo: true})
 		},
+		attach: func(ctx context.Context, args []string) (int, error) {
+			return exec.Run(ctx, exec.Cmd{
+				Name: "podman", Args: args, Sudo: true, Stdin: os.Stdin,
+			})
+		},
 	}
 }
 
@@ -86,6 +95,10 @@ func NewWith(r Runner) *Client {
 	return &Client{
 		run: r,
 		stream: func(ctx context.Context, args []string) (int, error) {
+			res, err := r(ctx, args)
+			return res.Code, err
+		},
+		attach: func(ctx context.Context, args []string) (int, error) {
 			res, err := r(ctx, args)
 			return res.Code, err
 		},
@@ -378,6 +391,20 @@ func (c *Client) ExecAsUser(ctx context.Context, container, user string, command
 	args = append(args, container)
 	args = append(args, command...)
 	return c.stream(ctx, args)
+}
+
+// ExecAttached runs a command inside a container with the caller's
+// stdin, stdout and stderr connected to it.
+//
+// Distinct from ExecWithOptions, which streams output but gives the child
+// no stdin: an interactive shell, a REPL, or anything reading a piped
+// heredoc needs the real thing.
+func (c *Client) ExecAttached(ctx context.Context, container string, options []string,
+	command ...string) (int, error) {
+	args := append([]string{"exec"}, options...)
+	args = append(args, container)
+	args = append(args, command...)
+	return c.attach(ctx, args)
 }
 
 // ExecWithOptions runs a command inside a container with extra podman

@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -46,7 +47,9 @@ const projectCommands = `  show       <projectname>                     project 
   start      <projectname>
   stop       <projectname>
   delete     <projectname> [--yes]
-  help       <projectname>                     verb reference for one project`
+  help       <projectname>                     verb reference for one project
+  run        <command> [args...]               run a command in the runtime of the
+                                               project you are standing in`
 
 // otherCommands are the read-only queries that are neither a project
 // verb nor a VM action.
@@ -172,6 +175,13 @@ func main() {
 	root.SetHelpCommand(helpCmd())
 
 	if err := root.Execute(); err != nil {
+		// A forwarded command's exit status is passed through untouched
+		// and silently: the child already reported whatever failed, and
+		// `mpd run` adding its own line would corrupt piped output.
+		var exit cli.ExitError
+		if errors.As(err, &exit) {
+			os.Exit(exit.Code)
+		}
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
@@ -476,7 +486,24 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 	createCmd.Flags().StringVar(&opts.GitBranch, "git-branch", "", "Branch to clone")
 	createCmd.Flags().StringVar(&opts.GitDepth, "git-depth", "", "Shallow-clone depth")
 
-	verbs = append(verbs, deleteCmd, configureCmd, createCmd)
+	runCmd := &cobra.Command{
+		Use:   "run [--] <command> [args...]",
+		Short: "Run a command in the runtime of the project you are in",
+		// The only verb whose second argument is not a project: the
+		// project comes from the working directory, everything after
+		// `run` is the command to forward.
+		Args:               cobra.MinimumNArgs(1),
+		DisableFlagParsing: true,
+		RunE: func(c *cobra.Command, args []string) error {
+			d, err := projectDeps()
+			if err != nil {
+				return err
+			}
+			return cli.Run(c.Context(), c.OutOrStdout(), d, args)
+		},
+	}
+
+	verbs = append(verbs, deleteCmd, configureCmd, createCmd, runCmd)
 
 	return verbs
 }

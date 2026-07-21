@@ -26,7 +26,7 @@ import (
 // ProjectVerbs are the tokens accepted as the first positional argument.
 // They are reserved as project names, so a project can never collide with
 // a verb.
-var ProjectVerbs = []string{"configure", "create", "delete", "help", "show", "start", "stop"}
+var ProjectVerbs = []string{"configure", "create", "delete", "help", "run", "show", "start", "stop"}
 
 // IsProjectVerb reports whether a token is a project verb.
 func IsProjectVerb(token string) bool {

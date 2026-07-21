@@ -655,4 +655,7 @@ func ShowHelp(out io.Writer, project string, n net.Net) {
 	fmt.Fprintln(out, "Project-type-specific operations (mdl-cron, phpunit, composer, …) are tools,")
 	fmt.Fprintln(out, "not host-side verbs. SSH into the runtime and run them on PATH:")
 	fmt.Fprintf(out, "  ssh user@<runtime>.runtime.%s\n", n.Zone())
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "Or forward one from the VM, from inside the project directory:")
+	fmt.Fprintf(out, "  cd /srv/projects/%s && mpd run <command> [args...]\n", project)
 }
