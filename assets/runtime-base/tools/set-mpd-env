@@ -13,7 +13,7 @@
 # the file (project-create.sh seeds it from the type's mpd-template.env).
 #
 # Caller is expected to have validated KEY against ^MPD_[A-Z0-9_]+$ and VALUE
-# against a safe charset on the Swift side. This script does no validation.
+# against a safe charset in mpd. This script does no validation.
 set -euo pipefail
 
 PATH_TO_FILE="$1"

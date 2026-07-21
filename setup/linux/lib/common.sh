@@ -397,7 +397,7 @@ remove_desktop_shortcut() {
 }
 
 # --- CA generation (host-side) ---
-# Bash twin of Mpd.VM.Certificate.generateCA in mpd/VM/Certificate.swift
+# Bash twin of cert.GenerateCA in go/internal/cert/ca.go
 # and the Swift CA generator in mpd-virt-macos (CA.swift). KEEP IN SYNC
 # across all three.
 

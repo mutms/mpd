@@ -101,7 +101,7 @@ func EnsureDnsmasqReady(ctx context.Context, out io.Writer, p *podman.Client, n 
 	m dnsmasq.Manager, vmIP string, verbose bool) error {
 
 	if !p.Exists(ctx, dnsmasq.Container) {
-		return fmt.Errorf("%s not found. Run: mpd --setup", dnsmasq.Container)
+		return fmt.Errorf("%s not found. Run: mpd --vm-setup", dnsmasq.Container)
 	}
 	if err := os.MkdirAll(vm.DnsmasqDir, 0o755); err != nil {
 		return err
@@ -115,7 +115,7 @@ func EnsureDnsmasqReady(ctx context.Context, out io.Writer, p *podman.Client, n 
 	switch {
 	case !p.Running(ctx, dnsmasq.Container):
 		if code, err := p.Start(ctx, dnsmasq.Container); err != nil || code != 0 {
-			return fmt.Errorf("Failed to start %s. Run: mpd --setup", dnsmasq.Container)
+			return fmt.Errorf("Failed to start %s. Run: mpd --vm-setup", dnsmasq.Container)
 		}
 		WaitForDnsmasq(ctx, out, p, n)
 		if verbose {

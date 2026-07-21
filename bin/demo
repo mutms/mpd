@@ -1,6 +1,6 @@
 #!/bin/bash
 # demo — create and start a demo project in one command.
-# Available on the mpd VM after `mpd --setup` adds bin/ to PATH.
+# Available on the mpd VM after `mpd --vm-setup` adds bin/ to PATH.
 #
 # Usage: demo <flavor> <tag>
 #   demo moodle v5.2.0

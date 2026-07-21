@@ -1,12 +1,5 @@
 .DS_Store
 /.idea
 /.claude
-/.build
-/.swiftpm/*
-!/.swiftpm/xcode
-/.swiftpm/xcode/*
-!/.swiftpm/xcode/xcshareddata
-/Package.resolved
 # binaries are compiled in each vm
 /bin/mpd
-/bin/gompd

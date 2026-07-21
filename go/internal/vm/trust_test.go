@@ -70,8 +70,8 @@ func TestFirefoxPolicyContent(t *testing.T) {
 func TestUnitKeepsTheGracefulStopPath(t *testing.T) {
 	body := UnitBody("/opt/mpd/bin/mpd")
 	for _, want := range []string{
-		"ExecStop=/opt/mpd/bin/mpd --stop",
-		"ExecStart=-/opt/mpd/bin/mpd --start",
+		"ExecStop=/opt/mpd/bin/mpd --vm-stop",
+		"ExecStart=-/opt/mpd/bin/mpd --vm-start",
 		"Before=shutdown.target reboot.target halt.target suspend.target",
 		"RemainAfterExit=yes",
 	} {

@@ -126,15 +126,9 @@ func FirefoxPolicy(certPath, zone string) (string, error) {
 			},
 		},
 	}
-	// Go sorts map keys when marshalling, so the bytes are stable and
-	// the idempotency check below is meaningful.
-	//
-	// The bytes differ from the Swift implementation's, which used
-	// Foundation's `"key" : value` spacing. Both are valid JSON and
-	// Firefox reads either, but each binary rewrites the other's file
-	// once and reports "installed" rather than "already in place". That
-	// is visible only while both binaries exist, and it self-corrects on
-	// the second run of whichever one is left.
+	// Go sorts map keys when marshalling, so the bytes are stable — which
+	// is what makes the "already in place" check in InstallFirefoxPolicy
+	// meaningful rather than a coin flip.
 	data, err := json.MarshalIndent(policy, "", "  ")
 	if err != nil {
 		return "", err

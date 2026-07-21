@@ -42,7 +42,7 @@ func ParseOSRelease(body string) OSRelease {
 
 // RequireSupportedHost is a hard gate on Debian Trixie.
 //
-// Not conservatism for its own sake: package names, Swift/Go toolchain
+// Not conservatism for its own sake: package names, Go toolchain
 // availability, the systemd unit layout and systemd-resolved's defaults
 // all differ between releases, and mpd drives all four. Running on
 // anything else produces failures far from their cause, so the check is
@@ -55,11 +55,11 @@ func RequireSupportedHost() error {
 	rel := ParseOSRelease(string(body))
 	if rel.ID != "debian" {
 		return fmt.Errorf("mpd targets Debian (got ID=%s).\n"+
-			"Use a Debian Trixie VM and re-run mpd --setup.", rel.ID)
+			"Use a Debian Trixie VM and re-run mpd --vm-setup.", rel.ID)
 	}
 	if rel.Codename != "trixie" {
 		return fmt.Errorf("mpd targets Debian Trixie (got VERSION_CODENAME=%s).\n"+
-			"Package names, Swift toolchain, and systemd-resolved/systemd-networkd\n"+
+			"Package names, Go toolchain, and systemd-resolved/systemd-networkd\n"+
 			"defaults vary between releases — pin to Trixie or accept that\n"+
 			"you're off the supported path.", rel.Codename)
 	}
@@ -69,7 +69,7 @@ func RequireSupportedHost() error {
 // bootstrapBinaries are representative of what
 // bootstrap/40-install-software.sh installs. Checking a handful of stats
 // is enough to tell "bootstrap never ran" from "bootstrap ran" — the
-// case this guards against is a fresh VM where --setup was typed too
+// case this guards against is a fresh VM where --vm-setup was typed too
 // early, not a hand-broken one.
 var bootstrapBinaries = []struct{ Name, Path string }{
 	{"podman", "/usr/bin/podman"},
@@ -113,7 +113,7 @@ reboot first:
 
     sudo reboot
 
-Then SSH back in and re-run mpd --setup.
+Then SSH back in and re-run mpd --vm-setup.
 
 Otherwise, see the README of your platform under
 /opt/mpd/setup/ for the expected network stack.`)
@@ -159,7 +159,7 @@ func ConfigureDNSResolver(ctx context.Context, out io.Writer, rootDomain, dnsmas
 
 // WriteRootOwnedFile installs content at a root-owned path via sudo,
 // reporting whether anything changed. An identical file short-circuits
-// before sudo runs, so a repeat `--setup` neither writes nor prompts.
+// before sudo runs, so a repeat `--vm-setup` neither writes nor prompts.
 func WriteRootOwnedFile(ctx context.Context, path, content string) (bool, error) {
 	if existing, err := os.ReadFile(path); err == nil && string(existing) == content {
 		return false, nil

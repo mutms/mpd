@@ -448,9 +448,9 @@ scp -q -o StrictHostKeyChecking=no -o BatchMode=yes \
 ssh_cmd "$VM_IP" "$VM_USER" "chmod 600 /var/lib/mpd/conf/caroot/rootCA*.pem"
 ok "Host CA uploaded"
 
-step "Running 'mpd --setup' (CA, podman network, services)"
-ssh_cmd "$VM_IP" "$VM_USER" 'mpd --setup'
-ok "mpd --setup complete"
+step "Running 'mpd --vm-setup' (CA, podman network, services)"
+ssh_cmd "$VM_IP" "$VM_USER" 'mpd --vm-setup'
+ok "mpd --vm-setup complete"
 
 step "VM bootstrap complete"
 echo "    ${VM_USER}@${VM_IP} (${VM_NAME})"

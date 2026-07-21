@@ -16,7 +16,7 @@ import (
 // Containers are the ground truth and the cache is derived: a runtime
 // whose container was removed behind mpd's back must lose its state
 // entry, and one created before the cache existed must gain one. This
-// runs during `--setup`, which is where a VM that drifted — restored
+// runs during `--vm-setup`, which is where a VM that drifted — restored
 // from a snapshot, half-migrated, hand-edited — gets reconciled.
 func RebuildStateCache(ctx context.Context, out io.Writer, p *podman.Client, s state.Store) error {
 	containers := p.Ps(ctx, "label=mpd.runtime")
@@ -76,7 +76,7 @@ func RebuildStateCache(ctx context.Context, out io.Writer, p *podman.Client, s s
 // keeps validating.
 //
 // Called only when the CA fingerprint actually changed — reissuing every
-// project certificate on each `--setup` would be pure churn.
+// project certificate on each `--vm-setup` would be pure churn.
 func ReconcileCertificates(ctx context.Context, out io.Writer, p *podman.Client,
 	projects []CertTarget, reissue func(string) error) {
 

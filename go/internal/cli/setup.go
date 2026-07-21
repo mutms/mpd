@@ -34,7 +34,7 @@ const BaseImagePull = "docker.io/library/postgres:17"
 // Setup brings a bootstrapped VM to a working mpd install.
 //
 // Idempotent from end to end, and that is the property to preserve when
-// changing it: `--setup` is the repair command. A developer whose VM has
+// changing it: `--vm-setup` is the repair command. A developer whose VM has
 // drifted — containers removed by hand, state wiped, CA replaced, VM ID
 // changed — runs it again, and every step either converges or says
 // precisely what it cannot fix. No step may assume it is running for the
@@ -53,7 +53,7 @@ const BaseImagePull = "docker.io/library/postgres:17"
 func Setup(ctx context.Context, out io.Writer) error {
 	// The one verb that announces itself: its transcript is long enough
 	// that a scrollback needs a mark for where it began.
-	fmt.Fprintf(out, "\n\033[1mmpd --setup\033[0m\n\n")
+	fmt.Fprintf(out, "\n\033[1mmpd --vm-setup\033[0m\n\n")
 
 	if _, err := vm.AssetsPath(); err != nil {
 		return err
@@ -166,7 +166,7 @@ func Setup(ctx context.Context, out io.Writer) error {
 	// Deliberately terse: anything about "what to do next" belongs to
 	// whatever orchestration called us — `mpd-virt setup` for a managed
 	// VM, sandbox/provision.sh for the sandbox.
-	fmt.Fprintf(out, "\n\033[1;32m✓ mpd --setup complete.\033[0m\n")
+	fmt.Fprintf(out, "\n\033[1;32m✓ mpd --vm-setup complete.\033[0m\n")
 	return nil
 }
 
@@ -193,12 +193,12 @@ func preflight(ctx context.Context, out io.Writer) error {
 // Re-derived on every run rather than trusted from the file: the
 // hostname is what the hypervisor-side bootstrap set, so a VM cloned to
 // a new identity converges here. A hand-edited MPD_VM_ID therefore
-// survives only until the next `--setup`, which is the documented
+// survives only until the next `--vm-setup`, which is the documented
 // behaviour.
 //
 // This is also why net.Load runs here rather than at process start: a VM
 // whose platform.env holds a broken ID must still be repairable by
-// `mpd --setup`, and a preflight resolve would refuse before we could
+// `mpd --vm-setup`, and a preflight resolve would refuse before we could
 // fix it.
 func setupIdentity(ctx context.Context, out io.Writer) (net.Net, vm.PlatformIdentity, error) {
 	ui.Step(out, "Platform identity")
@@ -332,10 +332,10 @@ A network's subnet cannot be changed in place. This VM predates per-VM addressin
 
     sudo podman rm -af
     sudo podman network rm %s
-    mpd --setup
+    mpd --vm-setup
 
 Then recreate runtimes and DB containers; /srv/ (projects, data, databases) is on the data volume and survives. No reboot needed — `+
-				"`podman rm -af`"+` stops the containers, and `+"`mpd --setup`"+` rebuilds the network, records, and certs in place.`,
+				"`podman rm -af`"+` stops the containers, and `+"`mpd --vm-setup`"+` rebuilds the network, records, and certs in place.`,
 				Network, actual, n.Subnet(), Network)
 		}
 		ui.OK(out, "Network '%s' already exists (%s).", Network, n.Subnet())

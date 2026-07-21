@@ -24,7 +24,7 @@ const PortalContainer = "mpd-service-portal"
 //
 // Inline rather than a built image: the portal is a handful of static
 // files plus one PHP script, and building an image for it would add a
-// build step to every `--setup` for no gain. `--restart always` plus a
+// build step to every `--vm-setup` for no gain. `--restart always` plus a
 // container that is only rebuilt on a revision bump means this runs
 // once per rebuild, not once per boot.
 const portalSetupCmd = "apt-get update -qq && apt-get install -y --no-install-recommends " +

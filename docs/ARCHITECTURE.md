@@ -16,8 +16,8 @@ Purpose: describe how `mpd` is structured, what is currently in scope, and where
 
 Current scope:
 
-- The Swift control plane is the same for both modes — setup,
-  lifecycle (`--setup/--start/--stop/--restart`, `--status`,
+- The Go control plane is the same for both modes — setup,
+  lifecycle (`--vm-setup/--vm-start/--vm-stop/--vm-restart`, `--vm-status`,
   `mpd list`), runtime/project orchestration, per-runtime sidecar
   reconciliation.
 - The mode distinction is recorded in `/var/lib/mpd/conf/platform.env` as
@@ -39,10 +39,10 @@ High-level CLI flow:
 
 Control-plane lifecycle commands:
 
-- `--setup`
-- `--start`
-- `--stop`
-- `--restart`
+- `--vm-setup`
+- `--vm-start`
+- `--vm-stop`
+- `--vm-restart`
 
 These should remain stable even as implementation details evolve.
 
@@ -50,26 +50,36 @@ These should remain stable even as implementation details evolve.
 
 This is a required architecture rule.
 
-- Direct host OS command execution is allowed only in `mpd/VM/Exec.swift`.
-- All other layers (`CLI`, `Runtime`, `Service`, `Core`) must not execute host commands directly.
-- Cross-layer container/runtime operations must go through `Mpd.Podman.*` only.
+- Direct host OS command execution is allowed only in
+  `go/internal/exec`. It is the only package that imports `os/exec`.
+- All other packages (`cli`, `runtime`, `project`, `service`, `vm`) must
+  not execute host commands directly.
+- Cross-layer container/runtime operations must go through
+  `go/internal/podman` only.
 
 Allowed exception:
 
-- `Mpd.Podman` acts as the single shared command gateway for container/runtime management.
+- `internal/podman` acts as the single shared command gateway for
+  container/runtime management. It is itself a client of `internal/exec`.
 
 ### Binaries ownership rules
 
-`Mpd.Environment.Binaries` defines host binaries used inside the VM.
-- Non-environment layers must not introduce new host-binary calls; they request environment or Podman actions.
+`internal/exec` holds an allow-list mapping each permitted command name
+to an **absolute** path (`binaries` in `exec.go`). Commands are never
+resolved through `PATH`: mpd runs privileged operations, and a pinned
+path cannot be redirected by PATH manipulation. Adding an entry widens
+what mpd can execute and is a deliberate act.
+- Non-exec packages must not introduce new host-binary calls; they
+  request Podman or `internal/vm` actions.
 
 ### Review/enforcement checklist
 
 Any PR that adds command execution must answer:
 
-1. Is this host command in `mpd/VM/Exec.swift`?
-2. If not, can it be routed through `Mpd.Podman` or moved into `Environment/`?
-3. Is binary resolution sourced from `Mpd.Environment.Binaries`?
+1. Is this host command issued from `go/internal/exec`?
+2. If not, can it be routed through `internal/podman` or moved into
+   `internal/vm`?
+3. Is the binary on the `internal/exec` allow-list, by absolute path?
 
 ### Sister rule: privilege model
 
@@ -119,9 +129,9 @@ macOS). The pattern these scripts follow:
 
    On a wipe, the next `setup.command` regenerates and re-imports
    into the System keychain. Generation uses the bash twin of
-   `Mpd.VM.Certificate.generateCA` (`mpd/VM/Certificate.swift`);
+   `cert.GenerateCA` (`go/internal/cert/ca.go`);
    the two generators must stay in sync. The CA is then uploaded into
-   the VM, where mpd's reuse check (`mpd/Action/ActionSetup.swift`)
+   the VM, where mpd's reuse check (`go/internal/cli/setup.go`)
    picks it up. Route, resolver, **and** CA-trust collapse into a
    single upfront fenced block, after which the long unattended
    VM-creation phase runs holding no sudo creds.
@@ -195,8 +205,8 @@ Cleanup contract:
 
 Primary persisted state domains:
 
-- Core/global state (`mpd/mpd/Core/*`)
-- Runtime/project state (`mpd/mpd/Runtime/*`)
+- Persisted intent (`go/internal/state/`)
+- Observed state (`go/internal/current/`)
 
 State mutation convention:
 
@@ -214,15 +224,15 @@ mpd splits resource state into two distinct concepts:
   by explicit user verbs (`mpd <p> create/start/stop/delete`, `mpd
   --runtime-create/start/stop/delete`). Survives reboots. Lives in
   `RegisteredProjectRecord.requested` and `RuntimeStateEntry.requested`
-  (`mpd/Runtime/RuntimeState.swift`).
+  (`go/internal/state/state.go`).
 - **`current`** — live observation, computed on each query from
   `Mpd.Podman` (no persistence). Domain: `running`, `stopped`,
   `missing` (no container exists). Accessors:
   `Mpd.Runtime.current(_:)`, `Mpd.Project.current(_:)`,
   `Mpd.Runtime.DB.current(engine:version:)` —
-  `mpd/Runtime/CurrentState.swift`.
+  `go/internal/current/current.go`.
 
-Reconciliation closes the gap: `mpd --start` walks `requested` and
+Reconciliation closes the gap: `mpd --vm-start` walks `requested` and
 brings `current` into agreement; `mpd --gc` (planned) does the
 opposite trim. This is the same desired-vs-observed model used by
 Kubernetes, systemd, and Terraform.
@@ -234,7 +244,7 @@ DB lifecycle is derived from runtime + project records (see
 Display layers show both columns side-by-side (`mpd list runtimes`,
 `mpd list`, `mpd <project> show`). Divergence — e.g.
 `requested=running, current=stopped` after a reboot but before
-`mpd --start` — is legible from the listing alone.
+`mpd --vm-start` — is legible from the listing alone.
 
 Out-of-process consumers (the portal container, in-runtime tools)
 don't have podman access, so they can't compute `current` themselves.
@@ -242,7 +252,7 @@ mpd writes a snapshot to
 `/var/lib/mpd/state/current-state.json` (`CurrentStateSnapshot` —
 runtimes/projects/databases name → status map plus a `refreshedAt`
 timestamp). The snapshot is refreshed automatically by `mpd list`,
-`mpd --status`, `mpd --start` / `--stop` / `--restart`, `mpd --setup`,
+`mpd --vm-status`, `mpd --vm-start` / `--vm-stop` / `--vm-restart`, `mpd --vm-setup`,
 and at every state-mutator save (`saveProjects`,
 `saveRuntimeStateEntry`, `deleteProject`, `deleteRuntimeStateEntry`).
 The portal bind-mounts the file at `/mpd-state/current-state.json` and
@@ -255,13 +265,13 @@ prefers it over the persisted intent files for live status display.
 - Runtime definitions and provisioning: `assets/runtimes/<runtime>/...`
 - Project-type behavior: `assets/runtimes/<runtime>/project_types/<type>/...`
 - Runtime / project-type tools: single executable per file under
-  corresponding `tools/` (see §7). Verbs are Swift, not assets.
+  corresponding `tools/` (see §7). Verbs are Go, not assets.
 - Service config/templates: `assets/services/...`, `assets/templates/...`
 
 Contributor rule:
 
 - Prefer additive asset changes for runtime/project-type customization.
-- Reserve Swift changes for control-plane, state, networking, and orchestration behavior.
+- Reserve Go changes for control-plane, state, networking, and orchestration behavior.
 
 ## 7) Verbs and tools
 
@@ -290,14 +300,15 @@ Don't duplicate. If a tool covers a capability, the verb is redundant.
 Convenience verbs that just `podman exec` into the runtime to run a
 tool with no host-side coordination should not exist.
 
-### Implementation: Swift by default
+### Implementation: Go by default
 
-Verbs are **Swift**, in `mpd/Runtime/`, `mpd/CLI/`, etc. The verb set
-is fixed and small — `create`, `configure`, `start`, `stop`, `delete`,
-`show` — all Swift control-plane methods with direct access to
-`Mpd.Podman.*`, state APIs, and sidecar reconciliation. There is no
-asset-shipped-verb mechanism: project-type-specific operations live
-inside the runtime as **tools**, not as host-side verbs.
+Verbs are **Go**: cobra commands in `go/cmd/mpd/main.go`, handlers in
+`go/internal/cli/project.go`. The verb set is fixed and small —
+`create`, `configure`, `start`, `stop`, `delete`, `show` — all
+control-plane code with direct access to `internal/podman`, the state
+APIs, and sidecar reconciliation. There is no asset-shipped-verb
+mechanism: project-type-specific operations live inside the runtime as
+**tools**, not as host-side verbs.
 
 Previous asset-shipped verbs (Moodle: `cache-purge`, `cron`, `upgrade`,
 `install`; Astro: `rebuild`, `upgrade`) all migrated to tools — they
@@ -425,7 +436,7 @@ are banned anywhere in mpd shell code, with no exceptions:
 2. Identity-switching to a non-root user — `sudo -u <user>`,
    `runuser -u <user>`, `runuser <user>`, `su - <user>`,
    `su <user> -c …`. If you need a script to run as the dev user,
-   the orchestrator (Swift `podman exec -u`, ssh, etc.) sets that
+   the orchestrator (mpd's `podman exec -u`, ssh, etc.) sets that
    identity at exec time.
 3. Re-execing the script as another identity from inside itself
    (any flavor of the above). Same root cause: identity belongs to
@@ -524,7 +535,7 @@ hints for discoverability.
 4. project `mpd.env`
 
 Runtime + type are read from `/srv/meta/<n>/project.json` (written by
-Swift's `writeProjectMeta`) using `jq`. Bash "last assignment wins" gives
+`project.WriteMeta`) using `jq`. Bash "last assignment wins" gives
 the right semantics — each layer overrides earlier ones, and explicit
 `KEY=""` blocks fall-through:
 
@@ -543,7 +554,7 @@ sensible default (`MPD_DB=postgres:latest` for moodle).
 **How `mpd-vm.env` reaches the runtime:** the host file
 `/var/lib/mpd/env/mpd-vm.env` is bind-mounted RO into every runtime
 container at the same absolute path (`Mpd.envMountRO` in
-`mpd/VM/VM.swift`). Directory mount, so vim/nano
+`go/internal/vm/vm.go`). Directory mount, so vim/nano
 atomic-rename writes on the host propagate inside the container
 immediately. No sync, no restart needed.
 
@@ -556,19 +567,19 @@ immediately. No sync, no restart needed.
 - `MPD_<KEY>` — global mpd infra (none currently in active use; the
   former `MPD_DNS_UPSTREAM` is gone — dnsmasq now bind-mounts the host's
   systemd-resolved upstream and follows whatever the host has configured).
-- **Reserved keys:** `MPD_DB` is owned by Swift's `Mpd.Runtime.DB.parseTag`
+- **Reserved keys:** `MPD_DB` is owned by `db.ParseTag`
   (engine whitelist + version regex); other reserved keys go in the same map
   in `ProjectOperations.sanitiseEnvValue` as they're added.
 
 **CLI surface for editing:** `mpd configure <project> KEY=VALUE [...]`
-parses positional pairs matching `^MPD_[A-Z0-9_]+=.*$`, sanitises in Swift
+parses positional pairs matching `^MPD_[A-Z0-9_]+=.*$`, sanitises in Go
 (reserved-key map for strict validators, otherwise a generic safe-charset
 check that blocks shell metacharacters), and rewrites the corresponding line
 in `/srv/projects/<n>/mpd.env` via
 `assets/runtime-base/tools/set-mpd-env`. Empty value deletes the line.
 After mutations are applied, the project type's `configure.sh` sources the
 layered env, generates config files, and emits resolved values into
-`/srv/meta/<n>/effective.json` (where Swift reads `dbTag` to provision the
+`/srv/meta/<n>/effective.json` (where mpd reads `dbTag` to provision the
 DB container).
 
 ## 9) Platform identity: conf/platform.env
@@ -585,12 +596,12 @@ MPD_INSTANCE_SUFFIX=<-suffix>   # e.g. "-161"; empty for the unsuffixed instance
 ```
 
 `MPD_INSTANCE_SUFFIX` is the disambiguator for concurrent VMs. Auto-derived
-at `mpd --setup` from the VM hostname (`mpd-<X>`), with the leading
+at `mpd --vm-setup` from the VM hostname (`mpd-<X>`), with the leading
 dash included (or empty when there's no suffix). Used as the hostname suffix
 on runtime **pods** (`mpd-runtime-<rt>-<X>`), so SSH'ing into
 `<rt>.runtime.<NNN>.mpd.test` gives a bash prompt that makes the instance
 unambiguous. DNS names are unaffected — they still resolve by IP via
-dnsmasq. Hand-edit to override; the next `mpd --setup` will overwrite back
+dnsmasq. Hand-edit to override; the next `mpd --vm-setup` will overwrite back
 to the auto-derived value.
 
 `Platform.write` preserves any other `MPD_*` keys it doesn't manage
@@ -601,10 +612,10 @@ and Platform can share the same file without clobbering each other.
 
 | Path                        | Writer                                                       | Values             | Behavior                                               |
 |-----------------------------|--------------------------------------------------------------|--------------------|--------------------------------------------------------|
-| `mpd VM` via mpd-virt  | `mpd-virt` orchestrator (host, separate repo, over SSH)      | `machine`, `${IP}` | written before `mpd --setup` runs in the VM            |
-| `mpd VM` via sandbox   | `setup/sandbox/lib/provision.sh`                             | `sandbox`, `""`    | written before `mpd --setup` runs inside the Debian VM |
+| `mpd VM` via mpd-virt  | `mpd-virt` orchestrator (host, separate repo, over SSH)      | `machine`, `${IP}` | written before `mpd --vm-setup` runs in the VM            |
+| `mpd VM` via sandbox   | `setup/sandbox/lib/provision.sh`                             | `sandbox`, `""`    | written before `mpd --vm-setup` runs inside the Debian VM |
 
-**Reader:** `Mpd.VM.Platform.load()` (Swift). Throws with a fix-it message
+**Reader:** `vm.LoadPlatform()` (`go/internal/vm/platform.go`). Fails with a fix-it message
 when missing, pointing at the matching bootstrap script. The machine path
 records the VM's IP so the in-VM mpd can verify network identity; sandbox
 has no host side, so its `MPD_VM_IP` stays empty.
@@ -658,7 +669,7 @@ Wipe contract:
 - Addressing is per-VM: `<NNN>` is the VM's `MPD_VM_ID`, used as both the
   third octet of the subnet and the first label of the DNS zone, so
   several VMs are reachable from one workstation at once. `Mpd.Net`
-  (`mpd/Net.swift`) is the single source of truth; nothing else should
+  (`go/internal/net/net.go`) is the single source of truth; nothing else should
   contain `10.163.` or `mpd.test` as a literal.
 - dnsmasq inside the VM serves `*.mpd.test`; the host gets a *scoped*
   resolver entry pointing the VM's zone at `10.163.<NNN>.3`
@@ -695,12 +706,12 @@ Per-runtime sidecars (attached to the runtime pod, not global):
 
 Project URLs are project-type-driven (via `configure.sh` writing
 `/srv/meta/<project>/urls.json`) and surfaced via the frontdoor sidecar — the
-control-plane Swift code never hard-codes per-runtime URL shapes.
+control-plane Go code never hard-codes per-runtime URL shapes.
 
 ### Laptop-side split DNS (Windows note)
 
 macOS (`/etc/resolver/mpd.test`) and Linux (`systemd-resolved` drop-in) handle
-split DNS natively, so `mpd --setup` prints a one-line recipe and is done.
+split DNS natively, so `mpd --vm-setup` prints a one-line recipe and is done.
 
 Windows is the awkward case. The built-in NRPT mechanism
 (`Add-DnsClientNrptRule`) works for most queries but is bypassed by some
@@ -730,14 +741,20 @@ See detailed docs:
 
 ## 12) Repository Layer Map
 
-- `mpd/CLI/` — command handlers, routing, status rendering
-- `mpd/Action/` — top-level verb implementations (`Setup`, `Start`, `Stop`, `Restart`, `Status`)
-- `mpd/VM/` — VM-host operations (`exec`, paths, DNS, Certificate, ShutdownUnit, Identity, Platform, DataVolume, Config)
-- `mpd/Runtime/` — runtime/project orchestration and records
-- `mpd/Service/` — service lifecycle control (`Mpd.Service.*`)
-- `mpd/Hooks/` — typed `Event` lifecycle hooks
-- `mpd/TUI/` — interactive TUI
-- `mpd/Util/` — Podman gateway, JSONStateStore
+- `go/cmd/mpd/` — CLI entry: flag set, project verbs, dispatch
+- `go/internal/cli/` — command implementations, listing and status
+  rendering, setup orchestration, completion
+- `go/internal/vm/` — VM-host operations (paths, identity, platform.env,
+  CA trust stores, resolver drop-in, motd, shutdown unit)
+- `go/internal/runtime/`, `go/internal/project/`, `go/internal/db/`,
+  `go/internal/sidecar/` — orchestration and records
+- `go/internal/service/` — always-on service lifecycle
+- `go/internal/hooks/` — typed `Event` lifecycle hooks
+- `go/internal/state/`, `go/internal/current/` — persisted intent and
+  observed state
+- `go/internal/podman/`, `go/internal/exec/` — the two command gateways
+- `go/internal/net/`, `go/internal/dnsmasq/`, `go/internal/cert/` —
+  addressing, DNS records, TLS
 - `assets/` — runtime/type/service scripts/config/templates + `runtime-base/skel/`
 - `bootstrap/` — VM bring-up steps 10–50 (passwordless sudo, repo clone, networking, apt, build)
 - `setup/` — per-platform host-side orchestration (sandbox, macos, linux, windows)

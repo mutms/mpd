@@ -37,10 +37,10 @@ MPD_APT_LOCK_TIMEOUT="${MPD_APT_LOCK_TIMEOUT:-300}"
 # relying on the compiled-in default, which `apt-config dump` doesn't
 # report — so on a given image you cannot tell whether you get 0 or 3.
 #
-# Bootstrap pulls `swiftlang` at ~400 MB, an order of magnitude larger
-# than anything else it fetches, which makes it the one most likely to
-# meet a CDN hiccup mid-transfer. Without retries a single stalled
-# connection fails the whole step; with them apt reconnects and resumes.
+# Bootstrap fetches a few hundred megabytes of packages in one step, so
+# a CDN hiccup mid-transfer is a real possibility. Without retries a
+# single stalled connection fails the whole step; with them apt
+# reconnects and resumes.
 MPD_APT_RETRIES="${MPD_APT_RETRIES:-3}"
 
 # apt-get wrapper: non-interactive, waits for the lock, retries stalled

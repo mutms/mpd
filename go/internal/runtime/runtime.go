@@ -118,7 +118,7 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 	// reservation, so idle pods cost nothing — safe for every runtime.
 	//
 	// No --dns here: the network carries it (see the podman network
-	// created by --setup), and every attached container inherits it.
+	// created by --vm-setup), and every attached container inherits it.
 	if code, err := p.PodCreate(ctx, []string{
 		"--name", o.Pod,
 		"--hostname", o.Pod,

@@ -19,7 +19,7 @@ Concrete shape, a use case driving it.
   mode, all in one view. Pattern borrowed from Laravel's
   `php artisan about` (familiar to Moodle devs increasingly working
   in both ecosystems). All data already exists in
-  `Mpd.Project.show` / state files — this is presentation, not new
+  `cli.ShowProject` / state files — this is presentation, not new
   logic.
 
 - **`mpd env <project>`** — print the resolved layered env for a
@@ -28,7 +28,7 @@ Concrete shape, a use case driving it.
   borrowed from Laravel's `php artisan config:show`. Especially
   useful when the four-layer cascade lands a value you didn't
   expect. Implementation: invoke `source-mpd-env.sh` with verbose
-  tracing, or re-implement the resolver in Swift for cleaner output.
+  tracing, or re-implement the resolver in Go for cleaner output.
 
 ## Parked: other ideas
 
@@ -51,11 +51,11 @@ Real possibilities, not committed work.
   tools, shell history, SSH known_hosts, and half-finished work, so
   "delete and recreate" is the wrong answer to a changed asset. The
   four infra services use a `mpd.service.revision` label plus
-  `Mpd.Podman.removeIfOutdated` to force recreation; runtimes
+  `podman.Client.RemoveIfOutdated` to force recreation; runtimes
   deliberately have no such mechanism and should not grow one.
   Instead they want upgrade scripts that run *inside* the existing
   container and converge it — the same shape as
-  `bootstrap/70-update.sh` for the VM. Driven by ordinary asset and
+  `bootstrap/99-update.sh` for the VM. Driven by ordinary asset and
   tooling drift over a runtime's life, not by re-addressing: changing
   an existing VM's ID is not a supported operation.
 

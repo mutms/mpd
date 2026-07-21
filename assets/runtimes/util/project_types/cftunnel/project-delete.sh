@@ -2,7 +2,7 @@
 # project-delete.sh <project-name>
 # cftunnel project type — runs at `mpd delete <project>`.
 # Stop + disable + remove the systemd unit. The project directory is
-# wiped by Swift after this script returns.
+# wiped by mpd after this script returns.
 
 set -euo pipefail
 

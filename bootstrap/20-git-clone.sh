@@ -39,8 +39,8 @@ ok "sudo -n true works"
 step "FHS directories: ${DEST} + ${STATE_DIR} (owned by ${USER_NAME})"
 # install -d is idempotent — creates the dir if missing, leaves alone if
 # present (and re-applies mode/owner). Chown'd to the dev user so git
-# clone, make install, mpd --setup all run without sudo from here on.
-# Subdirs (conf/, env/, state/) are created later by mpd --setup as
+# clone, make install, mpd --vm-setup all run without sudo from here on.
+# Subdirs (conf/, env/, state/) are created later by mpd --vm-setup as
 # needed and inherit the parent owner.
 sudo install -d -o "${USER_NAME}" -g "${GROUP_NAME}" -m 0755 "${DEST}"
 sudo install -d -o "${USER_NAME}" -g "${GROUP_NAME}" -m 0755 "${STATE_DIR}"

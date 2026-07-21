@@ -20,7 +20,8 @@ Each runtime directory typically contains:
 
 - `build.sh` — phase-2 build, runs as dev user with sudo for individual
   privileged ops. Required.
-- `configuration.json` — runtime IP, sidecar list, etc. Read by Swift.
+- `configuration.json` — runtime IP, sidecar list, etc. Read by the Go
+  control plane.
 - `mpd-defaults.env` — runtime-wide defaults for `MPD_*` env keys
   (see [docs/ARCHITECTURE.md §8](../../docs/ARCHITECTURE.md)).
 - `tools/` — runtime-wide executables on PATH inside the runtime.

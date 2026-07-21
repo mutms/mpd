@@ -18,7 +18,7 @@
 # fall-through from earlier layers (last-assignment-wins, even when empty).
 #
 # Runtime + type are read from /srv/meta/<project>/project.json (written by
-# Swift on every project configure/start). If that file is missing or fields
+# mpd on every project configure/start). If that file is missing or fields
 # are absent, layers 1+2 are silently skipped — layers 3+4 always load.
 #
 # SECURITY: env files are NOT bash-sourced. They are read line by line by a
@@ -66,7 +66,7 @@ _mpd_load_env_file() {
 }
 
 # Layer 1+2: runtime + type defaults. Read runtime/type from project.json
-# (written by Swift on configure/start). Both fields are required for the
+# (written by mpd on configure/start). Both fields are required for the
 # defaults files to load; if either is empty, defaults are silently skipped.
 _mpd_meta="/srv/meta/${PROJECT_NAME}/project.json"
 if [ -f "$_mpd_meta" ] && command -v jq >/dev/null 2>&1; then
@@ -93,7 +93,7 @@ unset -f _mpd_load_env_file
 # preference. A project that could set its own zone would get a cert and a
 # DNS record it isn't entitled to.
 #
-# Written by Swift (Mpd.VM.DataVolume.writeVMMeta) on every --setup/--start.
+# Written by mpd (cli.VMMeta) on every --vm-setup / --vm-start.
 # /var/lib/mpd/conf/platform.env — the original source — is deliberately not
 # mounted into containers, so the data volume is the only path in.
 _mpd_vm_meta="/srv/meta/vm.json"

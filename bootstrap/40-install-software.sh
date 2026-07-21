@@ -6,7 +6,7 @@
 # `make install`, plus a couple of niceties. Idempotent: apt-get install
 # on already-satisfied packages is a fast no-op.
 #
-# After this script completes, `mpd --setup` should never need apt
+# After this script completes, `mpd --vm-setup` should never need apt
 # itself — it just asserts these packages are present and fails loudly if
 # any are missing.
 
@@ -62,13 +62,11 @@ RUNTIME_PKGS=(
     bind9-dnsutils traceroute tcpdump lsof curl less vim-tiny psmisc
 )
 
-# Build deps for `make install`. swiftlang ships the Swift toolchain on
-# Trixie. libnss3-tools provides `certutil` for the Chromium NSS trust DB
-# (used by mpd --setup later). golang-go is for the in-progress Go port of
-# mpd — the VM has to be able to build both toolchains during the
-# transition, so they coexist rather than one replacing the other.
+# Build deps for `make install`. golang-go builds the mpd binary.
+# libnss3-tools provides `certutil` for the Chromium NSS trust DB, which
+# `mpd --vm-setup` writes the local CA into.
 BUILD_PKGS=(
-    build-essential pkg-config make swiftlang golang-go libnss3-tools
+    build-essential pkg-config make golang-go libnss3-tools
 )
 
 # qemu-guest-agent improves hypervisor↔guest integration on KVM/Parallels.

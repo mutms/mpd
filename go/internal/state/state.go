@@ -1,9 +1,9 @@
 // Package state reads mpd's persisted state under /var/lib/mpd/state/.
 //
-// These files are the contract shared between the Swift and Go binaries
-// during the port, and between mpd and out-of-process consumers (the
-// portal reads them read-only). Field names must match the Swift
-// Codable structs exactly.
+// These files are the contract between mpd and its out-of-process
+// consumers: the portal renders them read-only, and in-runtime shell
+// tools read them with jq. Renaming a field is a breaking change for
+// readers that mpd cannot see.
 //
 // Reading is deliberately forgiving: a missing file is an empty result,
 // not an error. `mpd list` on a VM that has never created a project
@@ -137,7 +137,7 @@ func (s Store) RuntimeNames() []string {
 	return names
 }
 
-// Config is VM-wide operator config, detected once at `mpd --setup`.
+// Config is VM-wide operator config, detected once at `mpd --vm-setup`.
 type Config struct {
 	UID  string `json:"uid"`
 	User string `json:"user"`
@@ -195,12 +195,6 @@ func readJSON(path string, v any) bool {
 // is worse than a missing one — readers would act on it — so writes go
 // to a temp file and are renamed into place, and every failure is
 // reported rather than swallowed.
-//
-// Note the on-disk formatting differs from the Swift implementation
-// (Swift emits `"key" : value`, Go emits `"key": value`). Both are valid
-// JSON and every consumer parses rather than pattern-matches, so the two
-// binaries interoperate; only a byte-comparison of the files would see a
-// difference.
 
 // SaveDatabases replaces databases.json.
 func (s Store) SaveDatabases(entries []Database) error {

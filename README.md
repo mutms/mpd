@@ -38,7 +38,7 @@ launch it from the SSH session you opened into the runtime; the
 agent shares the same files, same tools, same Moodle install the
 IDE is editing. SSH is a clean integration point — no filesystem-
 mount layer papering over the network, no debate about where the
-code "really" lives. (When the work is on **mpd itself** — Swift
+code "really" lives. (When the work is on **mpd itself** — Go
 sources, asset scripts — the agent runs in the VM instead, where
 the source checkout and toolchain live.)
 
@@ -146,8 +146,8 @@ resolver, CA trust) in one shot. Sibling `mpd-virt-linux` /
 ## What to expect, timing-wise
 
 - **First-time VM bootstrap**: 5–15 minutes depending on hypervisor
-  speed (image download, apt installs, Swift toolchain, build).
-- **First runtime build** after `mpd --setup`: 3–5 minutes (apt
+  speed (image download, apt installs, Go toolchain, build).
+- **First runtime build** after `mpd --vm-setup`: 3–5 minutes (apt
   installs for PHP/Node/etc. inside the runtime container).
 - **Subsequent project start** (`mpd start <project>`): a few seconds.
 - **`demo moodle v5.2.0`** (one-command fully-installed Moodle): a
@@ -159,12 +159,12 @@ resolver, CA trust) in one shot. Sibling `mpd-virt-linux` /
 ## Repository layout
 
 - `bin/` — local built binaries (`bin/mpd`)
-- `mpd/` — Swift control-plane sources (`Action/`, `VM/`, `Runtime/`, `Service/`, …)
+- `go/` — Go control-plane sources (`cmd/mpd/`, `internal/cli/`, `internal/vm/`, `internal/runtime/`, `internal/service/`, …)
 - `assets/` — runtime/service/sidecar definitions and shell scripts
 - `bootstrap/` — VM bring-up steps (passwordless sudo, repo clone, networking, apt, build)
 - `setup/` — per-platform host orchestration (sandbox + matched-host platforms)
 - `docs/` — full documentation tree
-- `/var/lib/mpd/` — runtime state at runtime (created by bootstrap, populated by `mpd --setup`)
+- `/var/lib/mpd/` — runtime state at runtime (created by bootstrap, populated by `mpd --vm-setup`)
 
 ## Documentation
 
@@ -184,7 +184,7 @@ predecessor ([MDC](https://github.com/skodak/mdc)) gave me speed
 and automation around OrbStack, but OrbStack is closed-source — and
 for a tool that decides what your browser trusts, I wanted the
 trust-deciding code to be readable. mpd lives entirely in this repo:
-Swift control plane plus shell tooling on top of Podman, with a
+Go control plane plus shell tooling on top of Podman, with a
 name-constrained local CA that can only sign for `*.mpd.test` (so a
 compromise can't impersonate anything else). Sandbox VM is the
 recommended starting point — a whole hypervisor between your dev
@@ -197,7 +197,7 @@ The design draws on 20 years of Moodle development, the OrbStack-era
 [MDC](https://github.com/skodak/mdc) tooling, and the
 [moodle-docker](https://github.com/moodlehq/moodle-docker) workflow as
 the public reference everyone reaches for first. mpd is also my first
-fully AI-driven project — the Swift binary, asset scripts, and
+fully AI-driven project — the Go binary, asset scripts, and
 documentation are mostly written by [Claude Code](https://claude.ai/code)
 (Anthropic) and [Codex](https://openai.com/codex/) (OpenAI) under my
 direction. Open source so other Moodle developers can adopt the same

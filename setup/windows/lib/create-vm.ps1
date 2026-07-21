@@ -162,7 +162,7 @@ Invoke-Ssh -User $VmUser -RemoteHost $VmIp -Command "mkdir -p /var/lib/mpd/conf/
 if ($LASTEXITCODE -ne 0) { throw "scp of CA cert failed." }
 & scp -o StrictHostKeyChecking=no -o BatchMode=yes $CaKey "${VmUser}@${VmIp}:/var/lib/mpd/conf/caroot/rootCA-key.pem"
 if ($LASTEXITCODE -ne 0) { throw "scp of CA key failed." }
-Write-Ok "Host CA uploaded (mpd --setup will reuse it)"
+Write-Ok "Host CA uploaded (mpd --vm-setup will reuse it)"
 
 # ── 11. Detach cloud-init ISO ─────────────────────────────────────────────────
 
@@ -216,12 +216,12 @@ Invoke-Ssh -User $VmUser -RemoteHost $VmIp `
 Write-Ok "mpd binary built"
 Write-Ok "Bootstrap complete"
 
-# ── 13. Run mpd --setup ───────────────────────────────────────────────────────
+# ── 13. Run mpd --vm-setup ───────────────────────────────────────────────────────
 
-Write-Step "Running 'mpd --setup'"
+Write-Step "Running 'mpd --vm-setup'"
 
-Invoke-Ssh -User $VmUser -RemoteHost $VmIp -Command "mpd --setup"
-Write-Ok "mpd --setup complete"
+Invoke-Ssh -User $VmUser -RemoteHost $VmIp -Command "mpd --vm-setup"
+Write-Ok "mpd --vm-setup complete"
 
 # ── 14. Login banner ──────────────────────────────────────────────────────────
 

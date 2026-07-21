@@ -67,7 +67,7 @@ func installZshCompletion(out io.Writer) {
 	if strings.Contains(current, "~/.zsh/completions") {
 		ui.Note(out, "~/.zshrc already includes ~/.zsh/completions in fpath.")
 	} else {
-		block := "\n# mpd completions (added by mpd --setup)\nfpath=(~/.zsh/completions $fpath)\n"
+		block := "\n# mpd completions (added by mpd --vm-setup)\nfpath=(~/.zsh/completions $fpath)\n"
 		// compinit must run after fpath is set, but only add it when the
 		// user's own config does not already call it — a second compinit
 		// is slow and can print warnings.
@@ -100,7 +100,7 @@ func installBashCompletion(out io.Writer) {
 
 	// The sentinel comment is what makes the append idempotent — bash
 	// has no fpath equivalent to test for.
-	const sentinel = "# mpd completions (added by mpd --setup)"
+	const sentinel = "# mpd completions (added by mpd --vm-setup)"
 	bashrc := filepath.Join(home, ".bashrc")
 	if strings.Contains(readOrEmpty(bashrc), sentinel) {
 		ui.Note(out, "~/.bashrc already sources ~/.bash_completion.d/mpd.")

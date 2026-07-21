@@ -1,12 +1,12 @@
 #!/bin/bash
-# bootstrap/70-update.sh
+# bootstrap/99-update.sh
 #
 # Refresh a running mpd VM to current `main`. Runs *after* initial
 # bootstrap has completed (i.e. the VM is already provisioned and the
 # `mpd` binary is on PATH). Invoked by `mpd-virt update <NNN>` over
 # SSH, but also fine to run by hand:
 #
-#     bash /opt/mpd/bootstrap/70-update.sh
+#     bash /opt/mpd/bootstrap/99-update.sh
 #
 # The contract for mpd-virt is "run this script, you'll be up to date".
 # Anything we ever need to add to the update flow — extra migrations,
@@ -19,17 +19,17 @@
 # When this script changes ITS OWN structure (adds a new step, reorders
 # them) one update cycle is not enough:
 #
-#   - bash reads 70-update.sh once when it starts. The git pull replaces
+#   - bash reads 99-update.sh once when it starts. The git pull replaces
 #     it on disk, but the running process keeps executing the old
 #     in-memory copy.
 #   - Every command invoked AFTER the pull (`bash 50-build.sh`,
-#     `mpd --setup`, …) is read fresh from disk and runs the NEW
+#     `mpd --vm-setup`, …) is read fresh from disk and runs the NEW
 #     version — so changes to those propagate in a single run.
 #   - But the orchestration in 70 itself (what to call, in what order)
 #     is whatever the originally-loaded copy said. A new step added
 #     inside 70 will only execute on the SECOND `mpd-virt update`.
 #
-# Worst case: run update twice when a release reshuffles 70-update.sh
+# Worst case: run update twice when a release reshuffles 99-update.sh
 # itself. If a release ever needs a one-shot migration that MUST run in
 # the same cycle as its code change, drop in the standard self-reexec
 # pattern right after the git pull:
@@ -61,11 +61,11 @@ bash "${SCRIPT_DIR}/20-git-clone.sh"
 step "Rebuilding mpd binary"
 bash "${SCRIPT_DIR}/50-build.sh"
 
-# --- Re-run mpd --setup --------------------------------------------------
+# --- Re-run mpd --vm-setup --------------------------------------------------
 # Picks up any in-mpd setup deltas: new services, new dnsmasq records,
 # updated container images, refreshed certificates. Idempotent.
 
-step "Re-running mpd --setup"
-mpd --setup
+step "Re-running mpd --vm-setup"
+mpd --vm-setup
 
 ok "Update complete."

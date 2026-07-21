@@ -126,8 +126,8 @@ phase:
 9. Detaches the cloud-init CD via `virsh change-media --eject` and
    restarts the VM.
 10. In-VM provisioning over SSH: 4 GB swap, build dependencies
-    (`build-essential`, `swiftlang`), `make install` of mpd, host CA
-    upload, `mpd --setup` (which installs podman, services, trust
+    (`build-essential`, `golang-go`), `make install` of mpd, host CA
+    upload, `mpd --vm-setup` (which installs podman, services, trust
     within the VM, **and the user-level `mpd.service` systemd unit**
     that auto-starts mpd on boot and graceful-stops on shutdown via
     `EventMpdPreStop` hooks; linger is enabled so the unit fires

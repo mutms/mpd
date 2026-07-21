@@ -36,18 +36,50 @@ import (
 // version is stamped at build time via -ldflags.
 var version = "dev"
 
-const usage = `mpd <options>
-mpd list       [projects|runtimes|services|dbs]   (default: projects)
-mpd help       <projectname>
-mpd create     <projectname> [--type=<type>] [--git-repo=<url>] [--git-branch=<branch>] [--git-depth=<n>]
-                              (default type: moodle)
-mpd configure  <projectname> [KEY=VALUE ...]
-                              (e.g. MPD_DB=postgres:18, MPD_PHP_VERSION=8.4)
-                              (full set lives in /srv/projects/<projectname>/mpd.env)
-mpd start      <projectname>
-mpd stop       <projectname>
-mpd delete     <projectname> [--yes]
-mpd show       <projectname>`
+// projectCommands is the verb-first half of the CLI: everything that
+// acts on one project.
+const projectCommands = `  show       <projectname>                     project details
+  create     <projectname> [--type=<type>] [--git-repo=<url>] [--git-branch=<branch>] [--git-depth=<n>]
+                                               (default type: moodle)
+  configure  <projectname> [KEY=VALUE ...]     (e.g. MPD_DB=postgres:18, MPD_PHP_VERSION=8.4;
+                                               full set lives in /srv/projects/<projectname>/mpd.env)
+  start      <projectname>
+  stop       <projectname>
+  delete     <projectname> [--yes]
+  help       <projectname>                     verb reference for one project`
+
+// otherCommands are the read-only queries that are neither a project
+// verb nor a VM action.
+const otherCommands = `  list       [projects|runtimes|services|dbs]  (default: projects)
+  net                                          this VM's container subnet and DNS zone
+  version                                      print the mpd version`
+
+// usage is the short form shown when a command is misspelled.
+const usage = `Usage:
+  mpd <flags>
+  mpd <verb> <projectname> [args...]
+
+Project commands:
+` + projectCommands
+
+// helpTemplate replaces cobra's default, which lists every command in one
+// undifferentiated block — including its own `completion` and `help`
+// entries — and buries the flags that are most of mpd's surface. The two
+// halves of the CLI are named instead: project verbs, then VM flags.
+const helpTemplate = `mpd — Moodle Plugin Development Environment
+
+Usage:
+  mpd <flags>
+  mpd <verb> <projectname> [args...]
+
+Project commands:
+` + projectCommands + `
+
+Other commands:
+` + otherCommands + `
+
+Flags:
+{{.LocalFlags.FlagUsages}}`
 
 // flags holds every global option. One struct rather than package-level
 // vars so the dispatch below reads as a single decision.
@@ -88,7 +120,6 @@ func main() {
 		Use:           "mpd",
 		Short:         "mpd — Moodle Plugin Development Environment",
 		Long:          "mpd — Moodle Plugin Development Environment",
-		Example:       usage,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          cobra.ArbitraryArgs,
@@ -96,6 +127,11 @@ func main() {
 			return dispatch(c, args, &f)
 		},
 	}
+
+	// Declaration order, not alphabetical: the help then reads as the
+	// groups below — VM lifecycle, runtimes, databases, modifiers —
+	// instead of interleaving them.
+	root.Flags().SortFlags = false
 
 	// VM lifecycle. The `--vm-` prefix names what they act on, so none of
 	// them can be mistaken for the project verb of the same name.
@@ -126,6 +162,11 @@ func main() {
 	root.Flags().BoolVar(&f.yes, "yes", false, "Skip confirmation prompts (for scripted use).")
 	root.Flags().BoolVar(&f.debug, "debug", false, "Print debug information.")
 
+	root.SetHelpTemplate(helpTemplate)
+	// cobra's generated `completion` command is noise here: mpd ships its
+	// own shims under assets/completions/, installed by --vm-setup.
+	root.CompletionOptions.DisableDefaultCmd = true
+
 	root.AddCommand(versionCmd(), netCmd(), listCmd())
 	root.AddCommand(projectVerbCmds(&f)...)
 	root.SetHelpCommand(helpCmd())
@@ -139,8 +180,8 @@ func main() {
 // dispatch runs whichever global flag was given.
 //
 // Order matches the flag groups above; at most one flag is acted on, and
-// a bare `mpd` with no flags falls through to status — the same fallback
-// the Swift implementation had, and a more useful answer than usage text.
+// a bare `mpd` with no flags falls through to status — a more useful
+// answer for someone who just typed `mpd` than usage text would be.
 func dispatch(c *cobra.Command, args []string, f *flags) error {
 	ctx := c.Context()
 	out := c.OutOrStdout()

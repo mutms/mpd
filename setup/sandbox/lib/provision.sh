@@ -7,7 +7,7 @@
 #   1. Runs the remaining bootstrap steps (30-50): networking, apt,
 #      build.
 #   2. Installs sandbox-specific tooling (VS Code).
-#   3. Runs `mpd --setup` to bring up podman networks, services, CA.
+#   3. Runs `mpd --vm-setup` to bring up podman networks, services, CA.
 #   4. Pre-warms a PHP runtime + postgres for fast first `demo moodle`.
 #   5. Drops GNOME desktop launchers.
 
@@ -34,7 +34,7 @@ bash "${REPO_DIR}/bootstrap/50-build.sh"
 # 50-build.sh prepends ~/.local/bin + /opt/mpd/bin to ~/.bashrc and also exports it
 # inside its own shell — but since we invoked it via `bash …` (a
 # subshell), the export doesn't reach us. Mirror it here so the
-# `mpd --setup` / `mpd --runtime-create` / `mpd --db-create` calls
+# `mpd --vm-setup` / `mpd --runtime-create` / `mpd --db-create` calls
 # below find the just-built binary without spawning a new login shell.
 export PATH="${REPO_DIR}/bin:${PATH}"
 
@@ -66,9 +66,9 @@ else
     ok "Installed: VS Code"
 fi
 
-# --- mpd --setup -------------------------------------------------------
-step "Running 'mpd --setup'"
-mpd --setup
+# --- mpd --vm-setup -------------------------------------------------------
+step "Running 'mpd --vm-setup'"
+mpd --vm-setup
 
 # --- Pre-warm (best-effort) -------------------------------------------
 step "Pre-warming demo runtime + database (best-effort)"

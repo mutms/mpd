@@ -89,7 +89,7 @@ One CA covers every VM — its name constraint (`permitted;DNS.0 =
 adding a VM needs no new trust operation.
 
 Changing an existing VM's ID is not a supported operation: the Podman
-network's subnet is fixed at create time, so `mpd --setup` refuses when
+network's subnet is fixed at create time, so `mpd --vm-setup` refuses when
 it finds a network that disagrees with the VM's id and prints the
 teardown/recreate steps.
 

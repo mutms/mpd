@@ -7,7 +7,7 @@
 # The Caddy frontdoor sidecar handles TLS termination + routing; nothing
 # in /etc/apache2/, /etc/hosts, or systemd is owned by the runtime.
 # DNS for the VM's zone is served by the dnsmasq service (out-of-runtime).
-# DB drop and source-tree removal happen on the host side via Swift.
+# DB drop and source-tree removal happen on the host side, in mpd.
 # Called by mpd delete <project>.
 set -euo pipefail
 

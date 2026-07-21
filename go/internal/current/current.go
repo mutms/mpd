@@ -9,7 +9,7 @@
 //     is needed and never persisted.
 //
 // Display layers join the two so divergence is visible: after a reboot
-// but before `mpd --start`, a project reads requested=running,
+// but before `mpd --vm-start`, a project reads requested=running,
 // current=stopped, which is what makes the pending reconciliation
 // legible instead of mysterious. Never persist a value from here into a
 // requested field. See docs/HOOKS.md §"Resource lifecycle model".

@@ -2,7 +2,7 @@
 
 Each subdirectory under `setup/` is a self-contained bootstrap that
 gets a VM to the point where
-`mpd --setup` can run. From there, the mpd flow is identical
+`mpd --vm-setup` can run. From there, the mpd flow is identical
 regardless of which path you took.
 
 The brand for the VM-mode product is **mpd VM**; this directory

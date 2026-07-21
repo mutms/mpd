@@ -38,8 +38,8 @@ func (p PsItem) Name() string {
 	return p.Names[0]
 }
 
-// Label reads one label, returning "" when absent — matching how the
-// Swift implementation treated a missing label.
+// Label reads one label, returning "" when absent. A missing label and
+// an empty one are the same thing to every caller here.
 func (p PsItem) Label(key string) string {
 	if p.Labels == nil {
 		return ""
@@ -112,8 +112,8 @@ const LabelManaged = "label=mpd.managed=true"
 // Ps lists containers matching a label filter, including stopped ones.
 //
 // A failed or unparseable listing yields an empty slice rather than an
-// error, mirroring the Swift behaviour: callers render "none found",
-// which is the truthful answer when podman cannot be asked.
+// error: callers render "none found", which is the truthful answer when
+// podman cannot be asked.
 func (c *Client) Ps(ctx context.Context, filter string) []PsItem {
 	res, err := c.run(ctx, []string{"ps", "-a", "--filter", filter, "--format", "json"})
 	if err != nil || res.Code != 0 {
@@ -173,7 +173,7 @@ func (c *Client) ContainerIP(ctx context.Context, name, network string) string {
 //
 // A network's subnet is fixed at creation, so this — not what mpd
 // currently computes — is the authority on what addresses containers on
-// it will get. `--setup` compares the two and refuses when they disagree.
+// it will get. `--vm-setup` compares the two and refuses when they disagree.
 func (c *Client) NetworkSubnet(ctx context.Context, name string) string {
 	res, err := c.run(ctx, []string{
 		"network", "inspect", name, "--format", "{{range .Subnets}}{{.Subnet}}{{end}}",
@@ -396,7 +396,7 @@ func (c *Client) NetworkCreate(ctx context.Context, name, subnet string, dnsServ
 // CA: each carries a revision label and a CA-fingerprint label, and a
 // mismatch on either means the running container is stale. A container
 // that matches on every checked label is left alone — that is the common
-// case on a repeat `--setup`, and rebuilding it would be pure churn.
+// case on a repeat `--vm-setup`, and rebuilding it would be pure churn.
 //
 // Reports whether anything was removed.
 func (c *Client) RemoveIfOutdated(ctx context.Context, name string, labels map[string]string) bool {

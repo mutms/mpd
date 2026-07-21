@@ -6,10 +6,9 @@
 // work, internal/service does container work — and a transcript that
 // changes shape halfway through reads as if something went wrong.
 //
-// Deliberately unconditional colour, matching the Swift implementation:
-// the two binaries are compared byte for byte during the port, and a
-// TTY-dependent escape sequence would make that comparison depend on how
-// the harness captured the output.
+// Colour is unconditional rather than TTY-dependent, so a transcript
+// captured through a pipe is identical to one seen on a terminal — which
+// is what makes setup output reproducible enough to diff.
 package ui
 
 import (

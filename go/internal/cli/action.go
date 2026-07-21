@@ -28,12 +28,12 @@ import (
 // every later step uses; then vm.json, so nothing reads stale addressing;
 // then the rest.
 //
-// Deliberately not idempotent-by-creation: `--start` starts what exists
-// and reports what does not. Creating things is `--setup`'s job, and
+// Deliberately not idempotent-by-creation: `--vm-start` starts what exists
+// and reports what does not. Creating things is `--vm-setup`'s job, and
 // conflating them would make the daily command unpredictably slow.
 func Start(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) error {
 	if _, err := os.Stat(stateDir); err != nil {
-		return fmt.Errorf("mpd is not set up yet. Run: mpd --setup")
+		return fmt.Errorf("mpd is not set up yet. Run: mpd --vm-setup")
 	}
 
 	fileaccess, _ := service.Find("fileaccess")
@@ -180,7 +180,7 @@ const StopSkipEnv = "MPD_STOP_DOES_NOT_SHUTDOWN_VM"
 //
 // One command, two callers needing opposite halves of the work:
 //
-//   - a human typing `mpd --stop` powers off, and must NOT fire hooks,
+//   - a human typing `mpd --vm-stop` powers off, and must NOT fire hooks,
 //     because powering off makes systemd stop mpd.service, whose
 //     ExecStop runs this same command again;
 //   - systemd's ExecStop fires the hooks, and must NOT power off — that
@@ -192,7 +192,7 @@ const StopSkipEnv = "MPD_STOP_DOES_NOT_SHUTDOWN_VM"
 // apart with no unit change and nothing to migrate.
 func Stop(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) error {
 	if _, err := os.Stat(stateDir); err != nil {
-		return fmt.Errorf("mpd is not set up yet. Run: mpd --setup")
+		return fmt.Errorf("mpd is not set up yet. Run: mpd --vm-setup")
 	}
 
 	if os.Getenv("INVOCATION_ID") != "" {
@@ -226,7 +226,7 @@ func Stop(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) er
 // would double up, which is the defect Stop above exists to avoid.
 func Restart(ctx context.Context, out io.Writer, stateDir string) error {
 	if _, err := os.Stat(stateDir); err != nil {
-		return fmt.Errorf("mpd is not set up yet. Run: mpd --setup")
+		return fmt.Errorf("mpd is not set up yet. Run: mpd --vm-setup")
 	}
 
 	fmt.Fprintln(out, "\n\033[1;33mRebooting VM\033[0m")

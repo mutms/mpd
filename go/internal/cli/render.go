@@ -1,7 +1,8 @@
 // Package cli renders mpd's terminal output.
 //
 // Output is a compatibility surface during the port: the Go binary is
-// verified by diffing its output against the Swift one, so column widths,
+// verified by diffing its output against the implementation it replaced,
+// so column widths,
 // separator lengths and status wording are reproduced deliberately rather
 // than redesigned. Change them after the flag day, not before.
 package cli
@@ -13,14 +14,14 @@ import (
 	"golang.org/x/term"
 )
 
-// Column widths, matching mpd/CLI/Status.swift.
+// Column widths, shared by every listing so the tables line up.
 const (
 	colService = 14
 	colStatus  = 12
 	colIP      = 16
 )
 
-// Col left-pads s to width w. Swift's `padding(toLength:)` truncates when
+// Col left-pads s to width w. The obvious implementation truncates when
 // the string is longer than the column; mpd's helper instead appends two
 // spaces so nothing is lost. Reproduced exactly.
 func Col(s string, w int) string {
@@ -42,7 +43,7 @@ const (
 
 // colorEnabled reports whether to emit ANSI colour: only for a real
 // terminal with a usable TERM. Piped output — including the differential
-// tests against the Swift binary — stays plain.
+// tests — stays plain.
 func colorEnabled() bool {
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		return false

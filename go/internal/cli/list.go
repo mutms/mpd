@@ -14,7 +14,8 @@ import (
 )
 
 // serviceFilter selects the always-on service containers. Note this is a
-// compose label rather than mpd.managed — kept as-is so the Go and Swift
+// compose label rather than mpd.managed — kept as-is so this and the
+// other listings
 // listings see exactly the same set.
 const serviceFilter = "label=com.docker.compose.project=mpd-service"
 

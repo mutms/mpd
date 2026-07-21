@@ -2,7 +2,7 @@
 // opposed to on containers.
 //
 // Everything here touches host state: /etc, the system trust store, the
-// dev user's home directory, systemd. It is the half of `mpd --setup`
+// dev user's home directory, systemd. It is the half of `mpd --vm-setup`
 // that podman knows nothing about. Container-side setup lives in
 // internal/service.
 //

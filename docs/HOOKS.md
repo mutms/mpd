@@ -1,6 +1,6 @@
 # Hooks
 
-API reference for mpd's hook system: typed Swift `Event` classes fire
+API reference for mpd's hook system: typed Go `Event` values fire
 at well-defined lifecycle points; bash scripts under
 `hooks/<event-name>.d/` in container assets observe them.
 
@@ -11,7 +11,7 @@ hooks, NetworkManager's `dispatcher.d/`. `run-parts`-style.
 
 Three nouns, no overlap:
 
-- **Event** — Swift class. The *thing that happens*. A verb handler
+- **Event** — Go struct value. The *thing that happens*. A verb handler
   constructs an event with typed context and fires it.
 - **Hook** — bash script. The *observer*. Lives on disk under
   `hooks/<event-name>.d/`, runs inside a container.
@@ -26,7 +26,7 @@ Events publish, hooks subscribe, audiences receive.
 Add a hook script to the right asset directory, make it executable.
 That's it — the dispatcher discovers it on the next event firing.
 
-Example: graceful postgres shutdown when `mpd --stop` runs:
+Example: graceful postgres shutdown when `mpd --vm-stop` runs:
 
 ```
 assets/databases/postgres/hooks/mpd-pre-stop.d/90-graceful-stop.sh
@@ -40,7 +40,7 @@ kill -TERM 1 2>/dev/null || true
 ```
 
 Run `chmod +x` on the file, then `mpd --check-hooks` to confirm it's
-recognised. `mpd --stop` will fire it.
+recognised. `mpd --vm-stop` will fire it.
 
 ## Resource lifecycle model
 
@@ -54,9 +54,9 @@ understanding *when* events fire:
 | Database | **No** — emergent from runtime + project records               | Computed from podman                  |
 | Service  | Always-on                                                      | Computed from podman                  |
 
-Reconciliation: `mpd --start` walks `requested` and brings `current`
+Reconciliation: `mpd --vm-start` walks `requested` and brings `current`
 into agreement. Stopping mpd or rebooting the VM preserves `requested`;
-`mpd --start` (or the systemd `mpd.service` unit at boot) restores
+`mpd --vm-start` (or the systemd `mpd.service` unit at boot) restores
 running state. See `docs/ARCHITECTURE.md` §5 for the full state model.
 
 DBs and services have no `requested` because they're emergent. DB
@@ -65,21 +65,21 @@ project on it might need) and `mpd --gc` (planned reclamation).
 
 ## Event catalogue
 
-| Event                   | Audience      | Failure     | Timeout | Fires                                                                |
-|-------------------------|---------------|-------------|---------|----------------------------------------------------------------------|
-| `EventMpdPreStop`       | `[.database]` | `.continue` | 120 s   | once during `mpd --stop`, before container teardown                  |
-| `EventProjectPreStart`  | `[.database]` | `.abort`    | 30 s    | per `mpd <p> start`, after runtime + DB are up, before project-setup |
-| `EventProjectPreStop`   | `[.runtime]`  | `.continue` | 30 s    | per `mpd <p> stop`, while project is still running                   |
-| `EventProjectPostStart` | `[.runtime]`  | `.continue` | 30 s    | per `mpd <p> start`, after project is recorded as running            |
+| Event                   | Audience            | Failure    | Timeout | Fires                                                                |
+|-------------------------|---------------------|------------|---------|----------------------------------------------------------------------|
+| `EventMpdPreStop`       | `AudienceDatabase`  | `Continue` | 120 s   | once during `mpd --vm-stop`, before container teardown                  |
+| `EventProjectPreStart`  | `AudienceDatabase`  | `Abort`    | 30 s    | per `mpd <p> start`, after runtime + DB are up, before project-setup |
+| `EventProjectPreStop`   | `AudienceRuntime`   | `Continue` | 30 s    | per `mpd <p> stop`, while project is still running                   |
+| `EventProjectPostStart` | `AudienceRuntime`   | `Continue` | 30 s    | per `mpd <p> start`, after project is recorded as running            |
 
 ### `EventMpdPreStop`
 
-Fires once during `mpd --stop`, before any container teardown. DB
+Fires once during `mpd --vm-stop`, before any container teardown. DB
 containers do graceful shutdown so the next start does not trigger
 crash recovery.
 
 - **Audience**: every running DB container on the host.
-- **Failure**: `.continue` — a stop must always complete.
+- **Failure**: `Continue` — a stop must always complete.
 - **Timeout**: 120 s. Longer than the 30 s default because a database
   flushing pending IO legitimately takes a while.
 - **Env vars**: just the standard set (no event-specific extras).
@@ -100,7 +100,7 @@ Fires per project start, after the runtime + project's DB are
 ensured up but before the project's `project-setup.sh` runs.
 
 - **Audience**: the project's DB container only.
-- **Failure**: `.abort` — pre-conditions should stop the verb if they
+- **Failure**: `Abort` — pre-conditions should stop the verb if they
   fail so the user sees the problem immediately.
 - **Timeout**: 30 s.
 - **Env vars** (in addition to the standard set):
@@ -118,7 +118,7 @@ custom DB roles.
 Fires per project stop, while the project's runtime is still running.
 
 - **Audience**: the project's runtime container only.
-- **Failure**: `.continue` — stops must always complete.
+- **Failure**: `Continue` — stops must always complete.
 - **Timeout**: 30 s.
 - **Env vars**: same as `EventProjectPreStart` (project, runtime,
   DB engine + version).
@@ -126,7 +126,8 @@ Fires per project stop, while the project's runtime is still running.
 Use cases: drain in-flight work, flush per-project caches, graceful
 shutdown of project-specific services running inside the runtime.
 Today's `sudo systemctl stop mpd-<project>` for project types with
-`stopSystemd: true` is still a Swift code path; that one-liner is a
+`stopSystemd: true` is still a Go control-plane code path
+(`go/internal/cli/project.go`); that one-liner is a
 candidate to migrate into a project-type hook here.
 
 ### `EventProjectPostStart`
@@ -135,7 +136,7 @@ Fires per project start, after the project is recorded as running and
 its URL is live.
 
 - **Audience**: the project's runtime container only.
-- **Failure**: `.continue` — the project is already started; a hook
+- **Failure**: `Continue` — the project is already started; a hook
   failure shouldn't undo that.
 - **Timeout**: 30 s.
 - **Env vars**: same as `EventProjectPreStart`.
@@ -149,11 +150,11 @@ Hook scripts live under `hooks/<event-name>.d/` in the layer that
 matches their audience kind:
 
 ```
-assets/runtime-base/hooks/<event>.d/                         # → .runtime audience, every runtime
-assets/runtimes/<rt>/hooks/<event>.d/                        # → .runtime audience, specific runtime
-assets/runtimes/<rt>/project_types/<type>/hooks/<event>.d/   # → .runtime audience, type-scoped
-assets/databases/<dbtype>/hooks/<event>.d/                   # → .database audience, per engine
-assets/services/<svc>/hooks/<event>.d/                       # → .service(name) audience
+assets/runtime-base/hooks/<event>.d/                         # → runtime audience, every runtime
+assets/runtimes/<rt>/hooks/<event>.d/                        # → runtime audience, specific runtime
+assets/runtimes/<rt>/project_types/<type>/hooks/<event>.d/   # → runtime audience, type-scoped
+assets/databases/<dbtype>/hooks/<event>.d/                   # → database audience, per engine
+assets/services/<svc>/hooks/<event>.d/                       # → service audience (named service)
 ```
 
 **Scripts must be named `*.sh`.** Anything else in the directory is
@@ -199,7 +200,7 @@ suffix is.
 Plus event-specific `MPD_HOOK_*` variables — see the catalogue.
 
 **Exit code**: `0` = success. Non-zero triggers the event's failure
-mode (`.abort` or `.continue`).
+mode (`Abort` or `Continue`).
 
 **stdout / stderr**: captured by the dispatcher and printed to the
 user. On failure, the full output is shown in the verb output. (A
@@ -211,72 +212,91 @@ The dispatcher is sequential within an audience (see "Limitations"),
 so a hook can assume earlier hooks in its layer chain have already
 completed.
 
-## Swift API
+## Go API
 
-Add an event by defining a struct that conforms to `Mpd.Hooks.Event`:
+An event is a value of the `hooks.Event` struct, built by a constructor
+function rather than declared as a type:
 
-```swift
-struct EventXxxYyy: Mpd.Hooks.Event {
-    // Optional context — surfaced to hook scripts as MPD_HOOK_* vars.
-    let project: String
+```go
+// hooks.Event — one typed lifecycle moment.
+type Event struct {
+    Name       string                    // kebab-case, matches <name>.d
+    Revision   int                       // surfaced as MPD_HOOK_REVISION
+    Timeout    time.Duration             // zero means DefaultTimeout
+    Audiences  []AudienceKind            // fired in declared order
+    OnFailure  FailureMode               // Abort or Continue
+    Env        map[string]string         // exported as MPD_HOOK_<KEY>
+    Containers func(AudienceKind) []string // audience → container names
+    ServiceName string                   // scopes AudienceService
+}
+```
 
-    // Audience list. Multiple audiences = event delivered to each kind.
-    static let audiences: [Mpd.Hooks.Audience] = [.runtime]
+Constants: audiences are `AudienceRuntime`, `AudienceDatabase`,
+`AudienceService`; failure modes are `Abort` and `Continue`; timeouts
+default to `DefaultTimeout` (30 s), with `StopTimeout` (120 s) used by
+`mpd-pre-stop`.
 
-    // Failure mode — abort the firing verb, or continue past failures.
-    static let onFailure: Mpd.Hooks.FailureMode = .continue
+Add an event by writing a constructor in `events.go` that returns a
+populated `Event`:
 
-    // Optional overrides; sensible defaults via the protocol.
-    // static let revision: Int = 1
-    // static let timeout: TimeInterval = 30
-
-    var env: [String: String] {
-        // Map context fields to MPD_HOOK_<key> env vars.
-        // The dispatcher prefixes with "MPD_HOOK_".
-        ["PROJECT": project]
+```go
+// EventXxxYyy is the event name constant; the constructor fills in the
+// audience, failure mode and env.
+func XxxYyy(ctx context.Context, pr Project, p *podman.Client) Event {
+    return Event{
+        Name:      EventXxxYyy,
+        Revision:  1,
+        Audiences: []AudienceKind{AudienceRuntime},
+        OnFailure: Continue,
+        // Keys are prefixed with MPD_HOOK_ by the dispatcher.
+        Env: map[string]string{"PROJECT": pr.Name},
+        // Resolve the audience to the containers to fire into.
+        Containers: func(a AudienceKind) []string { ... },
     }
 }
 ```
 
 Fire from a verb handler:
 
-```swift
-try Mpd.Hooks.fire(
-    EventXxxYyy(project: name),
-    verb: "start"
-)
+```go
+err := hooks.Fire(ctx, out, hooks.XxxYyy(ctx, pr, p), "start", p)
 ```
+
+`Fire` takes the context, the writer progress lines go to, the event,
+the verb name that fired it, and the podman client. It returns a
+non-nil error only when a failing hook aborted the verb.
 
 The dispatcher:
 
-1. Resolves the audience containers (running containers matching each
-   audience kind, scoped to the project's runtime/DB for project-level
-   events).
+1. Resolves the audience containers via the event's `Containers`
+   function (running containers matching each audience kind, scoped to
+   the project's runtime/DB for project-level events).
 2. For each container, walks the layered hook directories, sorts by
    layer + numeric-prefix order, and execs each script via
    `podman exec` with `MPD_HOOK_*` env vars set.
-3. Handles failures per `onFailure`: `.abort` rethrows; `.continue`
-   logs and proceeds.
+3. Handles failures per `OnFailure`: `Abort` returns the error;
+   `Continue` logs and proceeds.
 
-The full type definitions live in `mpd/Hooks/Hooks.swift`. Concrete
-event classes are in `mpd/Hooks/Event{Mpd,Project,Runtime}.swift`.
+The dispatcher and type definitions live in
+`go/internal/hooks/hooks.go`. The event constructors are in
+`go/internal/hooks/events.go`.
 
 ## Failure modes
 
-- **`.abort`** — hook exit code `!= 0` aborts the firing verb. Use for
+- **`Abort`** — hook exit code `!= 0` aborts the firing verb. Use for
   pre-conditions where continuing would be incorrect (e.g. project
   start when its DB pre-flight failed — better to stop visibly than
   let the project come up half-broken).
-- **`.continue`** — hook exit code `!= 0` is logged but the verb
+- **`Continue`** — hook exit code `!= 0` is logged but the verb
   proceeds. Use for cleanup-style and post-state events: any `*PreStop`
   (the verb has to finish stopping), any `*PostStart` (the resource is
   already started), any `MpdPreStop` (mpd has to power off regardless).
 
 ## Diagnostics
 
-The dispatcher knows the full Swift event catalogue and can walk the
+The dispatcher knows the full Go event catalogue and can walk the
 filesystem for installed hook scripts. Cross-referencing the two on
-`mpd --setup` (and on demand via `mpd --check-hooks`) produces three
+`mpd --vm-setup` (and on demand via `mpd --check-hooks`) produces three
 classes of warning:
 
 - **Orphan hook (event removed)** — `hooks/<event>.d/` exists for an
@@ -286,7 +306,7 @@ classes of warning:
   layer's container kind is no longer in the event's audiences.
   → "Hook X subscribed to event Y, but Y no longer fires on this audience."
 - **Revision bump** — event's `revision` increased since the last
-  `mpd --setup` run (tracked in `/var/lib/mpd/hooks-state.json`).
+  `mpd --vm-setup` run (tracked in `/var/lib/mpd/hooks-state.json`).
   → "Event X revised; review env-var contract for hooks under hooks/X.d/."
 
 Diagnostics are warnings, never hard failures — orphan hooks just
@@ -295,7 +315,7 @@ working.
 
 ## Systemd integration
 
-`mpd --setup` (machine path, including sandbox) installs a user-level
+`mpd --vm-setup` (machine path, including sandbox) installs a user-level
 `mpd.service` unit at `~/.config/systemd/user/mpd.service` that
 brackets the VM lifecycle:
 
@@ -308,8 +328,8 @@ Before=shutdown.target reboot.target halt.target suspend.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=-/home/<user>/Developer/mpd/bin/mpd --start
-ExecStop=/home/<user>/Developer/mpd/bin/mpd --stop
+ExecStart=-/home/<user>/Developer/mpd/bin/mpd --vm-start
+ExecStop=/home/<user>/Developer/mpd/bin/mpd --vm-stop
 TimeoutStartSec=300
 TimeoutStopSec=180
 
@@ -321,20 +341,20 @@ Plus `loginctl enable-linger <devuser>` so the user systemd manager
 runs at boot and survives logout.
 
 **At boot**: user systemd starts → `default.target` → `mpd.service`
-ExecStart fires `mpd --start`, which reconciles every runtime + project
+ExecStart fires `mpd --vm-start`, which reconciles every runtime + project
 in `requested=running` state back to live containers (and pre-warms
 their DBs). The dev user can SSH in seconds later and find the env
 already up.
 
 **At shutdown**: `shutdown -h now`, `poweroff`, `reboot`,
-`mpd --restart`, GNOME shutdown menu, and `virsh shutdown <vm>` all
-trigger `mpd --stop` via the unit's ExecStop. That fires
+`mpd --vm-restart`, GNOME shutdown menu, and `virsh shutdown <vm>` all
+trigger `mpd --vm-stop` via the unit's ExecStop. That fires
 `EventMpdPreStop`, which lets DBs shut down gracefully so the next
 boot doesn't trigger crash recovery.
 
 The leading `-` on `ExecStart` makes start failures non-fatal — the
 unit still goes active, so the ExecStop graceful-stop path is never
-lost even if a previous boot's `mpd --start` had a hiccup.
+lost even if a previous boot's `mpd --vm-start` had a hiccup.
 
 **Not covered**: hypervisor force-stop, hard reset, power loss.
 Those bypass systemd entirely; postgres comes up doing crash recovery
@@ -372,25 +392,25 @@ What's deferred from v1, called out so hook authors aren't surprised:
   shown after-the-fact, not streamed. For debugging hangs, use
   `podman logs <container>` or shell into the container directly.
 
-Adding any of these is purely an engine change — no event class or
-hook script needs to be updated to pick up the improvement.
+Adding any of these is purely an engine change — no event constructor
+or hook script needs to be updated to pick up the improvement.
 
 ## Adding a new event
 
 1. **Decide the audience and failure mode.** Audiences are
-   `.runtime`, `.database`, `.service(name)`. Failure mode is `.abort`
-   for pre-conditions, `.continue` for cleanup-style or post-state.
-2. **Add a Swift struct** conforming to `Mpd.Hooks.Event` in the
-   appropriate file under `mpd/Hooks/`:
-   - `EventMpd.swift` for environment-wide events (`Mpd*`)
-   - `EventProject.swift` for project-scoped events (`Project*`)
-   - `EventRuntime.swift` for runtime-scoped events (`Runtime*`)
-3. **Register in the catalogue.** Add `.init(EventXxx.self)` to
-   `Mpd.Hooks.catalogue` in `mpd/Hooks/HooksDiagnostic.swift` so the
+   `AudienceRuntime`, `AudienceDatabase`, `AudienceService`. Failure
+   mode is `Abort` for pre-conditions, `Continue` for cleanup-style or
+   post-state.
+2. **Add the event name constant and a constructor** returning a
+   `hooks.Event` in `go/internal/hooks/events.go` — environment-wide
+   events are named `Mpd*`, project-scoped ones `Project*`,
+   runtime-scoped ones `Runtime*`.
+3. **Register in the catalogue.** Add a `CatalogueEntry` to
+   `hooks.Catalogue()` in `go/internal/hooks/diagnose.go` so the
    diagnostic engine knows about it.
 4. **Fire from the relevant verb handler.** Single line:
-   `try Mpd.Hooks.fire(EventXxx(...), verb: "<verb>")`.
-5. **Build + `make check`.** Boundary guards stay green.
+   `hooks.Fire(ctx, out, hooks.XxxYyy(...), "<verb>", p)`.
+5. **`make install` + `make vet test`.** Build and checks stay green.
 6. **Document.** Add a subsection in this file's "Event catalogue"
    matching the existing format (one-line summary, audience, failure
    mode, timeout, env vars, use cases).

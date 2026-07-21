@@ -31,9 +31,9 @@ ensure_wsl_deps() {
 # --- CA generation ---
 # generate_mpd_ca KEY_PATH CERT_PATH
 #
-# Bash twin of Mpd.VM.Certificate.generateCA in mpd/VM/Certificate.swift.
-# DN, v3_ca extensions, and nameConstraints must stay in sync with the Swift
-# version so mpd --setup can detect and reuse a host-generated CA.
+# Bash twin of cert.GenerateCA in go/internal/cert/ca.go.
+# DN, v3_ca extensions, and nameConstraints must stay in sync with the Go
+# version so mpd --vm-setup can detect and reuse a host-generated CA.
 
 generate_mpd_ca() {
     local key_path="$1" cert_path="$2"

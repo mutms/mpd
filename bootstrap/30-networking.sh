@@ -18,7 +18,7 @@
 #     be converted from NetworkManager during template prep).
 #   - systemd-resolved owns DNS.
 #   - libnss-resolve plugs glibc NSS into resolved.
-# This matches what the in-VM `mpd --setup` asserts is in place.
+# This matches what the in-VM `mpd --vm-setup` asserts is in place.
 
 set -euo pipefail
 

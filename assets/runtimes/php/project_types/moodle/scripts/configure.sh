@@ -1,7 +1,7 @@
 #!/bin/bash
 # configure.sh <project-name>
-# Idempotent project repair/configuration for Moodle. Run by Swift's
-# `mpd configure <project>` after Swift has applied any KEY=VALUE mutations
+# Idempotent project repair/configuration for Moodle. Run by
+# `mpd configure <project>` after mpd has applied any KEY=VALUE mutations
 # to /srv/projects/<project>/mpd.env.
 #
 # Responsibilities:
@@ -14,7 +14,7 @@
 #   - Allocate FPM port
 #   - Emit /srv/meta/<project>/urls.json + effective.json
 #
-# Swift reads effective.json's dbTag (and re-sanitises) to provision the DB
+# mpd reads effective.json's dbTag (and re-sanitises) to provision the DB
 # container. dbTag empty (or missing) means "no DB for this project".
 set -euo pipefail
 
@@ -29,9 +29,9 @@ if [ ! -d "$PROJECT_DIR" ]; then
     exit 1
 fi
 
-# /srv/meta/<project>/ holds urls.json + effective.json (read by Swift, the
+# /srv/meta/<project>/ holds urls.json + effective.json (read by mpd, the
 # caddy sidecar, and the FPM provisioner) plus cert.pem/key.pem/project.json
-# that Swift writes via volumeToolRun (--user <uid>:<uid>). /srv/meta is
+# that mpd writes through the fileaccess container (--user <uid>:<uid>). /srv/meta is
 # dev-owned (mode 0775) by fileaccess provisioning, so plain mkdir works.
 mkdir -p "/srv/meta/${PROJECT_NAME}"
 
@@ -46,7 +46,7 @@ PHP_VER="${MPD_PHP_VERSION}"
 BEHAT="${MPD_PHP_MOODLE_BEHAT}"
 
 # MPD_DB (docker tag form): "postgres", "postgres:17", "postgres:latest", or
-# "" (empty = no DB). Bare engine expands to engine:latest. Swift re-validates
+# "" (empty = no DB). Bare engine expands to engine:latest. mpd re-validates
 # on the read side, so this script can be lenient about edge cases.
 DB_TAG="${MPD_DB:-}"
 DB_ENGINE=""
@@ -236,7 +236,7 @@ URLS="${URLS}"'
 ]'
 echo "$URLS" > "/srv/meta/${PROJECT_NAME}/urls.json"
 
-# --- effective.json — Swift reads dbTag/dbEngine to provision the container ---
+# --- effective.json — mpd reads dbTag/dbEngine to provision the container ---
 cat > "${EFFECTIVE_FILE}" <<EOF
 {
   "phpVersion": "${PHP_VER}",

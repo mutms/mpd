@@ -74,8 +74,8 @@ Then:
   3. Prepares a cloud-init seed ISO (user, SSH key, static IP).
   4. Creates a Hyper-V Generation 2 VM and boots it.
   5. Waits for cloud-init to finish, then clones the mpd repository
-     inside the VM, installs Swift and build tools, builds mpd, and
-     runs "mpd --setup" (CA certificate, container network, services).
+     inside the VM, installs Go and build tools, builds mpd, and
+     runs "mpd --vm-setup" (CA certificate, container network, services).
   6. Configures Windows networking: static route to the container
      subnet, DNS rule for *.<NNN>.mpd.test, and imports the mpd CA
      certificate so browsers trust https://<NNN>.mpd.test without warnings.
@@ -231,7 +231,7 @@ The simplest path is scp:
 
 For bulk transfers, the mpd fileaccess service exposes /srv/backups/
 inside the VM as an SSH endpoint at fileaccess.service.<NNN>.mpd.test after
-"mpd --setup" has run.
+"mpd --vm-setup" has run.
 
 Do not copy private keys or the caroot/ directory out of the VM.
 Private material stays in /var/lib/mpd/conf/ inside the VM.

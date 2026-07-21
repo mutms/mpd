@@ -73,8 +73,8 @@ USER_HOME="/home/${EXTUSER}"
 #
 # /var/lib/mpd/ on the VM is bind-mounted at the same path inside this
 # container (well, only /var/lib/mpd/env/ is — the rest isn't visible
-# here). The /var/lib/mpd/skel/ tree is mounted RO via Mpd.skelMountRO
-# (see Runtime.swift) so this script can read it.
+# here). The /var/lib/mpd/skel/ tree is mounted RO via podman.SkelMountRO
+# (see go/internal/runtime/runtime.go) so this script can read it.
 #
 # cp -aT copies CONTENTS of src into dst (the trailing T is important —
 # without it cp would create /home/<user>/skel/ instead of merging into

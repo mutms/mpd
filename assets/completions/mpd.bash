@@ -1,7 +1,7 @@
 # mpd bash completion shim.
 #
 # Forwards to `mpd --complete` for the actual candidate set — see
-# mpd/CLI/Complete.swift. Adding new flags/verbs only needs Swift edits;
+# go/internal/cli/complete.go. Adding new flags/verbs only needs Go edits;
 # this shim doesn't have to change.
 
 _mpd() {

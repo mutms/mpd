@@ -97,7 +97,7 @@ func WritePlatformTo(path string, id PlatformIdentity) error {
 		"MPD_PLATFORM=" + id.Platform + "\n" +
 		"MPD_VM_IP=" + id.VMIP + "\n" +
 		"# 3-digit VM identifier used in pod/container/hostname names.\n" +
-		"# Auto-derived from the VM hostname (mpd-<NNN>) at --setup; edit\n" +
+		"# Auto-derived from the VM hostname (mpd-<NNN>) at --vm-setup; edit\n" +
 		"# to override. Runtime containers are named mpd-<NNN>-<runtime>.\n" +
 		"MPD_VM_ID=" + id.VMID + "\n"
 	if len(preserved) > 0 {
@@ -112,7 +112,7 @@ func WritePlatformTo(path string, id PlatformIdentity) error {
 // The hostname is the authority, not platform.env: it is what the
 // hypervisor-side bootstrap set, it is what the user sees in their
 // prompt, and a VM cloned to a new identity gets a new hostname. `mpd
-// --setup` re-derives on every run and writes the result back, so a
+// --vm-setup` re-derives on every run and writes the result back, so a
 // hand-edited MPD_VM_ID survives only until the next setup.
 //
 // Returns "" when the hostname is not of the form mpd-<NNN>, which the

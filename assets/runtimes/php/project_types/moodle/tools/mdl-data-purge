@@ -8,7 +8,7 @@
 # Preserves:
 #   - mpd.env (user may edit DB / PHP / Behat options before re-configure)
 #   - Source tree
-#   - /srv/meta/<project>/{cert.pem,key.pem,project.json} (Swift-owned)
+#   - /srv/meta/<project>/{cert.pem,key.pem,project.json} (mpd-owned)
 #   - /etc/php/.../pool.d/mpd-<project>.conf (project-setup.sh rewrites
 #     it on next `mpd start <project>`)
 #

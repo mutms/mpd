@@ -15,7 +15,7 @@ import (
 // Revision labels let setup tell a container built by an older mpd from
 // one built by this mpd. Bump the relevant one whenever a service's
 // image, mounts, command or environment change: the label mismatch is
-// what makes `--setup` rebuild the container instead of reporting an
+// what makes `--vm-setup` rebuild the container instead of reporting an
 // out-of-date one as healthy.
 const (
 	RevisionLabel      = "mpd.service.revision"

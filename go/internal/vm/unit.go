@@ -9,7 +9,7 @@ import (
 )
 
 // UnitBody renders the systemd user unit that brackets the VM lifecycle:
-// `mpd --start` at boot, `mpd --stop` on shutdown, reboot and suspend.
+// `mpd --vm-start` at boot, `mpd --vm-stop` on shutdown, reboot and suspend.
 //
 // The shutdown half is the point. Without it podman SIGTERMs the
 // database containers mid-flight during teardown, and the next boot
@@ -18,7 +18,7 @@ import (
 //
 // `ExecStart=-` (the leading dash) makes a failed boot-time start
 // non-fatal, so the unit still reaches active and ExecStop still fires
-// on shutdown. Worst case the developer runs `mpd --start` by hand —
+// on shutdown. Worst case the developer runs `mpd --vm-start` by hand —
 // what must never be lost is the graceful-stop path.
 //
 // A USER unit, not a system one: the privilege rule forbids identity
@@ -33,8 +33,8 @@ Before=shutdown.target reboot.target halt.target suspend.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=-` + binary + ` --start
-ExecStop=` + binary + ` --stop
+ExecStart=-` + binary + ` --vm-start
+ExecStop=` + binary + ` --vm-stop
 TimeoutStartSec=300
 TimeoutStopSec=180
 

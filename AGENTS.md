@@ -30,9 +30,10 @@ macOS-host orchestrator (`mpd-virt`) that drives Parallels lives in a
 separate repository.
 
 **Implementation note:** sandbox and mpd VM share the same
-`mpd/Action/` + `mpd/VM/` code paths; sandbox is `PlatformKind.sandbox`
-and from the user's perspective is a distinct mode, but the codebase
-treats it as a Machine-flavored variant.
+`go/internal/cli/` + `go/internal/vm/` code paths; sandbox is
+`MPD_PLATFORM=sandbox` in platform.env, and from the user's perspective
+is a distinct mode, but the codebase treats it as a variant of the
+managed one.
 
 Read `README.md` first for the user-facing overview.
 
@@ -71,21 +72,30 @@ shell config, NSS DB) stay in `$HOME` and are not mpd's responsibility.
 
 ## Code layout
 
-The Swift binary lives under `mpd/`. Each subdirectory is a `Mpd.<X>` namespace:
+The binary is Go, built from `go/` into `bin/mpd` by `make install`:
 
-- `mpd/CLI/` — command handlers, status rendering, completion (`Mpd.Completion`)
-- `mpd/Action/` — top-level lifecycle verbs (`Mpd.Action.{Setup,Start,Stop,Restart,Status}`)
-- `mpd/VM/` — VM-host operations (paths, `Mpd.VM.exec/capture`, identity,
-  shutdown unit) plus sub-namespaces (`DNS`, `Certificate`, `DataVolume`,
-  `Platform`, `Config`)
-- `mpd/Runtime/` — runtime/project orchestration, sidecar reconciliation
-- `mpd/Service/` — always-on infra services (dnsmasq, portal, adminer,
-  fileaccess)
-- `mpd/Hooks/` — typed `Event` lifecycle hooks + asset-side `hooks/<event>.d/` dispatch
-- `mpd/TUI/` — interactive terminal UI
-- `mpd/Util/` — Podman shell-out gateway (`Mpd.Podman.*`) and other utilities
-- `mpd/Mpd.swift` — namespace root (open this file to see the full API surface)
-- `mpd/main.swift` — CLI entry, ArgumentParser dispatch
+- `go/cmd/mpd/main.go` — CLI entry: the flag set, the project verbs, dispatch
+- `go/internal/cli/` — command implementations, listing and status
+  rendering, setup orchestration, completion candidates
+- `go/internal/vm/` — VM-host operations (fixed paths, identity,
+  platform.env, CA trust stores, resolver drop-in, motd, shutdown unit)
+- `go/internal/runtime/` — runtime provisioning and its state cache
+- `go/internal/project/` — project scaffolding, env mutation, certs, rescan
+- `go/internal/service/` — always-on infra services (dnsmasq, portal,
+  adminer, fileaccess)
+- `go/internal/db/` — DB containers: tags, images, allocation, lifecycle
+- `go/internal/sidecar/` — per-runtime-pod sidecar reconciliation
+- `go/internal/hooks/` — typed `Event` lifecycle hooks + asset-side
+  `hooks/<event>.d/` dispatch
+- `go/internal/state/` — the JSON state files under `/var/lib/mpd/state/`
+- `go/internal/current/` — observed (as opposed to requested) state
+- `go/internal/dnsmasq/` — DNS record fragments
+- `go/internal/net/` — per-VM addressing: the single source of truth
+- `go/internal/assets/` — reads the `assets/` tree
+- `go/internal/podman/` — the Podman gateway (see the mandatory rule below)
+- `go/internal/exec/` — the ONLY package that runs host commands
+- `go/internal/cert/` — CA and leaf certificate generation
+- `go/internal/ui/` — the step/ok/warn output shapes
 
 Runtime/project-type behavior + service container assets live under `assets/`:
 - `assets/machine/` — VM-level assets deployed to the mpd VM itself
@@ -125,11 +135,11 @@ across docs.
 
 ## Mandatory architecture rule
 
-`Mpd.Podman` is the single shared gateway for container operations. Direct
-host-OS command execution is allowed only inside `mpd/VM/Exec.swift`.
-Other layers (CLI, Runtime, Service, Core) must not shell out directly — they
-request via Podman or environment APIs. Full rule + review checklist in
-`docs/ARCHITECTURE.md` §"Mandatory Constraint".
+`go/internal/podman` is the single shared gateway for container
+operations, and `go/internal/exec` is the only package permitted to run a
+host command at all. Every other package (cli, runtime, project, service,
+vm) must not shell out directly — they ask one of those two. Full rule +
+review checklist in `docs/ARCHITECTURE.md` §"Mandatory Constraint".
 
 ## Mandatory privilege rule
 
@@ -139,7 +149,7 @@ plus passwordless sudo.
 
 1. **Scripts run as the dev user.** Every shell asset under
    `assets/` and `mpd-virt/` is invoked as the dev user. The
-   orchestrator (Swift's `podman exec -u <user>`, host-side ssh, etc.)
+   orchestrator (mpd's `podman exec -u <user>`, host-side ssh, etc.)
    is responsible for setting that identity at exec time. Scripts do
    not change identity themselves.
 2. **`sudo` is for individual privileged commands only**, executed
@@ -171,8 +181,8 @@ plus passwordless sudo.
 rule (1) can hold. Exactly one root-context script,
 `assets/runtime-base/bootstrap.sh`, runs before the dev user exists
 and creates it (along with sudoers, sshd, /etc/mpd identity, /srv
-layout). The orchestrator (`Mpd.Runtime` provisioning step) is the
-only caller. After it returns, phase 2 — `assets/runtimes/<rt>/build.sh`
+layout). The orchestrator (the `go/internal/runtime` provisioning
+step) is the only caller. After it returns, phase 2 — `assets/runtimes/<rt>/build.sh`
 — runs as the dev user via `podman exec -u <user>`. Nothing else
 may invoke a script as root.
 
@@ -181,11 +191,12 @@ may invoke a script as root.
 - Keep changes scoped to the requested task. No drive-by refactors.
 - Update affected docs when moving/renaming files.
 - Prefer additive asset changes for runtime/project-type behavior; reserve
-  Swift edits for control-plane, state, networking, and orchestration.
+  Go edits for control-plane, state, networking, and orchestration.
 - Prefer deterministic behavior over convenience fallbacks.
 - Avoid cross-file doc duplication; link to canonical owners.
-- For shell completion, edit `mpd/CLI/Complete.swift` — the shims under
-  `assets/completions/` are stable forwarders and rarely need to change.
+- For shell completion, edit `go/internal/cli/complete.go` — the shims
+  under `assets/completions/` are stable forwarders and rarely need to
+  change.
 - **Each `setup/<name>/` directory must stay
   self-contained** — it's released as a small standalone bundle (a
   handful of `.sh` / `.ps1` / `.cmd` plus a README) and dropped onto a
@@ -212,7 +223,7 @@ this section is the "how to write one" follow-up.
 > runtime container can't do for itself. Otherwise it's a **tool**.
 
 Almost everything is a tool. The verb set is fixed and tiny — `create`,
-`configure`, `start`, `stop`, `delete`, `show` — all Swift, all in the
+`configure`, `start`, `stop`, `delete`, `show` — all Go, all in the
 control plane. Project-type-specific functionality (cron, phpunit,
 composer, …) is exposed inside the runtime container where SSH sessions
 and AI agents run; you reach it via PATH after `ssh user@<runtime>.runtime.<NNN>.mpd.test`.
@@ -223,26 +234,31 @@ Write only the tool.
 
 ### Adding a verb (rare)
 
-Verbs are **Swift**, in `mpd/Runtime/`, `mpd/CLI/`, etc. The dispatch
-table is `Mpd.Project.dispatch` in `mpd/Runtime/Project.swift`; the
-public verb set is `projectVerbs` in `mpd/main.swift`.
+Verbs are **Go**. Each one is a cobra command registered on the root in
+`projectVerbCmds` (`go/cmd/mpd/main.go`); the handler it calls lives in
+`go/internal/cli/project.go`.
 
 To add a new verb:
 
-- Add a Swift handler (a static func on `Mpd.Project`) in the
-  appropriate file (`ProjectLifecycle.swift` for lifecycle-shaped
-  things, `ProjectOperations.swift` otherwise).
-- Add the verb name to `projectVerbs` in `mpd/main.swift`.
-- Add a dispatch case in `Mpd.Project.dispatch`.
-- Update `Mpd.Project.showHelp` so the per-project `--help` lists it.
-- Update `mpd/CLI/Complete.swift` for shell completion (verb name +
-  any flag suggestions in `verbArgCandidates`).
+- Add the handler func in `go/internal/cli/project.go`, taking
+  `cli.ProjectDeps` like its neighbours.
+- Add the cobra command to `projectVerbCmds` in `go/cmd/mpd/main.go`.
+- Add the verb name to `cli.ProjectVerbs` in
+  `go/internal/cli/complete.go` — that list is what reserves the name so
+  a project can never collide with a verb, and what completion offers.
+- Add it to `cli.ShowHelp` (`go/internal/cli/project.go`) so
+  `mpd help <project>` lists it, and to the `projectCommands` block in
+  `go/cmd/mpd/main.go` so `mpd --help` does.
+- Add any flag suggestions to `verbArgs` in
+  `go/internal/cli/complete.go`.
 - Update `docs/CLI_BEHAVIOR.md` and the `Day-to-day commands` section
   in `docs/USAGE.md` if it belongs in the daily surface.
 
-Global flags (`mpd --foo`) live in `mpd/main.swift` (the
-`GlobalCommand` ParsableCommand) plus a handler under
-`mpd/CLI/CommandHandlers/`.
+Global flags (`mpd --foo`) are declared on the root command in
+`go/cmd/mpd/main.go` and acted on in its `dispatch` func. A flag that
+acts on the VM itself takes the `--vm-` prefix (`--vm-setup`,
+`--vm-stop`) so it can never be confused with the project verb of the
+same name. Add it to `globalFlags` in `go/internal/cli/complete.go` too.
 
 ### Adding a tool
 
@@ -394,12 +410,13 @@ not found." Internal sudo on specific operations is the right shape.
 
 **Build / static checks** (run after any code or asset change):
 - `make install` (writes `bin/mpd`)
+- `make test vet fmt-check`
 - skim affected docs for stale path / link references when moving or
   renaming files.
 
 **Throw-away-VM smoke checks** (rerun freely — all idempotent):
 - fresh VM via `setup/sandbox/take-over-sandbox-vm.sh` (or the
   matched-host bootstrap once `mpd-virt` lands)
-- `mpd --setup`, `mpd --start`, `mpd --status`
+- `mpd --vm-setup`, `mpd --vm-start`, `mpd --vm-status`
 - optional: `mpd create/start/stop <project>` end-to-end including HTTPS hit
-- `mpd --stop`
+- `mpd --vm-stop`

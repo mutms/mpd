@@ -16,7 +16,7 @@ import (
 )
 
 // Ok prints a success line. ANSI is emitted unconditionally — matching
-// the Swift helper, which does not check isatty. Changing that would
+// the listing helpers, which do not check isatty. Changing that would
 // change output the difftest compares, so it stays as-is until the flag
 // day.
 func Ok(out io.Writer, format string, args ...any) {

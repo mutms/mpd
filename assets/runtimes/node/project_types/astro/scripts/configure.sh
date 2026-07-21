@@ -22,7 +22,7 @@ if [ ! -f "${PROJECT_DIR}/package.json" ]; then
 fi
 
 # /srv/meta/<project>/ holds urls.json + effective.json plus
-# cert.pem/key.pem/project.json that Swift writes via volumeToolRun (which
+# cert.pem/key.pem/project.json that mpd writes through the fileaccess container (which
 # runs as the dev uid). /srv/meta is dev-owned, so plain mkdir works.
 mkdir -p "/srv/meta/${PROJECT_NAME}"
 
@@ -76,7 +76,7 @@ cat > "/srv/meta/${PROJECT_NAME}/urls.json" <<EOF
 EOF
 
 # Effective resolved settings — read by sibling scripts (project-setup.sh,
-# future Caddy generator) and by Swift for dbTag (empty for astro = no DB).
+# future Caddy generator) and by mpd for dbTag (empty for astro = no DB).
 cat > "/srv/meta/${PROJECT_NAME}/effective.json" <<EOF
 {
   "port": ${PORT},

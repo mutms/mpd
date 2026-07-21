@@ -1,4 +1,4 @@
-# `bootstrap/` — bring a Debian Trixie VM to the state `mpd --setup` expects
+# `bootstrap/` — bring a Debian Trixie VM to the state `mpd --vm-setup` expects
 
 These scripts are the single source of truth for VM-side bring-up. The
 **template VM stays pure Debian** — bootstrap runs in full on every
@@ -15,8 +15,8 @@ invokable; callers list them explicitly.
 | `20-git-clone.sh` | yes | no | Assert `sudo -n` works; create `/opt/mpd` + `/var/lib/mpd` (owned by the dev user); apt-install `git` + `ca-certificates`; clone (or fast-forward) the mpd repo to `/opt/mpd`. No hostname gate — step 10 already did it. |
 | `30-networking.sh` | no (local) | no | Hostname rename to `mpd-<NNN>`, systemd-resolved + libnss-resolve, optional static IP for octets in `[100, 254]` via `/etc/systemd/network/05-mpd.network`, IPv6 disable, IPv4 forwarding (`net.ipv4.ip_forward=1`, so the workstation's static route into the container subnet works), write `/var/lib/mpd/conf/platform.env`. Requires systemd-networkd (template prep must remove NetworkManager). |
 | `40-install-software.sh` | no (local) | no | apt-install the full runtime + build + diagnostics package set; enable `podman-restart.service`. |
-| `70-update.sh` | no (local) | no | **Out-of-band**: not part of the initial 10..50 chain. Run by `mpd-virt update <NNN>` (or by hand) to refresh a running VM: pulls latest source, rebuilds `mpd`, re-runs `mpd --setup`. Idempotent. **Caveat**: when a release changes 70-update.sh's own orchestration (adds a new step, reorders them), the running process is still the pre-pull copy — run update twice, or use the `exec` self-reexec pattern documented at the top of `70-update.sh`. |
 | `50-build.sh` | no (local) | no | `make install` + prepend `~/.local/bin` and `/opt/mpd/bin` to PATH in the dev user's `~/.bashrc` (before the non-interactive guard so it applies to login, interactive, AND sshd-invoked non-interactive shells); pre-creates `~/.local/bin` so user-installed CLIs (`claude-install`) work without a re-login. Also exports PATH in the running shell. |
+| `99-update.sh` | no (local) | no | **Out-of-band**: not part of the initial 10..50 chain. Run by `mpd-virt update <NNN>` (or by hand) to refresh a running VM: pulls latest source, rebuilds `mpd`, re-runs `mpd --vm-setup`. Idempotent. **Caveat**: when a release changes 99-update.sh's own orchestration (adds a new step, reorders them), the running process is still the pre-pull copy — run update twice, or use the `exec` self-reexec pattern documented at the top of `99-update.sh`. |
 
 Steps `10` and `20` are wgettable because they must run before the mpd
 repo exists on disk. They inline their own helpers and don't source
@@ -29,7 +29,7 @@ repo exists on disk. They inline their own helpers and don't source
 
 The user-facing wrapper at `setup/sandbox/take-over-sandbox-vm.sh` is
 itself wgettable; it chains 10 + 20 + 30..50 + sandbox-specific
-finalize (VS Code, GNOME launcher, `mpd --setup`, pre-warm).
+finalize (VS Code, GNOME launcher, `mpd --vm-setup`, pre-warm).
 
 ```bash
 bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/sandbox/take-over-sandbox-vm.sh)
@@ -47,7 +47,7 @@ ssh    … bash /opt/mpd/bootstrap/30-networking.sh <NNN>          # SSH drops o
 # reconnect at new static IP
 ssh    … bash /opt/mpd/bootstrap/40-install-software.sh
 ssh    … bash /opt/mpd/bootstrap/50-build.sh
-ssh    … mpd --setup
+ssh    … mpd --vm-setup
 ```
 
 Cloud-init flows (KVM, Hyper-V) handle the sudo bit via their

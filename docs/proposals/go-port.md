@@ -1,7 +1,26 @@
 # Proposal: port the mpd binary from Swift to Go
 
-**Status:** proposed
-**Scope:** the `mpd` control-plane binary only — `assets/` and `bootstrap/` are untouched
+**Status: DONE (2026-07-21).** Kept as the record of why the code looks
+the way it does; nothing here is still outstanding.
+
+The flag day landed: the Swift sources, `Package.swift`,
+`Package.resolved` and `.build/` are deleted, `bin/mpd` is the Go binary,
+`swiftlang` is gone from `bootstrap/40-install-software.sh`, and the two
+comparison harnesses (`difftest.sh`, `mutatetest.sh`) were removed along
+with the Swift binary they diffed against — both were green on their
+final run. The `oldswift` git branch holds the last Swift tree.
+
+One change the plan did not anticipate: the CLI flag names. During the
+port the Go binary used subcommands (`gompd setup`, `gompd up`) to avoid
+colliding with the Swift flags while both were installed. At the flag day
+the VM-lifecycle actions became `--vm-setup`, `--vm-start`, `--vm-stop`,
+`--vm-restart` and `--vm-status` — the `--vm-` prefix names what they act
+on, so none of them can be confused with the project verb of the same
+name (`mpd stop <project>`). Everything else kept its Swift spelling:
+`--runtime-*`, `--db-*`, `--check-hooks`, `--complete`, and the verb-first
+project grammar.
+
+**Scope:** the `mpd` control-plane binary only — `assets/` and `bootstrap/` were untouched
 **Migration:** two binaries side by side, then a flag day at the end
 
 ## Why
@@ -110,9 +129,9 @@ Add others only with a reason.
 
 ## Sequencing
 
-**Everything except `--setup` first; `--setup` last, on a throwaway VM.**
+**Everything except `--vm-setup` first; `--vm-setup` last, on a throwaway VM.**
 
-`--setup` is the most destructive and least reversible action — it
+`--vm-setup` is the most destructive and least reversible action — it
 creates the Podman network, generates the CA and service certs,
 configures the host resolver, and installs system units. It is also the
 one action whose failure leaves a VM in a half-built state. Porting it
@@ -148,7 +167,7 @@ against someone's belief about it.
 
 Dogfood the tool: an mpd VM is disposable by design, so develop mpd
 against a real one and create, start, stop and delete freely. Reset is
-`mpd --setup`, or deleting the VM.
+`mpd --vm-setup`, or deleting the VM.
 
 This is not a nicety. Two bugs in the first read-only increment were
 invisible against an empty VM and appeared immediately once fixtures
@@ -183,16 +202,16 @@ authoritative.
 Ported and verified byte-for-byte against the Swift binary: `list` (all
 four), `show`, `runtime` show/create/start/stop/delete, `db`
 create/start/stop/delete, `project` create/configure/start/stop/delete,
-`net`, `version`, `check-hooks`, `--start`, `--stop`, `--restart`, plus
+`net`, `version`, `check-hooks`, `--vm-start`, `--vm-stop`, `--vm-restart`, plus
 `internal/hooks` and `internal/sidecar`.
 
 Harnesses: `make go-difftest` (12 read-only comparisons) and
 `make go-mutatetest` (17 state comparisons). Both must stay green.
 
-`--setup` is now ported too (`internal/cli/setup.go`, `internal/vm/`,
+`--vm-setup` is now ported too (`internal/cli/setup.go`, `internal/vm/`,
 `internal/service/`). Verified on VM 150 in two ways:
 
-- **Idempotent path** — `mpd --setup` then `gompd setup` on a settled VM
+- **Idempotent path** — `mpd --vm-setup` then `gompd setup` on a settled VM
   produce byte-identical transcripts.
 - **Reset path** — the migration reset, run for real:
 
@@ -219,9 +238,9 @@ sites:
   valid and Firefox reads either, but each binary rewrites the other's
   file once. Self-corrects at the flag day.
 
-### Phase 3 — `--setup`, on a fresh VM
+### Phase 3 — `--vm-setup`, on a fresh VM
 
-Port `--setup` / `--start` / `--stop` / `--restart`. Validate by
+Port `--vm-setup` / `--vm-start` / `--vm-stop` / `--vm-restart`. Validate by
 bootstrapping a brand-new VM with Go mpd only — no Swift binary present.
 Success is a VM that reaches "portal answers over HTTPS at the zone
 apex" without a Swift toolchain ever being installed.

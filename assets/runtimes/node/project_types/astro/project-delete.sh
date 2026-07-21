@@ -2,7 +2,7 @@
 # project-delete.sh <project-name>
 # Stops and removes the per-project systemd unit for the Astro dev server.
 # Source files and node_modules are kept (the source tree is dev-owned and
-# may have local work; deletion happens via Swift on the host side).
+# may have local work; deletion happens on the host side, in mpd).
 #
 # The Caddy frontdoor sidecar handles TLS termination + routing; nothing
 # in /etc/apache2/, /etc/hosts, or anywhere else is owned by the runtime

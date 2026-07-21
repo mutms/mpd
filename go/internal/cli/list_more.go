@@ -14,8 +14,7 @@ import (
 	"github.com/mutms/mpd/go/internal/state"
 )
 
-// Column widths for the runtime and DB tables (mpd/Runtime/Runtime.swift
-// and mpd/CLI/Status.swift).
+// Column widths for the runtime and DB tables.
 const (
 	colRuntimeName = 18
 	colRequested   = 12

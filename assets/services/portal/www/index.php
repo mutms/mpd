@@ -5,7 +5,7 @@
 //
 // Data sources (all bind-mounted read-only from the host machine dir):
 // - /mpd-state/current-state.json — live observation snapshot, refreshed
-//   on `mpd list` / `mpd --status` / `mpd --start` / state-mutating verbs.
+//   on `mpd list` / `mpd --vm-status` / `mpd --vm-start` / state-mutating verbs.
 //   Authoritative for `current` (running / stopped / missing) of runtimes,
 //   projects, and DB containers.
 // - /mpd-state/projects.json — persisted project intent (`requested`).
@@ -16,7 +16,7 @@
 // - /srv/meta/<project>/project.json — ground-truth project identity
 //   (mpd-managed; read-only here).
 // - /mpd-state/vm.json — this VM's addressing (zone, subnet, service IPs),
-//   written by Swift's Mpd.VM.DataVolume.writeVMMeta(). Every hostname on
+//   written by mpd's cli.VMMeta(). Every hostname on
 //   this page is composed from `zone`, so a page served by VM 222 never
 //   shows VM 150's names.
 // - /opt/mpd/assets/runtimes — list of available runtime templates.
@@ -69,8 +69,8 @@ function serviceIp(int $host): string {
 }
 
 /**
- * Display name for the portal heading + title. Written by Swift's
- * Mpd.Service.Portal.setup() to /mpd-state/portal/display-name.txt:
+ * Display name for the portal heading + title. Written by mpd's
+ * service.SetupPortal() to /mpd-state/portal/display-name.txt:
  * the VM's short hostname (e.g. "mpd-158" managed, "mpd-000" sandbox).
  * Falls back to "mpd" if the file is missing (older setups, transient
  * read errors).
@@ -102,7 +102,7 @@ function devUser(): string {
 /**
  * Read a project type's `ideLinks` flag from
  * /opt/mpd/assets/runtimes/*&#47;project_types/<type>/configuration.json.
- * Default true (matches Swift's ProjectTypeConfiguration default).
+ * Default true (matches the assets.ProjectTypeConfig default).
  * Cached per type — config files don't change inside a request.
  */
 function projectTypeAllowsIdeLinks(string $type): bool {
@@ -187,7 +187,7 @@ function collectAvailableRuntimeNames(string $assetsRuntimesDir): array {
  * `current` status of runtimes, projects, and DBs. Each map is
  * name → "running" / "stopped" / "missing".
  *
- * Refreshed by `mpd list`, `mpd --status`, `mpd --start`, `mpd --setup`,
+ * Refreshed by `mpd list`, `mpd --vm-status`, `mpd --vm-start`, `mpd --vm-setup`,
  * and the state-mutating verbs. Falls back to an empty snapshot if
  * the file is missing — older mpd versions or fresh setups before any
  * refresh has run.
@@ -255,7 +255,7 @@ function tcpProbe(string $host, int $port, float $timeoutSeconds = 0.20): bool {
 
 // --- Load live-state snapshot (current-state.json) ---
 // Source-of-truth for `current` status of runtimes/projects/DBs.
-// Refreshed on `mpd list` / `mpd --status` / `mpd --start` / mutating verbs.
+// Refreshed on `mpd list` / `mpd --vm-status` / `mpd --vm-start` / mutating verbs.
 $currentState = loadCurrentState('/mpd-state/current-state.json');
 
 // --- Load project records (projects.json — persisted intent + metadata) ---
@@ -381,7 +381,7 @@ foreach ($allRuntimeNames as $name) {
 // --- Databases from machine cache (/mpd-state/databases.json), with project counts ---
 $databases = loadDatabaseStateCache('/mpd-state/databases.json');
 // Layer fresher live status from current-state.json on top — databases.json
-// is only rebuilt on `mpd --setup` / `mpd list dbs` / db verbs; the live
+// is only rebuilt on `mpd --vm-setup` / `mpd list dbs` / db verbs; the live
 // snapshot refreshes on every `mpd list` and is more up-to-date.
 foreach ($databases as $dbId => &$db) {
     $live = $currentState['databases'][$dbId] ?? '';

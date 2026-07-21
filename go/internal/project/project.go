@@ -183,7 +183,7 @@ func ReadURLs(ctx context.Context, p *podman.Client, uid, name string) []state.P
 
 // ReadEffective returns what a project type's configure.sh resolved into
 // /srv/meta/<project>/effective.json — most importantly dbTag, which is
-// how the layered mpd.env cascade reaches Swift/Go.
+// how the layered mpd.env cascade reaches mpd.
 func ReadEffective(ctx context.Context, p *podman.Client, uid, name string) map[string]any {
 	raw, ok := p.VolumeRead(ctx, "/srv/meta/"+name+"/effective.json", uid)
 	if !ok {

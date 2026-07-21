@@ -49,7 +49,7 @@ func EnsureSSHKey(ctx context.Context, out io.Writer) error {
 			Args: []string{"-t", "ed25519", "-N", "", "-f", keyPath, "-C", "mpd VM " + host, "-q"},
 		}); err != nil || code != 0 {
 			return fmt.Errorf("Failed to generate ~/.ssh/id_ed25519. " +
-				"Run `ssh-keygen -t ed25519` manually and re-run mpd --setup.")
+				"Run `ssh-keygen -t ed25519` manually and re-run mpd --vm-setup.")
 		}
 		ui.OK(out, "Generated VM-local key at ~/.ssh/id_ed25519 "+
 			"(no passphrase, used for VM→runtime / VM→fileaccess SSH).")

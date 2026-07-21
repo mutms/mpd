@@ -2,9 +2,8 @@
 //
 // It is the ONLY package that imports os/exec. Every other package that
 // needs a subprocess builds a domain wrapper on top of this one — most
-// notably internal/podman. This mirrors the rule the Swift implementation
-// enforced (mpd/VM/Exec.swift) and that AGENTS.md states as mandatory:
-// direct host-OS command execution is allowed only here.
+// notably internal/podman. AGENTS.md states this as a mandatory
+// constraint: direct host-OS command execution is allowed only here.
 //
 // # Difference from mudev's internal/exec
 //
@@ -13,7 +12,9 @@
 // to an absolute path in an allow-list (see binaries below). A command
 // that is not on the list cannot be run at all, and a PATH manipulation
 // cannot redirect one that is. Keep that property — it is the reason this
-// package exists rather than callers using os/exec directly.
+// package exists rather than callers using os/exec directly, and it is
+// what AGENTS.md means by "direct host-OS command execution is allowed
+// only here".
 package exec
 
 import (
@@ -27,8 +28,8 @@ import (
 )
 
 // ExitNotPermitted is returned as the exit code when a command is not on
-// the allow-list. 127 is the shell's "command not found", which is what
-// the Swift implementation returned for this case.
+// the allow-list. 127 is the shell's "command not found", which is the
+// closest existing convention for "mpd will not run that".
 const ExitNotPermitted = 127
 
 // binaries maps a bare command name to its absolute path. Adding an entry

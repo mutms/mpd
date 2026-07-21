@@ -14,7 +14,7 @@ stop / configure`).
 - **Experiments and Linux testing.** Anything destructive — testing
   a Trixie upgrade path, trying a PPA, validating a one-off hack —
   goes here. Snapshot before, revert if it breaks.
-- **Dogfooding mpd itself.** If you're editing the in-VM `mpd` Swift
+- **Dogfooding mpd itself.** If you're editing the in-VM `mpd` Go
   sources or the host-side `mpd-virt-macos` orchestrator, a sandbox
   VM is where you can break the whole setup safely. Real Mac stays
   pristine.
@@ -36,7 +36,7 @@ directly via Parallels Desktop Pro or UTM.
 | File | What it does |
 |---|---|
 | `take-over-sandbox-vm.sh` | Entry point. Hostname gate + disclaimer + sudo bootstrap + repo clone (if needed) + hand off to `lib/provision.sh`. |
-| `lib/provision.sh` | The work: apt deps, `make install`, `mpd --setup`, optional pre-warm. |
+| `lib/provision.sh` | The work: apt deps, `make install`, `mpd --vm-setup`, optional pre-warm. |
 
 ## Pick a hypervisor
 
@@ -122,7 +122,7 @@ works: `bash <(curl -sSL <url>)`.
 3. Disclaimer + Enter-to-proceed.
 4. Enables passwordless sudo (one-time password prompt for the install).
 5. apt-installs `git` if missing; clones the repo if missing.
-6. apt-installs `build-essential pkg-config make swiftlang libnss3-tools qemu-guest-agent`.
+6. apt-installs `build-essential pkg-config make golang-go libnss3-tools qemu-guest-agent`.
 7. Standardizes the network stack: writes
    `/etc/NetworkManager/conf.d/10-mpd-dns.conf` with
    `dns=systemd-resolved`, apt-installs `systemd-resolved` +
@@ -133,7 +133,7 @@ works: `bash <(curl -sSL <url>)`.
    IDE story works without leaving the desktop.
 9. `make install` of mpd; bin/ is added to PATH via ~/.bashrc.
 10. Writes `/var/lib/mpd/conf/platform.env` with `MPD_PLATFORM=sandbox`.
-11. `mpd --setup` — generates the CA, installs system trust + Firefox
+11. `mpd --vm-setup` — generates the CA, installs system trust + Firefox
     policies + `~/.pki/nssdb` import, brings up podman + dnsmasq + portal
     + adminer + fileaccess.
 12. Best-effort pre-warm: `mpd --runtime-create=php` and
@@ -149,7 +149,7 @@ GNOME 48's default "Dash" hides at the bottom of the Activities
 overview — discoverable on Super-press, but invisible the rest of the
 time, which feels alien if you're coming from a macOS dock. Two
 optional add-ons make the desktop noticeably closer to Mac muscle
-memory; both are user-scoped, no `mpd --setup` interaction.
+memory; both are user-scoped, no `mpd --vm-setup` interaction.
 
 ```bash
 # Extension Manager GUI — browse / install / configure GNOME Shell

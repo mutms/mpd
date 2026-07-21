@@ -3,7 +3,7 @@
 Purpose: define expected CLI behavior for `mpd` operations.
 
 Out of scope:
-- lifecycle UX details (`--setup/--start/--stop`) beyond routing notes
+- lifecycle UX details (`--vm-setup/--vm-start/--vm-stop`) beyond routing notes
 - deep architecture internals outside this behavioral contract (see `ARCHITECTURE.md`)
 
 ## Directory contract
@@ -28,12 +28,12 @@ If implementation and docs diverge, align code to this contract or update this f
 
 ## Entry routing contract
 
-From `mpd/mpd/main.swift`:
+From `go/cmd/mpd/main.go`:
 
-1. Bare `mpd` (no args) launches TUI.
-2. If first token is positional (does not start with `-`), route to project command path:
-   - `mpd <project> <verb> [args...]`
-3. Otherwise, route to global flag command path.
+1. Bare `mpd` (no args, no flags) shows status.
+2. If the first token is a project verb, route to the project command path:
+   - `mpd <verb> <project> [args...]`
+3. Otherwise, route to the global flag command path.
 
 Hard preconditions enforced before command execution:
 - non-root execution only
@@ -44,20 +44,20 @@ Hard preconditions enforced before command execution:
 Global command dispatch is first-match, single-action per invocation.
 
 Operational flags include:
-- `--status` — context-aware status (text)
-- `--setup` — idempotent first-run/reset; takes no argument (see below).
-- `--start` / `--stop` — daily on/off; act on the active host adopted
-  by `--setup`. `--start` reconciles `current` toward `requested` (see
-  "Resource lifecycle model" in `docs/HOOKS.md`); `--stop` fires
+- `--vm-status` — context-aware status (text)
+- `--vm-setup` — idempotent first-run/reset; takes no argument (see below).
+- `--vm-start` / `--vm-stop` — daily on/off; act on the active host adopted
+  by `--vm-setup`. `--vm-start` reconciles `current` toward `requested` (see
+  "Resource lifecycle model" in `docs/HOOKS.md`); `--vm-stop` fires
   `EventMpdPreStop` hooks for graceful DB shutdown, then powers off.
-- `--restart` — graceful stop + restart. On mpd VM, runs
+- `--vm-restart` — graceful stop + restart. On mpd VM, runs
   `sudo systemctl reboot` and lets the user-systemd `mpd.service` unit
-  drive the chain (ExecStop=`mpd --stop` on shutdown, ExecStart=
-  `mpd --start` on boot). User runs `mpd --start` afterward to restore projects.
+  drive the chain (ExecStop=`mpd --vm-stop` on shutdown, ExecStart=
+  `mpd --vm-start` on boot). User runs `mpd --vm-start` afterward to restore projects.
 - `--check-hooks` — cross-reference `assets/.../hooks/<event>.d/`
-  directories against the Swift `Event` catalogue and print warnings
+  directories against the Go `Event` catalogue and print warnings
   for orphans, removed audiences, and revision bumps. Also runs at the
-  end of `mpd --setup`.
+  end of `mpd --vm-setup`.
 - runtime mutators: `--runtime-create`, `--runtime-start`, `--runtime-stop`, `--runtime-delete`, `--runtime`
 - db mutators: `--db-create`, `--db-start`, `--db-stop`, `--db-delete`
   - `--db-delete` removes the container **and its data** under
@@ -70,17 +70,17 @@ Operational flags include:
 
 Listing is **a verb**, not a flag — `mpd list [projects|runtimes|services|dbs]`
 (default `projects`). Read-only entity queries; services are always-on
-infra started by `--start`.
+infra started by `--vm-start`.
 
 Operational preflight is not globally enforced before command dispatch.
 Setup/start/stop paths perform their own environment-specific checks where needed.
 
-### `--setup` adoption contract
+### `--vm-setup` adoption contract
 
-`--setup` is mode-aware and takes no argument. It adopts the existing
+`--vm-setup` is mode-aware and takes no argument. It adopts the existing
 host environment rather than provisioning one:
 
-`mpd --setup` validates the supported distro (Debian Trixie across every 
+`mpd --vm-setup` validates the supported distro (Debian Trixie across every 
 platform), verifies `systemd-resolved` is active (a precondition the
 platform bootstrap is responsible for), and proceeds. The
 active-machine label is always pinned to `mpd VM` regardless of
@@ -129,14 +129,15 @@ Contract intent:
 
 Scope clarification:
 - no-project commands use global flags (`mpd --...`)
-- project commands always start with a project name (`mpd <project> ...`)
+- project commands always start with a verb, followed by the project name (`mpd <verb> <project> ...`)
 
 Project command routing contract:
 
-- `mpd <project>` -> show project info
+- `mpd show <project>` -> show project info
 - `mpd create <project> [--type=<type>] ...` -> create flow (default type: `moodle`)
 - `mpd help <project>` -> project/type/runtime verb help
-- other verbs -> dispatch via `Mpd.Project.dispatch(...)`
+- other verbs -> one cobra command per verb in `go/cmd/mpd/main.go`,
+  handled by `cli.Project*` in `go/internal/cli/project.go`
 
 For non-create project verbs, project must already exist.
 
@@ -148,14 +149,14 @@ Meaning:
 
 Project-focused universal verbs (recommended daily surface):
 - `create` is inert beyond clone+scaffold: accepts `--type`, `--git-repo`, `--git-branch`, `--git-depth`. `--git-depth=<n>` does a shallow clone (passed straight to `git clone --depth=`) — useful for big repos like Moodle. Caveat: shallow clones implicitly `--single-branch`, so cross-branch operations need `git fetch --unshallow` first. Project-type `project-create.sh` seeds `/srv/projects/<project>/mpd.env` from the type's `mpd-template.env` (existing mpd.env preserved). No DB is provisioned here; the project is registered with status `notConfigured`. Next step is `mpd configure <project>`.
-- `configure` takes any number of positional `KEY=VALUE` pairs matching `^MPD_[A-Z0-9_]+=.*$`. Swift sanitises (reserved keys like `MPD_DB` get strict validation; others get a generic safe-charset check), then writes the line into `/srv/projects/<project>/mpd.env` (empty value deletes the line). Then runs the project-type `configure.sh` which sources the four-layer mpd.env (runtime defaults → type defaults → user-level → project) and emits `dbTag` / `urls` into `/srv/meta/<project>/{effective.json,urls.json}`. Swift reads `dbTag`, re-sanitises, and provisions the DB container if non-empty (visible image-pull progress via `podman pull`, then `podman run -d`, then per-project DB creation). The full mpd.env model — file paths, sourcing order, sanitisation, reserved keys — is documented in [`ARCHITECTURE.md` §8 "Configuration model: mpd.env"](ARCHITECTURE.md#8-configuration-model-mpdenv).
+- `configure` takes any number of positional `KEY=VALUE` pairs matching `^MPD_[A-Z0-9_]+=.*$`. The control plane sanitises (reserved keys like `MPD_DB` get strict validation; others get a generic safe-charset check), then writes the line into `/srv/projects/<project>/mpd.env` (empty value deletes the line). Then runs the project-type `configure.sh` which sources the four-layer mpd.env (runtime defaults → type defaults → user-level → project) and emits `dbTag` / `urls` into `/srv/meta/<project>/{effective.json,urls.json}`. The control plane reads `dbTag`, re-sanitises, and provisions the DB container if non-empty (visible image-pull progress via `podman pull`, then `podman run -d`, then per-project DB creation). The full mpd.env model — file paths, sourcing order, sanitisation, reserved keys — is documented in [`ARCHITECTURE.md` §8 "Configuration model: mpd.env"](ARCHITECTURE.md#8-configuration-model-mpdenv).
 - `start`
 - `stop`
 - `delete`
 
 ## Project-type-specific operations are tools, not verbs
 
-The verb set above is fixed and Swift-only. There is no host-side
+The verb set above is fixed and Go-only. There is no host-side
 asset-shipped-verb mechanism: project-type-specific operations
 (`cache-purge`, `cron`, `upgrade`, `install` on Moodle; `rebuild`,
 `upgrade` on Astro) live as project-type **tools** inside the runtime
@@ -183,15 +184,15 @@ out as those stabilize.
 
 Implementation policy for operational commands:
 
-1. Container actions via Podman are Swift-initiated (may escalate via `sudo` when required).
-2. Infrastructure-altering actions may combine Swift orchestration with shell helpers.
+1. Container actions via Podman are initiated by the Go control plane (may escalate via `sudo` when required).
+2. Infrastructure-altering actions may combine Go orchestration with shell helpers.
 3. Runtime provisioning and in-runtime operational behavior should prefer shell scripts in `assets/`.
 
-This keeps control-plane orchestration in Swift while runtime specifics stay versionable and portable in assets.
+This keeps control-plane orchestration in Go while runtime specifics stay versionable and portable in assets.
 
 Contributor targeting:
 - light developers should prefer additive `assets/` extensions (new runtime/project type/verbs/scripts),
-- service/networking/control-plane changes are Swift-level changes.
+- service/networking/control-plane changes are Go-level changes.
 
 ## Cross-mode correctness priorities
 

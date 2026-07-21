@@ -13,7 +13,7 @@
 #   - runs bootstrap/20-git-clone.sh (clones the repo to /opt/mpd),
 #   - chains to setup/sandbox/lib/provision.sh which runs the remaining
 #     bootstrap steps + sandbox-specific finalize (VS Code, GNOME launcher,
-#     mpd --setup, pre-warm).
+#     mpd --vm-setup, pre-warm).
 #
 # Two valid invocation modes:
 #   1. Standalone (wget|bash flow, no separate clone step):
@@ -96,5 +96,5 @@ bash "${BOOT20}"
 
 # At this point /opt/mpd is a clean git checkout. Chain to the
 # sandbox-specific finalizer, which runs bootstrap/30..60 + the
-# GNOME-VM-only extras (VS Code, launcher, mpd --setup, pre-warm).
+# GNOME-VM-only extras (VS Code, launcher, mpd --vm-setup, pre-warm).
 exec bash "${REPO_DIR}/setup/sandbox/lib/provision.sh"
