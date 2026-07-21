@@ -66,37 +66,96 @@ func RequireSupportedHost() error {
 	return nil
 }
 
-// bootstrapBinaries are representative of what
-// bootstrap/40-install-software.sh installs. Checking a handful of stats
-// is enough to tell "bootstrap never ran" from "bootstrap ran" — the
-// case this guards against is a fresh VM where --vm-setup was typed too
-// early, not a hand-broken one.
-var bootstrapBinaries = []struct{ Name, Path string }{
+// requiredPackages is what mpd itself needs at run time, keyed by a
+// binary whose absence proves the package is missing.
+//
+// bootstrap/40 installs the other half: what is needed to configure and
+// diagnose networking and to build mpd (golang-go, git, iproute2,
+// bind9-dnsutils, jq, …). The split is by purpose — that script runs
+// once before mpd exists, this list converges on every `--vm-setup`, so
+// a new runtime dependency reaches an already-bootstrapped VM without
+// re-running bootstrap.
+//
+// Package name and binary name are not the same thing — nft comes from
+// nftables, newuidmap from uidmap — so both are named rather than
+// derived.
+var requiredPackages = []struct{ Package, Binary string }{
+	// Container engine and the pieces podman needs but does not pull in
+	// under --no-install-recommends: catatonit is the pod pause binary,
+	// aardvark-dns resolves container names (without it `--dns` on a
+	// podman network is silently dropped), uidmap provides
+	// newuidmap/newgidmap.
 	{"podman", "/usr/bin/podman"},
-	{"nft", "/usr/sbin/nft"},
+	{"catatonit", "/usr/bin/catatonit"},
+	{"aardvark-dns", "/usr/lib/podman/aardvark-dns"},
+	{"uidmap", "/usr/bin/newuidmap"},
+	{"nftables", "/usr/sbin/nft"},
+	// Also in bootstrap/40, deliberately: the bootstrap scripts need it
+	// before mpd exists, and repeating it here keeps it converging on a
+	// VM bootstrapped earlier. mpd itself never shells out to jq — it
+	// parses JSON in Go, and jq is not on the internal/exec allow-list —
+	// but `bin/demo` uses it, and so does anyone reading /srv/meta by
+	// hand.
 	{"jq", "/usr/bin/jq"},
-	{"dig", "/usr/bin/dig"},
+	{"caddy", "/usr/bin/caddy"}, // TLS frontdoor for `mpd --web`
+	// Full vim, not vim-tiny: vim-tiny ships no defaults.vim, so it
+	// starts in compatible mode where arrow keys insert ABCD and
+	// backspace will not cross the insert point. /usr/bin/vim is the
+	// proof — vim-tiny provides only /usr/bin/vi.
+	{"vim", "/usr/bin/vim"},
+
+	// Extra tools for AI agents. An agent working on the VM is otherwise
+	// worse equipped than one inside a runtime, which already ships a
+	// developer toolbox — and project setup now happens VM-side.
+	// shellcheck/shfmt matter most: mpd is ~70 shell files with no
+	// linting, so this is the only thing that checks them.
+	//
+	// Deliberately not `gh`: it does nothing until `gh auth login`, and
+	// that stores a token on the VM. mpd keeps no credentials — git auth
+	// is the developer's SSH agent — and the CI side of this project is
+	// forgejo, not GitHub. Anyone who wants it: `sudo apt install gh`.
+	{"shellcheck", "/usr/bin/shellcheck"},
+	{"shfmt", "/usr/bin/shfmt"},
+	{"ripgrep", "/usr/bin/rg"}, // fast search over big project trees
+	{"tree", "/usr/bin/tree"},
 }
 
-// RequireBootstrapCompleted verifies the apt phase of bootstrap ran, and
-// names the missing pieces plus the commands that install them.
-func RequireBootstrapCompleted() error {
+// EnsurePackages installs whatever is missing.
+//
+// No "you must run bootstrap first" branch: mpd runs on Debian and can
+// install its own dependencies. The distinction only ever existed when
+// mpd was meant to run on macOS too, where it could not.
+func EnsurePackages(ctx context.Context, out io.Writer) error {
 	var missing []string
-	for _, b := range bootstrapBinaries {
-		info, err := os.Stat(b.Path)
-		if err != nil || info.IsDir() || info.Mode().Perm()&0o111 == 0 {
-			missing = append(missing, b.Name)
+	for _, p := range requiredPackages {
+		if info, err := os.Stat(p.Binary); err != nil || info.IsDir() {
+			missing = append(missing, p.Package)
 		}
 	}
 	if len(missing) == 0 {
 		return nil
 	}
-	return fmt.Errorf("Bootstrap incomplete — missing: %s.\n"+
-		"Run the bootstrap steps in /opt/mpd/bootstrap/:\n"+
-		"    bash bootstrap/30-networking.sh <NNN>      # sandbox: 000; managed: 100..254\n"+
-		"    bash bootstrap/40-install-software.sh\n"+
-		"    bash bootstrap/50-build.sh",
-		strings.Join(missing, ", "))
+
+	ui.Step(out, "Installing %s", strings.Join(missing, ", "))
+	// Refresh the index first: on a VM whose lists are empty or stale,
+	// install fails with "Unable to locate package", which reads like a
+	// missing package rather than a missing index.
+	if code, err := exec.Run(ctx, exec.Cmd{
+		Name: "apt-get", Args: []string{"update", "-qq"},
+		Env: []string{"DEBIAN_FRONTEND=noninteractive"}, Sudo: true,
+	}); err != nil || code != 0 {
+		return fmt.Errorf("apt-get update failed (exit %d).", code)
+	}
+	args := append([]string{"install", "-y", "--no-install-recommends"}, missing...)
+	if code, err := exec.Run(ctx, exec.Cmd{
+		Name: "apt-get", Args: args,
+		Env: []string{"DEBIAN_FRONTEND=noninteractive"}, Sudo: true,
+	}); err != nil || code != 0 {
+		return fmt.Errorf("Failed to install %s (apt-get exit %d).",
+			strings.Join(missing, ", "), code)
+	}
+	ui.OK(out, "installed %s", strings.Join(missing, ", "))
+	return nil
 }
 
 // RequireSystemdResolvedActive checks the one network-stack assumption

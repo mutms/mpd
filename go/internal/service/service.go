@@ -27,10 +27,6 @@ const (
 
 	adminerRevision = "7"
 	dnsmasqRevision = "9"
-	// 11: apache.conf is rendered per-VM into <stateDir>/portal/ and
-	// mounted from there — the mount source moved, so a surviving
-	// container would keep serving `ServerName mpd.test`.
-	portalRevision = "11"
 )
 
 // AdminerImage is the one service image mpd builds rather than pulls.
@@ -69,6 +65,10 @@ type Descriptor struct {
 	// proxies to the address below. Adminer works this way — it speaks
 	// plain HTTP and has no certificate of its own.
 	Proxy *PortalProxy
+	// Unit names the systemd unit backing this service, for services that
+	// are NOT containers. `mpd --web` runs on the VM itself, so its
+	// status comes from systemd and podman has never heard of it.
+	Unit string
 }
 
 // PortalProxy describes an upstream the portal reverse-proxies to.
@@ -100,9 +100,13 @@ func All() []Descriptor {
 			},
 		},
 		{
+			// The status page: `mpd --web` on the VM behind the VM's own
+			// Caddy, not a container. Its address is the podman bridge
+			// gateway, which the laptop reaches over its static route and
+			// every container reaches as its gateway.
 			Name:      "portal",
-			Container: "mpd-service-portal",
-			HostOctet: net.HostPortal,
+			Unit:      "mpd-web.service",
+			HostOctet: net.HostGateway,
 			// The portal is the zone apex, not a *.service name.
 			dns: func(n net.Net) string { return n.Zone() },
 			// Both names answer: the apex is what a developer types,
@@ -160,7 +164,13 @@ type DNSRecord struct {
 // service would reach a plain-HTTP port with no certificate.
 func DNSRecords(n net.Net) []DNSRecord {
 	var out []DNSRecord
-	portalIP := n.IP(net.HostPortal)
+	// Proxied services resolve to whatever terminates their TLS, which is
+	// the portal's own address — read from the registry rather than a
+	// hardcoded octet, so moving the portal moves them with it.
+	portalIP := ""
+	if d, ok := Find("portal"); ok {
+		portalIP = d.IP(n)
+	}
 	for _, d := range All() {
 		target := d.IP(n)
 		if d.Proxy != nil {

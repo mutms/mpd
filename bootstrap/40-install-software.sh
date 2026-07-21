@@ -6,9 +6,8 @@
 # `make install`, plus a couple of niceties. Idempotent: apt-get install
 # on already-satisfied packages is a fast no-op.
 #
-# After this script completes, `mpd --vm-setup` should never need apt
-# itself — it just asserts these packages are present and fails loudly if
-# any are missing.
+# Base set only. Packages for features mpd manages are apt-installed by
+# `mpd --vm-setup` preflight instead.
 
 set -euo pipefail
 
@@ -47,22 +46,16 @@ fi
 step "Installing software via apt"
 
 # --- Package set --------------------------------------------------------
-# `catatonit` is a Recommends of podman (pause binary for pods) — pulled
-# explicitly because we use --no-install-recommends. aardvark-dns is
-# similarly the resolver podman uses for container-name → IP; without it,
-# `--dns` on Podman networks is silently dropped. `uidmap` provides
-# newuidmap/newgidmap; rootless podman requires it for multi-ID maps
-# (missing on minimal Debian images, present on full installs).
+# Networking config + diagnostics, and what `make install` needs. podman
+# and friends are not here: mpd installs its own run-time packages in
+# `--vm-setup` preflight (go/internal/vm/host.go).
+#
 # bind9-dnsutils is the real package for dig/host on Trixie (dnsutils
 # is virtual; dpkg-query against the virtual name always reports
-# not-installed). Full `vim`, not `vim-tiny`: vim-tiny ships no
-# defaults.vim, so it starts in compatible mode where arrow keys insert
-# ABCD characters and backspace won't cross the insert point — the
-# runtime containers already install full vim, and the VM should match.
+# not-installed).
 RUNTIME_PKGS=(
-    podman catatonit aardvark-dns uidmap nftables sudo openssl
-    bash coreutils git iputils-ping ca-certificates systemd iproute2 jq
-    bind9-dnsutils traceroute tcpdump lsof curl less vim psmisc
+    sudo openssl bash coreutils git iputils-ping ca-certificates systemd
+    iproute2 jq bind9-dnsutils traceroute tcpdump lsof curl less psmisc
 )
 
 # Build deps for `make install`. golang-go builds the mpd binary.

@@ -35,6 +35,7 @@ const ExitNotPermitted = 127
 // binaries maps a bare command name to its absolute path. Adding an entry
 // is a deliberate act: it widens what mpd is able to execute.
 var binaries = map[string]string{
+	"apt-get":                "/usr/bin/apt-get",
 	"bash":                   "/bin/bash",
 	"certutil":               "/usr/bin/certutil",
 	"cp":                     "/bin/cp",

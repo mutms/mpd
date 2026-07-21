@@ -29,13 +29,18 @@ MPD_ZONE="$4"
 export DEBIAN_FRONTEND=noninteractive
 
 # --- Common developer tools ---
+# The last line is extra tooling for AI agents: shellcheck/shfmt for the
+# shell mpd ships, ripgrep for searching large project trees. Not `gh` —
+# it is useless until `gh auth login` stores a token in the container,
+# and git auth here is the developer's forwarded SSH agent.
 apt-get update -qq
 apt-get install -y --no-install-recommends \
     bash-completion bc bzip2 curl dnsutils file findutils git gzip htop \
     iproute2 iputils-ping jq less lftp locales locales-all lsof man-db mc \
     nano net-tools netcat-openbsd openssh-client openssh-server patch procps \
     psmisc rsync screen socat strace sudo tar telnet time tmux tree unzip \
-    vim wget whois xz-utils zip
+    vim wget whois xz-utils zip \
+    shellcheck shfmt ripgrep
 
 # --- OpenSSH (root login disabled; user login via Mac SSH key) ---
 mkdir -p /root/.ssh

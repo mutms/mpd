@@ -429,6 +429,19 @@ A few flavors, increasing severity:
 mpd --runtime-delete php         # nuke a runtime, keep projects + DBs
                                  # (the data volume keeps /srv/projects, /srv/dbs)
 
+# Container-layer reset. The first thing to try after upgrading mpd across
+# changes that alter container shape — new mounts, labels, images, or a
+# service that moved out of a container entirely. Everything mpd creates is
+# rebuilt from scratch; nothing you made is touched, because projects, DB
+# data and mpd state live outside the containers.
+sudo podman rm -af               # every mpd container, running or not
+sudo podman network rm mpd-internal
+
+mpd --vm-setup                   # network + services + units, from scratch
+mpd --runtime-create=php         # runtimes are NOT recreated by `mpd start`:
+                                 # it starts what exists and says so if it does not
+mpd start <project>              # per project you want back up
+
 # Manual in-VM reset (no --uninstall verb on mpd):
 rm -rf /var/lib/mpd                    # blow away state + identity in the VM
 

@@ -21,7 +21,7 @@ GO_DIR := $(CURDIR)/go
 # floor above what Trixie packages.
 export GOTOOLCHAIN = local
 
-.PHONY: build install clean test vet fmt fmt-check tidy
+.PHONY: build install clean test vet fmt fmt-check lint-shell fmt-shell tidy
 
 build install:
 	@mkdir -p bin
@@ -43,6 +43,29 @@ fmt-check:
 	@out=$$(cd $(GO_DIR) && gofmt -l .); \
 	if [ -n "$$out" ]; then echo "not gofmt-clean:"; echo "$$out"; exit 1; fi
 	@echo "gofmt clean"
+
+# Every shell script mpd ships, identified by content rather than by
+# extension: the in-runtime tools are deliberately extensionless
+# (composer-install, phpunit, the php wrapper).
+SHELL_FILES = $$(find bootstrap bin assets setup -type f -exec file --mime-type {} + | grep x-shellscript | cut -d: -f1)
+
+# Lint the shell half of mpd. Go has vet + gofmt; this is the equivalent
+# for the ~75 scripts under assets/, bootstrap/, bin/ and setup/.
+#
+# SC2034 (unused variable) is excluded, not silenced file by file: mpd's
+# env helpers exist to SET variables for whoever sources them —
+# tools/php assigns PROJECT_NAME purely so the source-mpd-env.sh it then
+# sources can read it. shellcheck cannot see across that boundary, so
+# every hit is a false positive.
+lint-shell:
+	@shellcheck -S warning -e SC2034 $(SHELL_FILES) && echo "shellcheck clean"
+
+# Apply shell formatting. Not wired into a check target: shfmt disagrees
+# with about half of these files today, and reformatting them wholesale
+# would bury real changes in whitespace. Run it on files you are already
+# touching.
+fmt-shell:
+	@shfmt -w -i 4 $(SHELL_FILES) && echo "shfmt applied"
 
 tidy:
 	cd $(GO_DIR) && go mod tidy

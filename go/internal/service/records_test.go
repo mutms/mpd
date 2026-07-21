@@ -7,7 +7,10 @@ import "testing"
 // would reach a plain-HTTP port with no certificate.
 func TestProxiedServiceResolvesToThePortal(t *testing.T) {
 	n := testNet(t, 150)
-	portal := "10.163.150.4"
+	// The portal is the VM itself now (mpd --web behind the VM's Caddy),
+	// so it answers on the podman bridge gateway rather than a container
+	// address.
+	portal := "10.163.150.1"
 
 	got := map[string]string{}
 	for _, r := range DNSRecords(n) {
@@ -33,7 +36,7 @@ func TestPortalPublishesApexAndServiceName(t *testing.T) {
 	for _, r := range DNSRecords(n) {
 		if _, ok := want[r.Host]; ok {
 			want[r.Host] = true
-			if r.IP != "10.163.150.4" {
+			if r.IP != "10.163.150.1" {
 				t.Errorf("%s → %q, want the portal address", r.Host, r.IP)
 			}
 		}

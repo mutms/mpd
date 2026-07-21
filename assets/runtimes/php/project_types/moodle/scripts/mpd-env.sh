@@ -29,9 +29,9 @@ PROJECT_DIR="/srv/projects/${PROJECT}"
 moodle_run() {
     local rel="$1"; shift
     if [ -f "${PROJECT_DIR}/${rel}" ]; then
-        cd "${PROJECT_DIR}"
+        cd "${PROJECT_DIR}" || exit 1
     elif [ -f "${PROJECT_DIR}/public/${rel}" ]; then
-        cd "${PROJECT_DIR}/public"
+        cd "${PROJECT_DIR}/public" || exit 1
     else
         echo "Error: ${rel} not found under ${PROJECT_DIR} or ${PROJECT_DIR}/public" >&2
         exit 1

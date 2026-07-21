@@ -25,7 +25,11 @@ const serviceFilter = "label=com.docker.compose.project=mpd-service"
 // than inspecting each service in turn: per-service inspects race against
 // a service restarting mid-listing and can report a mix of before and
 // after.
-func ListServices(ctx context.Context, out io.Writer, n net.Net, p *podman.Client) {
+// unitActive reports whether a systemd-backed service is running. Passed
+// in rather than called directly so the listing stays testable without a
+// systemd on the other end.
+func ListServices(ctx context.Context, out io.Writer, n net.Net, p *podman.Client,
+	unitActive func(context.Context, string) bool) {
 	stateByContainer := map[string]string{}
 	for _, item := range p.Ps(ctx, serviceFilter) {
 		if name := item.Name(); name != "" {
@@ -38,11 +42,16 @@ func ListServices(ctx context.Context, out io.Writer, n net.Net, p *podman.Clien
 
 	for _, d := range sortedByIP(n) {
 		status := StatusNotCreated
-		if state, ok := stateByContainer[d.Container]; ok {
+		if d.Unit != "" {
+			// VM-hosted: systemd owns it, podman has never heard of it.
+			status = StatusStopped
+			if unitActive != nil && unitActive(ctx, d.Unit) {
+				status = StatusRunning
+			}
+		} else if state, ok := stateByContainer[d.Container]; ok {
+			status = StatusStopped
 			if state == "running" {
 				status = StatusRunning
-			} else {
-				status = StatusStopped
 			}
 		}
 		fmt.Fprintln(out, Col(d.Name, colService)+

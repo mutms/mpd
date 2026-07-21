@@ -55,11 +55,13 @@ func stubPodman(psJSON string) *podman.Client {
 
 func TestListServices(t *testing.T) {
 	ps := `[
-	  {"Names":["mpd-service-dnsmasq"],"State":"running"},
-	  {"Names":["mpd-service-portal"],"State":"exited"}
+	  {"Names":["mpd-service-dnsmasq"],"State":"running"}
 	]`
 	var buf bytes.Buffer
-	ListServices(context.Background(), &buf, testNet(t, 150), stubPodman(ps))
+	// The web service is systemd-backed; report it running without a
+	// systemd in the loop.
+	unitActive := func(context.Context, string) bool { return true }
+	ListServices(context.Background(), &buf, testNet(t, 150), stubPodman(ps), unitActive)
 	out := buf.String()
 
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -69,8 +71,8 @@ func TestListServices(t *testing.T) {
 	if !strings.HasPrefix(lines[0], "SERVICE") {
 		t.Errorf("header = %q", lines[0])
 	}
-	// Ordered by IP: dnsmasq .3, portal .4, adminer .6.
-	for i, want := range []string{"dnsmasq", "portal", "adminer"} {
+	// Ordered by IP: portal .1 (systemd-backed), dnsmasq .3, adminer .6.
+	for i, want := range []string{"portal", "dnsmasq", "adminer"} {
 		if !strings.HasPrefix(lines[i+2], want) {
 			t.Errorf("row %d = %q, want it to start with %q", i, lines[i+2], want)
 		}
@@ -78,8 +80,10 @@ func TestListServices(t *testing.T) {
 	// A container podman didn't report is not-created; a non-running one
 	// is stopped. The distinction is what tells "never set up" from
 	// "set up and down".
-	if !strings.Contains(lines[3], "stopped") {
-		t.Errorf("portal row = %q, want stopped", lines[3])
+	// The portal is systemd-backed, so its status comes from the injected
+	// unit check rather than from podman ps.
+	if !strings.Contains(lines[2], "running") {
+		t.Errorf("portal row = %q, want running (unit active)", lines[2])
 	}
 	if !strings.Contains(lines[4], "not-created") {
 		t.Errorf("adminer row = %q, want not-created", lines[4])

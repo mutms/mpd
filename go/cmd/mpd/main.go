@@ -31,6 +31,7 @@ import (
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/state"
 	"github.com/mutms/mpd/go/internal/vm"
+	"github.com/mutms/mpd/go/internal/web"
 	"github.com/spf13/cobra"
 )
 
@@ -107,6 +108,7 @@ type flags struct {
 	dbDelete string
 
 	checkHooks bool
+	web        bool
 	yes        bool
 	debug      bool
 }
@@ -162,6 +164,9 @@ func main() {
 	root.Flags().StringVar(&f.dbStop, "db-stop", "", "Stop a running DB container `name`.")
 	root.Flags().StringVar(&f.dbDelete, "db-delete", "", "Remove a DB container `name` (prompts unless --yes).")
 
+	root.Flags().BoolVar(&f.web, "web", false,
+		"Run the status web server in the foreground (systemd: mpd-web.service).")
+
 	root.Flags().BoolVar(&f.checkHooks, "check-hooks", false,
 		"Cross-reference hook directories against the event catalogue. Also runs at the end of --vm-setup.")
 	root.Flags().BoolVar(&f.yes, "yes", false, "Skip confirmation prompts (for scripted use).")
@@ -205,6 +210,22 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 	}
 
 	switch {
+	case f.web:
+		// Long-running, unlike every other flag here: the process is the
+		// service, so it blocks until the context is cancelled.
+		n, err := net.Load(net.PlatformEnvPath)
+		if err != nil {
+			return err
+		}
+		p := podman.New()
+		return web.Serve(ctx, out, web.Deps{
+			Net:        n,
+			Podman:     p,
+			State:      state.New(),
+			Observer:   current.NewObserver(n.VMID(), p),
+			Assets:     assets.New(),
+			UnitActive: vm.UserUnitActive,
+		})
 	case f.vmSetup:
 		return cli.Setup(ctx, out)
 	case f.vmStart:
@@ -389,7 +410,7 @@ func listCmd() *cobra.Command {
 			case "runtimes":
 				cli.ListRuntimes(ctx, out, n, p, s, a)
 			case "services":
-				cli.ListServices(ctx, out, n, p)
+				cli.ListServices(ctx, out, n, p, vm.UserUnitActive)
 			case "dbs":
 				cli.ListDatabases(ctx, out, n, p, s)
 			}

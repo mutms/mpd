@@ -23,6 +23,7 @@ import (
 	"github.com/mutms/mpd/go/internal/state"
 	"github.com/mutms/mpd/go/internal/ui"
 	"github.com/mutms/mpd/go/internal/vm"
+	"github.com/mutms/mpd/go/internal/web"
 )
 
 // Network is the podman network every mpd container attaches to.
@@ -141,9 +142,6 @@ func Setup(ctx context.Context, out io.Writer) error {
 	if err := service.SetupDnsmasq(ctx, out, p, n, m, caFingerprint, identity.VMIP); err != nil {
 		return err
 	}
-	if err := service.SetupPortal(ctx, out, p, n, caFingerprint, user.User); err != nil {
-		return err
-	}
 
 	ui.Step(out, "DNS resolution")
 	verifyDNS(ctx, out, n, p)
@@ -167,6 +165,38 @@ func Setup(ctx context.Context, out io.Writer) error {
 	}
 
 	_, _ = p.PullQuiet(ctx, BaseImagePull)
+
+	// Transitional: the new stack answers at web.service.<zone> while the
+	// portal container keeps the apex, so both can be compared side by
+	// side. At cutover the apex moves here and this name goes away.
+	ui.Step(out, "Status web server (mpd --web)")
+	if err := vm.InstallWebUnit(ctx); err != nil {
+		return err
+	}
+	// Restarted on every run, not just when missing: `--vm-setup` is what
+	// a developer reaches for after `make install`, and a server still
+	// running the previous binary would serve stale templates with
+	// nothing to show for it.
+	ui.OK(out, "%s restarted (listening on %s).", vm.WebUnitName, web.Addr)
+
+	ui.Step(out, "TLS frontdoor (caddy)")
+	// Every name mpd serves from the VM itself. adminer speaks plain
+	// HTTP with no certificate of its own, so Caddy is what makes it
+	// https — the job the portal container's apache vhosts used to do.
+	sites := []vm.CaddySite{
+		{Host: n.Zone(), Upstream: web.Addr},
+		{Host: n.Service("portal"), Upstream: web.Addr},
+	}
+	if d, ok := service.Find("adminer"); ok && d.Proxy != nil {
+		sites = append(sites, vm.CaddySite{
+			Host:     d.DNS(n),
+			Upstream: fmt.Sprintf("%s:%d", d.IP(n), d.Proxy.Port),
+		})
+	}
+	if err := vm.ConfigureCaddy(ctx, out, user.User, n.Gateway(),
+		vm.ServiceDir+"/cert.pem", vm.ServiceDir+"/key.pem", sites); err != nil {
+		return err
+	}
 
 	ui.Step(out, "Installing shutdown unit")
 	if err := vm.InstallShutdownUnit(ctx, user.User); err != nil {
@@ -196,7 +226,7 @@ func preflight(ctx context.Context, out io.Writer) error {
 	if err := vm.RequireSupportedHost(); err != nil {
 		return err
 	}
-	if err := vm.RequireBootstrapCompleted(); err != nil {
+	if err := vm.EnsurePackages(ctx, out); err != nil {
 		return err
 	}
 	if err := vm.RequireSystemdResolvedActive(ctx, out); err != nil {
@@ -290,7 +320,11 @@ func setupCertificates(ctx context.Context, out io.Writer, n net.Net) (bool, err
 	// zone still verifies against the CA, so nothing else here would
 	// notice — and every HTTPS hit on the portal would fail hostname
 	// verification. Same signature-file pattern the project certs use.
-	sans := []string{n.Zone()}
+	// The apex (portal container) plus every name the VM's own Caddy
+	// frontdoor terminates. One certificate covers them all — a
+	// per-service cert would be a second thing to keep in step with the
+	// CA fingerprint for no gain.
+	sans := []string{n.Zone(), n.Service("portal"), n.Service("adminer")}
 	signature := strings.Join(sans, "\n")
 	sansChanged := readTrimmed(sansPath) != signature
 

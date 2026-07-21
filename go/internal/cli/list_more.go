@@ -66,7 +66,7 @@ func ListRuntimes(ctx context.Context, out io.Writer, n net.Net, p *podman.Clien
 	projectCounts := state.ProjectsByRuntime(s.Projects())
 
 	fmt.Fprintln(out, Col("NAME", colRuntimeName)+Col("REQUESTED", colRequested)+
-		Col("CURRENT", colCurrent)+Col("IP", colIP)+Col("DNS", colDNS)+"PROJECTS")
+		Col("STATUS", colCurrent)+Col("IP", colIP)+Col("DNS", colDNS)+"PROJECTS")
 	fmt.Fprintln(out, Rule(100))
 
 	for _, name := range names {
@@ -153,8 +153,8 @@ func ListDatabases(ctx context.Context, out io.Writer, n net.Net, p *podman.Clie
 
 // ListProjects renders `list projects`.
 //
-// The REQUESTED and CURRENT columns are different things and must be
-// computed differently: requested is persisted intent, current is a live
+// The REQUESTED and STATUS columns are different things and must be
+// computed differently: requested is persisted intent, status is a live
 // observation via internal/current. Rendering requested twice looks
 // plausible and hides exactly the divergence the table exists to show.
 func ListProjects(ctx context.Context, out io.Writer, s state.Store, o current.Observer) {
@@ -165,7 +165,7 @@ func ListProjects(ctx context.Context, out io.Writer, s state.Store, o current.O
 	}
 
 	fmt.Fprintln(out, Col("PROJECT", colService)+Col("REQUESTED", colRequested)+
-		Col("CURRENT", colCurrent)+Col("TYPE", colCurrent)+
+		Col("STATUS", colCurrent)+Col("TYPE", colCurrent)+
 		Col("RUNTIME", colCurrent)+Col("DB", colDatabase)+"URL")
 	fmt.Fprintln(out, Rule(100))
 

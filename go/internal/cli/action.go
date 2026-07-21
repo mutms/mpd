@@ -20,6 +20,7 @@ import (
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/service"
 	"github.com/mutms/mpd/go/internal/state"
+	"github.com/mutms/mpd/go/internal/vm"
 )
 
 // Start brings the VM's mpd environment up: services, then any runtime
@@ -42,7 +43,13 @@ func Start(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) e
 		return err
 	}
 
-	for _, name := range []string{"dnsmasq", "portal", "adminer"} {
+	// VM-hosted services: systemd owns them, so they are started here
+	// rather than through the container path below.
+	if err := vm.StartUnits(ctx, out); err != nil {
+		return err
+	}
+
+	for _, name := range []string{"dnsmasq", "adminer"} {
 		svc, ok := service.Find(name)
 		if !ok {
 			continue
