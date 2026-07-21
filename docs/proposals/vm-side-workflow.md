@@ -109,8 +109,31 @@ in its worked example.
 ## 3) `demo`, reworked on mudev
 
 ```
-demo <recipe-name|recipe-file>
+demo <recipe> [<projectname>]
 ```
+
+Two forms, one script:
+
+```
+demo moodle/release/4.5.12 moodle45                        # nothing exists yet
+cd /srv/projects/moodle45 && demo moodle/release/4.5.12    # tree already cloned
+```
+
+The optional argument is **last**, so position alone decides what each
+token is — first is always the recipe, second always the project name.
+No name-vs-recipe grammar rule to document, unlike `mpd create`'s single
+positional. Omitted, the project name comes from the cwd (§2), so the
+second form is the by-hand sequence collapsed:
+
+```
+cd /srv/projects/moodle45
+mudev clone moodle/release/4.5.12
+mpd create && mpd configure && mpd start
+```
+
+This is also what makes §2's optional positional structural rather than
+convenience: `demo` passes a name explicitly in the first form and relies
+on cwd in the second, and gets one code path for both.
 
 `demo` currently hardcodes a flavour and a tag (`demo moodle v5.2.1`),
 clones Moodle from GitHub by tag, and installs it. mudev already does the
@@ -134,6 +157,15 @@ did not exist. The test could never be true, so the "already exists →
 just start it" branch was dead code and re-running fell through to `mpd
 create` and failed with "Project already exists". It works now with no
 edit to `demo` at all — worth knowing before rewriting around it.
+
+**`demo` is the composite — there is no `mpd up`.** The question "should
+`mpd start` create and configure when run from a project directory?" is
+answered by this section rather than by a new verb: `start` stays
+predictable (it starts what exists), and the one-command path from
+nothing to a running site is `demo`, which already chains create →
+configure → start. Its Moodle half is likewise already a tool —
+`mdl-install`, the port of mdc's `site-install`. Nothing new is needed;
+`demo` just needs a recipe where its flavour and tag are now.
 
 **Open: does `demo` still belong in mpd?** As a mudev front-end it could
 equally be `mudev demo`. mpd already provisions mudev at `--vm-setup` and

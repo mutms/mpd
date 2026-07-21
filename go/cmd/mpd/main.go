@@ -39,17 +39,20 @@ var version = "dev"
 
 // projectCommands is the verb-first half of the CLI: everything that
 // acts on one project.
-const projectCommands = `  show       <projectname>                     project details
-  create     <projectname> [--type=<type>] [--git-repo=<url>] [--git-branch=<branch>] [--git-depth=<n>]
+const projectCommands = `  show       [projectname]                     project details
+  create     [projectname] [--type=<type>] [--git-repo=<url>] [--git-branch=<branch>] [--git-depth=<n>]
                                                (default type: moodle)
-  configure  <projectname> [KEY=VALUE ...]     (e.g. MPD_DB=postgres:18, MPD_PHP_VERSION=8.4;
+  configure  [projectname] [KEY=VALUE ...]     (e.g. MPD_DB=postgres:18, MPD_PHP_VERSION=8.4;
                                                full set lives in /srv/projects/<projectname>/mpd.env)
-  start      <projectname>
-  stop       <projectname>
-  delete     <projectname> [--yes]
+  start      [projectname]
+  stop       [projectname]
+  delete     <projectname> [--yes]             (never inferred — name it explicitly)
   help       <projectname>                     verb reference for one project
   run        <command> [args...]               run a command in the runtime of the
-                                               project you are standing in`
+                                               project you are standing in
+
+The project name is optional: inside /srv/projects/<name>/ (or any
+subdirectory) it defaults to that project.`
 
 // otherCommands are the read-only queries that are neither a project
 // verb nor a VM action.
@@ -406,42 +409,62 @@ func listCmd() *cobra.Command {
 func projectVerbCmds(f *flags) []*cobra.Command {
 	verbs := []*cobra.Command{}
 
+	// The project argument is optional throughout: omitted, it is the
+	// project whose directory the caller is standing in (cli.ProjectArg).
 	simple := func(use, short string, run func(context.Context, *cobra.Command, string, cli.ProjectDeps) error) *cobra.Command {
+		verb, _, _ := strings.Cut(use, " ")
 		return &cobra.Command{
 			Use:   use,
 			Short: short,
-			Args:  cobra.ExactArgs(1),
+			Args:  cobra.MaximumNArgs(1),
 			RunE: func(c *cobra.Command, args []string) error {
+				name, err := cli.ProjectArg(verb, args)
+				if err != nil {
+					return err
+				}
 				d, err := projectDeps()
 				if err != nil {
 					return err
 				}
-				return run(c.Context(), c, args[0], d)
+				return run(c.Context(), c, name, d)
 			},
 		}
 	}
 
 	verbs = append(verbs,
-		simple("start <project>", "Start a project",
+		simple("start [project]", "Start a project (default: the one you are in)",
 			func(ctx context.Context, c *cobra.Command, name string, d cli.ProjectDeps) error {
 				return cli.ProjectStart(ctx, c.OutOrStdout(), name, d)
 			}),
-		simple("stop <project>", "Stop a project",
+		simple("stop [project]", "Stop a project (default: the one you are in)",
 			func(ctx context.Context, c *cobra.Command, name string, d cli.ProjectDeps) error {
 				return cli.ProjectStop(ctx, c.OutOrStdout(), name, d)
 			}),
-		simple("show <project>", "Show project details",
+		simple("show [project]", "Show project details (default: the one you are in)",
 			func(ctx context.Context, c *cobra.Command, name string, d cli.ProjectDeps) error {
 				cli.ShowProject(ctx, c.OutOrStdout(), name, d.State, d.Podman, d.Observer, d.Net, d.UID)
 				return nil
 			}),
 	)
 
+	// The one verb that does NOT infer its project from the working
+	// directory: it removes the source tree, so the inferred answer would
+	// routinely be the directory the caller is standing in. Deleting that
+	// by omission is too easy; naming it is one word.
 	deleteCmd := &cobra.Command{
 		Use:   "delete <project>",
 		Short: "Delete a project, its database, dataroot and source tree",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				name, inProject := cli.ProjectNameFromCwd()
+				if inProject {
+					return fmt.Errorf("mpd delete: name the project explicitly — `mpd delete %s`.\n"+
+						"delete is never inferred from the working directory: it removes that\n"+
+						"directory, and you are standing in it.", name)
+				}
+				return fmt.Errorf("mpd delete: which project? Usage: mpd delete <project> [--yes]")
+			}
 			d, err := projectDeps()
 			if err != nil {
 				return err
@@ -452,24 +475,32 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 	deleteCmd.Flags().BoolVar(&f.yes, "yes", false, "Skip the confirmation prompt")
 
 	configureCmd := &cobra.Command{
-		Use:   "configure <project> [KEY=VALUE ...]",
+		Use:   "configure [project] [KEY=VALUE ...]",
 		Short: "Apply mpd.env changes and reconcile the project",
-		Args:  cobra.MinimumNArgs(1),
+		Args:  cobra.ArbitraryArgs,
 		RunE: func(c *cobra.Command, args []string) error {
+			name, settings, err := cli.SplitConfigureArgs(args)
+			if err != nil {
+				return err
+			}
 			d, err := projectDeps()
 			if err != nil {
 				return err
 			}
-			return cli.ProjectConfigure(c.Context(), c.OutOrStdout(), args[0], args[1:], d)
+			return cli.ProjectConfigure(c.Context(), c.OutOrStdout(), name, settings, d)
 		},
 	}
 
 	var opts cli.CreateOptions
 	createCmd := &cobra.Command{
-		Use:   "create <project>",
-		Short: "Scaffold a new project",
-		Args:  cobra.ExactArgs(1),
+		Use:   "create [project]",
+		Short: "Scaffold a new project (default: the directory you are in)",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
+			name, err := cli.ProjectArg("create", args)
+			if err != nil {
+				return err
+			}
 			d, err := projectDeps()
 			if err != nil {
 				return err
@@ -478,7 +509,7 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 			if err != nil {
 				return err
 			}
-			return cli.ProjectCreate(c.Context(), c.OutOrStdout(), args[0], opts, d, home)
+			return cli.ProjectCreate(c.Context(), c.OutOrStdout(), name, opts, d, home)
 		},
 	}
 	createCmd.Flags().StringVar(&opts.Type, "type", "", "Project type (default: inferred, else moodle)")

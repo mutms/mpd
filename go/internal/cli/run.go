@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
@@ -90,18 +89,7 @@ func Run(ctx context.Context, out io.Writer, d ProjectDeps, command []string) er
 // inside a project` rather than `mpd run: ...` — the caller typed the
 // shim, not this.
 func projectFromCwd(s state.Store, what string) (state.Project, string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return state.Project{}, "", err
-	}
-	// Resolve symlinks before comparing: /srv itself is a bind mount, and
-	// a symlinked path or a `..` segment must not walk out of the tree.
-	resolved, err := filepath.EvalSymlinks(cwd)
-	if err != nil {
-		resolved = filepath.Clean(cwd)
-	}
-
-	name, ok := projectNameFromPath(resolved)
+	name, ok := ProjectNameFromCwd()
 	if !ok {
 		return state.Project{}, "", fmt.Errorf(
 			"%s: not inside a project (%s/<name>/).\n"+
@@ -113,22 +101,17 @@ func projectFromCwd(s state.Store, what string) (state.Project, string, error) {
 		return state.Project{}, "", fmt.Errorf(
 			"%s: '%s' is not a registered project.\nRun: mpd create %s", what, name, name)
 	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return state.Project{}, "", err
+	}
+	// The container is handed the resolved path: /srv is a bind mount, so
+	// a symlinked cwd on the VM may not exist under that name inside.
+	resolved, err := filepath.EvalSymlinks(cwd)
+	if err != nil {
+		resolved = filepath.Clean(cwd)
+	}
 	return entry, resolved, nil
-}
-
-// projectNameFromPath returns the project directory name when path is
-// /srv/projects/<name> or below.
-func projectNameFromPath(path string) (string, bool) {
-	prefix := srv.Projects + string(os.PathSeparator)
-	if !strings.HasPrefix(path, prefix) {
-		return "", false
-	}
-	rest := strings.TrimPrefix(path, prefix)
-	name, _, _ := strings.Cut(rest, string(os.PathSeparator))
-	if name == "" {
-		return "", false
-	}
-	return name, true
 }
 
 // stdinIsTerminal reports whether stdin is a character device, which is
