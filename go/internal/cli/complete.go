@@ -42,6 +42,7 @@ func IsProjectVerb(token string) bool {
 // cmd/mpd/main.go — add new entries in both places.
 var globalFlags = []string{
 	"--vm-setup",
+	"--vm-upgrade",
 	"--vm-start",
 	"--vm-stop",
 	"--vm-restart",

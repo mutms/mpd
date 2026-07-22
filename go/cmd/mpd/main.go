@@ -91,6 +91,7 @@ Flags:
 // vars so the dispatch below reads as a single decision.
 type flags struct {
 	vmSetup   bool
+	vmUpgrade bool
 	vmStart   bool
 	vmStop    bool
 	vmRestart bool
@@ -144,6 +145,8 @@ func main() {
 	// them can be mistaken for the project verb of the same name.
 	root.Flags().BoolVar(&f.vmSetup, "vm-setup", false,
 		"Idempotent VM setup. Safe to run repeatedly. Adopts the current VM.")
+	root.Flags().BoolVar(&f.vmUpgrade, "vm-upgrade", false,
+		"Pull and rebuild mpd (plus mudev and the /srv/extra catalogues), then run --vm-setup.")
 	root.Flags().BoolVar(&f.vmStart, "vm-start", false,
 		"Daily start: start services and restore running projects. No provisioning.")
 	root.Flags().BoolVar(&f.vmStop, "vm-stop", false,
@@ -228,6 +231,8 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 		})
 	case f.vmSetup:
 		return cli.Setup(ctx, out)
+	case f.vmUpgrade:
+		return cli.Upgrade(ctx, out)
 	case f.vmStart:
 		d, err := projectDeps()
 		if err != nil {

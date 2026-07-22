@@ -35,16 +35,19 @@ const ExitNotPermitted = 127
 // binaries maps a bare command name to its absolute path. Adding an entry
 // is a deliberate act: it widens what mpd is able to execute.
 var binaries = map[string]string{
-	"apt-get":                "/usr/bin/apt-get",
-	"bash":                   "/bin/bash",
-	"certutil":               "/usr/bin/certutil",
-	"cp":                     "/bin/cp",
-	"git":                    "/usr/bin/git",
-	"id":                     "/usr/bin/id",
-	"install":                "/usr/bin/install",
-	"ip":                     "/usr/sbin/ip",
-	"loginctl":               "/usr/bin/loginctl",
-	"make":                   "/usr/bin/make",
+	"apt-get":  "/usr/bin/apt-get",
+	"bash":     "/bin/bash",
+	"certutil": "/usr/bin/certutil",
+	"cp":       "/bin/cp",
+	"git":      "/usr/bin/git",
+	"id":       "/usr/bin/id",
+	"install":  "/usr/bin/install",
+	"ip":       "/usr/sbin/ip",
+	"loginctl": "/usr/bin/loginctl",
+	"make":     "/usr/bin/make",
+	// mpd itself, so `--vm-upgrade` can apply the binary it just built
+	// rather than the one it is running.
+	"mpd":                    "/opt/mpd/bin/mpd",
 	"openssl":                "/usr/bin/openssl",
 	"ping":                   "/usr/bin/ping",
 	"podman":                 "/usr/bin/podman",

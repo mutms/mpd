@@ -33,6 +33,21 @@ var catalogueRemotes = map[string]string{
 	"mdl-recipes": "https://github.com/mutms/mdl-recipes.git",
 }
 
+// MudevRemote and CatalogueRemotes expose what mpd itself clones, so the
+// upgrade path can tell its own checkouts from the developer's. A
+// checkout whose origin differs is not mpd's to move.
+func MudevRemote() string { return mudevRemote }
+
+// CatalogueRemotes returns a copy, so a caller iterating it cannot edit
+// the source of truth.
+func CatalogueRemotes() map[string]string {
+	out := make(map[string]string, len(catalogueRemotes))
+	for k, v := range catalogueRemotes {
+		out[k] = v
+	}
+	return out
+}
+
 // EnsureMudev clones and builds mudev, and clones the public catalogues
 // it reads into /srv/extra.
 //
