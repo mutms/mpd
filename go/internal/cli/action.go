@@ -55,6 +55,13 @@ func Start(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) e
 	}
 
 	fmt.Fprintln(out, "\n\033[1m==> DNS resolution\033[0m")
+	// After adminer, so the podman bridge exists: at boot the resolver
+	// starts before podman has created it, and an interface appearing in
+	// the wrong instant is missed permanently. This is where a rebooted VM
+	// lands, so it is where the repair belongs.
+	if err := vm.EnsureDnsmasqResolving(ctx, out, d.Net.Gateway(), d.Net.Zone()); err != nil {
+		return err
+	}
 	verifyDNS(ctx, out, d.Net)
 
 	// Restore runtimes that had running projects. Failure warns rather

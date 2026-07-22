@@ -209,8 +209,13 @@ func Setup(ctx context.Context, out io.Writer) error {
 	// Last, not next to the resolver step: the resolver binds the podman
 	// bridge, and podman only creates that bridge when the first container
 	// attaches to the network. On a fresh VM that is adminer, above — so
-	// checking any earlier reports a failure that setup is about to fix.
+	// checking any earlier reports a failure that setup is about to fix,
+	// and repairing any earlier would restart the resolver before the
+	// thing it needs exists.
 	ui.Step(out, "DNS resolution")
+	if err := vm.EnsureDnsmasqResolving(ctx, out, n.Gateway(), n.Zone()); err != nil {
+		return err
+	}
 	verifyDNS(ctx, out, n)
 
 	ui.Step(out, "Installing shutdown unit")

@@ -192,6 +192,27 @@ One consequence worth knowing: if *no* container has ever started, the
 bridge does not exist and the resolver has nothing to bind. `mpd
 --vm-setup` creates adminer, which is enough.
 
+There is also a race, and it has bitten a real VM. dnsmasq scans the
+interfaces once at startup and then watches netlink for later ones; an
+interface appearing in the window between those two steps is missed
+**permanently**. At boot the resolver starts before podman has recreated
+the bridge, so the window is real — and a VM that loses the race comes up
+with a resolver that is `active`, bound to `127.0.0.1` only, and answering
+nothing. Every name on the VM fails, which reads like anything but a DNS
+problem.
+
+Both `mpd --vm-setup` and `mpd --vm-start` therefore check that the
+resolver *answers*, not merely that the unit is active, and restart it
+once if it does not (`vm.EnsureDnsmasqResolving`). By then the bridge
+exists, so the startup scan finds it. If it still does not answer the
+command fails loudly rather than reporting a green setup over a VM that
+resolves nothing.
+
+To recognise it by hand: `sudo ss -lnup | grep dnsmasq` should show *two*
+listeners, `127.0.0.1:53` and `10.163.<NNN>.1:53`. Only the first means
+you have hit this; `sudo systemctl restart mpd-dnsmasq` fixes it
+immediately.
+
 ## Diagnostic record: `vm.service.<NNN>.mpd.test`
 
 In addition to the runtime / service / project records, dnsmasq serves

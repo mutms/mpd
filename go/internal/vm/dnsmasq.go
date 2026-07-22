@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	gonet "net"
 	"os"
+	"time"
 
 	"github.com/mutms/mpd/go/internal/exec"
 	"github.com/mutms/mpd/go/internal/ui"
@@ -166,3 +168,92 @@ func ConfigureDnsmasq(ctx context.Context, out io.Writer, listenIP, iface string
 	ui.OK(out, "Resolver listening on %s:53 (authoritative for .test).", listenIP)
 	return nil
 }
+
+// EnsureDnsmasqResolving makes sure the resolver is not merely running but
+// actually answering, and restarts it once if it is not.
+//
+// "active" is not enough, and the gap between the two is a real failure
+// mode rather than a theoretical one. dnsmasq scans the interfaces once at
+// startup and watches netlink for later ones; an interface appearing in
+// the window between those two steps is missed permanently. Podman creates
+// the bridge when the first container attaches, which on a fresh VM is
+// moments after this unit starts — so the window is real, and a VM that
+// loses that race comes up with a resolver that is `active`, bound to
+// loopback only, and answering nothing in the zone. Every name on the VM
+// fails, which reads like anything but a DNS problem.
+//
+// Restarting fixes it, because by now the bridge exists and the startup
+// scan finds it. That is repair, not a retry loop: `--vm-setup` is the
+// repair command, and this converges in one step or reports why it cannot.
+//
+// Call this only once something has attached to the podman network — with
+// no bridge there is nothing to bind and a restart changes nothing.
+func EnsureDnsmasqResolving(ctx context.Context, out io.Writer, listenIP, zone string) error {
+	if resolverAnswers(ctx, listenIP, zone) {
+		ui.OK(out, "Resolver answers for %s at %s.", zone, listenIP)
+		return nil
+	}
+
+	ui.Warn(out, "Resolver is running but not answering at %s — restarting it.", listenIP)
+	if code, err := exec.Run(ctx, exec.Cmd{
+		Name: "systemctl", Args: []string{"restart", DnsmasqUnit}, Sudo: true,
+	}); err != nil || code != 0 {
+		return fmt.Errorf("systemctl restart %s failed — check `journalctl -u %s`.",
+			DnsmasqUnit, DnsmasqUnit)
+	}
+	if !waitForResolver(ctx, listenIP, zone) {
+		return fmt.Errorf(`The resolver is running but does not answer for %s at %s:53.
+
+Most likely nothing has attached to the podman network yet, so the bridge
+that address sits on does not exist. Check with:
+
+    ip -4 -br addr          # is there a bridge holding %s?
+    sudo ss -lnup | grep :53
+    journalctl -u %s`, zone, listenIP, listenIP, DnsmasqUnit)
+	}
+	ui.OK(out, "Resolver answers for %s at %s.", zone, listenIP)
+	return nil
+}
+
+// waitForResolver polls until the resolver answers, or gives up.
+//
+// `systemctl restart` returns once the process has been spawned, not once
+// dnsmasq has opened its sockets — so a single probe straight afterwards
+// races the thing it is checking and reports a failure that fixes itself
+// a moment later. Asked for once, this cost an hour of chasing a repair
+// that had in fact worked.
+func waitForResolver(ctx context.Context, listenIP, zone string) bool {
+	for i := 0; i < resolverProbeAttempts; i++ {
+		if resolverAnswers(ctx, listenIP, zone) {
+			return true
+		}
+		time.Sleep(resolverProbeInterval)
+	}
+	return false
+}
+
+const (
+	resolverProbeInterval = 250 * time.Millisecond
+	resolverProbeAttempts = 20 // 5s, generous for a local resolver restart
+)
+
+// resolverAnswers asks the resolver directly, bypassing systemd-resolved
+// and the VM's own resolv.conf, so the answer is about dnsmasq and not
+// about how the VM is configured to reach it.
+func resolverAnswers(ctx context.Context, listenIP, name string) bool {
+	r := &gonet.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, _ string) (gonet.Conn, error) {
+			d := gonet.Dialer{Timeout: probeTimeout}
+			return d.DialContext(ctx, network, gonet.JoinHostPort(listenIP, "53"))
+		},
+	}
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+	addrs, err := r.LookupHost(ctx, name)
+	return err == nil && len(addrs) > 0
+}
+
+// probeTimeout is generous for a resolver on the same host; it exists so a
+// wedged resolver cannot hang setup rather than to tune anything.
+const probeTimeout = 2 * time.Second
