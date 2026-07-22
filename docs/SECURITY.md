@@ -116,12 +116,14 @@ Laptop (macOS)
   |
 VM host (Debian Trixie)
   |
-  net.ipv4.ip_forward=1; podman1 bridge (10.163.<NNN>.1/24)
-  |   caddy binds here (VM process, not a container): terminates TLS for
-  |   the zone apex → mpd --web on 127.0.0.1, and for adminer → .6
+  net.ipv4.ip_forward=1; mpd0 bridge (10.163.<NNN>.1/24)
+  |   Two VM processes bind here, neither a container:
+  |     dnsmasq :53  — resolver for .test, for the VM, the laptop and
+  |                    every container (podman's own DNS is disabled)
+  |     caddy  :443  — terminates TLS for the zone apex → mpd --web on
+  |                    127.0.0.1, and for adminer → .6
   |
   mpd-internal network (10.163.<NNN>.0/24)
-    +-- mpd-service-dnsmasq    (10.163.<NNN>.3)
     +-- mpd-service-adminer    (10.163.<NNN>.6)
     +-- DB containers          (10.163.<NNN>.30–.99)
     +-- runtime pods           (10.163.<NNN>.100+, with per-runtime sidecars)

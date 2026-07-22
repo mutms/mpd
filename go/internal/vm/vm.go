@@ -49,10 +49,15 @@ const (
 	ServiceDir = ConfDir + "/service"
 	TempDir    = ConfDir + "/temp"
 
-	// DnsmasqDir is the source of truth for DNS fragments, bind-mounted
-	// read-only into the dnsmasq container as a DIRECTORY so adds and
-	// removes are visible inside immediately.
-	DnsmasqDir = StateDir + "/dnsmasq.d"
+	// DNSHostsDir holds the hosts files dnsmasq serves mpd's names from.
+	// dnsmasq watches the directory and re-reads it on every add, change
+	// and remove, so a record lands without signalling or restarting it.
+	DNSHostsDir = StateDir + "/dns"
+	// DnsmasqConfPath is the resolver's configuration, rendered by
+	// --vm-setup. Under ConfDir with the CA rather than under StateDir:
+	// it is mpd's own configuration of the VM, not operational state, and
+	// nothing rebuilds it from observation.
+	DnsmasqConfPath = ConfDir + "/dnsmasq.conf"
 	// CACertPath and CAKeyPath are the CA's PEM files.
 	CACertPath = CARootDir + "/rootCA.pem"
 	CAKeyPath  = CARootDir + "/rootCA-key.pem"

@@ -14,7 +14,7 @@ CLI behavior assumes fixed paths:
 - `/var/lib/mpd/` for state/cache and configuration:
   - `conf/` — CA + service cert, `platform.env` (PRIVATE)
   - `env/mpd-vm.env` — user-editable VM-wide env overrides (mounted into runtimes)
-  - `state/` — operational state: projects.json, runtimes/, dnsmasq.d/, etc.
+  - `state/` — operational state: projects.json, runtimes/, dns/, etc.
 
 Project backups live inside the data volume at `/srv/backups/`, accessed
 from the laptop with scp off the VM; see

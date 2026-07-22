@@ -26,7 +26,6 @@ const (
 	CAFingerprintLabel = "mpd.ca.fingerprint"
 
 	adminerRevision = "7"
-	dnsmasqRevision = "9"
 )
 
 // AdminerImage is the one service image mpd builds rather than pulls.
@@ -66,9 +65,14 @@ type Descriptor struct {
 	// plain HTTP and has no certificate of its own.
 	Proxy *PortalProxy
 	// Unit names the systemd unit backing this service, for services that
-	// are NOT containers. `mpd --web` runs on the VM itself, so its
-	// status comes from systemd and podman has never heard of it.
+	// are NOT containers. `mpd --web` and the resolver both run on the VM
+	// itself, so their status comes from systemd and podman has never
+	// heard of them.
 	Unit string
+	// UnitUser distinguishes a `systemctl --user` unit from a system one.
+	// Not derivable from the name, and the two are queried with different
+	// commands, so it is stated rather than guessed.
+	UnitUser bool
 }
 
 // PortalProxy describes an upstream the portal reverse-proxies to.
@@ -92,11 +96,16 @@ func (p PortalProxy) UpstreamURL(ip string) string {
 func All() []Descriptor {
 	return []Descriptor{
 		{
+			// dnsmasq from Debian's dnsmasq-base, running on the VM under
+			// mpd's own unit rather than in a container. It listens on the
+			// podman bridge gateway, which is the one address the laptop,
+			// the VM and every container can all reach — so all three use
+			// the same resolver without a second hop.
 			Name:      "dnsmasq",
-			Container: "mpd-service-dnsmasq",
-			HostOctet: net.HostDnsmasq,
+			Unit:      "mpd-dnsmasq.service",
+			HostOctet: net.HostGateway,
 			accessHint: func(n net.Net) string {
-				return fmt.Sprintf("DNS resolver (%s:53)", n.IP(net.HostDnsmasq))
+				return fmt.Sprintf("DNS resolver (%s:53)", n.Gateway())
 			},
 		},
 		{
@@ -106,6 +115,7 @@ func All() []Descriptor {
 			// every container reaches as its gateway.
 			Name:      "portal",
 			Unit:      "mpd-web.service",
+			UnitUser:  true,
 			HostOctet: net.HostGateway,
 			// The portal is the zone apex, not a *.service name.
 			dns: func(n net.Net) string { return n.Zone() },

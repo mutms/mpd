@@ -224,7 +224,7 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 			State:      state.New(),
 			Observer:   current.NewObserver(n.VMID(), p),
 			Assets:     assets.New(),
-			UnitActive: vm.UserUnitActive,
+			UnitActive: vm.UnitActive,
 		})
 	case f.vmSetup:
 		return cli.Setup(ctx, out)
@@ -390,7 +390,7 @@ func listCmd() *cobra.Command {
 			case "runtimes":
 				cli.ListRuntimes(ctx, out, n, p, s, a)
 			case "services":
-				cli.ListServices(ctx, out, n, p, vm.UserUnitActive)
+				cli.ListServices(ctx, out, n, p, vm.UnitActive)
 			case "dbs":
 				cli.ListDatabases(ctx, out, n, p, s)
 			case "network":
@@ -408,7 +408,7 @@ func listCmd() *cobra.Command {
 					fmt.Fprintf(out, "vm          ssh %s (address is DHCP)\n", host)
 				}
 				fmt.Fprintf(out, "gateway     %s\n", n.Gateway())
-				fmt.Fprintf(out, "dnsmasq     %s\n", n.IP(net.HostDnsmasq))
+				fmt.Fprintf(out, "dnsmasq     %s (the VM itself: resolver for .test)\n", n.Gateway())
 				fmt.Fprintf(out, "portal      %s (the VM itself: mpd --web behind caddy)\n", n.Gateway())
 				fmt.Fprintf(out, "adminer     %s\n", n.IP(net.HostAdminer))
 			}

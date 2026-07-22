@@ -246,7 +246,7 @@ func serviceRows(ctx context.Context, d Deps) []ServiceRow {
 		switch {
 		case svc.Unit != "":
 			// Runs on the VM under systemd; podman has never heard of it.
-			row.Running = d.UnitActive != nil && d.UnitActive(ctx, svc.Unit)
+			row.Running = d.UnitActive != nil && d.UnitActive(ctx, svc.Unit, svc.UnitUser)
 			row.Status = "stopped"
 		case stateByContainer[svc.Container] != "":
 			row.Running = stateByContainer[svc.Container] == "running"

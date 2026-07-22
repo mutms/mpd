@@ -65,32 +65,42 @@ func InstallWebUnit(ctx context.Context) error {
 }
 
 // StartUnits brings up the VM-hosted services `--vm-start` is
-// responsible for: the status web server and the TLS frontdoor in front
-// of it.
+// responsible for: the resolver, the status web server, and the TLS
+// frontdoor in front of it.
 //
-// Start, not restart: this is the daily path, and a running server should
+// The resolver goes first — the other two serve names it publishes.
+//
+// Start, not restart: this is the daily path, and a running unit should
 // keep serving. Failures warn rather than abort — a VM whose projects are
 // up but whose status page is down is still a working VM, and saying so
 // is more useful than refusing to start anything else.
 func StartUnits(ctx context.Context, out io.Writer) error {
+	for _, unit := range []string{DnsmasqUnit, CaddyUnit} {
+		if code, err := exec.Run(ctx, exec.Cmd{
+			Name: "systemctl", Args: []string{"start", unit}, Sudo: true,
+		}); err != nil || code != 0 {
+			ui.Warn(out, "could not start %s — run: mpd --vm-setup", unit)
+		}
+	}
 	if _, err := exec.Run(ctx, exec.Cmd{
 		Name: "systemctl", Args: []string{"--user", "start", WebUnitName},
 	}); err != nil {
 		ui.Warn(out, "could not start %s: %v", WebUnitName, err)
 	}
-	if code, err := exec.Run(ctx, exec.Cmd{
-		Name: "systemctl", Args: []string{"start", CaddyUnit}, Sudo: true,
-	}); err != nil || code != 0 {
-		ui.Warn(out, "could not start %s — run: mpd --vm-setup", CaddyUnit)
-	}
 	return nil
 }
 
-// UserUnitActive reports whether a user unit is running, for status
-// listings of services that systemd owns rather than podman.
-func UserUnitActive(ctx context.Context, unit string) bool {
-	res, err := exec.Capture(ctx, exec.Cmd{
-		Name: "systemctl", Args: []string{"--user", "is-active", "--quiet", unit},
-	})
+// UnitActive reports whether a systemd unit is running, for status
+// listings of services systemd owns rather than podman.
+//
+// user selects the scope. Passed in rather than probed: a system unit and
+// a user unit of the same name are different units, and asking both would
+// answer for whichever happened to exist.
+func UnitActive(ctx context.Context, unit string, user bool) bool {
+	args := []string{"is-active", "--quiet", unit}
+	if user {
+		args = append([]string{"--user"}, args...)
+	}
+	res, err := exec.Capture(ctx, exec.Cmd{Name: "systemctl", Args: args})
 	return err == nil && res.Code == 0
 }

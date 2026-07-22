@@ -242,7 +242,7 @@ func image(engine, version string) string {
 // synchronous_commit=off (lose the last moments of work on a crash) and
 // NOT full_page_writes=off (which risks an unrepairable torn page). See
 // docs/SECURITY.md §"Intentional compromises".
-func runArgs(ref Ref, ip string) ([]string, error) {
+func runArgs(ref Ref, ip, gateway string) ([]string, error) {
 	dataDir := DataDir(ref.Engine, ref.Version)
 	img := image(ref.Engine, ref.Version)
 
@@ -258,8 +258,8 @@ func runArgs(ref Ref, ip string) ([]string, error) {
 		"--label", "mpd.db.engine="+ref.Engine,
 		"--label", "mpd.db.version="+ref.Version,
 		"--label", "com.docker.compose.project=mpd-db",
-		"--network-alias", ref.ID,
 	)
+	args = append(args, podman.DNSOpts(gateway)...)
 
 	switch ref.Engine {
 	case "postgres":
@@ -319,7 +319,7 @@ func Ensure(ctx context.Context, ref Ref, p *podman.Client, n net.Net, uid strin
 			return err
 		}
 		fmt.Fprintf(out, "%s: creating DB container at %s...\n", ref.Container, ip)
-		args, err := runArgs(ref, ip)
+		args, err := runArgs(ref, ip, n.Gateway())
 		if err != nil {
 			return err
 		}

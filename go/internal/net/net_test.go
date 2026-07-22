@@ -21,14 +21,13 @@ func TestAddressing(t *testing.T) {
 		octet   int
 		zone    string
 		subnet  string
-		dnsmasq string
 		gateway string
 	}{
-		{150, "150.mpd.test", "10.163.150.0/24", "10.163.150.3", "10.163.150.1"},
-		{222, "222.mpd.test", "10.163.222.0/24", "10.163.222.3", "10.163.222.1"},
+		{150, "150.mpd.test", "10.163.150.0/24", "10.163.150.1"},
+		{222, "222.mpd.test", "10.163.222.0/24", "10.163.222.1"},
 		// Sandbox is not a special case — just the zeroth VM. It keeps
 		// the 10.163.0.0/24 every VM shared before per-VM addressing.
-		{0, "000.mpd.test", "10.163.0.0/24", "10.163.0.3", "10.163.0.1"},
+		{0, "000.mpd.test", "10.163.0.0/24", "10.163.0.1"},
 	}
 	for _, tc := range tests {
 		n := mustNew(t, tc.octet)
@@ -37,9 +36,6 @@ func TestAddressing(t *testing.T) {
 		}
 		if got := n.Subnet(); got != tc.subnet {
 			t.Errorf("VM %d Subnet() = %q, want %q", tc.octet, got, tc.subnet)
-		}
-		if got := n.IP(HostDnsmasq); got != tc.dnsmasq {
-			t.Errorf("VM %d IP(dnsmasq) = %q, want %q", tc.octet, got, tc.dnsmasq)
 		}
 		if got := n.Gateway(); got != tc.gateway {
 			t.Errorf("VM %d Gateway() = %q, want %q", tc.octet, got, tc.gateway)

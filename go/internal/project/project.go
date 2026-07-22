@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/mutms/mpd/go/internal/cert"
+	"github.com/mutms/mpd/go/internal/dnsmasq"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/srv"
@@ -104,7 +105,7 @@ func EnsureCert(ctx context.Context, out io.Writer, name string, urls []state.Pr
 	return srv.Write(srv.MetaFile(name, "cert.sans"), []byte(signature), 0o644)
 }
 
-// DNSRecords returns the dnsmasq fragment for a project: one address
+// DNSRecords returns the resolver's record file for a project: one hosts
 // line per in-zone host, all pointing at its runtime.
 func DNSRecords(name string, urls []state.ProjectURL, runtimeIP string, n net.Net) (string, bool) {
 	hosts := Hosts(urls, n)
@@ -113,7 +114,7 @@ func DNSRecords(name string, urls []state.ProjectURL, runtimeIP string, n net.Ne
 	}
 	var b strings.Builder
 	for _, h := range hosts {
-		fmt.Fprintf(&b, "address=/%s/%s\n", h, runtimeIP)
+		fmt.Fprintln(&b, dnsmasq.Line(h, runtimeIP))
 	}
 	return b.String(), true
 }

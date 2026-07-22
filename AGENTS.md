@@ -60,8 +60,9 @@ chowns), all enforced at runtime — do not propose alternates.
   etc.). Last-write-wins: VM-host skel overrides shipped skel.
 - `/var/lib/mpd/state/` — mpd-managed operational state. `projects.json`,
   `databases.json`, `current-state.json`, `hooks-state.json`,
-  `runtimes/<n>/`, `dnsmasq.d/`. dnsmasq mounts `state/dnsmasq.d/` at
-  `/etc/dnsmasq.d/` RO. Wipe to reset.
+  `runtimes/<n>/`, `dns/`. `dns/` holds the hosts files dnsmasq serves
+  mpd's names from (`hostsdir=`, re-read on change — no restart). Wipe to
+  reset.
 - `/srv/` — the Podman data volume, bind-mounted onto the VM at `/srv` by
   the `srv.mount` unit and mounted into every container at the same path,
   so `/srv/projects/<name>` means the same thing on both sides. Holds
@@ -84,7 +85,8 @@ The binary is Go, built from `go/` into `bin/mpd` by `make install`:
   platform.env, CA trust stores, resolver drop-in, motd, shutdown unit)
 - `go/internal/runtime/` — runtime provisioning and its state cache
 - `go/internal/project/` — project scaffolding, env mutation, certs, rescan
-- `go/internal/service/` — always-on infra services (dnsmasq, adminer)
+- `go/internal/service/` — the infra service registry (dnsmasq and the
+  status page run on the VM under systemd; adminer is the one container)
 - `go/internal/web/` — the status page `mpd --web` serves, behind the
   VM's caddy
 - `go/internal/db/` — DB containers: tags, images, allocation, lifecycle
@@ -95,7 +97,8 @@ The binary is Go, built from `go/` into `bin/mpd` by `make install`:
   privileged removal
 - `go/internal/state/` — the JSON state files under `/var/lib/mpd/state/`
 - `go/internal/current/` — observed (as opposed to requested) state
-- `go/internal/dnsmasq/` — DNS record fragments
+- `go/internal/dnsmasq/` — DNS record files (`vm.ConfigureDnsmasq` owns
+  the resolver itself)
 - `go/internal/net/` — per-VM addressing: the single source of truth
 - `go/internal/assets/` — reads the `assets/` tree
 - `go/internal/podman/` — the Podman gateway (see the mandatory rule below)

@@ -83,14 +83,19 @@ func RequireSupportedHost() error {
 var requiredPackages = []struct{ Package, Binary string }{
 	// Container engine and the pieces podman needs but does not pull in
 	// under --no-install-recommends: catatonit is the pod pause binary,
-	// aardvark-dns resolves container names (without it `--dns` on a
-	// podman network is silently dropped), uidmap provides
-	// newuidmap/newgidmap.
+	// uidmap provides newuidmap/newgidmap.
+	//
+	// Deliberately not aardvark-dns: mpd's network is created with
+	// --disable-dns, so podman's own resolver is never started. It would
+	// bind port 53 on the gateway, which is where mpd's resolver listens.
 	{"podman", "/usr/bin/podman"},
 	{"catatonit", "/usr/bin/catatonit"},
-	{"aardvark-dns", "/usr/lib/podman/aardvark-dns"},
 	{"uidmap", "/usr/bin/newuidmap"},
 	{"nftables", "/usr/sbin/nft"},
+	// The VM's resolver. dnsmasq-base is the binary alone; the `dnsmasq`
+	// package would additionally install a second unit reading
+	// /etc/dnsmasq.conf, which is the sysadmin's file and not mpd's.
+	{"dnsmasq-base", "/usr/sbin/dnsmasq"},
 	// Also in bootstrap/40, deliberately: the bootstrap scripts need it
 	// before mpd exists, and repeating it here keeps it converging on a
 	// VM bootstrapped earlier. mpd itself never shells out to jq — it
@@ -305,18 +310,18 @@ func unitIsActive(ctx context.Context, unit string) bool {
 	return err == nil && code == 0
 }
 
-// ConfigureDNSResolver points systemd-resolved at the dnsmasq container
-// for the whole root domain.
+// ConfigureDNSResolver points systemd-resolved at mpd's resolver for the
+// whole root domain.
 //
-// The root domain, not this VM's zone: a VM has exactly one dnsmasq and
+// The root domain, not this VM's zone: a VM has exactly one resolver and
 // no business resolving another VM's zone, so NXDOMAIN for a foreign
 // zone is the correct in-VM answer.
 //
 // `reload`, not `restart`, and only when the file actually changed —
 // restarting drops the per-link DNS state resolved is already serving.
-func ConfigureDNSResolver(ctx context.Context, out io.Writer, rootDomain, dnsmasqIP string) error {
+func ConfigureDNSResolver(ctx context.Context, out io.Writer, rootDomain, resolverIP string) error {
 	const path = "/etc/systemd/resolved.conf.d/mpd.conf"
-	content := fmt.Sprintf("[Resolve]\nDNS=%s\nDomains=~%s\n", dnsmasqIP, rootDomain)
+	content := fmt.Sprintf("[Resolve]\nDNS=%s\nDomains=~%s\n", resolverIP, rootDomain)
 
 	changed, err := WriteRootOwnedFile(ctx, path, content)
 	if err != nil {
@@ -329,7 +334,7 @@ func ConfigureDNSResolver(ctx context.Context, out io.Writer, rootDomain, dnsmas
 			return fmt.Errorf("systemctl reload systemd-resolved failed.")
 		}
 	}
-	ui.OK(out, "DNS resolver configured (systemd-resolved → %s for %s).", dnsmasqIP, rootDomain)
+	ui.OK(out, "DNS resolver configured (systemd-resolved → %s for %s).", resolverIP, rootDomain)
 	return nil
 }
 

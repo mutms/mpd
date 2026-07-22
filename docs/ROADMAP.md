@@ -141,7 +141,7 @@ Real possibilities, not committed work.
   user's separate workstation. Since the user already runs one CF
   Zero Trust client to reach Proxmox, mpd reuses it: a `cloudflared`
   connector inside the VM advertises the container CIDR
-  (`10.163.<NNN>.0/24`, dnsmasq `10.163.<NNN>.3`) as a private route; CA
+  (`10.163.<NNN>.0/24`, resolver `10.163.<NNN>.1`) as a private route; CA
   trust is unchanged. Keeps mpd's client-side contract
   transport-agnostic — three facts — (1) a route to
   `10.163.<NNN>.0/24` exists, (2) the VM's zone resolves to those IPs,

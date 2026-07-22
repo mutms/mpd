@@ -594,7 +594,7 @@ immediately. No sync, no restart needed.
 - `MPD_<RUNTIME>_<KEY>` — runtime-wide, applies to every type on that
   runtime (`MPD_PHP_VERSION`, `MPD_PHP_XDEBUG_MODE`).
 - `MPD_<KEY>` — global mpd infra (none currently in active use; the
-  former `MPD_DNS_UPSTREAM` is gone — dnsmasq now bind-mounts the host's
+  former `MPD_DNS_UPSTREAM` is gone — dnsmasq reads the host's
   systemd-resolved upstream and follows whatever the host has configured).
 - **Reserved keys:** `MPD_DB` is owned by `db.ParseTag`
   (engine whitelist + version regex); other reserved keys go in the same map
@@ -698,16 +698,21 @@ Wipe contract:
   several VMs are reachable from one workstation at once. `Mpd.Net`
   (`go/internal/net/net.go`) is the single source of truth; nothing else should
   contain `10.163.` or `mpd.test` as a literal.
-- dnsmasq inside the VM serves `*.mpd.test`; the host gets a *scoped*
-  resolver entry pointing the VM's zone at `10.163.<NNN>.3`
-  (`/etc/resolver/<NNN>.mpd.test` on macOS, NRPT on Windows, a
-  systemd-resolved drop-in on Linux).
+- dnsmasq runs **on the VM** (not in a container) and is authoritative for
+  `.test`; the host gets a *scoped* resolver entry pointing the VM's zone
+  at `10.163.<NNN>.1` (`/etc/resolver/<NNN>.mpd.test` on macOS, NRPT on
+  Windows, a systemd-resolved drop-in on Linux). Podman's own DNS is
+  disabled on the network so nothing else holds port 53 on the gateway.
 - All TLS certs (per-project, per-runtime, services) are signed by
   the local `mpd` CA generated on the host and pushed into the VM.
 
 Always-on infra services:
 
-- `dnsmasq` — DNS for `*.mpd.test`, authoritative for this VM's zone
+- `dnsmasq` — not a container: Debian's `dnsmasq-base` on the VM as the
+  system unit `mpd-dnsmasq.service`, listening on the bridge gateway.
+  Authoritative for `.test`; records are hosts files under
+  `/var/lib/mpd/state/dns/`, which it re-reads on change without a
+  restart. See docs/NETWORKING.md
 - the **portal** is not a container: `mpd --web` runs on the VM as the
   user unit `mpd-web.service`, listening on `127.0.0.1:8099`, with
   Debian's caddy in front of it on the bridge gateway terminating TLS for
@@ -748,7 +753,7 @@ Windows is the awkward case. The built-in NRPT mechanism
 clients (notably Chromium's async resolver) and interacts poorly with
 corporate VPN clients. The recommended fallback is to install a small
 local DNS forwarder on the laptop, point the system resolver at `127.0.0.1`,
-and let the forwarder split queries by domain (`*.<NNN>.mpd.test → 10.163.<NNN>.3`,
+and let the forwarder split queries by domain (`*.<NNN>.mpd.test → 10.163.<NNN>.1`,
 everything else → system upstream).
 
 **Recommended tool: Acrylic DNS Proxy** — Windows-only, MSI installer with

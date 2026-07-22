@@ -10,8 +10,8 @@
 //
 // Each VM owns one /24 and one DNS zone, both keyed on MPD_VM_ID: VM 150
 // serves 10.163.150.0/24 and the zone 150.mpd.test; the sandbox VM is
-// 000. The host part of an address never varies — dnsmasq is always .3,
-// adminer always .6, runtimes always .100+ — only the third octet
+// 000. The host part of an address never varies — the VM itself is always
+// .1, adminer always .6, runtimes always .100+ — only the third octet
 // moves, and it always equals the VM id. That is what lets a workstation
 // reach several VMs at once. See docs/NETWORKING.md.
 //
@@ -44,11 +44,15 @@ const SubnetPrefix = "10.163"
 
 // Host octets with a fixed meaning inside every VM's /24.
 const (
-	HostGateway = 1 // podman bridge — the VM itself, and the portal
-	HostDnsmasq = 3
-	// 4 and 5 are unassigned: 4 was the portal container, which is now
-	// `mpd --web` on the VM behind caddy and therefore answers on the
-	// gateway; 5 was fileaccess, which no longer exists at all.
+	// HostGateway is the podman bridge: the VM itself. Everything mpd
+	// serves from the VM rather than from a container answers here — the
+	// resolver, caddy, and `mpd --web` behind it.
+	HostGateway = 1
+	// 3, 4 and 5 are unassigned. Each was a container that no longer
+	// exists: 3 was dnsmasq, now a systemd unit on the VM listening on
+	// the gateway; 4 was the portal, now `mpd --web` behind caddy on the
+	// gateway; 5 was fileaccess, deleted outright once /srv was mounted
+	// on the VM.
 	HostAdminer = 6
 )
 
@@ -148,7 +152,7 @@ func (n Net) Subnet() string {
 }
 
 // IP composes a container address from its host octet.
-// e.g. IP(HostDnsmasq) on VM 150 → "10.163.150.3".
+// e.g. IP(HostAdminer) on VM 150 → "10.163.150.6".
 func (n Net) IP(host int) string {
 	return fmt.Sprintf("%s.%d.%d", SubnetPrefix, n.octet, host)
 }

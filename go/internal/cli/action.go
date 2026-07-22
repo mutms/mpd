@@ -15,7 +15,6 @@ import (
 	"github.com/mutms/mpd/go/internal/hooks"
 	"github.com/mutms/mpd/go/internal/srv"
 
-	"github.com/mutms/mpd/go/internal/dnsmasq"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/service"
@@ -49,18 +48,14 @@ func Start(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) e
 		return err
 	}
 
-	for _, name := range []string{"dnsmasq", "adminer"} {
-		svc, ok := service.Find(name)
-		if !ok {
-			continue
-		}
+	if svc, ok := service.Find("adminer"); ok {
 		if err := service.Start(ctx, out, svc, d.Net, d.Podman); err != nil {
 			return err
 		}
 	}
 
 	fmt.Fprintln(out, "\n\033[1m==> DNS resolution\033[0m")
-	verifyDNS(ctx, out, d.Net, d.Podman)
+	verifyDNS(ctx, out, d.Net)
 
 	// Restore runtimes that had running projects. Failure warns rather
 	// than aborts: one broken runtime should not stop the others coming
@@ -97,13 +92,13 @@ func Start(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) e
 	return nil
 }
 
-// verifyDNS checks that the VM's own resolver answers for the zone apex
-// through dnsmasq. Reports rather than fails: a VM with broken DNS is
-// still worth having started, and the message says what to inspect.
-func verifyDNS(ctx context.Context, out io.Writer, n net.Net, p *podman.Client) {
-	if !dnsmasqReachable(ctx, p) {
-		fmt.Fprintf(out, "DNS check: dnsmasq at %s:53 not reachable within 8s.\n", n.IP(net.HostDnsmasq))
-		fmt.Fprintf(out, "  Inspect with: sudo podman logs %s\n", dnsmasq.Container)
+// verifyDNS checks that the VM's own resolver answers for the zone apex.
+// Reports rather than fails: a VM with broken DNS is still worth having
+// started, and the message says what to inspect.
+func verifyDNS(ctx context.Context, out io.Writer, n net.Net) {
+	if !dnsmasqReachable(ctx) {
+		fmt.Fprintf(out, "DNS check: resolver at %s:53 not active within 8s.\n", n.Gateway())
+		fmt.Fprintf(out, "  Inspect with: journalctl -u %s\n", vm.DnsmasqUnit)
 		return
 	}
 	// The apex answers wherever the portal is — the registry knows, and
@@ -120,16 +115,21 @@ func verifyDNS(ctx context.Context, out io.Writer, n net.Net, p *podman.Client) 
 		return
 	}
 	if got == "" {
-		fmt.Fprintln(out, "DNS check: no result — system resolver not pointing at dnsmasq")
+		fmt.Fprintln(out, "DNS check: no result — nothing answered for the zone.")
+		// The overwhelmingly likely cause, and not an obvious one: the
+		// resolver binds the podman bridge, which podman does not create
+		// until a container attaches to the network.
+		fmt.Fprintf(out, "  If no container has ever started, the bridge does not exist yet\n"+
+			"  and the resolver has nothing to bind. Start one, or run: mpd --vm-setup\n")
 	} else {
 		fmt.Fprintf(out, "DNS check: got %s, expected %s\n", got, want)
 	}
 	fmt.Fprintf(out, "  Verify: resolvectl status; getent hosts %s\n", n.Zone())
 }
 
-func dnsmasqReachable(ctx context.Context, p *podman.Client) bool {
+func dnsmasqReachable(ctx context.Context) bool {
 	for i := 0; i < 16; i++ {
-		if p.Running(ctx, dnsmasq.Container) {
+		if vm.UnitActive(ctx, vm.DnsmasqUnit, false) {
 			return true
 		}
 		time.Sleep(500 * time.Millisecond)
@@ -149,12 +149,13 @@ func writeVMMeta(ctx context.Context, d ProjectDeps) error {
 // /var/lib/mpd/conf/platform.env, which holds the CA key and is
 // deliberately never mounted into a container.
 func VMMeta(ctx context.Context, p *podman.Client, n net.Net, stateDir string) error {
+	// No separate resolver address: it listens on the gateway, and a
+	// second key holding the same value is a second thing to keep true.
 	meta := map[string]string{
-		"vmId":      n.VMID(),
-		"zone":      n.Zone(),
-		"subnet":    n.Subnet(),
-		"gateway":   n.Gateway(),
-		"dnsmasqIp": n.IP(net.HostDnsmasq),
+		"vmId":    n.VMID(),
+		"zone":    n.Zone(),
+		"subnet":  n.Subnet(),
+		"gateway": n.Gateway(),
 	}
 	data, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {

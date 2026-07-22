@@ -21,7 +21,7 @@ func stub(out string, code int) (*Client, *[]string) {
 }
 
 const psJSON = `[
-  {"Names":["mpd-service-dnsmasq"],"State":"running","Labels":{"mpd.managed":"true"}},
+  {"Names":["mpd-service-adminer"],"State":"running","Labels":{"mpd.managed":"true"}},
   {"Names":["mpd-service-adminer"],"State":"exited","Labels":{"mpd.service.revision":"7"}},
   {"Names":["mpd-150-php-main"],"State":"running","Labels":null}
 ]`
@@ -32,7 +32,7 @@ func TestPsParsesPodmanJSON(t *testing.T) {
 	if len(items) != 3 {
 		t.Fatalf("got %d items, want 3", len(items))
 	}
-	if items[0].Name() != "mpd-service-dnsmasq" || items[0].State != "running" {
+	if items[0].Name() != "mpd-service-adminer" || items[0].State != "running" {
 		t.Errorf("first item = %+v", items[0])
 	}
 	if got := items[1].Label("mpd.service.revision"); got != "7" {

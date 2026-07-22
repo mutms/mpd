@@ -48,8 +48,9 @@ type Deps struct {
 	Observer current.Observer
 	Assets   assets.Tree
 	// UnitActive reports whether a systemd-backed service is running,
-	// injected so rendering never shells out on its own.
-	UnitActive func(context.Context, string) bool
+	// injected so rendering never shells out on its own. The bool is the
+	// unit's scope — true for a `systemctl --user` unit.
+	UnitActive func(context.Context, string, bool) bool
 }
 
 // Serve runs the status server until ctx is cancelled.

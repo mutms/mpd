@@ -54,13 +54,15 @@ func stubPodman(psJSON string) *podman.Client {
 }
 
 func TestListServices(t *testing.T) {
-	ps := `[
-	  {"Names":["mpd-service-dnsmasq"],"State":"running"}
-	]`
+	// Only adminer is a container now; the resolver and the status page
+	// are systemd units on the VM. Reported as not-created, which is what
+	// an empty podman ps means for the one service that is still a
+	// container.
+	ps := `[]`
 	var buf bytes.Buffer
-	// The web service is systemd-backed; report it running without a
-	// systemd in the loop.
-	unitActive := func(context.Context, string) bool { return true }
+	// dnsmasq and the portal are systemd-backed; report them running
+	// without a systemd in the loop.
+	unitActive := func(context.Context, string, bool) bool { return true }
 	ListServices(context.Background(), &buf, testNet(t, 150), stubPodman(ps), unitActive)
 	out := buf.String()
 
@@ -71,8 +73,10 @@ func TestListServices(t *testing.T) {
 	if !strings.HasPrefix(lines[0], "SERVICE") {
 		t.Errorf("header = %q", lines[0])
 	}
-	// Ordered by IP: portal .1 (systemd-backed), dnsmasq .3, adminer .6.
-	for i, want := range []string{"portal", "dnsmasq", "adminer"} {
+	// Ordered by IP, then registry order for ties: dnsmasq and the portal
+	// both answer on the gateway .1 because both run on the VM itself,
+	// and adminer is the lone container at .6.
+	for i, want := range []string{"dnsmasq", "portal", "adminer"} {
 		if !strings.HasPrefix(lines[i+2], want) {
 			t.Errorf("row %d = %q, want it to start with %q", i, lines[i+2], want)
 		}
@@ -80,10 +84,13 @@ func TestListServices(t *testing.T) {
 	// A container podman didn't report is not-created; a non-running one
 	// is stopped. The distinction is what tells "never set up" from
 	// "set up and down".
-	// The portal is systemd-backed, so its status comes from the injected
-	// unit check rather than from podman ps.
+	// dnsmasq is systemd-backed, so its status comes from the injected
+	// unit check rather than from podman ps — which reported nothing.
 	if !strings.Contains(lines[2], "running") {
-		t.Errorf("portal row = %q, want running (unit active)", lines[2])
+		t.Errorf("dnsmasq row = %q, want running (unit active)", lines[2])
+	}
+	if !strings.Contains(lines[3], "running") {
+		t.Errorf("portal row = %q, want running (unit active)", lines[3])
 	}
 	if !strings.Contains(lines[4], "not-created") {
 		t.Errorf("adminer row = %q, want not-created", lines[4])

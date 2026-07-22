@@ -82,14 +82,8 @@ func syncDatabaseState(ctx context.Context, p *podman.Client, s state.Store, dns
 	if err := db.RebuildStateCache(ctx, p, s); err != nil {
 		return err
 	}
-	changed, err := dns.EnsureDatabaseRecords(ctx)
-	if err != nil {
-		return err
-	}
-	if changed {
-		return dns.Restart(ctx)
-	}
-	return nil
+	_, err := dns.EnsureDatabaseRecords(ctx)
+	return err
 }
 
 // DBCreate creates (or starts) a DB container.

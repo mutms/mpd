@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/mutms/mpd/go/internal/exec"
 )
@@ -331,24 +332,86 @@ func (c *Client) NetworkExists(ctx context.Context, name string) bool {
 	return err == nil && res.Code == 0
 }
 
-// NetworkCreate creates a bridge network with a fixed subnet and the DNS
-// servers containers on it should use.
+// NetworkCreate creates a bridge network with a fixed subnet and podman's
+// own DNS turned off.
 //
-// The DNS servers are set on the network rather than per container, so
-// every container that attaches — runtimes, sidecars, service containers,
-// DB containers — resolves mpd names without each create having to
-// remember a --dns flag.
-func (c *Client) NetworkCreate(ctx context.Context, name, subnet string, dnsServers []string) (int, error) {
-	args := []string{"network", "create", "--subnet", subnet}
-	for _, s := range dnsServers {
-		args = append(args, "--dns", s)
-	}
-	args = append(args, name)
-	res, err := c.run(ctx, args)
+// --disable-dns evicts aardvark-dns, which would otherwise bind port 53 on
+// the gateway address — exactly where mpd's resolver listens. It was never
+// earning its place anyway: mpd's names are all fully qualified and served
+// by dnsmasq, so aardvark answered nothing mpd asked for and forwarded the
+// rest, one hop for no answers.
+//
+// Containers get their resolver from DNSOpts at create time instead. That
+// cannot be folded back onto the network here: podman rejects
+// NetworkDNSServers when DNS is disabled, since it configures aardvark's
+// upstream rather than the container's resolv.conf.
+// iface pins the bridge's name instead of taking podman's podman0,
+// podman1, … counter, whose value depends on what other networks happened
+// to be created first. mpd's resolver has to name that interface in its
+// config to bind the gateway address, so a name that drifts is a name
+// that silently stops resolving.
+func (c *Client) NetworkCreate(ctx context.Context, name, iface, subnet string) (int, error) {
+	res, err := c.run(ctx, []string{
+		"network", "create",
+		"--subnet", subnet,
+		"--interface-name", iface,
+		"--disable-dns",
+		name,
+	})
 	if err != nil {
 		return -1, err
 	}
 	return res.Code, nil
+}
+
+// NetworkInterface reports the host bridge a podman network uses.
+//
+// Read rather than assumed: it is what mpd's resolver binds to, and a
+// network created before mpd pinned the name still carries podman's own.
+func (c *Client) NetworkInterface(ctx context.Context, name string) string {
+	res, err := c.run(ctx, []string{
+		"network", "inspect", name, "--format", "{{.NetworkInterface}}",
+	})
+	if err != nil || res.Code != 0 {
+		return ""
+	}
+	return strings.TrimSpace(res.Stdout)
+}
+
+// NetworkDNSEnabled reports whether podman's own DNS is on for a network.
+//
+// True means the network predates mpd's move to a VM-hosted resolver and
+// aardvark-dns still owns the gateway's port 53. It cannot be turned off
+// in place — `podman network update` only edits nameserver lists — so the
+// caller's job is to say so rather than to repair it.
+func (c *Client) NetworkDNSEnabled(ctx context.Context, name string) bool {
+	res, err := c.run(ctx, []string{
+		"network", "inspect", name, "--format", "{{.DNSEnabled}}",
+	})
+	if err != nil || res.Code != 0 {
+		return false
+	}
+	return strings.TrimSpace(res.Stdout) == "true"
+}
+
+// DNSOpts is the resolver configuration every mpd container and pod is
+// created with: mpd's own resolver on the podman bridge gateway, and
+// nothing else.
+//
+// Exactly one nameserver, deliberately. Left to itself podman copies the
+// VM's resolv.conf, which lists the upstream link resolver as a fallback —
+// so a name under .test would quietly escape to public DNS whenever the
+// local resolver blinked, and answer NXDOMAIN instead of failing visibly.
+//
+// The timeout is glibc's, not dnsmasq's: the stock 5s × 2 attempts means a
+// query lost while the resolver restarts costs the caller ten seconds.
+// One second twice is still ample for a resolver on the same host.
+func DNSOpts(gateway string) []string {
+	return []string{
+		"--dns", gateway,
+		"--dns-option", "timeout:1",
+		"--dns-option", "attempts:2",
+	}
 }
 
 // RemoveIfOutdated removes a container whose labels no longer match what

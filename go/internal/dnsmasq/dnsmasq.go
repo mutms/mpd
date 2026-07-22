@@ -1,11 +1,26 @@
 // Package dnsmasq maintains the DNS records mpd serves for its own
 // containers.
 //
-// Records live as conf.d fragments under <stateDir>/dnsmasq.d/, which is
-// bind-mounted read-only into the dnsmasq container at /etc/dnsmasq.d/.
-// dnsmasq does NOT reload a conf directory on SIGHUP, so any change here
-// requires a container restart — that is why every writer returns
-// "changed" and the caller restarts exactly once.
+// Records are hosts files under <stateDir>/dns/, which the resolver reads
+// via dnsmasq's `hostsdir=`. That directive is the reason this package has
+// no Restart: dnsmasq watches the directory and re-reads it on every add,
+// change and remove, flushing the cache for just the affected names.
+// Publishing a record is a file write and nothing else.
+//
+// It was not always so. These records used to be `address=/host/ip`
+// fragments in a `conf-dir=`, which dnsmasq reads only at startup — not
+// even SIGHUP re-reads a config file. Every `mpd create` and `mpd delete`
+// therefore restarted the resolver, and although the restart itself took
+// 0.2s, a client whose query was in flight paid glibc's full
+// `timeout:5 attempts:2` — ten seconds of "Temporary failure in name
+// resolution" for every other project on the VM.
+//
+// The format change is not merely a serialisation detail. `address=/x/ip`
+// answers for x AND every name beneath it, so it was a wildcard that
+// happened to be used for exact names; a hosts entry answers only the
+// name written. Since mpd enumerates every name it publishes, exact match
+// is what was meant all along, and unknown names under the zone now
+// NXDOMAIN by construction rather than by careful use of a wildcard.
 package dnsmasq
 
 import (
@@ -21,23 +36,31 @@ import (
 	"github.com/mutms/mpd/go/internal/podman"
 )
 
-// Container is the dnsmasq service container.
-const Container = "mpd-service-dnsmasq"
+// recordSuffix marks the files in the hosts directory mpd owns. dnsmasq
+// reads every file in a hostsdir regardless of name, so the suffix is for
+// humans and for PruneOutOfZone, not for dnsmasq.
+const recordSuffix = ".hosts"
 
-// Manager writes record fragments and restarts dnsmasq when they change.
+// Manager writes record files into the resolver's hosts directory.
+//
+// No restart method, and none is wanted: see the package comment.
 type Manager struct {
 	dir string
 	n   net.Net
 	p   *podman.Client
 }
 
-// New returns a Manager writing into <stateDir>/dnsmasq.d/.
+// New returns a Manager writing into <stateDir>/dns/.
 func New(stateDir string, n net.Net, p *podman.Client) Manager {
-	return Manager{dir: filepath.Join(stateDir, "dnsmasq.d"), n: n, p: p}
+	return Manager{dir: filepath.Join(stateDir, "dns"), n: n, p: p}
 }
 
-// EnsureDatabaseRecords rewrites databases.conf from live containers and
-// reports whether the file changed.
+// hostsLine renders one record. Hosts syntax: address first, then the
+// names it answers for.
+func hostsLine(host, ip string) string { return ip + " " + host }
+
+// EnsureDatabaseRecords rewrites the database records from live
+// containers and reports whether the file changed.
 //
 // Addresses come from podman rather than from databases.json: a stopped
 // container has no address, so its record must disappear — pointing a
@@ -64,10 +87,10 @@ func (m Manager) EnsureDatabaseRecords(ctx context.Context) (bool, error) {
 	}
 	sort.Slice(records, func(i, j int) bool { return records[i].id < records[j].id })
 	for _, r := range records {
-		lines = append(lines, "address=/"+m.n.DB(r.id)+"/"+r.ip)
+		lines = append(lines, hostsLine(m.n.DB(r.id), r.ip))
 	}
 
-	return m.writeIfChanged("databases.conf", strings.Join(lines, "\n")+"\n")
+	return m.writeIfChanged("databases", strings.Join(lines, "\n")+"\n")
 }
 
 // ServiceRecord is one name mpd publishes for an infra service.
@@ -76,47 +99,37 @@ type ServiceRecord struct {
 	IP   string
 }
 
-// EnsureServiceRecords rewrites services.conf and reports whether it
-// changed.
-//
-// The apex gets a `host-record` while everything else gets `address=`:
-// dnsmasq's `address=/domain/ip` matches the domain AND all its
-// subdomains, so using it for the zone apex would make every
-// unrecognised name under the zone resolve to the portal — including
-// project and runtime names whose own records had not been written yet.
+// EnsureServiceRecords rewrites the service records and reports whether
+// they changed.
 func (m Manager) EnsureServiceRecords(records []ServiceRecord, vmIP string) (bool, error) {
 	lines := []string{"# mpd managed service DNS records"}
 	for _, r := range records {
-		if r.Host == m.n.Zone() {
-			lines = append(lines, "host-record="+r.Host+","+r.IP)
-		} else {
-			lines = append(lines, "address=/"+r.Host+"/"+r.IP)
-		}
+		lines = append(lines, hostsLine(r.Host, r.IP))
 	}
 
 	// vm.service.<zone> answers with the VM's OWN address rather than a
 	// container's, so the host-side orchestrator can confirm it is
-	// talking to this VM's dnsmasq and not another's. Skipped on sandbox
+	// talking to this VM's resolver and not another's. Skipped on sandbox
 	// VMs, which are on DHCP and have no address to publish.
 	if vmIP != "" {
-		lines = append(lines, "host-record="+m.n.VMServiceRecord()+","+vmIP)
+		lines = append(lines, hostsLine(m.n.VMServiceRecord(), vmIP))
 	}
 
-	return m.writeIfChanged("services.conf", strings.Join(lines, "\n")+"\n")
+	return m.writeIfChanged("services", strings.Join(lines, "\n")+"\n")
 }
 
-// managedFragments are rewritten from scratch on every reconcile, so
+// managedRecords are rewritten from scratch on every reconcile, so
 // PruneOutOfZone must leave them alone.
-var managedFragments = map[string]bool{"services.conf": true, "databases.conf": true}
+var managedRecords = map[string]bool{"services": true, "databases": true}
 
-// PruneOutOfZone deletes fragments that serve names outside this VM's
+// PruneOutOfZone deletes record files serving names outside this VM's
 // zone, reporting whether anything went.
 //
 // Per-runtime and per-project records are written at create time and
 // never revisited. After a VM's ID changes they keep answering for the
 // old zone at addresses on the old subnet — names that resolve to
 // somewhere nothing listens. The entities they describe have to be
-// recreated to get correct records anyway, so a stale fragment has no
+// recreated to get correct records anyway, so a stale record has no
 // value and its half-working DNS is actively confusing.
 func (m Manager) PruneOutOfZone(out io.Writer) bool {
 	entries, err := os.ReadDir(m.dir)
@@ -126,7 +139,8 @@ func (m Manager) PruneOutOfZone(out io.Writer) bool {
 	removed := false
 	for _, e := range entries {
 		name := e.Name()
-		if !strings.HasSuffix(name, ".conf") || managedFragments[name] {
+		base, ok := strings.CutSuffix(name, recordSuffix)
+		if !ok || managedRecords[base] {
 			continue
 		}
 		path := filepath.Join(m.dir, name)
@@ -147,18 +161,20 @@ func (m Manager) PruneOutOfZone(out io.Writer) bool {
 	return removed
 }
 
-// recordHosts extracts the host from each `address=/<host>/<ip>` line.
+// recordHosts extracts every name a hosts file answers for. A line is an
+// address followed by one or more names; comments and blanks carry none.
 func recordHosts(body string) []string {
 	var hosts []string
 	for _, raw := range strings.Split(body, "\n") {
-		rest, found := strings.CutPrefix(strings.TrimSpace(raw), "address=/")
-		if !found {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		host, _, _ := strings.Cut(rest, "/")
-		if host != "" {
-			hosts = append(hosts, host)
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
 		}
+		hosts = append(hosts, fields[1:]...)
 	}
 	return hosts
 }
@@ -172,17 +188,11 @@ func anyOutOfZone(n net.Net, hosts []string) bool {
 	return false
 }
 
-// Restart restarts dnsmasq so it picks up conf.d changes.
-func (m Manager) Restart(ctx context.Context) error {
-	_, err := m.p.Restart(ctx, Container)
-	return err
-}
-
-// writeIfChanged writes content only when it differs, so an unchanged
-// reconcile does not trigger a needless dnsmasq restart (which would
-// drop in-flight lookups for no reason).
+// writeIfChanged writes content only when it differs. Unchanged content
+// is not rewritten, so dnsmasq's directory watch does not fire and the
+// cache for those names is not flushed for nothing.
 func (m Manager) writeIfChanged(name, content string) (bool, error) {
-	path := filepath.Join(m.dir, name)
+	path := filepath.Join(m.dir, name+recordSuffix)
 	if existing, err := os.ReadFile(path); err == nil && string(existing) == content {
 		return false, nil
 	}
@@ -195,11 +205,10 @@ func (m Manager) writeIfChanged(name, content string) (bool, error) {
 	return true, nil
 }
 
-// RemoveRecord deletes a per-project or per-runtime conf fragment.
-// Reports whether anything was removed, so the caller restarts dnsmasq
-// only when it needs to.
+// RemoveRecord deletes a per-project or per-runtime record file.
+// Reports whether anything was removed.
 func (m Manager) RemoveRecord(name string) (bool, error) {
-	path := filepath.Join(m.dir, name+".conf")
+	path := filepath.Join(m.dir, name+recordSuffix)
 	if _, err := os.Stat(path); err != nil {
 		return false, nil
 	}
@@ -209,8 +218,12 @@ func (m Manager) RemoveRecord(name string) (bool, error) {
 	return true, nil
 }
 
-// WriteRecord writes a per-project or per-runtime conf fragment,
-// reporting whether it changed.
+// WriteRecord writes a per-project or per-runtime record file, reporting
+// whether it changed.
 func (m Manager) WriteRecord(name, body string) (bool, error) {
-	return m.writeIfChanged(name+".conf", body)
+	return m.writeIfChanged(name, body)
 }
+
+// Line renders one record for a caller assembling a record body itself —
+// project records, which pair many names with one runtime address.
+func Line(host, ip string) string { return hostsLine(host, ip) }

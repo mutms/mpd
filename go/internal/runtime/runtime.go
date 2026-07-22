@@ -117,15 +117,18 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 	// there and crashes on the default 64 MB. tmpfs is a cap, not a
 	// reservation, so idle pods cost nothing — safe for every runtime.
 	//
-	// No --dns here: the network carries it (see the podman network
-	// created by --vm-setup), and every attached container inherits it.
-	if code, err := p.PodCreate(ctx, []string{
+	// --dns on the POD, not the containers: pod members share one network
+	// namespace and one /etc/resolv.conf, which the infra container owns.
+	// Sidecars therefore inherit it without repeating it.
+	podArgs := []string{
 		"--name", o.Pod,
 		"--hostname", o.Pod,
 		"--network", "mpd-internal:ip=" + runtimeIP,
 		"--shm-size=2g",
 		"--label", "com.docker.compose.project=mpd-dev",
-	}); err != nil || code != 0 {
+	}
+	podArgs = append(podArgs, podman.DNSOpts(o.Net.Gateway())...)
+	if code, err := p.PodCreate(ctx, podArgs); err != nil || code != 0 {
 		return "", fmt.Errorf("Failed to create runtime '%s'.", o.Name)
 	}
 

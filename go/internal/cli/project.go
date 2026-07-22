@@ -69,6 +69,13 @@ func ProjectStart(ctx context.Context, out io.Writer, name string, d ProjectDeps
 		if err := db.Ensure(ctx, ref, d.Podman, d.Net, d.UID, out); err != nil {
 			return err
 		}
+		// db.Ensure may have just created the container, and its address
+		// is only known once it exists. Without this the project comes up
+		// with a database it cannot name: Moodle reports
+		// "dbconnectionfailed" on a DB that is running and healthy.
+		if _, err := d.Dnsmasq.EnsureDatabaseRecords(ctx); err != nil {
+			return err
+		}
 	}
 
 	ev := hookProject(entry, container, d)
@@ -86,14 +93,8 @@ func ProjectStart(ctx context.Context, out io.Writer, name string, d ProjectDeps
 
 	runtimeIP := d.Podman.Label(ctx, container, "mpd.ip")
 	if body, ok := project.DNSRecords(name, entry.URLs, runtimeIP, d.Net); ok {
-		changed, err := d.Dnsmasq.WriteRecord(name, body)
-		if err != nil {
+		if _, err := d.Dnsmasq.WriteRecord(name, body); err != nil {
 			return err
-		}
-		if changed {
-			if err := d.Dnsmasq.Restart(ctx); err != nil {
-				return err
-			}
 		}
 	}
 
@@ -163,14 +164,8 @@ func ProjectStop(ctx context.Context, out io.Writer, name string, d ProjectDeps)
 		return err
 	}
 
-	removed, err := d.Dnsmasq.RemoveRecord(name)
-	if err != nil {
+	if _, err := d.Dnsmasq.RemoveRecord(name); err != nil {
 		return err
-	}
-	if removed {
-		if err := d.Dnsmasq.Restart(ctx); err != nil {
-			return err
-		}
 	}
 
 	Ok(out, "'%s' stopped.", name)
@@ -263,14 +258,8 @@ func ProjectDelete(ctx context.Context, out io.Writer, in io.Reader, name string
 		}
 	}
 
-	removed, err := d.Dnsmasq.RemoveRecord(name)
-	if err != nil {
+	if _, err := d.Dnsmasq.RemoveRecord(name); err != nil {
 		return err
-	}
-	if removed {
-		if err := d.Dnsmasq.Restart(ctx); err != nil {
-			return err
-		}
 	}
 
 	for _, path := range []string{
@@ -405,14 +394,8 @@ func ProjectConfigure(ctx context.Context, out io.Writer, name string, args []st
 		if err := db.RebuildStateCache(ctx, d.Podman, d.State); err != nil {
 			return err
 		}
-		changed, err := d.Dnsmasq.EnsureDatabaseRecords(ctx)
-		if err != nil {
+		if _, err := d.Dnsmasq.EnsureDatabaseRecords(ctx); err != nil {
 			return err
-		}
-		if changed {
-			if err := d.Dnsmasq.Restart(ctx); err != nil {
-				return err
-			}
 		}
 	} else {
 		// Clear stale DB fields: a project that dropped MPD_DB must stop

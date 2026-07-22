@@ -44,19 +44,11 @@ func RuntimeStop(ctx context.Context, out io.Writer, name string, p *podman.Clie
 		return err
 	}
 
-	removedAny := false
 	for _, proj := range s.Projects() {
 		if proj.RuntimeName == name && proj.Requested == "running" {
-			removed, err := dns.RemoveRecord(proj.Name)
-			if err != nil {
+			if _, err := dns.RemoveRecord(proj.Name); err != nil {
 				return err
 			}
-			removedAny = removedAny || removed
-		}
-	}
-	if removedAny {
-		if err := dns.Restart(ctx); err != nil {
-			return err
 		}
 	}
 	Ok(out, "Stopped runtime '%s'.", name)
@@ -125,9 +117,6 @@ func RuntimeDelete(ctx context.Context, out io.Writer, in io.Reader, name string
 		if _, err := dns.RemoveRecord(projName); err != nil {
 			return err
 		}
-	}
-	if err := dns.Restart(ctx); err != nil {
-		return err
 	}
 	if err := s.DeleteRuntime(name); err != nil {
 		return err
@@ -206,6 +195,11 @@ func RuntimeStart(ctx context.Context, out io.Writer, name string, p *podman.Cli
 	Ok(out, "Started runtime '%s'.", name)
 
 	ensureProjectDatabases(ctx, out, name, p, s, n, uid)
+	// Same reason as in ProjectStart: a DB container created a moment ago
+	// has an address nothing has published yet.
+	if _, err := dns.EnsureDatabaseRecords(ctx); err != nil {
+		return err
+	}
 	return restoreRunningProjects(ctx, out, name, container, runtimeIP, p, s, dns, n, devUser, uid)
 }
 
@@ -280,7 +274,6 @@ func restoreRunningProjects(ctx context.Context, out io.Writer, runtime, contain
 	}
 
 	fmt.Fprintf(out, "\n\033[1m==> Restoring %d project(s) in '%s'\033[0m\n", len(projects), runtime)
-	changed := false
 	for _, proj := range projects {
 		fmt.Fprintf(out, "  Restoring '%s'...\n", proj.Name)
 
@@ -297,15 +290,10 @@ func restoreRunningProjects(ctx context.Context, out io.Writer, runtime, contain
 		}
 
 		if body, ok := project.DNSRecords(proj.Name, proj.URLs, runtimeIP, n); ok {
-			wrote, err := dns.WriteRecord(proj.Name, body)
-			if err != nil {
+			if _, err := dns.WriteRecord(proj.Name, body); err != nil {
 				return err
 			}
-			changed = changed || wrote
 		}
-	}
-	if changed {
-		return dns.Restart(ctx)
 	}
 	return nil
 }
@@ -338,11 +326,8 @@ func RuntimeCreate(ctx context.Context, out io.Writer, name string, p *podman.Cl
 		return err
 	}
 
-	fmt.Fprintln(out, "\n\033[1m==> Writing dnsmasq conf.d entry\033[0m")
-	if _, err := dns.WriteRecord(name, "address=/"+n.Runtime(name)+"/"+runtimeIP+"\n"); err != nil {
-		return err
-	}
-	if err := dns.Restart(ctx); err != nil {
+	fmt.Fprintln(out, "\n\033[1m==> Publishing DNS record\033[0m")
+	if _, err := dns.WriteRecord(name, dnsmasq.Line(n.Runtime(name), runtimeIP)+"\n"); err != nil {
 		return err
 	}
 

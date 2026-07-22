@@ -26,8 +26,14 @@ import (
 	"github.com/mutms/mpd/go/internal/web"
 )
 
-// Network is the podman network every mpd container attaches to.
-const Network = "mpd-internal"
+// Network is the podman network every mpd container attaches to, and
+// NetworkInterface is the host bridge it hangs off. The bridge is named
+// rather than left to podman's podman0/podman1 counter because mpd's
+// resolver has to bind an address on it.
+const (
+	Network          = "mpd-internal"
+	NetworkInterface = "mpd0"
+)
 
 // BaseImagePull is fetched during setup so the first project create does
 // not also pay for a several-hundred-megabyte download.
@@ -137,14 +143,14 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 
-	m := dnsmasq.New(state.Dir, n, p)
-	caFingerprint := vm.Fingerprint(ctx, vm.CACertPath)
-	if err := service.SetupDnsmasq(ctx, out, p, n, m, caFingerprint, identity.VMIP); err != nil {
+	ui.Step(out, "DNS resolver (dnsmasq)")
+	if err := vm.ConfigureDnsmasq(ctx, out, n.Gateway(), p.NetworkInterface(ctx, Network)); err != nil {
 		return err
 	}
-
-	ui.Step(out, "DNS resolution")
-	verifyDNS(ctx, out, n, p)
+	m := dnsmasq.New(state.Dir, n, p)
+	if err := service.ReconcileDNSRecords(ctx, out, m, n, identity.VMIP, true); err != nil {
+		return err
+	}
 
 	ui.Step(out, "Shell completion for mpd")
 	InstallCompletion(out)
@@ -171,9 +177,6 @@ func Setup(ctx context.Context, out io.Writer) error {
 
 	_, _ = p.PullQuiet(ctx, BaseImagePull)
 
-	// Transitional: the new stack answers at web.service.<zone> while the
-	// portal container keeps the apex, so both can be compared side by
-	// side. At cutover the apex moves here and this name goes away.
 	ui.Step(out, "Status web server (mpd --web)")
 	if err := vm.InstallWebUnit(ctx); err != nil {
 		return err
@@ -202,6 +205,13 @@ func Setup(ctx context.Context, out io.Writer) error {
 		vm.ServiceDir+"/cert.pem", vm.ServiceDir+"/key.pem", sites); err != nil {
 		return err
 	}
+
+	// Last, not next to the resolver step: the resolver binds the podman
+	// bridge, and podman only creates that bridge when the first container
+	// attaches to the network. On a fresh VM that is adminer, above — so
+	// checking any earlier reports a failure that setup is about to fix.
+	ui.Step(out, "DNS resolution")
+	verifyDNS(ctx, out, n)
 
 	ui.Step(out, "Installing shutdown unit")
 	if err := vm.InstallShutdownUnit(ctx, user.User); err != nil {
@@ -237,11 +247,7 @@ func preflight(ctx context.Context, out io.Writer) error {
 	if err := vm.EnablePodmanRestart(ctx, out); err != nil {
 		return err
 	}
-	if err := vm.RequireSystemdResolvedActive(ctx, out); err != nil {
-		return err
-	}
-	ui.OK(out, "Podman runs natively — no machine needed.")
-	return nil
+	return vm.RequireSystemdResolvedActive(ctx, out)
 }
 
 // setupIdentity refreshes the VM ID from the hostname and returns the
@@ -371,25 +377,30 @@ func setupHostTrustAndDNS(ctx context.Context, out io.Writer, n net.Net) error {
 	vm.InstallFirefoxPolicy(ctx, out, vm.CACertPath, n.Zone())
 
 	ui.Step(out, "DNS resolver for %s", net.RootDomain)
-	return vm.ConfigureDNSResolver(ctx, out, net.RootDomain, n.IP(net.HostDnsmasq))
+	return vm.ConfigureDNSResolver(ctx, out, net.RootDomain, n.Gateway())
 }
 
 // setupNetworkAndVolume creates the podman network and the data volume.
 //
-// The network check is a refusal, not a repair: a podman network's
-// subnet is fixed at creation, so a network created under a different VM
-// ID keeps handing out addresses from the OLD subnet while mpd composes
-// DNS records and certificate SANs from the new one. Every name would
-// resolve to an address nothing listens on. Reporting success on that is
-// worse than stopping, so this prints the migration and refuses.
+// Both network checks are refusals, not repairs, and for the same reason:
+// neither property can be changed in place, so the honest move is to name
+// the migration rather than report success on a network that is wrong.
+//
+//   - Subnet: fixed at creation. A network created under a different VM ID
+//     keeps handing out addresses from the OLD subnet while mpd composes
+//     DNS records and certificate SANs from the new one, so every name
+//     resolves to an address nothing listens on.
+//   - DNS: `podman network update` edits nameserver lists only, never the
+//     dns_enabled flag. A network created with podman's DNS on has
+//     aardvark-dns holding port 53 on the gateway, which is where mpd's
+//     own resolver has to listen.
 func setupNetworkAndVolume(ctx context.Context, out io.Writer, p *podman.Client, n net.Net) error {
 	ui.Step(out, "Podman network")
 	if p.NetworkExists(ctx, Network) {
-		actual := p.NetworkSubnet(ctx, Network)
-		if actual != "" && actual != n.Subnet() {
-			return fmt.Errorf(`Podman network '%s' is on %s, but this VM's subnet is %s.
+		if reason := networkMismatch(ctx, p, n); reason != "" {
+			return fmt.Errorf(`Podman network '%s' %s
 
-A network's subnet cannot be changed in place. This VM predates per-VM addressing (or its MPD_VM_ID changed). Either recreate the VM, or migrate in place — destroys containers, keeps the data volume:
+That cannot be changed in place. Migrate — destroys containers, keeps the data volume:
 
     sudo podman rm -af
     sudo podman network rm %s
@@ -397,15 +408,14 @@ A network's subnet cannot be changed in place. This VM predates per-VM addressin
 
 Then recreate runtimes and DB containers; /srv/ (projects, data, databases) is on the data volume and survives. No reboot needed — `+
 				"`podman rm -af`"+` stops the containers, and `+"`mpd --vm-setup`"+` rebuilds the network, records, and certs in place.`,
-				Network, actual, n.Subnet(), Network)
+				Network, reason, Network)
 		}
 		ui.OK(out, "Network '%s' already exists (%s).", Network, n.Subnet())
 	} else {
-		if code, err := p.NetworkCreate(ctx, Network, n.Subnet(),
-			[]string{n.IP(net.HostDnsmasq)}); err != nil || code != 0 {
+		if code, err := p.NetworkCreate(ctx, Network, NetworkInterface, n.Subnet()); err != nil || code != 0 {
 			return fmt.Errorf("Failed to create Podman network '%s'.", Network)
 		}
-		ui.OK(out, "Network '%s' created (%s).", Network, n.Subnet())
+		ui.OK(out, "Network '%s' created (%s, podman DNS off).", Network, n.Subnet())
 	}
 
 	ui.Step(out, "Data volume")
@@ -418,6 +428,21 @@ Then recreate runtimes and DB containers; /srv/ (projects, data, databases) is o
 	}
 	ui.OK(out, "Volume '%s' created.", vm.DataVolume)
 	return nil
+}
+
+// networkMismatch describes what is wrong with the existing network, or
+// "" when it is usable. The text completes a sentence starting with the
+// network's name.
+func networkMismatch(ctx context.Context, p *podman.Client, n net.Net) string {
+	if actual := p.NetworkSubnet(ctx, Network); actual != "" && actual != n.Subnet() {
+		return fmt.Sprintf("is on %s, but this VM's subnet is %s.\n"+
+			"This VM predates per-VM addressing, or its MPD_VM_ID changed.", actual, n.Subnet())
+	}
+	if p.NetworkDNSEnabled(ctx, Network) {
+		return "was created with podman's DNS enabled.\n" +
+			"aardvark-dns holds port 53 on " + n.Gateway() + ", where mpd's resolver listens."
+	}
+	return ""
 }
 
 // setupStateDirectories creates the directories and seed files mpd's own
@@ -503,7 +528,7 @@ func reconcileCaches(ctx context.Context, out io.Writer, p *podman.Client, s sta
 	} else {
 		ui.OK(out, "Database cache rebuilt (%d database(s) found).", count)
 	}
-	if err := service.EnsureDnsmasqReady(ctx, out, p, n, m, vmIP, false); err != nil {
+	if err := service.ReconcileDNSRecords(ctx, out, m, n, vmIP, false); err != nil {
 		return err
 	}
 

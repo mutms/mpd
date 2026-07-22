@@ -17,21 +17,26 @@ Laptop (macOS — primary)
   |
 VM (Debian Trixie)              hostname: mpd-<NNN>
   |
-  Podman (rootful) bridge:  podman1  10.163.<NNN>.1/24
-   |                                  caddy on the VM binds here: the zone
-   |                                  apex (mpd --web) and adminer, both HTTPS
+  Podman (rootful) bridge:  mpd0  10.163.<NNN>.1/24
+   |    Three VM processes bind this address, and nothing else does:
+   |      dnsmasq :53   — DNS for *.test
+   |      caddy   :443  — the zone apex (mpd --web) and adminer, both HTTPS
    |
-   `mpd-internal` Podman network    10.163.<NNN>.0/24
+   `mpd-internal` Podman network    10.163.<NNN>.0/24  (podman DNS disabled)
      |
-     +-- mpd-service-dnsmasq     10.163.<NNN>.3   (DNS for *.<NNN>.mpd.test)
      +-- mpd-service-adminer     10.163.<NNN>.6   (plain HTTP; caddy fronts it)
      +-- DB containers           10.163.<NNN>.30–.99
      +-- runtime containers      10.163.<NNN>.100+ (full dev access via SSH)
 ```
 
+The bridge is named `mpd0` rather than taking podman's `podman0`/`podman1`
+counter, whose value depends on what other networks were created first.
+dnsmasq names that interface in its config, so a name that drifts is a
+name that silently stops resolving.
+
 The VM runs `net.ipv4.ip_forward=1` (set by `bootstrap/30-networking.sh`)
 so packets from the laptop transit the VM and reach containers via
-`podman1`.
+`mpd0`.
 
 ## How the laptop reaches containers
 
@@ -43,7 +48,7 @@ Default Switch), and the container subnet hangs off that:
   `mpd-virt` (persistent where the OS supports it; re-asserted on
   `start` otherwise). This is what makes container IPs reachable.
 - **DNS** — a *scoped* resolver entry pointing `*.<NNN>.mpd.test` at that
-  VM's dnsmasq (`10.163.<NNN>.3`): `/etc/resolver/<NNN>.mpd.test` on
+  VM's resolver (`10.163.<NNN>.1`): `/etc/resolver/<NNN>.mpd.test` on
   macOS, an NRPT rule for `.<NNN>.mpd.test` on Windows, a
   systemd-resolved drop-in with `Domains=~<NNN>.mpd.test` on Linux.
   Scoped, so only that VM's zone goes to that VM — everything else keeps
@@ -61,9 +66,9 @@ use mpd.
 `<NNN>` above is the VM's `MPD_VM_ID` — the last octet of its static IP
 (`000` for a sandbox VM). It is the discriminator in **both** halves of
 the addressing: the third octet of the container subnet, and the first
-label of the DNS zone. Nothing else varies: dnsmasq is always `.3`,
-adminer `.6`, runtimes `.100+`, and the status page answers on the
-gateway `.1` because it runs on the VM rather than in a container.
+label of the DNS zone. Nothing else varies: adminer is always `.6`,
+runtimes `.100+`, and both the resolver and the status page answer on the
+gateway `.1` because they run on the VM rather than in a container.
 
 ```
 VM 150:  10.163.150.0/24   zone 150.mpd.test   moodle45.150.mpd.test
@@ -94,30 +99,98 @@ network's subnet is fixed at create time, so `mpd --vm-setup` refuses when
 it finds a network that disagrees with the VM's id and prints the
 teardown/recreate steps.
 
-## DNS forwarding upstream
+## One resolver, on the VM
 
-dnsmasq inside the container sets `local=/mpd.test/` (so it's authoritative
-for `*.mpd.test` and never forwards those queries) and reads upstream
-resolvers from a bind-mounted view of the host's
-`/run/systemd/resolve/resolv.conf` — the *real* per-link upstream nameservers
-managed by systemd-resolved, **not** the `127.0.0.53` stub that
-`/etc/resolv.conf` points at. dnsmasq watches that file and adapts when the
-host switches networks (corporate VPN, Wi-Fi, etc.) without restart.
+dnsmasq runs **on the VM** — Debian's `dnsmasq-base` package under mpd's
+own `mpd-dnsmasq.service`, configured from `/var/lib/mpd/conf/dnsmasq.conf`
+(rendered by `mpd --vm-setup`; edits are overwritten). It is not a
+container, and there is no second resolver anywhere in the path.
+
+Everything asks it at the same address, `10.163.<NNN>.1`:
+
+| Client | How it gets there |
+| --- | --- |
+| Containers | `--dns 10.163.<NNN>.1` at create time, one nameserver, no fallback |
+| The VM | systemd-resolved drop-in: `DNS=10.163.<NNN>.1`, `Domains=~mpd.test` |
+| The laptop | scoped resolver entry (see above) |
+
+Podman's own DNS is **off** (`--disable-dns` on the network). Otherwise
+aardvark-dns would hold port 53 on the gateway, which is where dnsmasq
+listens — and it answered nothing mpd asks for, since every mpd name is
+fully qualified and served here.
+
+Containers get exactly one nameserver on purpose. Left to itself podman
+copies the VM's resolv.conf, which lists the upstream link resolver as a
+fallback — so a `.test` name would quietly escape to public DNS whenever
+the local resolver blinked, and answer NXDOMAIN instead of failing
+visibly. They also get `timeout:1 attempts:2`, because glibc's stock
+`timeout:5 attempts:2` turns any momentary gap into a ten-second stall.
+
+### Authoritative for `.test`, forwarding for everything else
+
+`local=/test/` makes dnsmasq authoritative for the whole reserved TLD, not
+just `mpd.test`: `.test` is RFC 6761 reserved and must never reach a public
+resolver. Unknown names under it return NXDOMAIN immediately, and AAAA
+queries on names with only A records return NoData. That is what avoids
+the multi-second `getaddrinfo` stalls that used to happen when AAAA queries
+leaked to public DNS for a `.test` name. A VM has exactly one resolver and
+no business answering for another VM's zone, so NXDOMAIN for a foreign
+zone is the correct in-VM answer.
+
+Everything else is forwarded using `/run/systemd/resolve/resolv.conf` — the
+*real* per-link upstream nameservers managed by systemd-resolved, **not**
+the `127.0.0.53` stub, which resolves `.test` by asking dnsmasq and would
+therefore loop. dnsmasq watches that file and adapts when the host switches
+networks (corporate VPN, Wi-Fi) without a restart.
+
+That file also lists dnsmasq's *own* address, because mpd points resolved
+at it for `.test`. Not a loop either: dnsmasq drops any upstream that is
+one of its own addresses, logging `ignoring nameserver <ip> - local
+interface`, and forwards to the remaining per-link ones.
 
 There is no `MPD_DNS_UPSTREAM` to configure and no hardcoded public DNS in
-the path: queries follow whatever the host's link manager (NetworkManager
-or systemd-networkd) hands to systemd-resolved.
+the path.
 
-## DNS authoritativeness
+### Records are files, and changing one restarts nothing
 
-dnsmasq is **authoritative** for `*.mpd.test` (the whole root domain, not
-just its own zone — a VM has exactly one dnsmasq and no business
-resolving another VM's zone, so NXDOMAIN for a foreign zone is the
-correct in-VM answer). Unknown names in that domain
-return NXDOMAIN immediately, AAAA queries on names with only A records
-return NoData. This avoids the upstream-forwarding stalls that previously
-caused multi-second `getaddrinfo` delays when AAAA queries leaked to public
-DNS for `.test` TLD names.
+Records live as hosts files in `/var/lib/mpd/state/dns/`, read via
+dnsmasq's `hostsdir=`. dnsmasq watches that directory and re-reads it on
+every add, change and remove, flushing the cache for just the affected
+names. Publishing a record is a file write and nothing else — `mpd create`,
+`mpd start`, `mpd stop` and `mpd delete` never signal or restart the
+resolver.
+
+This matters more than it sounds. Records used to be `address=/host/ip`
+fragments in a `conf-dir=`, which dnsmasq reads only at startup — not even
+SIGHUP re-reads a config file — so every record change restarted the
+resolver. The restart itself took 0.2s, but a client whose query was in
+flight paid glibc's full timeout: a measured **10.013 seconds** of
+`Temporary failure in name resolution` for every other project on the VM,
+per record change.
+
+The format change is not just serialisation. `address=/x/ip` answers for
+`x` **and every name beneath it**, so it was a wildcard being used for
+exact names; a hosts entry answers only the name written. Since mpd
+enumerates every name it publishes, exact match is what was always meant,
+and unknown names under the zone now NXDOMAIN by construction rather than
+by careful use of a wildcard.
+
+### Binding the bridge
+
+The resolver binds only `10.163.<NNN>.1`, never the VM's LAN address:
+nothing mpd serves is published beyond the VM.
+
+It uses `bind-dynamic` with `interface=mpd0`, because podman does not
+create the bridge until the first container attaches to the network —
+which, on a fresh VM, is after the unit starts. `bind-dynamic` watches for
+the interface appearing and binds then. The `interface=` line is what makes
+that work: with `listen-address=` alone dnsmasq binds nothing when the
+address shows up later, stays `active` with no listener, and every name in
+the zone fails until something restarts it.
+
+One consequence worth knowing: if *no* container has ever started, the
+bridge does not exist and the resolver has nothing to bind. `mpd
+--vm-setup` creates adminer, which is enough.
 
 ## Diagnostic record: `vm.service.<NNN>.mpd.test`
 
@@ -129,15 +202,15 @@ vm.service.<NNN>.mpd.test → <MPD_VM_IP from /var/lib/mpd/conf/platform.env>
 ```
 
 i.e. the **VM's own static IP** (e.g. `10.211.55.125` for a managed VM),
-not a container subnet address. It's written as `host-record=...` in
-`services.conf` by `Mpd.Service.Dnsmasq.ensureServiceDNSRecords()` and
-skipped on sandbox VMs (where `MPD_VM_IP` is empty).
+not a container subnet address. It's written into `services.hosts` by
+`dnsmasq.Manager.EnsureServiceRecords` and skipped on sandbox VMs (where
+`MPD_VM_IP` is empty).
 
 The purpose is identity verification: `mpd-virt diag` on the Mac queries
 this name and compares the answer to the VM's known IP. A match proves
 the Mac is talking to **this specific VM's** dnsmasq — not some other
 resolver that happens to know about the zone. With per-VM subnets a
-reply from `10.163.<NNN>.3` can only be that VM's dnsmasq, so this is
+reply from `10.163.<NNN>.1` can only be that VM's resolver, so this is
 now a confirmation rather than a disambiguation — but it is cheap and it
 catches registry IP drift on the host side.
 

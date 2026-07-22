@@ -17,31 +17,41 @@ func manager(t *testing.T, octet int) (Manager, string) {
 		t.Fatalf("net.New(%d): %v", octet, err)
 	}
 	dir := t.TempDir()
-	return Manager{dir: filepath.Join(dir, "dnsmasq.d"), n: n}, dir
+	return Manager{dir: filepath.Join(dir, "dns"), n: n}, dir
 }
 
-// The zone apex must be a host-record, never `address=`. dnsmasq's
-// `address=/domain/ip` matches the domain AND every subdomain, so using
-// it for the apex would make every not-yet-created project and runtime
-// name resolve to the portal instead of NXDOMAIN.
-func TestApexIsAHostRecordNotAWildcard(t *testing.T) {
+// Records are hosts lines, which match the exact name and nothing else.
+//
+// This used to be a much more delicate property. As `conf-dir=` fragments
+// the apex needed `host-record=` while everything else used `address=`,
+// because `address=/domain/ip` matches the domain AND every name beneath
+// it — an apex written the ordinary way would have answered for every
+// not-yet-created project instead of NXDOMAIN. Hosts files have no
+// wildcard form, so the trap is gone rather than avoided.
+func TestRecordsAreExactMatchHostsLines(t *testing.T) {
 	m, _ := manager(t, 150)
 	if _, err := m.EnsureServiceRecords([]ServiceRecord{
-		{Host: "150.mpd.test", IP: "10.163.150.4"},
-		{Host: "adminer.service.150.mpd.test", IP: "10.163.150.4"},
+		{Host: "150.mpd.test", IP: "10.163.150.1"},
+		{Host: "adminer.service.150.mpd.test", IP: "10.163.150.1"},
 	}, ""); err != nil {
 		t.Fatal(err)
 	}
 
-	body := readConf(t, m, "services.conf")
-	if !strings.Contains(body, "host-record=150.mpd.test,10.163.150.4") {
-		t.Errorf("apex is not a host-record:\n%s", body)
+	body := readRecords(t, m, "services")
+	for _, want := range []string{
+		"10.163.150.1 150.mpd.test",
+		"10.163.150.1 adminer.service.150.mpd.test",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q:\n%s", want, body)
+		}
 	}
-	if strings.Contains(body, "address=/150.mpd.test/") {
-		t.Errorf("apex written as a wildcard address:\n%s", body)
-	}
-	if !strings.Contains(body, "address=/adminer.service.150.mpd.test/10.163.150.4") {
-		t.Errorf("non-apex record missing:\n%s", body)
+	// No dnsmasq config syntax may survive in a file dnsmasq reads as
+	// hosts: it would be parsed as a hostname, not as a directive.
+	for _, forbidden := range []string{"address=", "host-record="} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("config syntax %q in a hosts file:\n%s", forbidden, body)
+		}
 	}
 }
 
@@ -52,22 +62,22 @@ func TestVMRecordOnlyWhenTheVMHasAnAddress(t *testing.T) {
 	if _, err := m.EnsureServiceRecords(nil, ""); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(readConf(t, m, "services.conf"), "vm.service") {
+	if strings.Contains(readRecords(t, m, "services"), "vm.service") {
 		t.Error("vm.service record published for a VM with no address")
 	}
 
 	if _, err := m.EnsureServiceRecords(nil, "10.211.55.150"); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(readConf(t, m, "services.conf"),
-		"host-record=vm.service.150.mpd.test,10.211.55.150") {
+	if !strings.Contains(readRecords(t, m, "services"),
+		"10.211.55.150 vm.service.150.mpd.test") {
 		t.Error("vm.service record missing for a VM with an address")
 	}
 }
 
-// Writers report "changed" so the caller restarts dnsmasq exactly once.
-// An unchanged write reporting true would restart the resolver on every
-// single command.
+// Writers report "changed" so an unchanged reconcile does not rewrite the
+// file. dnsmasq watches the directory: a needless write fires its reload
+// and flushes the cache for those names for nothing.
 func TestUnchangedWriteReportsNoChange(t *testing.T) {
 	m, _ := manager(t, 150)
 	records := []ServiceRecord{{Host: "portal.service.150.mpd.test", IP: "10.163.150.1"}}
@@ -82,10 +92,10 @@ func TestUnchangedWriteReportsNoChange(t *testing.T) {
 	}
 }
 
-// A fragment left over from a previous VM ID answers for the old zone at
-// an address on the old subnet. The entity it describes has to be
-// recreated anyway, so the stale file has no value.
-func TestPruneRemovesOutOfZoneFragmentsOnly(t *testing.T) {
+// A record left over from a previous VM ID answers for the old zone at an
+// address on the old subnet. The entity it describes has to be recreated
+// anyway, so the stale file has no value.
+func TestPruneRemovesOutOfZoneRecordsOnly(t *testing.T) {
 	m, _ := manager(t, 150)
 	if err := os.MkdirAll(m.dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -95,24 +105,25 @@ func TestPruneRemovesOutOfZoneFragmentsOnly(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("stale.conf", "address=/stale.100.mpd.test/10.163.100.101\n")
-	write("current.conf", "address=/current.150.mpd.test/10.163.150.101\n")
+	write("stale.hosts", "10.163.100.101 stale.100.mpd.test\n")
+	write("current.hosts", "10.163.150.101 current.150.mpd.test\n")
 	// Rewritten from scratch every reconcile — pruning them would be
 	// churn, and one of them legitimately carries the VM's own address.
-	write("services.conf", "address=/portal.service.100.mpd.test/10.163.100.1\n")
-	write("databases.conf", "address=/pg.db.100.mpd.test/10.163.100.20\n")
-	// Not a fragment: dnsmasq only reads *.conf.
-	write("notes.txt", "address=/whatever.100.mpd.test/10.163.100.9\n")
+	write("services.hosts", "10.163.100.1 portal.service.100.mpd.test\n")
+	write("databases.hosts", "10.163.100.20 pg.db.100.mpd.test\n")
+	// Not one of mpd's: dnsmasq reads it, but mpd did not write it and
+	// must not delete a file it does not own.
+	write("notes.txt", "10.163.100.9 whatever.100.mpd.test\n")
 
 	if !m.PruneOutOfZone(io.Discard) {
 		t.Fatal("PruneOutOfZone reported no change, want true")
 	}
 	for name, wantGone := range map[string]bool{
-		"stale.conf":     true,
-		"current.conf":   false,
-		"services.conf":  false,
-		"databases.conf": false,
-		"notes.txt":      false,
+		"stale.hosts":     true,
+		"current.hosts":   false,
+		"services.hosts":  false,
+		"databases.hosts": false,
+		"notes.txt":       false,
 	} {
 		_, err := os.Stat(filepath.Join(m.dir, name))
 		if gone := os.IsNotExist(err); gone != wantGone {
@@ -126,18 +137,34 @@ func TestPruneOnACleanTreeChangesNothing(t *testing.T) {
 	if err := os.MkdirAll(m.dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(m.dir, "php.conf"),
-		[]byte("address=/php.runtime.150.mpd.test/10.163.150.100\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(m.dir, "php.hosts"),
+		[]byte("10.163.150.100 php.runtime.150.mpd.test\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if m.PruneOutOfZone(io.Discard) {
-		t.Error("PruneOutOfZone removed an in-zone fragment")
+		t.Error("PruneOutOfZone removed an in-zone record")
 	}
 }
 
-func readConf(t *testing.T, m Manager, name string) string {
+// A hosts line may carry several names for one address, and every one of
+// them has to be checked — a file mixing zones must not survive because
+// its first name happened to be in-zone.
+func TestRecordHostsReadsEveryNameOnALine(t *testing.T) {
+	got := recordHosts("# comment\n10.163.150.100 a.150.mpd.test b.150.mpd.test\n\n10.0.0.1\n")
+	want := []string{"a.150.mpd.test", "b.150.mpd.test"}
+	if len(got) != len(want) {
+		t.Fatalf("recordHosts() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("recordHosts()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func readRecords(t *testing.T, m Manager, name string) string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(m.dir, name))
+	data, err := os.ReadFile(filepath.Join(m.dir, name+recordSuffix))
 	if err != nil {
 		t.Fatal(err)
 	}

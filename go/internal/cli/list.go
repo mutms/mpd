@@ -29,7 +29,7 @@ const serviceFilter = "label=com.docker.compose.project=mpd-service"
 // in rather than called directly so the listing stays testable without a
 // systemd on the other end.
 func ListServices(ctx context.Context, out io.Writer, n net.Net, p *podman.Client,
-	unitActive func(context.Context, string) bool) {
+	unitActive func(context.Context, string, bool) bool) {
 	stateByContainer := map[string]string{}
 	for _, item := range p.Ps(ctx, serviceFilter) {
 		if name := item.Name(); name != "" {
@@ -45,7 +45,7 @@ func ListServices(ctx context.Context, out io.Writer, n net.Net, p *podman.Clien
 		if d.Unit != "" {
 			// VM-hosted: systemd owns it, podman has never heard of it.
 			status = StatusStopped
-			if unitActive != nil && unitActive(ctx, d.Unit) {
+			if unitActive != nil && unitActive(ctx, d.Unit, d.UnitUser) {
 				status = StatusRunning
 			}
 		} else if state, ok := stateByContainer[d.Container]; ok {

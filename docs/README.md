@@ -64,7 +64,7 @@ Quick reference; full contract in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 - `/var/lib/mpd/skel/` — optional user-managed dotfile defaults for
   new runtimes (`/etc/skel/`-style). Empty by default.
 - `/var/lib/mpd/state/` — mpd-managed operational state
-  (projects.json, runtimes/, dnsmasq.d/, etc.). Wipe to reset.
+  (projects.json, runtimes/, dns/, etc.). Wipe to reset.
 - `/srv/` — Podman data volume, mounted on the VM and in every
   container at the same path (projects/, data/, meta/, dbs/, extra/,
   backups/).

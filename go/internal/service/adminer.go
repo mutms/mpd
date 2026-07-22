@@ -42,6 +42,7 @@ func SetupAdminer(ctx context.Context, out io.Writer, p *podman.Client, n net.Ne
 			"--restart", "always",
 			"--label", RevisionLabel+"="+adminerRevision,
 		)
+		args = append(args, podman.DNSOpts(n.Gateway())...)
 		args = append(args, commonLabels("adminer")...)
 		args = append(args, AdminerImage)
 		if code, err := p.Run(ctx, args); err != nil || code != 0 {
