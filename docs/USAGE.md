@@ -427,7 +427,7 @@ whatever feels right.
 A few flavors, increasing severity:
 
 ```bash
-mpd --runtime-delete php         # nuke a runtime, keep projects + DBs
+mpd --runtime-delete php         # delete a runtime, keep projects + DBs
                                  # (the data volume keeps /srv/projects, /srv/dbs)
 
 # Container-layer reset. The first thing to try after upgrading mpd across
@@ -450,7 +450,7 @@ mpd start <project>              # per project you want back up
 # Manual in-VM reset (no --uninstall verb on mpd):
 rm -rf /var/lib/mpd                    # blow away state + identity in the VM
 
-# Nuke the VM itself: hypervisor's VM-delete operation (or, for sandbox,
+# Delete the VM itself: hypervisor's VM-delete operation (or, for sandbox,
 # revert to your pre-take-over snapshot), then re-bootstrap from any
 # setup/<name>/. On macOS hosts: `mpd-virt uninstall <octet>` (separate
 # orchestrator binary, own repo) handles the host side cleanly.
