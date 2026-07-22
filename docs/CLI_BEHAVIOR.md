@@ -163,7 +163,23 @@ answer would routinely be the directory the caller is standing in.
 Project-focused universal verbs (recommended daily surface):
 - `create` is inert beyond scaffolding: accepts `--type`. It does not fetch any source — `/srv` is mounted on the VM, so cloning is ordinary shell (`git clone`, or `mudev clone <recipe>`) done before or after, with the developer's own credentials. Project-type `project-create.sh` seeds `/srv/projects/<project>/mpd.env` from the type's `mpd-template.env` (existing mpd.env preserved, so scaffolding a directory that already holds a source tree is safe). No DB is provisioned here; the project is registered with status `notConfigured`. Next step is `mpd configure`.
 - `configure` takes any number of positional `KEY=VALUE` pairs matching `^MPD_[A-Z0-9_]+=.*$`. The control plane sanitises (reserved keys like `MPD_DB` get strict validation; others get a generic safe-charset check), then writes the line into `/srv/projects/<project>/mpd.env` (empty value deletes the line). Then runs the project-type `configure.sh` which sources the four-layer mpd.env (runtime defaults → type defaults → user-level → project) and emits `dbTag` / `urls` into `/srv/meta/<project>/{effective.json,urls.json}`. The control plane reads `dbTag`, re-sanitises, and provisions the DB container if non-empty (visible image-pull progress via `podman pull`, then `podman run -d`, then per-project DB creation). The full mpd.env model — file paths, sourcing order, sanitisation, reserved keys — is documented in [`ARCHITECTURE.md` §8 "Configuration model: mpd.env"](ARCHITECTURE.md#8-configuration-model-mpdenv).
-- `start`
+- `start` re-reads `/srv/meta/<project>/urls.json` before it uses the URL
+  list, because that file is the source of truth and the copy in
+  `projects.json` is a cache only `configure` refreshes. The cert SANs and
+  the DNS record are both composed from it, so starting from a stale copy
+  would re-establish a project under names it no longer has. The refresh
+  is silent — it needs no user action, so reporting it would be noise.
+  What `start` will **not** do is re-run the project type's
+  `configure.sh`: that resolves database tags and can create containers,
+  which is too much for a daily verb to do unasked.
+  It refuses on exactly one condition, the one it cannot repair itself: a
+  project whose URLs all name another VM's zone (`/srv` restored or copied
+  from another VM, or `MPD_VM_ID` changed since the project was
+  configured). The error names both zones and says to run `mpd configure
+  <project>`. Configuration judged unusable is never written into state.
+  New invariants belong in `project.CheckConfigured`, and each should earn
+  its place by the same test: if mpd can repair it, repair it instead of
+  reporting it.
 - `stop`
 - `delete` — the one verb that always needs an explicit name
 - `run <command> [args...]` — runs a command inside the runtime that owns the current project, with the caller's working directory forwarded verbatim (`/srv` is the same path on the VM and in the container). The child's stdin, stdout, stderr and exit code are the caller's; a TTY is allocated only when stdin is one. The command runs through a login shell, so it sees exactly the PATH an interactive runtime session has — every project-type tool (`mdl-install`, `phpunit`, `composer`) resolves. Note the grammar: everything after `run` is the command, so this is the one verb whose second argument is not a project name.

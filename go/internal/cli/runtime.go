@@ -277,6 +277,29 @@ func restoreRunningProjects(ctx context.Context, out io.Writer, runtime, contain
 	for _, proj := range projects {
 		fmt.Fprintf(out, "  Restoring '%s'...\n", proj.Name)
 
+		// Same refresh-and-check as ProjectStart, in the same order: the
+		// cert and DNS record below are composed from proj.URLs, and a
+		// recreated runtime is exactly when the cached copy is most likely
+		// to have gone stale.
+		//
+		// A project configured for another VM is skipped, not fatal: the
+		// other projects on this runtime are fine, and taking the whole
+		// runtime down over one of them helps nobody.
+		urls := proj.URLs
+		if fresh, ok := project.ReadURLs(proj.Name); ok {
+			urls = fresh
+		}
+		if err := project.CheckConfigured(proj.Name, urls, n); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: skipping '%s': %v\n", proj.Name, err)
+			continue
+		}
+		if !sameURLs(urls, proj.URLs) {
+			proj.URLs = urls
+			if err := s.UpsertProject(proj); err != nil {
+				return err
+			}
+		}
+
 		if err := project.EnsureCert(ctx, out, proj.Name, proj.URLs, n, p, uid); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: cert for '%s': %v\n", proj.Name, err)
 		}

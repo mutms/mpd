@@ -78,6 +78,29 @@ func ProjectStart(ctx context.Context, out io.Writer, name string, d ProjectDeps
 		}
 	}
 
+	// urls.json is the source of truth; projects.json holds a copy that
+	// only `configure` refreshes. Re-read it before anything downstream
+	// uses it — the cert SANs and the DNS record below are both composed
+	// from entry.URLs, so a stale copy silently re-establishes a project
+	// under names it no longer has.
+	//
+	// Checked BEFORE it is adopted: configuration judged unusable must not
+	// be written into state, or a failed start leaves projects.json
+	// advertising another VM's URLs.
+	urls := entry.URLs
+	if fresh, ok := project.ReadURLs(name); ok {
+		urls = fresh
+	}
+	if err := project.CheckConfigured(name, urls, d.Net); err != nil {
+		return err
+	}
+	if !sameURLs(urls, entry.URLs) {
+		entry.URLs = urls
+		if err := d.State.UpsertProject(entry); err != nil {
+			return err
+		}
+	}
+
 	ev := hookProject(entry, container, d)
 
 	// Pre-start: runtime and DB are up, project setup has not run. Hook
@@ -403,7 +426,7 @@ func ProjectConfigure(ctx context.Context, out io.Writer, name string, args []st
 		entry.DatabaseEngine, entry.DatabaseVersion, entry.DatabaseID = "", "", ""
 	}
 
-	entry.URLs = project.ReadURLs(name)
+	entry.URLs, _ = project.ReadURLs(name)
 	if entry.Requested == "not-configured" && entry.Type != "" {
 		entry.Requested = "stopped"
 	}
@@ -440,6 +463,23 @@ func ProjectConfigure(ctx context.Context, out io.Writer, name string, args []st
 
 	Ok(out, "Project '%s' configured. Type: %s, Status: %s", name, entry.Type, entry.Requested)
 	return nil
+}
+
+// sameURLs reports whether two URL lists are identical, so a refresh that
+// changes nothing does not rewrite projects.json.
+//
+// Order matters and that is deliberate: configure.sh emits them in a
+// stable order, so a difference in order is a real difference.
+func sameURLs(a, b []state.ProjectURL) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // projectVerbs are names a project may not take, because `mpd <name>
