@@ -27,12 +27,23 @@ import (
 )
 
 // Network is the podman network every mpd container attaches to, and
-// NetworkInterface is the host bridge it hangs off. The bridge is named
-// rather than left to podman's podman0/podman1 counter because mpd's
-// resolver has to bind an address on it.
+// NetworkInterface is the host bridge it hangs off.
+//
+// The bridge is named rather than left to podman's podman0/podman1
+// counter, whose value depends on what other networks happened to be
+// created first: mpd's resolver names that interface in its config to
+// bind the gateway, so a name that drifts is a name that silently stops
+// resolving.
+//
+// NOT "mpd0", however obvious that looks. That was the WireGuard tunnel
+// mpd used before it moved to a routed subnet (removed 2026-07-20), and
+// every VM bootstrapped before then still brings one up at boot from an
+// enabled wg-quick@mpd0.service. netavark then refuses to create the
+// network at all: "bridge interface mpd0 already exists but is a
+// Wireguard interface". The "br" keeps the two apart for good.
 const (
 	Network          = "mpd-internal"
-	NetworkInterface = "mpd0"
+	NetworkInterface = "mpdbr0"
 )
 
 // BaseImagePull is fetched during setup so the first project create does

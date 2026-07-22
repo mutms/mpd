@@ -116,7 +116,7 @@ Laptop (macOS)
   |
 VM host (Debian Trixie)
   |
-  net.ipv4.ip_forward=1; mpd0 bridge (10.163.<NNN>.1/24)
+  net.ipv4.ip_forward=1; mpdbr0 bridge (10.163.<NNN>.1/24)
   |   Two VM processes bind here, neither a container:
   |     dnsmasq :53  — resolver for .test, for the VM, the laptop and
   |                    every container (podman's own DNS is disabled)
@@ -168,7 +168,7 @@ the VM.
 
 The VM has `net.ipv4.ip_forward=1` (set by
 `bootstrap/30-networking.sh`) — needed to route between the VM's
-external NIC and `podman1`. It forwards for anyone who can reach the
+external NIC and `mpdbr0`. It forwards for anyone who can reach the
 VM and has the route; on a LAN-hosted VM that means the LAN. Don't put
 an mpd VM on a network you don't trust.
 
@@ -322,7 +322,7 @@ single-developer environment.
 
 Containers are unreachable from the laptop until the host static route
 for `10.163.<NNN>.0/24` is installed. The VM host can reach containers
-natively via `podman1`.
+natively via `mpdbr0`.
 
 ## What mpd does NOT protect against
 

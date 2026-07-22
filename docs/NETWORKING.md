@@ -17,7 +17,7 @@ Laptop (macOS — primary)
   |
 VM (Debian Trixie)              hostname: mpd-<NNN>
   |
-  Podman (rootful) bridge:  mpd0  10.163.<NNN>.1/24
+  Podman (rootful) bridge:  mpdbr0  10.163.<NNN>.1/24
    |    Three VM processes bind this address, and nothing else does:
    |      dnsmasq :53   — DNS for *.test
    |      caddy   :443  — the zone apex (mpd --web) and adminer, both HTTPS
@@ -29,14 +29,22 @@ VM (Debian Trixie)              hostname: mpd-<NNN>
      +-- runtime containers      10.163.<NNN>.100+ (full dev access via SSH)
 ```
 
-The bridge is named `mpd0` rather than taking podman's `podman0`/`podman1`
-counter, whose value depends on what other networks were created first.
-dnsmasq names that interface in its config, so a name that drifts is a
-name that silently stops resolving.
+The bridge is named `mpdbr0` rather than taking podman's
+`podman0`/`podman1` counter, whose value depends on what other networks
+were created first. dnsmasq names that interface in its config, so a name
+that drifts is a name that silently stops resolving.
+
+It is deliberately not `mpd0`: that was the WireGuard tunnel mpd used
+before it moved to a routed subnet (removed 2026-07-20), and VMs
+bootstrapped before then still bring one up at boot. Reusing the name made
+netavark refuse the network outright — *"bridge interface mpd0 already
+exists but is a Wireguard interface"*. A VM created before the rename
+keeps whatever name its network was made with; mpd reads the interface
+back from podman rather than assuming, so both work.
 
 The VM runs `net.ipv4.ip_forward=1` (set by `bootstrap/30-networking.sh`)
 so packets from the laptop transit the VM and reach containers via
-`mpd0`.
+`mpdbr0`.
 
 ## How the laptop reaches containers
 
@@ -180,7 +188,7 @@ by careful use of a wildcard.
 The resolver binds only `10.163.<NNN>.1`, never the VM's LAN address:
 nothing mpd serves is published beyond the VM.
 
-It uses `bind-dynamic` with `interface=mpd0`, because podman does not
+It uses `bind-dynamic` with `interface=mpdbr0`, because podman does not
 create the bridge until the first container attaches to the network —
 which, on a fresh VM, is after the unit starts. `bind-dynamic` watches for
 the interface appearing and binds then. The `interface=` line is what makes

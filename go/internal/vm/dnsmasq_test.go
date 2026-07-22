@@ -9,12 +9,12 @@ import (
 // fails somewhere far from the config file — so they are asserted here
 // rather than discovered on a VM.
 func TestDnsmasqConfCarriesTheLoadBearingDirectives(t *testing.T) {
-	body := DnsmasqConfBody("10.163.150.1", "mpd0", "/var/lib/mpd/state/dns")
+	body := DnsmasqConfBody("10.163.150.1", "mpdbr0", "/var/lib/mpd/state/dns")
 
 	for _, tc := range []struct{ directive, why string }{
 		{"bind-dynamic",
 			"without it dnsmasq fails at boot, before podman has created the bridge"},
-		{"interface=mpd0",
+		{"interface=mpdbr0",
 			"listen-address alone never binds an address that appears later"},
 		{"listen-address=10.163.150.1",
 			"the gateway is the one address the laptop, the VM and containers all reach"},
@@ -37,7 +37,7 @@ func TestDnsmasqConfCarriesTheLoadBearingDirectives(t *testing.T) {
 // straight back here, so a query for a name this resolver cannot answer
 // would bounce between the two.
 func TestDnsmasqDoesNotForwardToTheResolvedStub(t *testing.T) {
-	for _, line := range directives(DnsmasqConfBody("10.163.150.1", "mpd0", "/var/lib/mpd/state/dns")) {
+	for _, line := range directives(DnsmasqConfBody("10.163.150.1", "mpdbr0", "/var/lib/mpd/state/dns")) {
 		if strings.Contains(line, "127.0.0.53") {
 			t.Errorf("directive forwards to the systemd-resolved stub: %q", line)
 		}
@@ -62,7 +62,7 @@ func directives(body string) []string {
 // The listen address is the only thing that varies per VM, and getting it
 // wrong makes the resolver answer for a subnet it is not on.
 func TestDnsmasqConfListensOnTheGivenAddressOnly(t *testing.T) {
-	body := DnsmasqConfBody("10.163.222.1", "mpd0", "/var/lib/mpd/state/dns")
+	body := DnsmasqConfBody("10.163.222.1", "mpdbr0", "/var/lib/mpd/state/dns")
 	if !strings.Contains(body, "listen-address=10.163.222.1") {
 		t.Errorf("wrong listen address:\n%s", body)
 	}

@@ -88,13 +88,13 @@ fi
 # --- IPv4 forwarding --------------------------------------------------
 # The workstation reaches container IPs through a static route whose
 # next hop is this VM, so the VM kernel has to forward packets from its
-# external NIC into the podman1 bridge. Unconditional: sandbox VMs are
+# external NIC into the mpd bridge. Unconditional: sandbox VMs are
 # their own workstation and forwarding is harmless there.
 
 step "IPv4 forwarding"
 
 IP_FORWARD_DROP_IN=/etc/sysctl.d/99-mpd-forwarding.conf
-IP_FORWARD_BODY="# mpd: required so the kernel routes packets from the external NIC → podman1 → containers.
+IP_FORWARD_BODY="# mpd: required so the kernel routes packets from the external NIC → mpdbr0 → containers.
 net.ipv4.ip_forward = 1
 "
 if [ -f "${IP_FORWARD_DROP_IN}" ] && \
