@@ -78,6 +78,12 @@ const (
 	SigningCertPath = CARootDir + "/vmCA.pem"
 	SigningKeyPath  = CARootDir + "/vmCA-key.pem"
 
+	// LanHostsPath holds names for machines on the local network that are
+	// not mpd VMs, in hosts(5) format, pushed in by `mpd-virt server sync`.
+	// Under ConfDir rather than StateDir: it is configuration handed to
+	// this VM from outside, not state the VM derives or rebuilds.
+	LanHostsPath = ConfDir + "/lan-hosts"
+
 	// TrustStorePath is where the CA lands in the system trust store.
 	TrustStorePath = "/usr/local/share/ca-certificates/mpd-local.crt"
 

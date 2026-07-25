@@ -118,9 +118,61 @@ func (m Manager) EnsureServiceRecords(records []ServiceRecord, vmIP string) (boo
 	return m.writeIfChanged("services", strings.Join(lines, "\n")+"\n")
 }
 
+// EnsureLANRecords publishes names for machines on the local network that
+// are not mpd VMs — `forge.mpd.test`, `proxmox.mpd.test` — and reports
+// whether they changed.
+//
+// The source is a hosts(5) file the workstation's orchestrator pushes in
+// (`mpd-virt server sync`). It is copied through rather than derived,
+// because nothing in the VM knows what is on the LAN; the VM's job is to
+// answer for it so that containers, which resolve through this resolver
+// and have no /etc/hosts of their own, can reach those hosts by name and
+// verify their TLS against a CA they already trust.
+//
+// Names outside the mpd tree are dropped. A hosts file that could publish
+// anything would make this resolver authoritative for names it has no
+// business answering — and `local=/test/` means an answer here is final.
+func (m Manager) EnsureLANRecords(path string) (bool, error) {
+	lines := []string{"# mpd managed LAN service DNS records"}
+
+	// A missing file is not an error: it means no LAN servers are
+	// registered on the workstation. The record file is still written, so
+	// removing the last server retracts the names it used to publish.
+	if body, err := os.ReadFile(path); err == nil {
+		for _, raw := range strings.Split(string(body), "\n") {
+			line := strings.TrimSpace(raw)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			fields := strings.Fields(line)
+			if len(fields) < 2 {
+				continue
+			}
+			var hosts []string
+			for _, h := range fields[1:] {
+				if h == net.RootDomain || strings.HasSuffix(h, "."+net.RootDomain) {
+					hosts = append(hosts, h)
+				}
+			}
+			if len(hosts) == 0 {
+				continue
+			}
+			lines = append(lines, hostsLine(strings.Join(hosts, " "), fields[0]))
+		}
+	}
+
+	return m.writeIfChanged("lan", strings.Join(lines, "\n")+"\n")
+}
+
 // managedRecords are rewritten from scratch on every reconcile, so
 // PruneOutOfZone must leave them alone.
-var managedRecords = map[string]bool{"services": true, "databases": true}
+//
+// "lan" belongs here for a reason that is easy to miss: every LAN name is
+// by definition outside this VM's zone, which is exactly the condition
+// PruneOutOfZone deletes a record file for. Without this entry the LAN
+// records would be published, work, and then vanish on the next
+// reconcile — most visibly at the following `mpd --vm-start`.
+var managedRecords = map[string]bool{"services": true, "databases": true, "lan": true}
 
 // PruneOutOfZone deletes record files serving names outside this VM's
 // zone, reporting whether anything went.

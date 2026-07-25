@@ -7,6 +7,7 @@ import (
 	"github.com/mutms/mpd/go/internal/dnsmasq"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/ui"
+	"github.com/mutms/mpd/go/internal/vm"
 )
 
 // ReconcileDNSRecords rewrites the record files that mpd derives rather
@@ -37,6 +38,14 @@ func ReconcileDNSRecords(ctx context.Context, out io.Writer, m dnsmasq.Manager,
 	if err != nil {
 		return err
 	}
+	// Names for LAN machines that are not VMs, pushed in from the
+	// workstation. Publishing them here is what lets a container resolve
+	// `forge.mpd.test` — containers use this resolver and have no
+	// /etc/hosts of their own.
+	lan, err := m.EnsureLANRecords(vm.LanHostsPath)
+	if err != nil {
+		return err
+	}
 
 	if !verbose {
 		return nil
@@ -46,6 +55,8 @@ func ReconcileDNSRecords(ctx context.Context, out io.Writer, m dnsmasq.Manager,
 		ui.OK(out, "Service and database DNS records published.")
 	case services || stale:
 		ui.OK(out, "Service DNS records published.")
+	case lan:
+		ui.OK(out, "LAN service DNS records published.")
 	default:
 		ui.OK(out, "DNS records already current.")
 	}
