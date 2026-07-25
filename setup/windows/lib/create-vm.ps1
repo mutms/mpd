@@ -151,18 +151,48 @@ Invoke-Ssh -User $VmUser -RemoteHost $VmIp `
     -Command "MPD_BRANCH=$MpdBranch MPD_REPO=$MpdRepo bash <(wget -qO- $MpdRepoRaw/bootstrap/20-git-clone.sh)"
 Write-Ok "Repository cloned"
 
-# ── 9. Upload host CA to VM ─────────────────────────────────────────────────
+# ── 9. Issue this VM's signing CA, then upload CA material ──────────────────
 
-Write-Step "Uploading host CA to VM"
+# The root's private key stays on this host. The VM gets its own
+# intermediate, name-constrained to its own DNS zone, which the in-VM `mpd`
+# uses to sign service and project certificates. A compromised VM can
+# therefore forge names in its own zone and nowhere else — not another VM's
+# zone, and not names issued directly under mpd.test.
 
-$CaPem = Join-Path $MpdUserDir "ca\rootCA.pem"
-$CaKey = Join-Path $MpdUserDir "ca\rootCA-key.pem"
-Invoke-Ssh -User $VmUser -RemoteHost $VmIp -Command "mkdir -p /var/lib/mpd/conf/caroot"
+$VmId = "{0:d3}" -f $VmOctet
+Write-Step "Issuing this VM's signing CA (constrained to $VmId.mpd.test)"
+
+$CaPem   = Join-Path $MpdUserDir "ca\rootCA.pem"
+$CaKey   = Join-Path $MpdUserDir "ca\rootCA-key.pem"
+$VmCaDir = Join-Path $MpdUserDir "$VmId\ca"
+$VmCaPem = Join-Path $VmCaDir "vmCA.pem"
+$VmCaKey = Join-Path $VmCaDir "vmCA-key.pem"
+New-Item -ItemType Directory -Force -Path $VmCaDir | Out-Null
+
+$wslCaPem   = Convert-ToWSLPath $CaPem
+$wslCaKey   = Convert-ToWSLPath $CaKey
+$wslVmCaPem = Convert-ToWSLPath $VmCaPem
+$wslVmCaKey = Convert-ToWSLPath $VmCaKey
+Invoke-WSLScript @"
+set -euo pipefail
+. '$wslCommonSh'
+generate_vm_ca '$wslVmCaKey' '$wslVmCaPem' '$wslCaPem' '$wslCaKey' $VmOctet
+"@
+Write-Ok "VM CA issued ($VmCaPem)"
+
+Write-Step "Uploading CA material to VM"
+
+Invoke-Ssh -User $VmUser -RemoteHost $VmIp -Command "mkdir -p /var/lib/mpd/conf/caroot && chmod 700 /var/lib/mpd/conf/caroot"
+# The root's PUBLIC certificate only — the trust anchor. Its private key is
+# deliberately absent from these uploads.
 & scp -o StrictHostKeyChecking=no -o BatchMode=yes $CaPem "${VmUser}@${VmIp}:/var/lib/mpd/conf/caroot/rootCA.pem"
-if ($LASTEXITCODE -ne 0) { throw "scp of CA cert failed." }
-& scp -o StrictHostKeyChecking=no -o BatchMode=yes $CaKey "${VmUser}@${VmIp}:/var/lib/mpd/conf/caroot/rootCA-key.pem"
-if ($LASTEXITCODE -ne 0) { throw "scp of CA key failed." }
-Write-Ok "Host CA uploaded (mpd --vm-setup will reuse it)"
+if ($LASTEXITCODE -ne 0) { throw "scp of root CA cert failed." }
+& scp -o StrictHostKeyChecking=no -o BatchMode=yes $VmCaPem "${VmUser}@${VmIp}:/var/lib/mpd/conf/caroot/vmCA.pem"
+if ($LASTEXITCODE -ne 0) { throw "scp of VM CA cert failed." }
+& scp -o StrictHostKeyChecking=no -o BatchMode=yes $VmCaKey "${VmUser}@${VmIp}:/var/lib/mpd/conf/caroot/vmCA-key.pem"
+if ($LASTEXITCODE -ne 0) { throw "scp of VM CA key failed." }
+Invoke-Ssh -User $VmUser -RemoteHost $VmIp -Command "chmod 644 /var/lib/mpd/conf/caroot/rootCA.pem /var/lib/mpd/conf/caroot/vmCA.pem && chmod 600 /var/lib/mpd/conf/caroot/vmCA-key.pem && rm -f /var/lib/mpd/conf/caroot/rootCA-key.pem"
+Write-Ok "CA material uploaded (root private key NOT copied)"
 
 # ── 11. Detach cloud-init ISO ─────────────────────────────────────────────────
 

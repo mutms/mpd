@@ -327,6 +327,20 @@ Delete the cert from the system trust store (or `~/.pki/nssdb` for
 Chromium, or `/etc/firefox/policies/mpd-rootCA.crt` for Firefox)
 and the next `setup.sh` re-imports — no manual recovery dance.
 
+**What a created VM receives is not this keypair.** `create-vm.sh` uploads
+the root's *public* certificate as the trust anchor, plus a per-VM
+intermediate it issues on the host — signed by the root and
+name-constrained to that VM's zone (`permitted;DNS:<NNN>.mpd.test`,
+`pathlen:0`), kept at `~/.mpd-virt/<NNN>/ca/`. The root's private key is
+never copied into a VM, so a compromised VM can forge names in its own
+zone and nowhere else. The in-VM `mpd` signs its service and project
+certificates with that intermediate and serves it alongside every leaf.
+
+This is why the host CA is generated with `pathlen:1`: a root asserting
+`pathlen:0` may sign leaves and nothing else, so it could not sign the
+intermediate. `setup.sh` refuses to reuse a `pathlen:0` root left over
+from before this change, and tells you to regenerate it.
+
 CAs flow host → VM only. Neither caroot nor `/var/lib/mpd-virt/ca/` is
 ever populated from a VM source. If somehow neither location is
 populated when you run the existing-VM `setup.sh` path (e.g. you

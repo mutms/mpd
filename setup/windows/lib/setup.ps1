@@ -93,6 +93,20 @@ $CaPem = Join-Path $CaDir "rootCA.pem"
 $CaKey = Join-Path $CaDir "rootCA-key.pem"
 
 if ((Test-Path $CaPem) -and (Test-Path $CaKey)) {
+    # A root generated before per-VM signing CAs asserts pathlen:0 and
+    # cannot sign the intermediate every VM now gets. Fail here rather
+    # than at the first TLS handshake in the VM.
+    $wslCheckPem = Convert-ToWSLPath $CaPem
+    $caText = Invoke-WSLScript "openssl x509 -in '$wslCheckPem' -noout -text"
+    if ($caText -match 'pathlen:0') {
+        throw @"
+The host CA at $CaPem asserts pathlen:0 and cannot sign a per-VM
+intermediate. It predates per-VM signing CAs.
+
+Remove $CaDir and re-run this script to generate a replacement, then
+re-trust the new CA on this host and in any VM that still trusts the old one.
+"@
+    }
     Write-Ok "Reusing existing host CA ($CaDir)"
 } else {
     New-Item -ItemType Directory -Force -Path $CaDir | Out-Null

@@ -185,7 +185,9 @@ Directory ownership split:
 
 - `bin/` — local built binaries (`bin/mpd`); executable path checks depend on this.
 - `/var/lib/mpd/conf/` — persistent local trust/network material:
-  - `caroot/` — root CA keypair/fingerprint
+  - `caroot/` — the trust anchor (`rootCA.pem`; public only, on a
+    `mpd-virt`-provisioned VM) plus the CA this VM signs leaves with
+    (`vmCA.pem`/`vmCA-key.pem`, constrained to its own zone)
   - `service/` — service TLS cert/key (the VM's zone apex, `<NNN>.mpd.test`)
   - `temp/` — short-lived cert operation files
   - `platform.env` — platform identity (see §9)

@@ -46,9 +46,9 @@ chowns), all enforced at runtime — do not propose alternates.
   FHS slot for add-on packages. Bind-mounted RO into every mpd-created
   container at the same path, so `/opt/mpd/assets/...` resolves identically
   on the VM and inside containers.
-- `/var/lib/mpd/conf/` — persistent identity. CA + service cert,
-  `platform.env`. PRIVATE — never bind-mounted
-  into containers.
+- `/var/lib/mpd/conf/` — persistent identity. Trust anchor + this VM's
+  own signing CA + service cert, `platform.env`. PRIVATE — never
+  bind-mounted into containers.
 - `/var/lib/mpd/env/` — user-editable env overrides. Holds `mpd-vm.env`
   only. Bind-mounted RO into every runtime container at the same path
   (directory mount, so vim/nano atomic-rename writes propagate).
@@ -103,7 +103,9 @@ The binary is Go, built from `go/` into `bin/mpd` by `make install`:
 - `go/internal/assets/` — reads the `assets/` tree
 - `go/internal/podman/` — the Podman gateway (see the mandatory rule below)
 - `go/internal/exec/` — the ONLY package that runs host commands
-- `go/internal/cert/` — CA and leaf certificate generation
+- `go/internal/cert/` — CA and leaf certificate generation. `ResolveSigner`
+  decides which CA this VM signs with (zone-constrained intermediate, or a
+  self-signed CA that is its own anchor); leaves carry their chain
 - `go/internal/ui/` — the step/ok/warn output shapes
 
 Runtime/project-type behavior + service container assets live under `assets/`:

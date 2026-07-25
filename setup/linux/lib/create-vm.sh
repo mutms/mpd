@@ -439,14 +439,31 @@ ssh_cmd "$VM_IP" "$VM_USER" \
 ok "mpd binary built"
 ok "Bootstrap complete"
 
-step "Uploading host CA into VM (mpd will reuse it)"
+step "Issuing this VM's signing CA (constrained to $(printf '%03d' "$VM_OCTET").mpd.test)"
+VM_CA_DIR="${STATE_DIR}/$(printf '%03d' "$VM_OCTET")/ca"
+VM_CA_PEM="${VM_CA_DIR}/vmCA.pem"
+VM_CA_KEY="${VM_CA_DIR}/vmCA-key.pem"
+mkdir -p "$VM_CA_DIR"
+chmod 700 "$VM_CA_DIR"
+generate_vm_ca "$VM_CA_KEY" "$VM_CA_PEM" "$ARG_HOST_CA_PEM" "$ARG_HOST_CA_KEY" "$VM_OCTET"
+ok "VM CA issued at ${VM_CA_PEM}"
+
+step "Uploading CA material into VM"
+# The root's PUBLIC certificate only — it is the trust anchor the VM's
+# trust stores are told about. Its private key stays on this host, so a
+# compromised VM cannot sign for another VM's zone, nor for names issued
+# directly under mpd.test. What signs inside the VM is the intermediate
+# above, name-constrained to this VM alone.
 ssh_cmd "$VM_IP" "$VM_USER" \
     "mkdir -p /var/lib/mpd/conf/caroot && chmod 700 /var/lib/mpd/conf/caroot"
 scp -q -o StrictHostKeyChecking=no -o BatchMode=yes \
-    "$ARG_HOST_CA_PEM" "$ARG_HOST_CA_KEY" \
+    "$ARG_HOST_CA_PEM" "$VM_CA_PEM" "$VM_CA_KEY" \
     "${VM_USER}@${VM_IP}:/var/lib/mpd/conf/caroot/"
-ssh_cmd "$VM_IP" "$VM_USER" "chmod 600 /var/lib/mpd/conf/caroot/rootCA*.pem"
-ok "Host CA uploaded"
+ssh_cmd "$VM_IP" "$VM_USER" \
+    "chmod 644 /var/lib/mpd/conf/caroot/rootCA.pem /var/lib/mpd/conf/caroot/vmCA.pem \
+     && chmod 600 /var/lib/mpd/conf/caroot/vmCA-key.pem \
+     && rm -f /var/lib/mpd/conf/caroot/rootCA-key.pem"
+ok "CA material uploaded (root private key NOT copied)"
 
 step "Running 'mpd --vm-setup' (CA, podman network, services)"
 ssh_cmd "$VM_IP" "$VM_USER" 'mpd --vm-setup'

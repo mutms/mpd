@@ -43,10 +43,11 @@ Two consequences run through everything below:
   shared data volume — these buy ergonomics inside a boundary that is
   already assumed to be hostile.
 - **The boundary that matters is VM → workstation.** That direction is
-  one-way by construction: the CA private key never enters a VM (only
-  the certificate does), SSH runs workstation → VM with no keys pointing
-  back, and no container port is published to the workstation's own
-  network.
+  one-way by construction: the root CA private key never enters a VM —
+  what a VM gets is its own intermediate, which cannot name anything
+  outside that VM's DNS zone — SSH runs workstation → VM with no keys
+  pointing back, and no container port is published to the workstation's
+  own network.
 
 ### Where the isolation actually comes from
 
@@ -91,9 +92,10 @@ lived, upgraded in place, never recreated (see `docs/ROADMAP.md`):
 - **Assume persistent compromise.** A runtime that executes a malicious
   postinstall keeps it. Nothing resets it between projects, and mpd
   offers no scrubbing step. If you suspect one, delete the runtime.
-- **Keep credentials out of the VM.** This is why the CA private key
-  never leaves the workstation, and why it is worth resisting the
-  temptation to park API tokens in `mpd-vm.env` for convenience.
+- **Keep credentials out of the VM.** This is why the root CA private key
+  stays on the workstation and the VM gets only a zone-constrained
+  intermediate, and why it is worth resisting the temptation to park API
+  tokens in `mpd-vm.env` for convenience.
 - **`ssh -A` is the one live credential path in.** Agent forwarding
   gives anything running as the dev user in that container use of your
   key for the session — including a `git clone` you didn't start. It is
@@ -200,28 +202,72 @@ runtime, which reaches the gateway — can read it.
 
 ## TLS and the certificate authority
 
-The CA is generated on the host by `mpd-virt` (separate orchestrator,
-separate repo). The CA signs all TLS certificates used within the
-environment. The in-VM `mpd` binary receives the CA keypair from the
-host during provisioning and uses it to sign per-project, per-runtime,
-and per-service certs.
+The root CA is generated on the host by `mpd-virt` (separate
+orchestrator, separate repo) and its private key stays there. What a VM
+receives is a **per-VM intermediate**, signed by that root and
+name-constrained to the VM's own zone, which the in-VM `mpd` binary uses
+to sign per-project, per-runtime and per-service certs.
+
+Two certificates are therefore in play inside a VM and they are not the
+same thing. The **anchor** is what the VM's trust stores trust; the
+**signer** is what leaf certificates are actually signed with:
+
+```
+mpd Root CA                        key: workstation only, never copied
+  permitted;DNS:mpd.test
+  └── mpd VM 126 CA                key: on VM 126
+        permitted;DNS:126.mpd.test
+        └── 126.mpd.test, m45.126.mpd.test, …   signed inside the VM
+```
+
+Every host platform provisions this way. `cert.ResolveSigner` decides
+which case a given VM is in:
+
+| Provisioned by            | Anchor        | Signer                      | Root key in the VM? |
+|---------------------------|---------------|-----------------------------|---------------------|
+| `mpd-virt` (macOS)        | `rootCA.pem`  | zone-constrained `vmCA.pem` | **No**              |
+| `setup/linux`, `setup/windows` | `rootCA.pem` | zone-constrained `vmCA.pem` | **No**         |
+| sandbox / no CA material  | self-signed, generated in the VM | the same certificate | Yes — it made it |
+
+Only the last row still has a VM holding a CA key that can sign for the
+whole `mpd.test` tree, and there the VM generated that CA itself — there
+is no separate root whose key could have been withheld. Anchor and signer
+are one certificate, so the chain is one long and nothing extra is sent
+in the handshake.
 
 ### CA properties
 
-| Property                | Value                                                           |
-|-------------------------|-----------------------------------------------------------------|
-| Host-side location      | `~/.mpd-virt/conf/caroot/rootCA.pem` + `rootCA-key.pem` (on macOS)   |
-| In-VM working location  | data volume `/srv/meta/ca/`                                     |
-| CA validity             | 10 years                                                        |
-| Leaf cert validity      | 397 days (macOS requires < 398 for trust)                       |
-| Name constraints        | `mpd.test` + `.mpd.test` only                                   |
-| Key permissions         | `rootCA-key.pem` mode `0600`                                    |
-| macOS trust             | System Keychain via `security add-trusted-cert -d -r trustRoot` |
+| Property                  | Value                                                                     |
+|---------------------------|---------------------------------------------------------------------------|
+| Root CA (host)            | `~/.mpd-virt/conf/caroot/rootCA.pem` + `rootCA-key.pem` (on macOS)         |
+| Per-VM CA (host)          | `~/.mpd-virt/<NNN>/ca/vmCA.pem` + `vmCA-key.pem`                           |
+| In-VM location            | `/var/lib/mpd/conf/caroot/` — anchor `rootCA.pem`, signer `vmCA.pem`/`-key.pem` |
+| Root CA private key       | Never leaves the workstation on the `mpd-virt` path (see table above)     |
+| Root CA validity          | 365 days via `mpd-virt`; 10 years when generated by `setup/*` or in-VM    |
+| Per-VM CA validity        | ≤ 397 days, capped by the root's remaining life                           |
+| Leaf cert validity        | ≤ 397 days (macOS requires < 398), capped by the signer's remaining life  |
+| Root name constraints     | `permitted;DNS:mpd.test`                                                  |
+| Per-VM name constraints   | `permitted;DNS:<NNN>.mpd.test`, `pathlen:0`                               |
+| Key permissions           | every private key mode `0600`                                             |
+| macOS trust               | System Keychain via `security add-trusted-cert -d -r trustRoot` — root only |
 
-**Name constraints** limit the CA to signing certificates for
-`*.mpd.test` domains only. Even if the CA key is compromised, it
-cannot sign certificates for real domains (e.g. `google.com`).
-Browsers enforce name constraints.
+**Name constraints** limit the root to signing for `*.mpd.test` only, so
+even a compromised key cannot sign for a real domain (e.g.
+`google.com`). RFC 5280 constraints compose down the chain, so the per-VM
+intermediate is limited twice over: a leaf it signs for another VM's zone
+is rejected by the intermediate's own constraint, and one for a public
+domain by the root's. Both the macOS Security framework and OpenSSL
+enforce this.
+
+That second constraint is what makes it safe to give `*.mpd.test` names
+to machines that are not development VMs: rooting a VM buys the ability
+to forge names in a zone the attacker already controls, and nothing else.
+
+**Nothing outlives its issuer.** Both the per-VM CA and every leaf are
+capped by however long the certificate above them has left. A
+certificate valid past its issuer's expiry does not degrade gracefully —
+the chain fails on the issuer's date while the leaf still reads as
+valid, which is a confusing failure to debug.
 
 **Host-only trust rule.** CAs flow host → VM only. The macOS keychain
 only ever trusts certificates the host generated itself. `mpd-virt`
@@ -298,9 +344,14 @@ inside containers). No DB ports are exposed on `0.0.0.0` of the LAN.
 
 | Secret                  | Location                                       | Permissions       |
 |-------------------------|------------------------------------------------|-------------------|
-| CA private key          | `~/.mpd-virt/conf/caroot/rootCA-key.pem` (host)     | `0600`            |
+| Root CA private key     | `~/.mpd-virt/conf/caroot/rootCA-key.pem` (host only) | `0600`      |
+| Per-VM CA private key   | `~/.mpd-virt/<NNN>/ca/vmCA-key.pem` (host) and `/var/lib/mpd/conf/caroot/vmCA-key.pem` (VM) | `0600` |
 | Per-project TLS keys    | `/srv/meta/<project>/key.pem`                  | Inside data volume|
 | SSH authorized keys     | `/home/<user>/.ssh/authorized_keys`            | Inside containers |
+
+The per-VM CA key is the one piece of CA material that is *meant* to
+travel. It is constrained to that VM's zone, so its blast radius is the
+VM it already lives on.
 
 The host-side `mpd-virt uninstall` removes the VM and host-side
 networking; it offers to remove the CA from the macOS Keychain.

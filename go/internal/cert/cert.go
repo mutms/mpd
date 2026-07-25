@@ -18,10 +18,14 @@ package cert
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mutms/mpd/go/internal/exec"
 )
@@ -46,7 +50,12 @@ const (
 	SigningCertPath = CARootDir + "/vmCA.pem"
 	SigningKeyPath  = CARootDir + "/vmCA-key.pem"
 
-	LeafDaysStr = "397"
+	// LeafDays is the longest a leaf may live. 397 is not arbitrary: macOS
+	// rejects leaf certificates valid for 398 days or more, so a
+	// longer-lived cert would be untrusted on the very workstation the
+	// developer browses from. A leaf can still be issued for less — see
+	// leafDays.
+	LeafDays = 397
 )
 
 // Signer is the CA leaf certificates are signed with.
@@ -100,6 +109,41 @@ func resolveSignerIn(dir string) (Signer, bool) {
 		return Signer{CertPath: anchorCert, KeyPath: anchorKey}, true
 	}
 	return Signer{}, false
+}
+
+// leafDays is how long a leaf signed right now may live: LeafDays, unless
+// the CA signing it expires sooner.
+//
+// Nothing may outlive its issuer. A leaf valid past its CA's expiry does
+// not gracefully degrade — the whole chain fails on the CA's date, while
+// the leaf still claims months of validity, so every tool reports a
+// puzzle: `openssl x509 -enddate` on the leaf says it is fine and every
+// client rejects it anyway.
+//
+// This binds in practice rather than in theory. A per-VM intermediate is
+// itself capped at whatever the root has left, so on a root approaching
+// renewal the signer can easily have fewer than 397 days remaining, and
+// an uncapped leaf would sail past it.
+func leafDays(signerCertPath string) (int, error) {
+	data, err := os.ReadFile(signerCertPath)
+	if err != nil {
+		return 0, fmt.Errorf("reading signing CA %s: %w", signerCertPath, err)
+	}
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return 0, fmt.Errorf("signing CA %s is not PEM", signerCertPath)
+	}
+	ca, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return 0, fmt.Errorf("parsing signing CA %s: %w", signerCertPath, err)
+	}
+	remaining := int(time.Until(ca.NotAfter).Hours() / 24)
+	if remaining <= 0 {
+		return 0, fmt.Errorf(
+			"The signing CA %s expired on %s. Renew it before issuing certificates.",
+			signerCertPath, ca.NotAfter.Format("2006-01-02"))
+	}
+	return min(LeafDays, remaining), nil
 }
 
 func fileExists(path string) bool {
@@ -156,12 +200,17 @@ func Generate(ctx context.Context, sans []string, certPath, keyPath string) erro
 		return err
 	}
 
+	days, err := leafDays(signer.CertPath)
+	if err != nil {
+		return err
+	}
+
 	cn := sans[0]
 	steps := [][]string{
 		{"genrsa", "-out", keyPath, "2048"},
 		{"req", "-new", "-key", keyPath, "-out", csr, "-subj", "/CN=" + cn},
 		{"x509", "-req", "-in", csr, "-CA", signer.CertPath, "-CAkey", signer.KeyPath,
-			"-CAcreateserial", "-out", certPath, "-days", LeafDaysStr, "-extfile", extFile},
+			"-CAcreateserial", "-out", certPath, "-days", strconv.Itoa(days), "-extfile", extFile},
 	}
 	for _, args := range steps {
 		res, err := exec.Capture(ctx, exec.Cmd{Name: "openssl", Args: args})
