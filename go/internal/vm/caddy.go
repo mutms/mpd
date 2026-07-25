@@ -71,8 +71,16 @@ https://%s {
 //
 // Idempotent: WriteRootOwnedFile short-circuits when content is
 // unchanged, so a repeat `--vm-setup` neither rewrites nor reloads.
+//
+// certChanged is the one input that is not visible in the files this
+// function writes. Caddy loads the certificate into memory at startup and
+// the Caddyfile names only its path, so reissuing the certificate leaves
+// this configuration byte-identical — and without being told, Caddy would
+// go on serving the old leaf until something else happened to restart it.
+// After a CA rotation that leaf is signed by a CA nothing trusts any
+// more, so every name on the VM fails TLS while the config looks correct.
 func ConfigureCaddy(ctx context.Context, out io.Writer, user, bindIP,
-	certPath, keyPath string, sites []CaddySite) error {
+	certPath, keyPath string, sites []CaddySite, certChanged bool) error {
 
 	dropIn := fmt.Sprintf("[Service]\nUser=%s\nGroup=%s\n", user, user)
 	dropInChanged, err := WriteRootOwnedFile(ctx, caddyDropIn, dropIn)
@@ -99,7 +107,7 @@ func ConfigureCaddy(ctx context.Context, out io.Writer, user, bindIP,
 	if dropInChanged || !caddyActive(ctx) {
 		action = "restart"
 	}
-	if confChanged || dropInChanged || !caddyActive(ctx) {
+	if confChanged || dropInChanged || certChanged || !caddyActive(ctx) {
 		if code, err := exec.Run(ctx, exec.Cmd{
 			Name: "systemctl", Args: []string{action, CaddyUnit}, Sudo: true,
 		}); err != nil || code != 0 {

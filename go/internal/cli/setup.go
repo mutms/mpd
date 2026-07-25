@@ -107,7 +107,7 @@ func Setup(ctx context.Context, out io.Writer) error {
 	}
 	ui.OK(out, "user=%s  uid=%s", user.User, user.UID)
 
-	caChanged, err := setupCertificates(ctx, out, n)
+	certs, err := setupCertificates(ctx, out, n)
 	if err != nil {
 		return err
 	}
@@ -176,7 +176,7 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 
-	if err := reconcileCaches(ctx, out, p, s, n, m, identity.VMIP, user.UID, caChanged); err != nil {
+	if err := reconcileCaches(ctx, out, p, s, n, m, identity.VMIP, user.UID, certs.CAChanged); err != nil {
 		return err
 	}
 
@@ -213,7 +213,8 @@ func Setup(ctx context.Context, out io.Writer) error {
 		})
 	}
 	if err := vm.ConfigureCaddy(ctx, out, user.User, n.Gateway(),
-		vm.ServiceDir+"/cert.pem", vm.ServiceDir+"/key.pem", sites); err != nil {
+		vm.ServiceDir+"/cert.pem", vm.ServiceDir+"/key.pem", sites,
+		certs.ServiceCertChanged); err != nil {
 		return err
 	}
 
@@ -305,34 +306,56 @@ func dashIfEmpty(s string) string {
 	return s
 }
 
+// certState reports what setupCertificates changed, so the steps after it
+// can react to the parts that concern them.
+type certState struct {
+	// CAChanged is true when the CA that signs leaves moved. It
+	// invalidates every certificate derived from it, so service
+	// containers are rebuilt and project certs reissued.
+	CAChanged bool
+	// ServiceCertChanged is true when the certificate caddy serves was
+	// rewritten — on a CA change, on SAN drift, or on first creation.
+	//
+	// Tracked separately because caddy holds the certificate in memory
+	// and its configuration does not mention the contents, only the path.
+	// A reissued certificate therefore leaves the Caddyfile byte-identical
+	// and would, without this, never be picked up: the VM would go on
+	// serving a leaf signed by a CA that no longer exists.
+	ServiceCertChanged bool
+}
+
 // setupCertificates ensures the CA and the service certificate exist and
-// are current, reporting whether the CA changed.
-//
-// A changed CA invalidates every certificate it signed, so the answer
-// propagates: service containers are rebuilt on it, and project certs
-// are reissued.
-func setupCertificates(ctx context.Context, out io.Writer, n net.Net) (bool, error) {
+// are current, reporting what it changed.
+func setupCertificates(ctx context.Context, out io.Writer, n net.Net) (certState, error) {
 	ui.Step(out, "Root CA certificate")
 	// 0700 on both: one holds the CA private key, the other the openssl
 	// scratch files that briefly contain key material.
 	for _, dir := range []string{vm.CARootDir, vm.TempDir} {
 		if err := vm.EnsureDir(dir, 0o700); err != nil {
-			return false, err
+			return certState{}, err
 		}
 	}
 
-	if _, err := os.Stat(vm.CACertPath); err != nil {
-		if err := cert.GenerateCA(ctx, vm.CAKeyPath, vm.CACertPath); err != nil {
-			return false, err
+	// Which CA this VM signs with depends on how it was provisioned; see
+	// cert.ResolveSigner. Absent entirely means nobody has pushed CA
+	// material in, so this is a VM set up without mpd-virt: generate a
+	// self-signed CA that acts as its own anchor.
+	signer, ok := cert.ResolveSigner()
+	if !ok {
+		if err := cert.GenerateCA(ctx, vm.SigningKeyPath, vm.SigningCertPath); err != nil {
+			return certState{}, err
+		}
+		if err := copyFile(vm.SigningCertPath, vm.CACertPath, 0o644); err != nil {
+			return certState{}, err
+		}
+		if signer, ok = cert.ResolveSigner(); !ok {
+			return certState{}, fmt.Errorf("Root CA material missing or invalid: %s", vm.CARootDir)
 		}
 		ui.OK(out, "CA certificate generated in %s", vm.CACertPath)
+	} else if signer.Chain {
+		ui.OK(out, "Signing with %s, anchored on %s", signer.CertPath, vm.CACertPath)
 	} else {
 		ui.OK(out, "CA already exists in %s", vm.CACertPath)
-	}
-	for _, required := range []string{vm.CACertPath, vm.CAKeyPath} {
-		if info, err := os.Stat(required); err != nil || info.IsDir() {
-			return false, fmt.Errorf("Root CA material missing or invalid: %s", required)
-		}
 	}
 
 	ui.Step(out, "Services certificate")
@@ -342,7 +365,13 @@ func setupCertificates(ctx context.Context, out io.Writer, n net.Net) (bool, err
 		fingerprintPath = vm.ServiceDir + "/rootCA.fingerprint"
 		sansPath        = vm.ServiceDir + "/cert.sans"
 	)
-	fingerprint := vm.Fingerprint(ctx, vm.CACertPath)
+	// Fingerprint the signer, not the anchor. What invalidates a leaf is a
+	// change of whatever signed it, and on a VM with a per-zone
+	// intermediate that can move while the anchor stays put — as it does
+	// on every `mpd-virt refresh-ca`. Fingerprinting the anchor there would
+	// report "nothing changed" and leave every project serving a
+	// certificate signed by a CA that no longer exists.
+	fingerprint := vm.Fingerprint(ctx, signer.CertPath)
 	caChanged := readTrimmed(fingerprintPath) != fingerprint
 
 	// SAN drift: the service cert covers exactly the zone apex, and the
@@ -358,24 +387,26 @@ func setupCertificates(ctx context.Context, out io.Writer, n net.Net) (bool, err
 	signature := strings.Join(sans, "\n")
 	sansChanged := readTrimmed(sansPath) != signature
 
+	state := certState{CAChanged: caChanged}
 	if !exists(certPath) || !exists(keyPath) || caChanged || sansChanged {
 		if err := vm.EnsureDir(vm.ServiceDir, 0o700); err != nil {
-			return false, err
+			return certState{}, err
 		}
 		if err := cert.Generate(ctx, sans, certPath, keyPath); err != nil {
-			return false, err
+			return certState{}, err
 		}
 		if err := os.WriteFile(fingerprintPath, []byte(fingerprint), 0o644); err != nil {
-			return false, err
+			return certState{}, err
 		}
 		if err := os.WriteFile(sansPath, []byte(signature), 0o644); err != nil {
-			return false, err
+			return certState{}, err
 		}
+		state.ServiceCertChanged = true
 		ui.OK(out, "Services certificate generated in %s for %s", vm.ServiceDir, strings.Join(sans, ", "))
 	} else {
 		ui.OK(out, "Services cert already exists in %s", vm.ServiceDir)
 	}
-	return caChanged, nil
+	return state, nil
 }
 
 // setupHostTrustAndDNS covers the four places on the VM that have to
@@ -578,4 +609,17 @@ func readTrimmed(path string) string {
 func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// copyFile duplicates src at dst with the given mode. Used to publish a
+// self-signed signing CA as its own trust anchor, which is why it copies
+// rather than symlinks: the anchor is read by trust stores and by
+// cert.ResolveSigner's byte comparison, and a link would make "are these
+// the same certificate?" depend on how the question was asked.
+func copyFile(src, dst string, mode os.FileMode) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, mode)
 }

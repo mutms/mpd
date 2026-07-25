@@ -29,8 +29,7 @@ regenerate
 caddy run --config "${CADDYFILE}" --adapter caddyfile --watch &
 CADDY_PID=$!
 
-# Watcher: rebuild on any change inside /srv/meta/. When `caddy --watch` sees
-# the Caddyfile timestamp change it reloads automatically — no SIGHUP needed.
+# Watcher: rebuild on any change inside /srv/meta/.
 mkdir -p "$META_DIR"
 inotifywait -m -r -e close_write,delete,moved_to,moved_from "$META_DIR" 2>/dev/null \
     | while read -r path event file; do
@@ -38,7 +37,23 @@ inotifywait -m -r -e close_write,delete,moved_to,moved_from "$META_DIR" 2>/dev/n
         # several files doesn't fire one regenerate per file.
         sleep 0.5
         # Drain any pending events without blocking forever.
-        regenerate || true
+        if regenerate; then
+            # --force is the point of this call. A certificate rotation
+            # rewrites cert.pem but not the Caddyfile, which only ever
+            # names its path — so the regenerated config is byte-identical,
+            # `caddy --watch` compares the two, finds no difference, and
+            # does not reload. Caddy then serves the superseded
+            # certificate from memory until something restarts the
+            # container. After a CA rotation that certificate is signed by
+            # a CA nothing trusts any more, so every project URL fails TLS
+            # while both the config and the files on disk look correct.
+            #
+            # When the config genuinely did change, --watch reloads as
+            # well and this is a second, graceful reload of identical
+            # content: milliseconds, and only on a real change.
+            caddy reload --config "${CADDYFILE}" --adapter caddyfile --force \
+                >/dev/null 2>&1 || true
+        fi
     done &
 
 # Keep the container alive on Caddy.

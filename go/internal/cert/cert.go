@@ -1,12 +1,22 @@
 // Package cert issues the TLS certificates mpd's local CA signs.
 //
-// The CA itself is generated on the workstation and pushed into the VM;
-// only its key material lives here, under /var/lib/mpd/conf/caroot/ —
-// never on the data volume and never inside a container. Leaf certs are
-// signed in the VM and written to where they are served from.
+// The CA material lives under /var/lib/mpd/conf/caroot/ — never on the
+// data volume and never inside a container. Leaf certs are signed in the
+// VM and written to where they are served from.
+//
+// Two certificates matter here and they are not the same thing. The
+// **anchor** is what the VM's trust stores are told to trust; the
+// **signer** is what leaf certificates are actually signed with. On a VM
+// provisioned by mpd-virt the signer is an intermediate constrained to
+// that VM's own zone, and the root's private key is never copied into the
+// VM at all — so a compromised VM can mint certificates for its own names
+// and for nothing else. On a VM set up by setup/linux or setup/windows
+// the two are one self-signed certificate. Signer resolves which case a
+// given VM is in; everything else here goes through it.
 package cert
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -17,14 +27,97 @@ import (
 )
 
 // Paths under the private identity directory.
+//
+// KEEP IN SYNC with the same constants in internal/vm/vm.go. They are
+// duplicated rather than imported because this package is otherwise
+// independent of the VM-management package, and pulling that in for four
+// string constants would invert the dependency.
 const (
-	ConfDir     = "/var/lib/mpd/conf"
-	CARootDir   = ConfDir + "/caroot"
-	TempDir     = ConfDir + "/temp"
-	CACertPath  = CARootDir + "/rootCA.pem"
-	CAKeyPath   = CARootDir + "/rootCA-key.pem"
+	ConfDir   = "/var/lib/mpd/conf"
+	CARootDir = ConfDir + "/caroot"
+	TempDir   = ConfDir + "/temp"
+
+	// CACertPath is the trust anchor; CAKeyPath its key, present only when
+	// the VM signs with the anchor directly.
+	CACertPath = CARootDir + "/rootCA.pem"
+	CAKeyPath  = CARootDir + "/rootCA-key.pem"
+
+	// SigningCertPath and SigningKeyPath are the CA leaves are signed with.
+	SigningCertPath = CARootDir + "/vmCA.pem"
+	SigningKeyPath  = CARootDir + "/vmCA-key.pem"
+
 	LeafDaysStr = "397"
 )
+
+// Signer is the CA leaf certificates are signed with.
+type Signer struct {
+	CertPath string
+	KeyPath  string
+
+	// Chain is true when CertPath is not the trust anchor. A client that
+	// trusts only the anchor cannot verify a leaf signed by an
+	// intermediate unless the intermediate travels with it, so Generate
+	// appends CertPath to the leaf file it writes.
+	Chain bool
+}
+
+// ResolveSigner reports which CA this VM signs with, and false when there
+// is no CA material at all — a fresh VM, where the caller's answer is to
+// generate one rather than to fail.
+//
+// The intermediate wins when present. A VM migrated by `mpd-virt
+// refresh-ca` has its root key deleted, but an interrupted migration (or
+// a re-run of an older mpd-virt) could leave both on disk, and in that
+// state the constrained signer is the one we want — preferring the root
+// would silently undo the migration.
+func ResolveSigner() (Signer, bool) { return resolveSignerIn(CARootDir) }
+
+// resolveSignerIn is ResolveSigner against an arbitrary directory, so the
+// three-way decision can be tested without writing to /var/lib.
+func resolveSignerIn(dir string) (Signer, bool) {
+	// Basenames come from the path constants rather than being spelled
+	// again, so the tested code and the production paths cannot drift.
+	var (
+		anchorCert = filepath.Join(dir, filepath.Base(CACertPath))
+		anchorKey  = filepath.Join(dir, filepath.Base(CAKeyPath))
+		signerCert = filepath.Join(dir, filepath.Base(SigningCertPath))
+		signerKey  = filepath.Join(dir, filepath.Base(SigningKeyPath))
+	)
+	if fileExists(signerKey) && fileExists(signerCert) {
+		return Signer{
+			CertPath: signerCert,
+			KeyPath:  signerKey,
+			// setup/linux and setup/windows write one self-signed
+			// certificate to both paths. Identical bytes mean the chain is
+			// one long and there is nothing to append.
+			Chain: !sameFile(signerCert, anchorCert),
+		}, true
+	}
+	if fileExists(anchorKey) && fileExists(anchorCert) {
+		// A VM provisioned before per-VM intermediates existed. It still
+		// holds the root key and still signs with it, which is what it did
+		// before this code shipped — `mpd-virt refresh-ca` moves it on.
+		return Signer{CertPath: anchorCert, KeyPath: anchorKey}, true
+	}
+	return Signer{}, false
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+func sameFile(a, b string) bool {
+	da, err := os.ReadFile(a)
+	if err != nil {
+		return false
+	}
+	db, err := os.ReadFile(b)
+	if err != nil {
+		return false
+	}
+	return bytes.Equal(da, db)
+}
 
 // Generate signs a certificate for sans, writing PEM files to certPath
 // and keyPath.
@@ -35,6 +128,10 @@ const (
 func Generate(ctx context.Context, sans []string, certPath, keyPath string) error {
 	if len(sans) == 0 {
 		return fmt.Errorf("no SANs given")
+	}
+	signer, ok := ResolveSigner()
+	if !ok {
+		return fmt.Errorf("Root CA material missing or invalid: %s", CARootDir)
 	}
 	if err := os.MkdirAll(TempDir, 0o700); err != nil {
 		return err
@@ -63,7 +160,7 @@ func Generate(ctx context.Context, sans []string, certPath, keyPath string) erro
 	steps := [][]string{
 		{"genrsa", "-out", keyPath, "2048"},
 		{"req", "-new", "-key", keyPath, "-out", csr, "-subj", "/CN=" + cn},
-		{"x509", "-req", "-in", csr, "-CA", CACertPath, "-CAkey", CAKeyPath,
+		{"x509", "-req", "-in", csr, "-CA", signer.CertPath, "-CAkey", signer.KeyPath,
 			"-CAcreateserial", "-out", certPath, "-days", LeafDaysStr, "-extfile", extFile},
 	}
 	for _, args := range steps {
@@ -75,6 +172,36 @@ func Generate(ctx context.Context, sans []string, certPath, keyPath string) erro
 			return fmt.Errorf("Failed to generate certificate for %s.", cn)
 		}
 	}
+	if signer.Chain {
+		if err := appendChain(certPath, signer.CertPath); err != nil {
+			return err
+		}
+	}
 	// The key never leaves this directory world-readable, even briefly.
 	return os.Chmod(keyPath, 0o600)
+}
+
+// appendChain concatenates the signing CA onto the leaf file, leaf first.
+//
+// Everything that serves these files hands the whole file to the client:
+// caddy's `tls <cert> <key>`, the per-project caddy sidecar, the portal.
+// So the file *is* the chain, and a leaf alone would fail verification
+// everywhere the intermediate is not already installed — which is
+// everywhere, since only the root is ever distributed.
+//
+// Leaf first is not a stylistic choice: TLS requires the end-entity
+// certificate to come first in the chain the server sends.
+func appendChain(certPath, caPath string) error {
+	ca, err := os.ReadFile(caPath)
+	if err != nil {
+		return fmt.Errorf("reading signing CA %s: %w", caPath, err)
+	}
+	leaf, err := os.ReadFile(certPath)
+	if err != nil {
+		return fmt.Errorf("reading leaf %s: %w", certPath, err)
+	}
+	if !bytes.HasSuffix(leaf, []byte("\n")) {
+		leaf = append(leaf, '\n')
+	}
+	return os.WriteFile(certPath, append(leaf, ca...), 0o644)
 }

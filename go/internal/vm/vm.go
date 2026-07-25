@@ -58,9 +58,25 @@ const (
 	// it is mpd's own configuration of the VM, not operational state, and
 	// nothing rebuilds it from observation.
 	DnsmasqConfPath = ConfDir + "/dnsmasq.conf"
-	// CACertPath and CAKeyPath are the CA's PEM files.
+	// CACertPath is the trust anchor: the certificate every trust store on
+	// this VM is told about. CAKeyPath is its private key, which is present
+	// only on VMs that sign with the anchor directly — see SigningCertPath.
 	CACertPath = CARootDir + "/rootCA.pem"
 	CAKeyPath  = CARootDir + "/rootCA-key.pem"
+
+	// SigningCertPath and SigningKeyPath are the CA this VM actually signs
+	// leaf certificates with, which is not necessarily the anchor.
+	//
+	// A VM provisioned by mpd-virt gets an intermediate constrained to its
+	// own zone (`permitted;DNS:<NNN>.mpd.test`) and never sees the root's
+	// private key at all, so a compromised VM can mint certificates for its
+	// own names and nothing else. A VM set up by setup/linux or
+	// setup/windows generates a self-signed CA and writes it to both paths,
+	// making anchor and signer the same certificate and the chain one long.
+	//
+	// cert.Signer resolves which case a given VM is in.
+	SigningCertPath = CARootDir + "/vmCA.pem"
+	SigningKeyPath  = CARootDir + "/vmCA-key.pem"
 
 	// TrustStorePath is where the CA lands in the system trust store.
 	TrustStorePath = "/usr/local/share/ca-certificates/mpd-local.crt"
