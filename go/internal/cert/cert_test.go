@@ -182,6 +182,55 @@ func TestLeafDays(t *testing.T) {
 	})
 }
 
+// TestSelfSignedInstallPath covers what a VM with no CA material does —
+// the sandbox VM (id 000) and the setup/linux, setup/windows flows before
+// anything is pushed in.
+//
+// Those installs have no orchestrator to hand them an intermediate, so
+// --vm-setup generates one CA and uses it as both anchor and signer. The
+// property that matters is Chain == false: appending the signer to every
+// leaf would ship the trust anchor to clients that already have it, and a
+// self-signed certificate is not an intermediate.
+func TestSelfSignedInstallPath(t *testing.T) {
+	dir := t.TempDir()
+	signerCert := filepath.Join(dir, filepath.Base(SigningCertPath))
+	signerKey := filepath.Join(dir, filepath.Base(SigningKeyPath))
+	anchor := filepath.Join(dir, filepath.Base(CACertPath))
+
+	// Empty caroot: no signer at all, which is the caller's cue to make one.
+	if _, ok := resolveSignerIn(dir); ok {
+		t.Fatal("expected no signer before generation")
+	}
+
+	if err := GenerateCA(t.Context(), signerKey, signerCert); err != nil {
+		t.Skipf("GenerateCA unavailable here (needs openssl + %s): %v", TempDir, err)
+	}
+	// setupCertificates publishes the self-signed CA as its own anchor.
+	data, err := os.ReadFile(signerCert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(anchor, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok := resolveSignerIn(dir)
+	if !ok {
+		t.Fatal("expected a signer after generation")
+	}
+	if got.CertPath != signerCert {
+		t.Errorf("signed with %s, want %s", got.CertPath, signerCert)
+	}
+	if got.Chain {
+		t.Error("Chain = true, but anchor and signer are the same self-signed certificate")
+	}
+	// And it must still be usable as a signer: leaves get a real lifetime.
+	days, err := leafDays(got.CertPath)
+	if err != nil || days <= 0 {
+		t.Errorf("leafDays = %d, %v; want a positive lifetime", days, err)
+	}
+}
+
 // TestAppendChain checks the leaf comes first. TLS requires the
 // end-entity certificate at the head of the chain the server sends, and
 // getting it backwards fails in clients rather than at write time.
