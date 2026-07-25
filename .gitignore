@@ -3,3 +3,4 @@
 /.claude
 # binaries are compiled in each vm
 /bin/mpd
+.build/
