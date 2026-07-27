@@ -86,13 +86,23 @@ OS:
   guest-tools auto-injection your hypervisor provides (Parallels'
   shared SSH key, for example). The take-over script does not touch
   `~/.ssh/authorized_keys` either way.
-- **In-guest automatic updates disabled.** A GNOME session starts
-  `packagekitd`, which takes the dpkg lock just to check for updates —
-  right when the take-over script wants it:
+- **In-guest automatic updates disabled.** GNOME Software's background
+  service activates `packagekitd`, which takes the dpkg lock just to
+  check for updates — right when the take-over script wants it:
   ```bash
-  sudo systemctl mask packagekit packagekit-offline-update
   sudo systemctl disable --now unattended-upgrades
+  sudo systemctl mask apt-daily.timer apt-daily-upgrade.timer
+  mkdir -p ~/.config/autostart
+  { cat /etc/xdg/autostart/org.gnome.Software.desktop; echo 'Hidden=true'; } \
+      > ~/.config/autostart/org.gnome.Software.desktop
   ```
+  Do **not** `systemctl mask packagekit` — it's a `static`,
+  D-Bus-activated unit, so masking it doesn't silence its callers, it
+  makes GNOME Software, GNOME Settings and the codec-install prompt
+  fail with `GDBus.Error:org.freedesktop.systemd1.UnitMasked`. If you
+  already did, `sudo systemctl unmask packagekit
+  packagekit-offline-update`.
+
   Not fatal if you skip it: mpd's `apt-get` calls wait for the lock
   (300s, `MPD_APT_LOCK_TIMEOUT`) rather than failing. It just makes the
   run slower and less predictable.

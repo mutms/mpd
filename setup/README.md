@@ -34,20 +34,49 @@ Applies to any Debian guest you **keep and reuse** — a sandbox VM, or a
 template you clone from. Run these inside the guest, once, while
 preparing it:
 
-```
-sudo systemctl mask packagekit packagekit-offline-update
+```bash
+# Timer-driven updaters — these are what actually install behind your back.
 sudo systemctl disable --now unattended-upgrades
+sudo systemctl mask apt-daily.timer apt-daily-upgrade.timer
+
+# GNOME Software: stop it downloading updates, and stop its background
+# service autostarting at login. The app stays launchable by hand.
+sudo install -d /etc/dconf/db/local.d/locks
+printf 'user-db:user\nsystem-db:local\n' | sudo tee /etc/dconf/profile/user
+printf '[org/gnome/software]\ndownload-updates=false\ndownload-updates-notify=false\n' \
+    | sudo tee /etc/dconf/db/local.d/00-mpd-no-auto-updates
+printf '/org/gnome/software/download-updates\n/org/gnome/software/download-updates-notify\n' \
+    | sudo tee /etc/dconf/db/local.d/locks/mpd-no-auto-updates
+sudo dconf update
+mkdir -p ~/.config/autostart
+{ cat /etc/xdg/autostart/org.gnome.Software.desktop; echo 'Hidden=true'; } \
+    > ~/.config/autostart/org.gnome.Software.desktop
 ```
 
-Two different things take the dpkg lock out from under a bootstrap:
+> **Do not `systemctl mask packagekit`.** It looks like the obvious
+> lever and it is a trap. `packagekit.service` is `static` and
+> D-Bus-activated (`/usr/share/dbus-1/services/org.freedesktop.PackageKit.service`)
+> — it never starts on its own, only when something asks for it.
+> Masking doesn't make those callers quiet, it makes them *fail*:
+> GNOME Software, GNOME Settings, and the GStreamer codec-install
+> prompt each surface
+> `GDBus.Error:org.freedesktop.systemd1.UnitMasked: Unit
+> packagekit.service is masked.` Leave PackageKit unmasked and remove
+> the things that *schedule* it, as above.
 
-- **`packagekitd`** is started by an auto-login GNOME session and grabs
-  the lock just to *check* for updates — which lands exactly when a
-  freshly cloned or freshly installed VM is being bootstrapped.
-- **`unattended-upgrades`** runs on a timer and holds the lock far
-  longer, because it actually installs.
+Three different things take the dpkg lock out from under a bootstrap:
 
-Neither breaks a bootstrap: `bootstrap/00-common.sh` wraps every
+- **`unattended-upgrades`** runs on a timer and holds the lock the
+  longest, because it actually installs.
+- **`apt-daily.timer` / `apt-daily-upgrade.timer`** run `apt-get
+  update` (and drive unattended-upgrades where it's installed).
+- **`packagekitd`**, activated by GNOME Software's background service
+  at login, grabs the lock just to *check* for updates — which lands
+  exactly when a freshly cloned or freshly installed VM is being
+  bootstrapped. Disabling that autostart is what removes it; masking
+  PackageKit is not.
+
+None of them breaks a bootstrap: `bootstrap/00-common.sh` wraps every
 `apt-get` with `DPkg::Lock::Timeout=300` (override with
 `MPD_APT_LOCK_TIMEOUT`) plus `Acquire::Retries=3`, so a competing job
 stalls the run instead of failing it. Worth knowing that Debian's
@@ -59,11 +88,12 @@ bootstrap runs `apt-get` itself, and a kept guest gets rebuilt when its
 hypervisor tooling changes (new Parallels Tools, say) — so a guest that
 *also* updates itself adds nondeterminism without adding currency, and
 can pull in package versions the image was never tested with. Nothing
-in mpd uses PackageKit.
+in mpd uses PackageKit — but parts of the GNOME desktop do, on demand,
+which is why it stays unmasked and only its schedulers go away.
 
 Cloud-init paths (`linux/`, `windows/`) build each VM from a minimal
-image with no desktop, so `packagekitd` never runs there — but
-`unattended-upgrades` may still be present.
+image with no desktop, so `packagekitd` never runs there — but the
+`apt-daily` timers and possibly `unattended-upgrades` still are.
 
 ## What's not here
 
