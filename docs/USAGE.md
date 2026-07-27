@@ -249,6 +249,61 @@ absent). On the sandbox platform the "laptop key" is just whatever
 keys you have authorized for SSHing into the VM (or none, if you only
 ever access the sandbox via the hypervisor's console).
 
+## `mpd` from inside the runtime
+
+You don't need a second terminal to drive mpd. `mpd` is on `PATH` inside
+every runtime and the project verbs work there:
+
+```bash
+ssh mpd-<NNN>-php
+cd /srv/projects/newproject          # a directory that isn't a project yet
+mpd create --type=moodle             # scaffolds it, in THIS runtime
+mpd configure newproject
+mpd start newproject
+mpd show newproject
+```
+
+It is the same binary — `/opt/mpd` is bind-mounted read-only, so there is
+no second build to keep in step. It notices it is inside a runtime, sends
+the command to the VM over that runtime's control socket, and the VM runs
+it. Because your terminal's own file descriptors are handed to the process
+on the VM, output streams live and in colour, exit codes propagate into
+`$?`, and a confirmation prompt like `mpd delete`'s reads your keystrokes.
+
+**Only project verbs**: `create`, `configure`, `start`, `stop`, `delete`,
+`show`, `help`. Everything that acts on the VM or its infrastructure
+stays in a VM terminal — no `--vm-*`, no `--runtime-*`, no `--db-*`. A
+runtime has no business building runtimes or database containers.
+`mpd run` is refused too: you are already in the runtime, so run the
+command directly.
+
+**You can only touch your own runtime's projects.** From the `php`
+runtime, a `node` project is refused by name, and so is standing in its
+directory:
+
+```
+$ mpd start site
+Error: cannot act on project 'site' from the 'php' runtime — it belongs to 'node'.
+Run it from a VM terminal, or from that runtime.
+```
+
+Two details worth knowing:
+
+- **`--type` is constrained, not optional.** It still says what kind of
+  project to build, but it must be a type this runtime serves — otherwise
+  `mpd create --type=astro` from `php` would quietly build the whole
+  `node` runtime. Where a runtime serves exactly one type (php serves
+  only `moodle`), you can leave `--type` out and mpd fills it in.
+- **`cd` where it matters.** Inside `/srv/projects/<name>/` the project
+  name is inferred, exactly as on the VM. Elsewhere — including the
+  `$HOME` you land in when you SSH in — name the project explicitly;
+  `/srv` is the only tree that means the same thing on both sides.
+
+To turn the whole thing off, set `MPD_RUNTIME_CONTROL=off` in
+`/var/lib/mpd/env/mpd-vm.env`; it applies to the next command, no restart.
+The trade-off it exists for is in
+[`SECURITY.md`](SECURITY.md#the-runtime-control-socket).
+
 ### Pushing to git from inside the runtime
 
 Runtimes don't carry your private SSH key. Authenticate to

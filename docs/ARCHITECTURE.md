@@ -287,6 +287,18 @@ runtime container can't do for itself — provisioning DB containers,
 attaching sidecars, writing project metadata, podman lifecycle. Surface:
 `mpd <verb> <project>`. Lifetime: one invocation per CLI call.
 
+*Where a verb is typed and where it runs are separate questions.* Project
+verbs can also be **typed inside a runtime**: the same binary detects it
+is in a container and forwards the command to the VM over that runtime's
+control socket, which executes it there. That does not make them tools —
+the work is still VM-side, which is exactly why it has to be forwarded.
+It only removes the second terminal. `internal/control` owns this; the
+rule below is unaffected, and the split between the two categories is
+untouched by it. Verb-vs-tool is about *who can do the work*, never about
+where the developer happens to be sitting. See
+[`SECURITY.md`](SECURITY.md#the-runtime-control-socket) for what a
+runtime is allowed to ask for and why.
+
 **Tools** are run from inside the runtime container — by a developer
 in an SSH session, by an AI agent in the same SSH session, by a verb
 that `podman exec`s into the runtime, or by another tool. They handle

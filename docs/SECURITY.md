@@ -297,6 +297,74 @@ This allows:
 - Cross-runtime HTTPS requests
 - Composer and npm HTTPS operations against `*.mpd.test` URLs
 
+## The runtime control socket
+
+`mpd` works from inside a runtime container: it forwards project commands
+to the VM over a Unix socket and the VM runs them. This deliberately
+widens what a runtime can reach, so the trade is recorded here rather
+than left implicit.
+
+**What changes.** Before, a compromised or confused process inside a
+runtime — including an AI agent, which runs there with passwordless sudo
+— could write anything under `/srv` but could not touch the control
+plane: no podman socket, no `/var/lib/mpd/conf`, no
+`/var/lib/mpd/state`. It can now create, configure, start, stop and
+delete **projects assigned to its own runtime**. Deleting a project
+destroys its database, dataroot and source tree, so this is a real
+increase in blast radius, not a formality.
+
+**What does not change.** It cannot create or delete runtimes or database
+containers, cannot act on another runtime's projects, cannot run
+`--vm-*`, and cannot ask the VM to execute an arbitrary command.
+
+Four properties carry that:
+
+1. **Closed vocabulary.** The daemon never runs a program named in a
+   request. It validates the argv against `cli.ProjectVerbs` minus `run`
+   — the project verbs, nothing else — then spawns the mpd binary, whose
+   path comes from `internal/exec`'s absolute-path allow-list. A request
+   selects a verb; it cannot select an executable. A pinning test makes
+   adding a verb a deliberate decision about runtime exposure rather than
+   a silent grant.
+2. **Identity from the channel.** Each runtime gets its own socket,
+   bind-mounted read-only into that runtime alone, so the caller's
+   identity is the socket that accepted the connection — unforgeable,
+   because the client never asserts it. `SO_PEERCRED` could not do this:
+   every runtime runs the same UID-matched dev user, so peer credentials
+   are identical across all of them. They still help as a second layer —
+   the socket is mode `0660` and dev-user-owned, and the kernel enforces
+   that across the container boundary.
+3. **Context validated, not believed.** Most verbs infer their target
+   project from the working directory, so a cwd taken on faith would be a
+   way to name someone else's project. A cwd is usable only inside
+   `/srv`, the one tree at the same path on both sides; anywhere else the
+   command still runs but from `/srv`, because `/home/<user>` exists on
+   the VM too and is a *different* directory there. Relative or
+   non-clean paths are refused outright.
+4. **Scoped authority.** A runtime may act only on projects assigned to
+   it. An unconfigured project has no assignment yet, so it is judged by
+   its type instead — otherwise `configure` on a scaffolded moodle
+   project would be allowed from the node runtime and would provision
+   php. `create` is constrained the same way: `--type` must belong to the
+   calling runtime, and name-based type inference is checked too, since
+   it searches every runtime's types.
+
+`run` is refused rather than scoped. It is arbitrary execution by design
+and picks its target runtime from cwd, so it is the one verb where a
+trusted cwd would hand one runtime a shell in another. From inside a
+runtime it would also merely loop back to where the caller already is.
+
+**Turning it off.** Set `MPD_RUNTIME_CONTROL=off` in
+`/var/lib/mpd/env/mpd-vm.env`. Read per request, so it takes effect on
+the next command with no restart; only an explicit `off`/`false`/`0`/`no`
+disables it, so a typo cannot silently break mpd inside every runtime.
+
+The daemon (`mpd --control`, `mpd-control.service`) runs as a **systemd
+user unit with no privileges of its own**. A forwarded verb acquires
+privilege the same way a VM terminal does — per-operation `sudo` inside
+the child — and the child takes the state lock itself, so concurrent
+commands serialise whichever side they came from.
+
 ## Authentication
 
 ### SSH

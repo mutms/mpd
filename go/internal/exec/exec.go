@@ -71,6 +71,25 @@ type Cmd struct {
 	Env []string
 	// Stdin is optional standard input.
 	Stdin io.Reader
+	// Stdout and Stderr are where Run sends the command's output. Nil
+	// means this process's own os.Stdout / os.Stderr, which is what every
+	// caller on the VM wants.
+	//
+	// They exist for callers that are not the process's own terminal. When
+	// mpd serves a request from inside a runtime, the command's output has
+	// to reach the caller's terminal rather than the daemon's journal, and
+	// output produced by children — asset scripts, podman — is most of what
+	// a verb like `create` prints. Since this package is the only one
+	// allowed to start a process, nothing else can redirect it.
+	//
+	// Passing an *os.File matters: os/exec hands a real file descriptor
+	// straight to the child, so the child sees a genuine (possibly tty)
+	// descriptor and writes to it unbuffered. Any other io.Writer gets a
+	// pipe plus a copying goroutine, which works but loses the tty.
+	//
+	// Capture ignores both — capturing output is its entire contract.
+	Stdout io.Writer
+	Stderr io.Writer
 	// Sudo runs the command via `sudo -n`. Non-interactive on purpose:
 	// mpd never prompts for a password, it fails and says what to fix.
 	Sudo bool
@@ -127,7 +146,8 @@ func Available(name string) bool {
 	return info.Mode().Perm()&0o111 != 0
 }
 
-// Run executes cmd, streaming stdout and stderr to this process's own.
+// Run executes cmd, streaming stdout and stderr to cmd.Stdout and
+// cmd.Stderr — this process's own when they are nil.
 // It returns the exit code. A non-zero exit is not an error: err is
 // non-nil only when the process could not be started, or when the command
 // is not allow-listed (code ExitNotPermitted).
@@ -136,9 +156,22 @@ func Run(ctx context.Context, cmd Cmd) (int, error) {
 	if err != nil {
 		return ExitNotPermitted, err
 	}
-	c.Stdout = os.Stdout
-	c.Stderr = os.Stderr
+	c.Stdout = writerOr(cmd.Stdout, os.Stdout)
+	c.Stderr = writerOr(cmd.Stderr, os.Stderr)
 	return wait(c)
+}
+
+// writerOr returns w, or fallback when w is nil.
+//
+// Written out rather than inlined because a typed-nil io.Writer is not
+// == nil, and assigning one to osexec.Cmd.Stdout makes the child's output
+// vanish silently. Callers build Cmd from many places; funnelling the
+// choice through one func keeps that trap in a single spot.
+func writerOr(w io.Writer, fallback io.Writer) io.Writer {
+	if w == nil {
+		return fallback
+	}
+	return w
 }
 
 // Capture executes cmd and captures stdout and stderr separately, with

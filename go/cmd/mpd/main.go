@@ -18,12 +18,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
 
 	"github.com/mutms/mpd/go/internal/assets"
 	"github.com/mutms/mpd/go/internal/cli"
+	"github.com/mutms/mpd/go/internal/control"
 	"github.com/mutms/mpd/go/internal/current"
 	"github.com/mutms/mpd/go/internal/dnsmasq"
 	"github.com/mutms/mpd/go/internal/hooks"
@@ -110,6 +112,7 @@ type flags struct {
 
 	checkHooks bool
 	web        bool
+	control    bool
 	yes        bool
 	debug      bool
 }
@@ -121,6 +124,24 @@ func main() {
 	if len(os.Args) >= 3 && os.Args[1] == "--complete" {
 		cli.CompleteFromArgs(os.Stdout, os.Args[2:], state.New(), assets.New())
 		cli.ExitCompletion()
+	}
+
+	// Inside a runtime container there is no control plane to run against:
+	// /var/lib/mpd/conf and /var/lib/mpd/state are deliberately not
+	// mounted, and there is no podman socket. So the command goes to the
+	// VM, which runs it and writes back through this terminal.
+	//
+	// Before cobra, because building the command tree here would only
+	// produce handlers that cannot work — every one of them starts by
+	// loading platform.env. Forwarding the raw argv also means the VM
+	// parses it with its own command tree, which is the only one that
+	// should decide what a verb means.
+	if _, inRuntime := control.RuntimeName(); inRuntime && !runsLocallyInRuntime(os.Args[1:]) {
+		code, err := control.Forward(os.Args[1:])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+		}
+		os.Exit(code)
 	}
 
 	var f flags
@@ -169,6 +190,8 @@ func main() {
 
 	root.Flags().BoolVar(&f.web, "web", false,
 		"Run the status web server in the foreground (systemd: mpd-web.service).")
+	root.Flags().BoolVar(&f.control, "control", false,
+		"Serve project commands sent from inside runtimes (systemd: mpd-control.service).")
 
 	root.Flags().BoolVar(&f.checkHooks, "check-hooks", false,
 		"Cross-reference hook directories against the event catalogue. Also runs at the end of --vm-setup.")
@@ -229,24 +252,41 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 			Assets:     assets.New(),
 			UnitActive: vm.UnitActive,
 		})
+	case f.control:
+		// Long-running, like --web. Deliberately does NOT take the state
+		// lock: each request spawns a child mpd that takes it itself, and a
+		// lock held here would be a different file description that the
+		// child would then wait on forever.
+		//
+		// A socket for every runtime the assets tree defines, not just the
+		// provisioned ones. Binding up front means a runtime created later
+		// already has its endpoint, so nothing has to reconcile sockets
+		// against runtime lifecycle — and a socket whose runtime does not
+		// exist is simply one nothing ever connects to.
+		a := assets.New()
+		runtimes := a.RuntimeNames()
+		if err := control.PruneSockets(runtimes); err != nil {
+			return err
+		}
+		return control.Serve(ctx, out, runtimes, control.RunDir, state.New(), a)
 	case f.vmSetup:
-		return cli.Setup(ctx, out)
+		return withLock(ctx, out, state.New(), func() error { return cli.Setup(ctx, out) })
 	case f.vmUpgrade:
-		return cli.Upgrade(ctx, out)
+		return withLock(ctx, out, state.New(), func() error { return cli.Upgrade(ctx, out) })
 	case f.vmStart:
 		d, err := projectDeps()
 		if err != nil {
 			return err
 		}
-		return cli.Start(ctx, out, d, state.Dir)
+		return withLock(ctx, out, d.State, func() error { return cli.Start(ctx, out, d, state.Dir) })
 	case f.vmStop:
 		d, err := projectDeps()
 		if err != nil {
 			return err
 		}
-		return cli.Stop(ctx, out, d, state.Dir)
+		return withLock(ctx, out, d.State, func() error { return cli.Stop(ctx, out, d, state.Dir) })
 	case f.vmRestart:
-		return cli.Restart(ctx, out, state.Dir)
+		return withLock(ctx, out, state.New(), func() error { return cli.Restart(ctx, out, state.Dir) })
 	case f.checkHooks:
 		hooks.Diagnose(c.ErrOrStderr(), state.Dir)
 		return nil
@@ -269,6 +309,45 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 	return nil
 }
 
+// runsLocallyInRuntime reports whether a command should be answered inside
+// the runtime instead of forwarded to the VM.
+//
+// Only things that are true of the binary itself. `version` reports the
+// build of the binary being asked, and /opt/mpd is the same checkout on
+// both sides, so answering locally is both correct and faster. Everything
+// else needs state, podman or the network, none of which exist here.
+func runsLocallyInRuntime(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	switch args[0] {
+	case "version", "--version", "-v":
+		return true
+	}
+	return false
+}
+
+// withLock runs fn under mpd's exclusive mutation lock.
+//
+// Every mutating entry point goes through here and nothing else does.
+// flock is per open file description, so a second acquire inside the same
+// process blocks on itself forever — which is why the lock is taken in
+// this file, at the boundary, and never from inside a cli handler. A
+// handler that needs it already has it. See state.Store.Acquire.
+//
+// Read-only paths (show, list, status, --vm-status) are deliberately
+// absent: the atomic rename in writeJSON means a reader sees either the
+// old file or the new one, so blocking them behind a long create would
+// cost real waiting to prevent nothing.
+func withLock(ctx context.Context, out io.Writer, s state.Store, fn func() error) error {
+	release, err := s.Acquire(ctx, out)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return fn()
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, v := range values {
 		if v != "" {
@@ -285,22 +364,28 @@ func runtimeAction(ctx context.Context, out interface{ Write([]byte) (int, error
 	if err != nil {
 		return err
 	}
-	switch {
-	case f.runtimeCreate != "":
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return err
-		}
-		return cli.RuntimeCreate(ctx, out, name, p, s, dns, o, n, assets.New(), devUser(), devUID(), home)
-	case f.runtimeStart != "":
-		return cli.RuntimeStart(ctx, out, name, p, s, dns, o, n, devUser(), devUID())
-	case f.runtimeStop != "":
-		return cli.RuntimeStop(ctx, out, name, p, s, dns, o)
-	case f.runtimeDelete != "":
-		return cli.RuntimeDelete(ctx, out, c.InOrStdin(), name, p, s, dns, o, devUser(), f.yes)
-	default:
+	// --runtime-show reads; everything else here mutates.
+	if f.runtimeShow != "" {
 		return cli.ShowRuntime(ctx, out, name, s, p, o, n)
 	}
+	return withLock(ctx, out, s, func() error {
+		switch {
+		case f.runtimeCreate != "":
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return err
+			}
+			return cli.RuntimeCreate(ctx, out, name, p, s, dns, o, n, assets.New(), devUser(), devUID(), home)
+		case f.runtimeStart != "":
+			return cli.RuntimeStart(ctx, out, name, p, s, dns, o, n, devUser(), devUID())
+		case f.runtimeStop != "":
+			return cli.RuntimeStop(ctx, out, name, p, s, dns, o)
+		case f.runtimeDelete != "":
+			return cli.RuntimeDelete(ctx, out, c.InOrStdin(), name, p, s, dns, o, devUser(), f.yes)
+		default:
+			return cli.ShowRuntime(ctx, out, name, s, p, o, n)
+		}
+	})
 }
 
 func dbAction(ctx context.Context, out interface{ Write([]byte) (int, error) },
@@ -310,20 +395,23 @@ func dbAction(ctx context.Context, out interface{ Write([]byte) (int, error) },
 	if err != nil {
 		return err
 	}
-	switch {
-	case f.dbCreate != "":
-		n, err := net.Load(net.PlatformEnvPath)
-		if err != nil {
-			return err
+	// Every db action mutates — there is no --db-show.
+	return withLock(ctx, out, s, func() error {
+		switch {
+		case f.dbCreate != "":
+			n, err := net.Load(net.PlatformEnvPath)
+			if err != nil {
+				return err
+			}
+			return cli.DBCreate(ctx, out, name, p, s, dns, n, devUID())
+		case f.dbStart != "":
+			return cli.DBStart(ctx, out, name, p, s, dns)
+		case f.dbStop != "":
+			return cli.DBStop(ctx, out, name, p, s, dns)
+		default:
+			return cli.DBDelete(ctx, out, c.InOrStdin(), name, p, s, dns, f.yes)
 		}
-		return cli.DBCreate(ctx, out, name, p, s, dns, n, devUID())
-	case f.dbStart != "":
-		return cli.DBStart(ctx, out, name, p, s, dns)
-	case f.dbStop != "":
-		return cli.DBStop(ctx, out, name, p, s, dns)
-	default:
-		return cli.DBDelete(ctx, out, c.InOrStdin(), name, p, s, dns, f.yes)
-	}
+	})
 }
 
 // helpCmd replaces cobra's built-in `help`, because `mpd help
@@ -440,7 +528,14 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 
 	// The project argument is optional throughout: omitted, it is the
 	// project whose directory the caller is standing in (cli.ProjectArg).
-	simple := func(use, short string, run func(context.Context, *cobra.Command, string, cli.ProjectDeps) error) *cobra.Command {
+	//
+	// lock says whether the verb mutates. Passed explicitly rather than
+	// inferred, because getting it wrong is silent in both directions: a
+	// mutating verb without the lock races, and a read-only verb with it
+	// waits for no reason.
+	build := func(use, short string, lock bool,
+		run func(context.Context, *cobra.Command, string, cli.ProjectDeps) error) *cobra.Command {
+
 		verb, _, _ := strings.Cut(use, " ")
 		return &cobra.Command{
 			Use:   use,
@@ -455,17 +550,28 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 				if err != nil {
 					return err
 				}
-				return run(c.Context(), c, name, d)
+				if !lock {
+					return run(c.Context(), c, name, d)
+				}
+				return withLock(c.Context(), c.OutOrStdout(), d.State, func() error {
+					return run(c.Context(), c, name, d)
+				})
 			},
 		}
 	}
+	simple := func(use, short string, run func(context.Context, *cobra.Command, string, cli.ProjectDeps) error) *cobra.Command {
+		return build(use, short, false, run)
+	}
+	mutating := func(use, short string, run func(context.Context, *cobra.Command, string, cli.ProjectDeps) error) *cobra.Command {
+		return build(use, short, true, run)
+	}
 
 	verbs = append(verbs,
-		simple("start [project]", "Start a project (default: the one you are in)",
+		mutating("start [project]", "Start a project (default: the one you are in)",
 			func(ctx context.Context, c *cobra.Command, name string, d cli.ProjectDeps) error {
 				return cli.ProjectStart(ctx, c.OutOrStdout(), name, d)
 			}),
-		simple("stop [project]", "Stop a project (default: the one you are in)",
+		mutating("stop [project]", "Stop a project (default: the one you are in)",
 			func(ctx context.Context, c *cobra.Command, name string, d cli.ProjectDeps) error {
 				return cli.ProjectStop(ctx, c.OutOrStdout(), name, d)
 			}),
@@ -498,7 +604,9 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 			if err != nil {
 				return err
 			}
-			return cli.ProjectDelete(c.Context(), c.OutOrStdout(), c.InOrStdin(), args[0], d, f.yes)
+			return withLock(c.Context(), c.OutOrStdout(), d.State, func() error {
+				return cli.ProjectDelete(c.Context(), c.OutOrStdout(), c.InOrStdin(), args[0], d, f.yes)
+			})
 		},
 	}
 	deleteCmd.Flags().BoolVar(&f.yes, "yes", false, "Skip the confirmation prompt")
@@ -516,7 +624,9 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 			if err != nil {
 				return err
 			}
-			return cli.ProjectConfigure(c.Context(), c.OutOrStdout(), name, settings, d)
+			return withLock(c.Context(), c.OutOrStdout(), d.State, func() error {
+				return cli.ProjectConfigure(c.Context(), c.OutOrStdout(), name, settings, d)
+			})
 		},
 	}
 
@@ -538,7 +648,9 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 			if err != nil {
 				return err
 			}
-			return cli.ProjectCreate(c.Context(), c.OutOrStdout(), name, opts, d, home)
+			return withLock(c.Context(), c.OutOrStdout(), d.State, func() error {
+				return cli.ProjectCreate(c.Context(), c.OutOrStdout(), name, opts, d, home)
+			})
 		},
 	}
 	createCmd.Flags().StringVar(&opts.Type, "type", "", "Project type (default: inferred, else moodle)")

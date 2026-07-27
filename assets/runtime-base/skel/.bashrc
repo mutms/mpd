@@ -61,6 +61,15 @@ unset _d _mpd_rt _mpd_assets
 # provisioned simply has no mount here.
 [ -x /opt/mudev/bin/mudev ] && PATH="/opt/mudev/bin:$PATH"
 
+# --- mpd itself ------------------------------------------------------------
+# The same binary the VM runs, reached through the read-only /opt/mpd mount.
+# It detects that it is inside a runtime (via /etc/mpd/runtime) and forwards
+# project commands to the VM over this runtime's control socket, so
+# `mpd create`, `mpd start` and friends work from here without a second
+# terminal. Guarded because /opt/mpd/bin/mpd only exists once the VM has
+# been built with `make install`.
+[ -x /opt/mpd/bin/mpd ] && PATH="/opt/mpd/bin:$PATH"
+
 # --- User-installed CLIs ---------------------------------------------------
 # Claude Code, gh, and other tools that ship via personal `~/.local/bin`
 # installs (claude-install drops binaries here). Unguarded on purpose:

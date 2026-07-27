@@ -132,10 +132,22 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 		return "", fmt.Errorf("Failed to create runtime '%s'.", o.Name)
 	}
 
+	// The control socket's directory must exist, and be dev-user-owned,
+	// before podman is asked to bind-mount it: podman would otherwise
+	// create it as root and the daemon could not bind a socket inside it.
+	// Created here rather than by the daemon because the mount is
+	// established now, at container create, and the daemon may not have
+	// started yet on a freshly set-up VM.
+	controlDir := podman.ControlDir(o.Name)
+	if err := os.MkdirAll(controlDir, 0o755); err != nil {
+		return "", fmt.Errorf("Failed to create %s: %w", controlDir, err)
+	}
+
 	args := []string{"-d", "--name", o.Container, "--pod", o.Pod, "--systemd", "always"}
 	args = append(args, podman.OptMountRO...)
 	args = append(args, podman.EnvMountRO...)
 	args = append(args, podman.SkelMountRO...)
+	args = append(args, podman.ControlMountRO(o.Name)...)
 	if podman.MudevPresent() {
 		args = append(args, podman.MudevMountRO...)
 	}

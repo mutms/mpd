@@ -58,6 +58,7 @@ var globalFlags = []string{
 	"--vm-status",
 	"--check-hooks",
 	"--web",
+	"--control",
 	"--yes",
 	"--debug",
 	"--help",

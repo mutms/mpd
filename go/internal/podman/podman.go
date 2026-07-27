@@ -567,6 +567,45 @@ var (
 	SkelMountRO = []string{"-v", "/var/lib/mpd/skel:/var/lib/mpd/skel:ro"}
 )
 
+// ControlRunDir mirrors control.RunDir. Duplicated rather than imported,
+// for the same reason as vmMudevDir above: internal/control sits above this
+// package and importing it would invert the dependency direction.
+//
+// Exported because internal/cli needs to name the directory too, and cli
+// cannot import internal/control either — control imports cli for the
+// project verb list, which is the canonical home for it.
+const ControlRunDir = "/var/lib/mpd/run"
+
+// ControlMountRO gives one runtime the socket it sends project commands to,
+// and gives it nothing else.
+//
+// Per-runtime by construction: only <rt>'s own directory is mounted, so the
+// socket a container can reach is the socket that identifies it. That is
+// what lets the daemon take the caller's identity from the channel instead
+// of believing a claim in the request. A shared mount would forfeit it.
+//
+// Read-only, which is enough — connecting to a Unix socket needs write
+// permission on the socket inode, not on the directory, and an RO bind
+// mount was measured to permit connect() while still refusing to let the
+// container create or replace anything here.
+//
+// A DIRECTORY mount, not the socket file: the daemon unlinks and rebinds
+// its socket on every start, and a file mount would pin the old inode.
+// Measured too — a socket rebound to a new inode is immediately reachable
+// from an already-running container.
+func ControlMountRO(runtime string) []string {
+	dir := ControlDir(runtime)
+	return []string{"-v", dir + ":" + dir + ":ro"}
+}
+
+// ControlDir is the VM-side directory ControlMountRO shares with a runtime.
+//
+// Exported so the runtime provisioner can create it, owned by the dev user,
+// BEFORE podman runs. Podman auto-creates a missing bind-mount source as
+// root — the same trap MudevMountRO documents — and a root-owned directory
+// here is one the daemon cannot bind its socket in.
+func ControlDir(runtime string) string { return ControlRunDir + "/" + runtime }
+
 // PodCreate creates a pod.
 func (c *Client) PodCreate(ctx context.Context, args []string) (int, error) {
 	return c.stream(ctx, append([]string{"pod", "create"}, args...))

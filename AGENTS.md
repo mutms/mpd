@@ -91,6 +91,9 @@ The binary is Go, built from `go/` into `bin/mpd` by `make install`:
   VM's caddy
 - `go/internal/db/` — DB containers: tags, images, allocation, lifecycle
 - `go/internal/sidecar/` — per-runtime-pod sidecar reconciliation
+- `go/internal/control/` — `mpd` run from inside a runtime: the
+  per-runtime Unix socket, the FD-passing client/daemon, and the guard
+  that decides what a runtime may ask the VM to do
 - `go/internal/hooks/` — typed `Event` lifecycle hooks + asset-side
   `hooks/<event>.d/` dispatch
 - `go/internal/srv/` — the data volume at `/srv`: reads, atomic writes,

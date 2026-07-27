@@ -205,6 +205,15 @@ func Setup(ctx context.Context, out io.Writer) error {
 	// nothing to show for it.
 	ui.OK(out, "%s restarted (listening on %s).", vm.WebUnitName, web.Addr)
 
+	ui.Step(out, "Control socket for runtimes (mpd --control)")
+	if err := vm.InstallControlUnit(ctx); err != nil {
+		return err
+	}
+	// Restarted for a sharper reason than the web server's: this daemon
+	// carries the guard that decides what a runtime may ask for, so one
+	// still running the previous binary would enforce the previous rules.
+	ui.OK(out, "%s restarted (sockets under %s).", vm.ControlUnitName, podman.ControlRunDir)
+
 	ui.Step(out, "TLS frontdoor (caddy)")
 	// Every name mpd serves from the VM itself. adminer speaks plain
 	// HTTP with no certificate of its own, so Caddy is what makes it

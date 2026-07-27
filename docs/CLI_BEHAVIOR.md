@@ -100,6 +100,34 @@ carries only the fully-qualified name. The block is regenerated on every
 run; content outside the markers is preserved. See
 [`USAGE.md`](USAGE.md#ssh-into-the-runtime).
 
+It also installs `mpd-control.service` (`mpd --control`), the daemon that
+serves project commands sent from inside runtime containers. Restarted on
+every run, like `mpd-web.service`, and for a sharper reason: it carries
+the guard deciding what a runtime may ask for, so a daemon on the previous
+binary would enforce the previous rules.
+
+### Running `mpd` inside a runtime
+
+The same binary behaves differently depending on where it runs. Inside a
+runtime container (detected via `/etc/mpd/runtime`) it is a client: it
+forwards the argv, the working directory and its own stdin/stdout/stderr
+descriptors to the VM, and exits with the status of the mpd that ran
+there. Output, colour, TTY behaviour and interactive prompts are the
+caller's, because the process on the VM writes to the caller's terminal
+directly rather than through a relay.
+
+Only project verbs are accepted — `create`, `configure`, `start`, `stop`,
+`delete`, `show`, `help` — and only against projects belonging to the
+calling runtime. `run` and every global flag are refused with a message
+naming what to use instead. `version` is answered locally, since it
+describes the binary being asked and `/opt/mpd` is the same checkout on
+both sides.
+
+Disable with `MPD_RUNTIME_CONTROL=off` in `/var/lib/mpd/env/mpd-vm.env`;
+it is read per request, so no restart is needed. Full model in
+[`SECURITY.md`](SECURITY.md#the-runtime-control-socket), workflow in
+[`USAGE.md`](USAGE.md#mpd-from-inside-the-runtime).
+
 ### Fallback rule
 
 If no known global flag path matches, status output is shown.
