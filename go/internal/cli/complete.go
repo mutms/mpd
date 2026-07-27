@@ -26,7 +26,7 @@ import (
 // ProjectVerbs are the tokens accepted as the first positional argument.
 // They are reserved as project names, so a project can never collide with
 // a verb.
-var ProjectVerbs = []string{"configure", "create", "delete", "help", "run", "show", "start", "stop"}
+var ProjectVerbs = []string{"configure", "create", "delete", "help", "reset", "run", "show", "start", "stop"}
 
 // IsProjectVerb reports whether a token is a project verb.
 func IsProjectVerb(token string) bool {
@@ -150,7 +150,7 @@ func verbArgs(verb string) []string {
 	case "configure":
 		// Commonly-set keys; any MPD_* key is accepted.
 		return []string{"MPD_DB=", "MPD_PHP_VERSION=", "MPD_PHP_MOODLE_BEHAT=", "--yes"}
-	case "delete":
+	case "delete", "reset":
 		return []string{"--yes"}
 	default:
 		return nil

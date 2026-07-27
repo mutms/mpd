@@ -48,6 +48,8 @@ const projectCommands = `  show       [projectname]                     project 
                                                full set lives in /srv/projects/<projectname>/mpd.env)
   start      [projectname]
   stop       [projectname]
+  reset      [projectname] [--yes]             destroy its DB + data, keep the code;
+                                               leaves it not-configured
   delete     <projectname> [--yes]             (never inferred — name it explicitly)
   help       <projectname>                     verb reference for one project
   run        <command> [args...]               run a command in the runtime of the
@@ -581,6 +583,19 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 				return nil
 			}),
 	)
+
+	// reset DOES infer from the working directory, unlike delete. The reason
+	// delete refuses — it removes the directory you are standing in — does
+	// not apply here: reset keeps the source tree, so the inferred project
+	// is still a directory that exists afterwards. The typed-name prompt is
+	// what guards the destructive part.
+	resetCmd := mutating("reset [project]",
+		"Reset a project: destroy its data, keep the code (default: the one you are in)",
+		func(ctx context.Context, c *cobra.Command, name string, d cli.ProjectDeps) error {
+			return cli.ProjectReset(ctx, c.OutOrStdout(), c.InOrStdin(), name, d, f.yes)
+		})
+	resetCmd.Flags().BoolVar(&f.yes, "yes", false, "Skip the confirmation prompt")
+	verbs = append(verbs, resetCmd)
 
 	// The one verb that does NOT infer its project from the working
 	// directory: it removes the source tree, so the inferred answer would

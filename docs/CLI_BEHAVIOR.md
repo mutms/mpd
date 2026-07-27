@@ -117,8 +117,8 @@ caller's, because the process on the VM writes to the caller's terminal
 directly rather than through a relay.
 
 Only project verbs are accepted — `create`, `configure`, `start`, `stop`,
-`delete`, `show`, `help` — and only against projects belonging to the
-calling runtime. `run` and every global flag are refused with a message
+`reset`, `delete`, `show`, `help` — and only against projects belonging to
+the calling runtime. `run` and every global flag are refused with a message
 naming what to use instead. `version` is answered locally, since it
 describes the binary being asked and `/opt/mpd` is the same checkout on
 both sides.
@@ -195,6 +195,11 @@ command from the right directory. An explicit name always wins. `delete`
 is excluded deliberately: it removes the source tree, so the inferred
 answer would routinely be the directory the caller is standing in.
 
+`reset` does infer, despite being destructive, because that reason does not
+apply to it: it keeps the source tree, so the inferred project is still a
+directory that exists afterwards. The typed-name confirmation is what
+guards it.
+
 Project-focused universal verbs (recommended daily surface):
 - `create` is inert beyond scaffolding: accepts `--type`. It does not fetch any source — `/srv` is mounted on the VM, so cloning is ordinary shell (`git clone`, or `mudev clone <recipe>`) done before or after, with the developer's own credentials. Project-type `project-create.sh` seeds `/srv/projects/<project>/mpd.env` from the type's `mpd-template.env` (existing mpd.env preserved, so scaffolding a directory that already holds a source tree is safe). No DB is provisioned here; the project is registered with status `notConfigured`. Next step is `mpd configure`.
 - `configure` takes any number of positional `KEY=VALUE` pairs matching `^MPD_[A-Z0-9_]+=.*$`. The control plane sanitises (reserved keys like `MPD_DB` get strict validation; others get a generic safe-charset check), then writes the line into `/srv/projects/<project>/mpd.env` (empty value deletes the line). Then runs the project-type `configure.sh` which sources the four-layer mpd.env (runtime defaults → type defaults → user-level → project) and emits `dbTag` / `urls` into `/srv/meta/<project>/{effective.json,urls.json}`. The control plane reads `dbTag`, re-sanitises, and provisions the DB container if non-empty (visible image-pull progress via `podman pull`, then `podman run -d`, then per-project DB creation). The full mpd.env model — file paths, sourcing order, sanitisation, reserved keys — is documented in [`ARCHITECTURE.md` §8 "Configuration model: mpd.env"](ARCHITECTURE.md#8-configuration-model-mpdenv).
@@ -216,7 +221,27 @@ Project-focused universal verbs (recommended daily surface):
   its place by the same test: if mpd can repair it, repair it instead of
   reporting it.
 - `stop`
+- `reset` — destroys everything the project generated and returns it to the
+  state `create` left it in, keeping `/srv/projects/<project>/`. Drops the
+  project's database (never the shared engine container, which keeps
+  running), empties `/srv/data/<project>/`, removes `/srv/meta/<project>/`
+  including the TLS certificate, and removes the DNS record. State goes
+  back to exactly what `create` writes — name and type only — so the
+  project is **not configured** and `start` refuses until `mpd configure`
+  runs. That is deliberate on both counts: it is the honest description of
+  a project with no database or dataroot, and it is what makes the
+  switch-database flow work, since only `configure` reads the new
+  `MPD_DB`. `config.php` survives (`configure.sh` writes it only when
+  missing) while `config-mpd.php` is regenerated, which is how the engine
+  changes underneath unchanged project code.
 - `delete` — the one verb that always needs an explicit name
+
+`reset` and `delete` both confirm by asking the caller to **type the
+project name**, not `y/N`: `y` is the same keystroke regardless of which
+project the prompt names, so it cannot distinguish the intended project
+from a mistyped one. `--yes` skips the question for scripted use. The
+other destructive flags (`--runtime-delete`, `--db-delete`) keep `y/N` —
+they are VM-terminal-only and name infrastructure, not a developer's site.
 - `run <command> [args...]` — runs a command inside the runtime that owns the current project, with the caller's working directory forwarded verbatim (`/srv` is the same path on the VM and in the container). The child's stdin, stdout, stderr and exit code are the caller's; a TTY is allocated only when stdin is one. The command runs through a login shell, so it sees exactly the PATH an interactive runtime session has — every project-type tool (`mdl-install`, `phpunit`, `composer`) resolves. Note the grammar: everything after `run` is the command, so this is the one verb whose second argument is not a project name.
 
 ## Project-type-specific operations are tools, not verbs

@@ -53,7 +53,13 @@ func ProjectStart(ctx context.Context, out io.Writer, name string, d ProjectDeps
 		return fmt.Errorf("Project '%s' not found. Create it: mpd %s create", name, name)
 	}
 	if entry.RuntimeName == "" {
-		return fmt.Errorf("No runtime assigned to '%s'.\nUse: mpd %s create", name, name)
+		// The project exists but has never been configured — the state
+		// `create` leaves, and the state `reset` returns it to. Configure is
+		// what assigns the runtime and builds the database, so pointing at
+		// `create` here would send the caller to a verb that refuses because
+		// the project already exists.
+		return fmt.Errorf("Project '%s' is not configured yet, so it has no runtime or database.\n"+
+			"Run: mpd configure %s", name, name)
 	}
 
 	container := d.Observer.RuntimeContainer(entry.RuntimeName)
@@ -343,8 +349,9 @@ func ProjectDelete(ctx context.Context, out io.Writer, in io.Reader, name string
 	fmt.Fprintf(out, "Runtime:  %s\n", runtimeStr)
 	fmt.Fprintf(out, "Source:   /srv/projects/%s/\n", name)
 	fmt.Fprintln(out, "This will remove the DB, dataroot, source tree, and all config files.")
+	fmt.Fprintf(out, "To keep the code and start over instead, use `mpd reset %s`.\n", name)
 
-	if !assumeYes && !promptYesNo(out, in, fmt.Sprintf("Remove project '%s'?", name)) {
+	if !assumeYes && !promptName(out, in, name, "deletion") {
 		fmt.Fprintln(out, "Aborted.")
 		return nil
 	}
@@ -408,6 +415,149 @@ func ProjectDelete(ctx context.Context, out io.Writer, in io.Reader, name string
 	}
 
 	Ok(out, "Project '%s' deleted.", name)
+	return nil
+}
+
+// ProjectReset throws away a project's data and returns it to the state
+// `create` left it in, keeping the source tree.
+//
+// # What it is for
+//
+// Two situations, both of which used to mean delete-and-start-over:
+//
+//   - The database is corrupted, or the site's data is simply not worth
+//     keeping, and you want a fresh install against the code you already
+//     have. The source tree and config.php survive, so nothing has to be
+//     re-cloned and no hand-edited settings are lost.
+//   - You want a different database engine. Reset, edit MPD_DB in
+//     mpd.env, then configure: config-mpd.php is regenerated from the new
+//     value, so the switch needs no manual edit of any PHP file.
+//
+// # What survives, and why that is the whole point
+//
+// /srv/projects/<name>/ is untouched — code, git history, mpd.env,
+// config.php. configure.sh writes config.php only when it is missing and
+// regenerates config-mpd.php every time, which is what lets the DB change
+// underneath an unchanged config.php.
+//
+// Everything derived goes: the project's database, the contents of
+// /srv/data/<name>/ (dataroot and its behat/phpunit siblings), the
+// generated metadata in /srv/meta/<name>/ including the TLS certificate,
+// and the project's DNS record.
+//
+// # Not configured afterwards, deliberately
+//
+// The resulting state is exactly what `create` writes — type and name, and
+// nothing else — so `start` refuses until `configure` has run. That is the
+// honest description of the project at that moment: it has no database, no
+// dataroot and no runtime assignment, and pretending otherwise would only
+// move the failure to somewhere less obvious. It is also what makes the
+// switch-the-database flow work, since configure is what reads the new
+// MPD_DB.
+//
+// The database *engine* container is left running. It is shared with every
+// other project on that engine:version, so stopping it would reach outside
+// this project, and an idle engine costs nothing.
+func ProjectReset(ctx context.Context, out io.Writer, in io.Reader, name string,
+	d ProjectDeps, assumeYes bool) error {
+
+	entry, found := findProject(d.State, name)
+	if !found {
+		return fmt.Errorf("Project '%s' not found.", name)
+	}
+	container := d.Observer.RuntimeContainer(entry.RuntimeName)
+
+	dbStr := entry.DatabaseID
+	if dbStr == "" {
+		dbStr = "(none)"
+	}
+	fmt.Fprintf(out, "Project:  %s\n", name)
+	fmt.Fprintf(out, "Type:     %s\n", orDash(entry.Type))
+	fmt.Fprintf(out, "Database: %s\n", dbStr)
+	fmt.Fprintf(out, "Keeps:    /srv/projects/%s/ (code, mpd.env, config.php)\n", name)
+	fmt.Fprintf(out, "Destroys: the '%s' database and everything in /srv/data/%s/\n", name, name)
+	fmt.Fprintf(out, "Leaves '%s' not configured — run `mpd configure %s` next.\n", name, name)
+
+	if !assumeYes && !promptName(out, in, name, "reset") {
+		fmt.Fprintln(out, "Aborted.")
+		return nil
+	}
+
+	// Stop while the runtime is still up, so the type's stop path and the
+	// pre-stop hooks run against a live project — the same ordering
+	// argument as delete.
+	if entry.Requested == "running" {
+		if err := ProjectStop(ctx, out, name, d); err != nil {
+			fmt.Fprintf(out, "Warning: stop failed, continuing with reset: %v\n", err)
+		}
+	}
+
+	// The type's teardown: Apache alias, systemd unit, whatever it owns.
+	// Reset is a re-scaffold, so the project must be torn down as
+	// completely as a delete would tear it down — configure.sh builds it
+	// all back.
+	if entry.RuntimeName != "" && d.Podman.Running(ctx, container) {
+		if cfg, ok := d.Assets.ProjectTypeConfig(entry.Type); ok {
+			script := fmt.Sprintf("/opt/mpd/assets/runtimes/%s/project_types/%s/project-delete.sh",
+				cfg.AssetsRuntime, cfg.AssetsType)
+			_, _ = project.Exec(ctx, d.Podman, container, d.DevUser, "bash", script, name)
+		}
+	}
+
+	// The project's database inside its engine — never the engine itself.
+	if entry.DatabaseEngine != "" {
+		dbContainer := db.ContainerName(entry.DatabaseEngine, entry.DatabaseVersion)
+		if d.Podman.Running(ctx, dbContainer) {
+			fmt.Fprintf(out, "\n\033[1m==> Dropping database '%s'\033[0m\n", name)
+			if err := db.Drop(ctx, out, entry.DatabaseEngine, dbContainer, name, d.Podman); err != nil {
+				fmt.Fprintf(out, "Warning: %v\n", err)
+			}
+		} else {
+			fmt.Fprintf(out, "Engine %s is not running — skipping the database drop.\n", dbContainer)
+		}
+	}
+
+	// The record points at a runtime address this project no longer has.
+	if _, err := d.Dnsmasq.RemoveRecord(name); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(out, "\n\033[1m==> Clearing /srv/data/%s/\033[0m\n", name)
+	if err := srv.RemoveContents(ctx, srv.DataDir(name)); err != nil {
+		return err
+	}
+	// Generated metadata, including the certificate: all of it is rebuilt
+	// by configure from mpd.env, and a certificate for URLs the project no
+	// longer publishes should not outlive them.
+	if err := srv.Remove(ctx, srv.MetaDir(name)); err != nil {
+		return err
+	}
+
+	// Exactly what ProjectCreate writes. Assembled field by field rather
+	// than by clearing the old entry, so a field added to state.Project
+	// later cannot silently survive a reset.
+	if err := d.State.UpsertProject(state.Project{
+		Name:      entry.Name,
+		Type:      entry.Type,
+		Requested: "not-configured",
+	}); err != nil {
+		return err
+	}
+
+	// The project no longer publishes a behat URL or requests a runtime, so
+	// a sidecar that existed only for it is now unnecessary.
+	if entry.RuntimeName != "" {
+		pod := podName(d.Observer, entry.RuntimeName)
+		desired := sidecar.Desired(entry.RuntimeName, d.State, d.Assets)
+		if err := sidecar.Reconcile(ctx, out, pod, desired, d.Podman); err != nil {
+			fmt.Fprintf(out, "Warning: sidecar reconcile: %v\n", err)
+		}
+	}
+
+	fmt.Fprintln(out, "")
+	Ok(out, "Project '%s' reset — code kept, data gone, not configured.", name)
+	fmt.Fprintf(out, "  Edit /srv/projects/%s/mpd.env (e.g. MPD_DB) if needed, then:\n", name)
+	fmt.Fprintf(out, "    mpd configure %s\n", name)
 	return nil
 }
 
@@ -703,6 +853,8 @@ func ShowHelp(out io.Writer, project string, n net.Net) {
 	fmt.Fprintf(out, "                                              full set lives in /srv/projects/%s/mpd.env)\n", project)
 	fmt.Fprintf(out, "  start      %s\n", project)
 	fmt.Fprintf(out, "  stop       %s\n", project)
+	fmt.Fprintf(out, "  reset      %s [--yes]               destroy the DB + /srv/data/%s/,\n", project, project)
+	fmt.Fprintf(out, "                                              keep the code; then configure again\n")
 	fmt.Fprintf(out, "  delete     %s [--yes]\n", project)
 	fmt.Fprintln(out, "")
 	fmt.Fprintf(out, "Inside /srv/projects/%s/ (or any subdirectory) the name is optional:\n", project)

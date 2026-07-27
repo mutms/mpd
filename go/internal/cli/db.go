@@ -172,3 +172,29 @@ func promptYesNo(out io.Writer, in io.Reader, message string) bool {
 	answer := strings.ToLower(strings.TrimSpace(line))
 	return answer == "y" || answer == "yes"
 }
+
+// promptName asks the caller to type a name back, and reports whether they
+// typed it exactly.
+//
+// Used instead of promptYesNo for the two verbs that destroy data a
+// developer cannot get back: `delete` and `reset`. `y` is one keystroke
+// next to `n`, and it is the same keystroke whichever project the prompt is
+// about — so a mistyped project name plus a reflexive `y` is a plausible way
+// to lose the wrong site. Typing the name is the cheapest confirmation that
+// cannot be given by reflex, and it re-reads the name back to the caller in
+// the act of confirming.
+//
+// Whitespace is trimmed, because a copy-paste picks up a trailing newline
+// and that is not a different answer. Case is not folded: project names are
+// lowercase by construction (validProjectName), so a case difference means
+// the caller typed something else.
+func promptName(out io.Writer, in io.Reader, name, action string) bool {
+	fmt.Fprintf(out, "\nType the project name to confirm %s (or anything else to abort)\n  %s: ",
+		action, name)
+	reader := bufio.NewReader(in)
+	line, err := reader.ReadString('\n')
+	if err != nil && line == "" {
+		return false
+	}
+	return strings.TrimSpace(line) == name
+}

@@ -133,15 +133,9 @@ func EnsureLayout(ctx context.Context, uid string) error {
 // on every file — silently, if the caller ignores the error, which is how
 // a "removed" message gets printed over data that is still there.
 func Remove(ctx context.Context, path string) error {
-	// Refuse anything outside the volume. This runs `rm -rf` as root, so
-	// a caller that composed a path wrongly must not be able to take the
-	// VM with it.
-	clean := filepath.Clean(path)
-	if clean != Dir && !strings.HasPrefix(clean, Dir+"/") {
-		return fmt.Errorf("refusing to remove %q: outside %s", path, Dir)
-	}
-	if clean == Dir {
-		return fmt.Errorf("refusing to remove the whole data volume")
+	clean, err := insideVolume(path)
+	if err != nil {
+		return err
 	}
 	if _, err := os.Stat(clean); os.IsNotExist(err) {
 		return nil
@@ -156,6 +150,70 @@ func Remove(ctx context.Context, path string) error {
 		return fmt.Errorf("removing %s: exit %d", clean, code)
 	}
 	return nil
+}
+
+// DataDir is a project's data directory: dataroot and its behat/phpunit
+// siblings live inside it.
+func DataDir(project string) string { return filepath.Join(Dir, "data", project) }
+
+// RemoveContents deletes everything inside a directory, keeping the
+// directory itself.
+//
+// Root, for the same reason as Remove: files inside may be owned by a
+// service's own uid, and an unprivileged unlink fails per-file.
+//
+// The directory survives so its ownership and mode survive with it. Those
+// were set by volume provisioning (`install -d -o <uid> -m 0775`), not by
+// whatever happens to run next, so removing and recreating the directory
+// would quietly hand it a different owner — and the scripts that write
+// inside it run as the dev user and assume they can.
+//
+// A missing directory is not an error: the caller wants it empty, and it is.
+func RemoveContents(ctx context.Context, path string) error {
+	clean, err := insideVolume(path)
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(clean)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("reading %s: %w", clean, err)
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+
+	// One rm for all children rather than one per child: fewer sudo
+	// invocations, and the whole thing either happens or reports why.
+	args := []string{"-rf"}
+	for _, e := range entries {
+		args = append(args, filepath.Join(clean, e.Name()))
+	}
+	code, err := exec.Run(ctx, exec.Cmd{Name: "rm", Args: args, Sudo: true})
+	if err != nil {
+		return fmt.Errorf("emptying %s: %w", clean, err)
+	}
+	if code != 0 {
+		return fmt.Errorf("emptying %s: exit %d", clean, code)
+	}
+	return nil
+}
+
+// insideVolume validates a path for the privileged removal helpers.
+//
+// Both of them run `rm -rf` as root, so a path composed wrongly by a
+// caller must not be able to take the VM with it.
+func insideVolume(path string) (string, error) {
+	clean := filepath.Clean(path)
+	if clean != Dir && !strings.HasPrefix(clean, Dir+"/") {
+		return "", fmt.Errorf("refusing to touch %q: outside %s", path, Dir)
+	}
+	if clean == Dir {
+		return "", fmt.Errorf("refusing to empty the whole data volume")
+	}
+	return clean, nil
 }
 
 // ListProjects returns the project directories present on the volume,

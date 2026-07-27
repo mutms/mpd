@@ -84,7 +84,13 @@ func TestAllowedVerbsTracksProjectVerbs(t *testing.T) {
 	want := map[string]bool{
 		"configure": true, "create": true, "delete": true,
 		"help": true, "show": true, "start": true, "stop": true,
-		"run": false, // loops back into the calling runtime
+		// reset is project-scoped and needs VM privilege (drop the database,
+		// privileged removal under /srv), so it is a verb a runtime cannot
+		// perform for itself — and a corrupted database is something you
+		// discover while working inside the runtime. Allowed, confined by the
+		// scoping rule to the caller's own projects.
+		"reset": true,
+		"run":   false, // loops back into the calling runtime
 	}
 
 	if len(cli.ProjectVerbs) != len(want) {

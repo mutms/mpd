@@ -409,6 +409,52 @@ is:
 rm`, VM reset, etc.). Always pull off before destructive ops you
 care about.
 
+## Starting over without re-cloning: `mpd reset`
+
+`mpd reset <project>` throws away everything a project generated and puts
+it back in the state `mpd create` left it in, **keeping the source tree**.
+Two things it is for:
+
+```bash
+# The database is corrupted, or the data is not worth keeping.
+mpd reset moodle45
+mpd configure moodle45            # fresh, empty database
+mpd start moodle45
+# then install Moodle again from the runtime: ssh mpd-<NNN>-php, mdl-install
+
+# Switch database engine on an existing site.
+mpd reset moodle45
+vi /srv/projects/moodle45/mpd.env  # MPD_DB=postgres:18
+mpd configure moodle45            # config-mpd.php regenerated for the new engine
+mpd start moodle45
+```
+
+**Kept:** `/srv/projects/<project>/` — the code, git history, `mpd.env`
+and `config.php`. That is the point: nothing is re-cloned and no
+hand-edited settings are lost. `config.php` is written only when missing,
+while `config-mpd.php` (wwwroot, dataroot, DB credentials) is regenerated
+on every `configure` — which is what lets the database change underneath
+an unchanged `config.php`.
+
+**Destroyed:** the project's database, everything inside
+`/srv/data/<project>/` (dataroot plus the behat and phpunit ones), the
+generated metadata in `/srv/meta/<project>/` including its TLS
+certificate, and the project's DNS record.
+
+**Left not configured.** Afterwards the project has no database, no
+dataroot and no runtime assignment, so `mpd start` refuses until you run
+`mpd configure`. That is also what makes the engine switch work, since
+`configure` is what reads the new `MPD_DB`.
+
+The database *engine container* keeps running. It is shared by every
+project on that `engine:version`, so stopping it would reach outside this
+project, and an idle engine costs nothing.
+
+Both `reset` and `delete` ask you to **type the project name** rather than
+answering `y/N` — `y` is the same keystroke whichever project the prompt is
+about, so a mistyped name plus a reflexive `y` is a plausible way to lose
+the wrong site. `--yes` skips the question for scripted use.
+
 ## Day-to-day commands
 
 ```bash
@@ -429,7 +475,8 @@ mpd <project>                    # show project info
 mpd create <project> [...]       # scaffold a new project
 mpd configure <project> [K=V]    # apply mpd.env, (re)provision DB
 mpd start <project> / stop       # run/halt the project
-mpd delete <project>             # remove the project
+mpd reset <project>              # destroy DB + data, keep the code (type the name to confirm)
+mpd delete <project>             # remove the project entirely (type the name to confirm)
 mpd help <project>               # all verbs for this project type
 
 mpd --runtime=<name>             # show one runtime's details
