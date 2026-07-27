@@ -85,6 +85,14 @@ done
 # Caddy sidecar reaches this pool via 127.0.0.1:${FPM_PORT} on the pod's
 # shared netns. FPM workers run as the developer user so web and CLI both
 # read/write the same project files as the same identity.
+#
+# Errors are always displayed in the response body. This is a development
+# environment: a bare 500 with an empty body tells the developer nothing,
+# and the failures that matter most — anything fatal inside config.php —
+# happen *before* Moodle's setup.php gets to apply $CFG->debugdisplay, so
+# relying on Moodle's own error handling loses exactly the errors that are
+# hardest to diagnose. php_admin_* (not php_value) so nothing downstream
+# can switch it back off mid-request.
 DEV_USER=$(id -un)
 FPM_CONF_DIR="/etc/php/${PHP_VER}/fpm/pool.d"
 if [ -d "$FPM_CONF_DIR" ]; then
@@ -97,6 +105,10 @@ pm = ondemand
 pm.max_children = 5
 pm.process_idle_timeout = 60s
 php_admin_value[error_log] = ${DATAROOT}/php_error.log
+php_admin_flag[log_errors] = on
+php_admin_flag[display_errors] = on
+php_admin_flag[display_startup_errors] = on
+php_admin_value[error_reporting] = E_ALL
 EOF
     sudo systemctl reload "php${PHP_VER}-fpm" || sudo systemctl restart "php${PHP_VER}-fpm" || true
 fi
