@@ -244,12 +244,17 @@ func Reconcile(ctx context.Context, out io.Writer, pod string, desired []Spec, p
 
 // ensureImage builds a sidecar image from assets when it declares a
 // build context, else pulls it. No-op when already present locally.
+//
+// A missing image is announced and its progress streamed: sidecar images
+// run to gigabytes (selenium is >2 GB), and a silent multi-minute fetch
+// reads as a hang at whatever step printed last.
 func ensureImage(ctx context.Context, out io.Writer, spec Spec, p *podman.Client) error {
 	if p.ImageExists(ctx, spec.Image) {
 		return nil
 	}
 	if spec.BuildContext == "" {
-		if code, err := p.PullQuiet(ctx, spec.Image); err != nil || code != 0 {
+		fmt.Fprintf(out, "\n\033[1m==> Pulling sidecar image '%s'\033[0m\n", spec.Image)
+		if code, err := p.Pull(ctx, spec.Image); err != nil || code != 0 {
 			return fmt.Errorf("Failed to pull sidecar image '%s'.", spec.Image)
 		}
 		return nil

@@ -492,9 +492,12 @@ func (c *Client) ImageExists(ctx context.Context, image string) bool {
 	return err == nil && res.Code == 0
 }
 
-// PullQuiet fetches an image without streaming layer progress. Used for
-// sidecars, where the pull is incidental to the operation the user asked
-// for rather than the point of it.
+// PullQuiet fetches an image without streaming layer progress.
+//
+// Only for pre-warming a pull whose result is not what the user is
+// waiting on (setup's base image). Anything the user is blocked on goes
+// through Pull: a silent multi-gigabyte fetch is indistinguishable from
+// a hang.
 func (c *Client) PullQuiet(ctx context.Context, image string) (int, error) {
 	res, err := c.run(ctx, []string{"pull", "-q", image})
 	if err != nil {

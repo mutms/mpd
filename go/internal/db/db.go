@@ -132,30 +132,46 @@ func unknownEngine(name string) error {
 
 // WaitFor blocks until the container accepts connections, up to ~60s.
 //
-// The ping command is engine-specific and not interchangeable: MariaDB
-// 12.x dropped the mysqladmin symlink in favour of mariadb-admin, so the
-// two MySQL-family engines no longer share a binary.
+// The probe goes over TCP to 127.0.0.1, never the unix socket, and that
+// is the whole point of it. On a first run both official entrypoints
+// bring up a *temporary* server to initialise the data directory and set
+// the root credentials, and they deliberately keep it off the network —
+// mariadb/mysql with `--skip-networking`, postgres with
+// `listen_addresses=”`. A socket probe is answered by that temporary
+// server, so it reports ready, the entrypoint then stops it to start the
+// real one, and whatever mpd does next races the gap. TCP is closed for
+// exactly that window, which makes it the only probe that means "the
+// server users will connect to is up".
+//
+// The client is engine-specific and not interchangeable: MariaDB 12.x
+// dropped the `mysql` CLI symlink, so the two MySQL-family engines no
+// longer share a binary.
 func WaitFor(ctx context.Context, ref Ref, p *podman.Client, out interface{ Write([]byte) (int, error) }) error {
-	fmt.Fprintf(out, "Waiting for %s to be ready...\n", ref.Container)
-
 	interval := 2 * time.Second
 	if ref.Engine == "postgres" {
 		interval = time.Second
 	}
 	for i := 0; i < 30; i++ {
-		time.Sleep(interval)
 		var code int
 		switch ref.Engine {
 		case "postgres":
-			code = p.ExecQuietly(ctx, ref.Container, "pg_isready", "-U", "postgres")
+			code = p.ExecQuietly(ctx, ref.Container, "pg_isready", "-h", "127.0.0.1", "-U", "postgres")
 		case "mariadb":
-			code = p.ExecQuietly(ctx, ref.Container, "mariadb-admin", "-u", "root", "-proot", "ping", "--silent")
+			code = p.ExecQuietly(ctx, ref.Container,
+				"mariadb", "-h", "127.0.0.1", "-u", "root", "-proot", "-e", "SELECT 1")
 		default:
-			code = p.ExecQuietly(ctx, ref.Container, "mysqladmin", "-u", "root", "-proot", "ping", "--silent")
+			code = p.ExecQuietly(ctx, ref.Container,
+				"mysql", "-h", "127.0.0.1", "-u", "root", "-proot", "-e", "SELECT 1")
 		}
 		if code == 0 {
 			return nil
 		}
+		// Announced on the first miss rather than up front: Ensure probes
+		// every time now, and a ready container should say nothing.
+		if i == 0 {
+			fmt.Fprintf(out, "Waiting for %s to be ready...\n", ref.Container)
+		}
+		time.Sleep(interval)
 	}
 	return fmt.Errorf("%s did not become ready within 60s.", ref.Container)
 }
@@ -298,8 +314,8 @@ func runArgs(ref Ref, ip, gateway string) ([]string, error) {
 }
 
 // Ensure creates the container if absent, starts it if stopped, and
-// waits for it to accept connections. Idempotent: a running container is
-// left alone and nothing is printed.
+// waits for it to accept connections. Idempotent: a running and healthy
+// container is left alone and nothing is printed.
 func Ensure(ctx context.Context, ref Ref, p *podman.Client, n net.Net, uid string,
 	out interface{ Write([]byte) (int, error) }) error {
 
@@ -307,6 +323,7 @@ func Ensure(ctx context.Context, ref Ref, p *podman.Client, n net.Net, uid strin
 		return err
 	}
 
+	var created, started bool
 	switch {
 	case !p.Exists(ctx, ref.Container):
 		img := image(ref.Engine, ref.Version)
@@ -326,19 +343,28 @@ func Ensure(ctx context.Context, ref Ref, p *podman.Client, n net.Net, uid strin
 		if code, err := p.Run(ctx, args); err != nil || code != 0 {
 			return fmt.Errorf("Failed to create DB container '%s'.", ref.Container)
 		}
-		if err := WaitFor(ctx, ref, p, out); err != nil {
-			return err
-		}
-		fmt.Fprintf(out, "\033[1;32m✓ %s is ready.\033[0m\n", ref.Container)
+		created = true
 
 	case !p.Running(ctx, ref.Container):
 		fmt.Fprintf(out, "%s: starting...\n", ref.Container)
 		if code, err := p.Start(ctx, ref.Container); err != nil || code != 0 {
 			return fmt.Errorf("Failed to start DB container '%s'.", ref.Container)
 		}
-		if err := WaitFor(ctx, ref, p, out); err != nil {
-			return err
-		}
+		started = true
+	}
+
+	// Probed unconditionally, not just when mpd touched the container:
+	// "running" is a podman fact, not a database one, and a container
+	// started by the boot units or by an earlier command may still be
+	// initialising. Callers go straight on to issue SQL.
+	if err := WaitFor(ctx, ref, p, out); err != nil {
+		return err
+	}
+
+	switch {
+	case created:
+		fmt.Fprintf(out, "\033[1;32m✓ %s is ready.\033[0m\n", ref.Container)
+	case started:
 		fmt.Fprintf(out, "\033[1;32m✓ %s is running.\033[0m\n", ref.Container)
 	}
 	return nil
