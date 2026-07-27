@@ -63,7 +63,7 @@ func ShowProject(ctx context.Context, out io.Writer, name string, s state.Store,
 	if entry.Requested == "running" && rtRunning {
 		fmt.Fprintln(out, field("Runtime:", rt))
 		writeURLs(out, entry.URLs)
-		fmt.Fprintln(out, field("SSH:", "ssh "+n.Runtime(rt)))
+		fmt.Fprintln(out, field("SSH:", "ssh "+n.RuntimeAlias(rt)))
 		fmt.Fprintln(out, field("Directory:", "/srv/projects/"+name))
 		writeSettings(out, name)
 		return
@@ -152,7 +152,7 @@ func ShowRuntime(ctx context.Context, out io.Writer, name string, s state.Store,
 
 	fmt.Fprintln(out, showField("Name:", name))
 	fmt.Fprintln(out, showField("IP:", orDash(ip)))
-	fmt.Fprintln(out, showField("SSH:", "ssh "+n.Runtime(name)))
+	fmt.Fprintln(out, showField("SSH:", "ssh "+n.RuntimeAlias(name)))
 	fmt.Fprintln(out, showField("URL:", "https://"+n.Runtime(name)))
 	fmt.Fprintln(out, showField("Requested:", requested))
 	fmt.Fprintln(out, showField("Current:", string(o.Runtime(ctx, name))))

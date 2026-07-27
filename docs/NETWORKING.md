@@ -268,6 +268,19 @@ Host mpd-<octet>-php
 IDEs (PHPStorm Gateway, VS Code Remote-SSH) configure ProxyJump the same
 way. mpd-virt writes these SSH config entries automatically.
 
+**From a terminal inside the VM** — `mpd --vm-setup` writes the same
+`mpd-<NNN>-<rt>` aliases into the VM's own `~/.ssh/config`, minus the
+ProxyJump (the runtime subnet is directly attached there). Deliberately
+the same alias as the host-side entry above, so `ssh mpd-<NNN>-php` is
+one command whether typed on the laptop or in the VM. Details in
+[`USAGE.md`](USAGE.md#ssh-into-the-runtime).
+
+Note what is *not* here: short names in DNS. dnsmasq publishes only
+fully-qualified names, because this resolver is authoritative for the
+whole `.test` tree (`local=/test/`) — a bare `php` record would be a name
+with no zone, answered finally for every container on the VM. Keeping the
+short form at the ssh layer scopes it to the one program that wants it.
+
 mpd assumes your laptop user, VM user, and runtime user share the same
 name — that's what makes the bare jump-host form work without explicit
 `user@`. Set up the VM with the same account name as your laptop login.

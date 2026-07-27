@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mutms/mpd/go/internal/assets"
 	"github.com/mutms/mpd/go/internal/cert"
 	"github.com/mutms/mpd/go/internal/current"
 	"github.com/mutms/mpd/go/internal/db"
@@ -106,6 +107,12 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 	ui.OK(out, "user=%s  uid=%s", user.User, user.UID)
+
+	// After Configuration, which is where the dev user's name is resolved.
+	ui.Step(out, "Runtime SSH aliases")
+	if err := vm.EnsureSSHConfig(out, user.User, runtimeSSHHosts(n, assets.New())); err != nil {
+		return err
+	}
 
 	certs, err := setupCertificates(ctx, out, n)
 	if err != nil {
@@ -407,6 +414,30 @@ func setupCertificates(ctx context.Context, out io.Writer, n net.Net) (certState
 		ui.OK(out, "Services cert already exists in %s", vm.ServiceDir)
 	}
 	return state, nil
+}
+
+// runtimeSSHHosts builds the ~/.ssh/config entries for every runtime the
+// assets tree defines.
+//
+// Every runtime is listed, not just the provisioned ones: the aliases are
+// written once at setup, and an alias for a runtime that does not exist
+// yet fails to connect exactly as the FQDN would. Regenerating this on
+// each runtime create/delete would buy nothing and add a mutation to two
+// more code paths.
+//
+// The VM-qualified alias comes first because it is the same string the
+// workstation's ~/.ssh/config uses for the hop from outside — `ssh
+// mpd-130-php` means one thing whether typed on the laptop or in the VM.
+func runtimeSSHHosts(n net.Net, a assets.Tree) []vm.RuntimeHost {
+	var hosts []vm.RuntimeHost
+	for _, rt := range a.RuntimeNames() {
+		fqdn := n.Runtime(rt)
+		hosts = append(hosts, vm.RuntimeHost{
+			Patterns: []string{n.RuntimeAlias(rt), rt, fqdn},
+			HostName: fqdn,
+		})
+	}
+	return hosts
 }
 
 // setupHostTrustAndDNS covers the four places on the VM that have to

@@ -93,6 +93,13 @@ active-machine label is always pinned to `mpd VM` regardless of
 the OS hostname (which may be `mpd-<digits>` for concurrent
 cloud-init VMs or `mpd-sandbox` for the sandbox platform).
 
+Among the per-user files it maintains, `--vm-setup` writes a marked block
+into the dev user's `~/.ssh/config` giving every runtime in the assets
+tree a short alias — `ssh mpd-<NNN>-php`, or `ssh php` — since DNS
+carries only the fully-qualified name. The block is regenerated on every
+run; content outside the markers is preserved. See
+[`USAGE.md`](USAGE.md#ssh-into-the-runtime).
+
 ### Fallback rule
 
 If no known global flag path matches, status output is shown.

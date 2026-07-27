@@ -214,11 +214,33 @@ that don't hold editable code (e.g. `cftunnel`) opt out via
 the section.
 
 If you're inside the VM (e.g. a GNOME terminal in a desktop-in-VM
-setup), use the VM-local SSH key instead of `-A`:
+setup), use the VM-local SSH key instead of `-A` — and there is a short
+alias for every runtime:
 
 ```bash
-ssh user@php.runtime.<NNN>.mpd.test       # uses ~/.ssh/id_ed25519, no -A needed
+ssh mpd-<NNN>-php                         # the short alias mpd writes for you
+ssh php                                   # same thing, in-VM shorthand
+ssh user@php.runtime.<NNN>.mpd.test       # the long form still works
 ```
+
+All three use `~/.ssh/id_ed25519`, so no `-A` is needed. The aliases are
+a managed block `mpd --vm-setup` writes into the dev user's
+`~/.ssh/config`, one entry per runtime in the assets tree — it fills in
+the user, points the alias at the real name, and skips host-key
+verification, which a container that gets recreated on demand would
+otherwise trip over on every rebuild. Only the FQDN is in DNS; the short
+names are an ssh-level convenience, so they work for `ssh`, `scp` and
+`rsync` but not in a browser.
+
+Anything you write *outside* the `# >>> mpd runtimes ... >>>` markers is
+preserved across re-runs; anything inside them is regenerated. An alias
+for a runtime you haven't provisioned yet fails to resolve, exactly as
+the long form would.
+
+`mpd-<NNN>-php` is also the runtime container's own hostname, so your
+shell prompt after connecting echoes what you typed. It's the same
+string the workstation's `~/.ssh/config` uses for the hop in from
+outside, so the command reads the same in both places.
 
 `mpd --vm-setup` populates each runtime's `authorized_keys` with two key
 sources: the laptop key (from the VM's `~/.ssh/authorized_keys`) and

@@ -199,6 +199,20 @@ func (n Net) Service(name string) string { return n.Host(name + ".service") }
 // Runtime names a runtime: Runtime("php") → "php.runtime.<zone>".
 func (n Net) Runtime(name string) string { return n.Host(name + ".runtime") }
 
+// RuntimeAlias is the short SSH alias for a runtime:
+// RuntimeAlias("php") on VM 130 → "mpd-130-php".
+//
+// Not a DNS name — nothing resolves it. It is the alias
+// vm.EnsureSSHConfig writes into ~/.ssh/config, and it lives here
+// because it is composed from the VM id and so belongs with every other
+// name keyed on it.
+//
+// It is also, not by coincidence, the runtime container's own hostname
+// (the container is that name plus "-main"), so the prompt after `ssh
+// mpd-130-php` echoes what was typed. The two are composed
+// independently; this is a convention worth keeping, not a dependency.
+func (n Net) RuntimeAlias(name string) string { return "mpd-" + n.label + "-" + name }
+
 // DB names a database container: DB("pg17") → "pg17.db.<zone>".
 func (n Net) DB(name string) string { return n.Host(name + ".db") }
 

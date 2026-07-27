@@ -67,6 +67,9 @@ func TestNaming(t *testing.T) {
 		n.Runtime("php"):    "php.runtime.150.mpd.test",
 		n.DB("pg17"):        "pg17.db.150.mpd.test",
 		n.VMServiceRecord(): "vm.service.150.mpd.test",
+		// Zero-padded like every other id-keyed name, and deliberately
+		// NOT in the zone — it is an ssh alias, not a DNS name.
+		n.RuntimeAlias("php"): "mpd-150-php",
 	}
 	for got, want := range tests {
 		if got != want {

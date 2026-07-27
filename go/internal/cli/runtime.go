@@ -378,6 +378,6 @@ func RuntimeCreate(ctx context.Context, out io.Writer, name string, p *podman.Cl
 
 	fmt.Fprintln(out, "")
 	Ok(out, "Runtime '%s' is ready.", name)
-	fmt.Fprintf(out, "  IP:   %s\n  SSH:  ssh %s\n", runtimeIP, n.Runtime(name))
+	fmt.Fprintf(out, "  IP:   %s\n  SSH:  ssh %s\n", runtimeIP, n.RuntimeAlias(name))
 	return nil
 }
