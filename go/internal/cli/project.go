@@ -2,10 +2,15 @@ package cli
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
+	"net/http"
+	"os"
 	"path/filepath"
 	"regexp"
+	"time"
 
 	"github.com/mutms/mpd/go/internal/assets"
 	"github.com/mutms/mpd/go/internal/current"
@@ -18,6 +23,7 @@ import (
 	"github.com/mutms/mpd/go/internal/sidecar"
 	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
+	"github.com/mutms/mpd/go/internal/vm"
 )
 
 // ProjectDeps bundles what the project verbs need. Passed as a struct
@@ -141,11 +147,102 @@ func ProjectStart(ctx context.Context, out io.Writer, name string, d ProjectDeps
 		fmt.Fprintf(out, "Warning: %v\n", err)
 	}
 
+	url := entry.MainURL()
+	waitForURL(ctx, out, url)
+
 	Ok(out, "'%s' is running.", name)
-	if url := entry.MainURL(); url != "" {
+	if url != "" {
 		fmt.Fprintf(out, "  %s\n", url)
 	}
 	return nil
+}
+
+// waitForURL blocks until the project's main URL answers, up to ~30s.
+//
+// This is the only readiness gate on what the developer actually opens.
+// ProjectStart already waits for sshd and for the database, but the
+// frontdoor is updated out of band: mpd writes /srv/meta/<project>/, and
+// the caddy sidecar notices by inotify, coalesces, regenerates, validates
+// and reloads on its own schedule (assets/sidecars/caddy/entry.sh), while
+// PHP-FPM binds its new pool independently. Without this, mpd prints
+// "is running" while the URL still returns a connection error or a 502.
+//
+// Deliberately last, and deliberately non-fatal. Every piece of work mpd
+// owns — setup script, state write, DNS record, certificate, hooks — has
+// already completed and been persisted by the time this runs; what it
+// waits on belongs to other processes that do not care whether mpd is
+// alive. mpd installs no signal handler, so Ctrl-C here kills the process
+// outright — and that is safe precisely because nothing is left to do.
+// The timeout path warns for the same reason: a slow frontdoor is worth
+// reporting, but it has not failed the start.
+func waitForURL(ctx context.Context, out io.Writer, url string) {
+	if url == "" {
+		return
+	}
+	client, err := trustingClient()
+	if err != nil {
+		fmt.Fprintf(out, "  Warning: cannot verify %s: %v\n", url, err)
+		return
+	}
+
+	// Anything below 500 means the vhost is wired to a live backend. A
+	// redirect counts and is not followed: Moodle bounces to a login or
+	// setup page, and chasing it proves nothing extra about readiness.
+	probe := func() bool {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return false
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode < 500
+	}
+
+	if probe() {
+		return
+	}
+	fmt.Fprintf(out, "  Waiting for %s to answer…\n", url)
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		time.Sleep(500 * time.Millisecond)
+		if probe() {
+			return
+		}
+	}
+	fmt.Fprintf(out, "  Warning: %s did not answer within 30s.\n", url)
+}
+
+// trustingClient is an HTTP client that trusts this VM's anchor and
+// nothing else.
+//
+// Verification is not skipped, because a leaf the local trust store
+// rejects is exactly the failure this probe should surface rather than
+// paper over: after a CA rotation Caddy can keep serving a certificate
+// signed by an anchor nothing trusts any more, with both the config and
+// the files on disk looking correct (see assets/sidecars/caddy/entry.sh).
+// An InsecureSkipVerify probe would report that broken project as ready.
+func trustingClient() (*http.Client, error) {
+	pem, err := os.ReadFile(vm.CACertPath)
+	if err != nil {
+		return nil, err
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pem) {
+		return nil, fmt.Errorf("no certificate found in %s", vm.CACertPath)
+	}
+	return &http.Client{
+		Timeout: 3 * time.Second,
+		// Redirects are responses, not failures: return the first one.
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
+		},
+	}, nil
 }
 
 // ProjectStop takes a project down.
