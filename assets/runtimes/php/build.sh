@@ -21,6 +21,10 @@ export DEBIAN_FRONTEND=noninteractive
 # All PHP versions to install
 PHP_VERSIONS="8.1 8.2 8.3 8.4 8.5"
 
+# Oldest supported PHP — what the `php` dispatcher falls back to outside a
+# project tree. Keep in sync with MPD_PHP_FALLBACK_VERSION in tools/php.
+PHP_FALLBACK_VERSION="8.2"
+
 # ── Sury PHP repository ──────────────────────────────────────────────────────
 sudo apt-get install -y --no-install-recommends apt-transport-https ca-certificates curl gnupg2 lsb-release
 
@@ -103,11 +107,28 @@ INIEOF
     fi
 done
 
-# ── Runtime tools: /usr/local/bin/php symlink (project-aware version dispatcher) ──
-# The php wrapper itself lives at /opt/mpd/assets/runtimes/php/tools/php so edits
-# on the host are live in the runtime; we install a symlink under
-# /usr/local/bin/ for consumers that don't go through PATH (systemd, cron).
-sudo ln -sf /opt/mpd/assets/runtimes/php/tools/php /usr/local/bin/php
+# ── `php` as a real Debian alternative ───────────────────────────────────────
+# The project-aware dispatcher lives at /opt/mpd/assets/runtimes/php/tools/php
+# (bind-mounted, so host edits are live). Register it in the alternatives
+# system rather than shimming it in under /usr/local/bin: the Sury packages
+# register /usr/bin/phpX.Y at priorities 81…85, we register at 1000 and pin
+# it, so /usr/bin/php -> /etc/alternatives/php -> the dispatcher. Anything
+# that expects the Debian-standard interpreter path — PhpStorm's CLI
+# interpreter probe above all — sees one consistent `php`, and
+# `update-alternatives --config php` still lets a real version be selected.
+sudo rm -f /usr/local/bin/php   # legacy shim; shadowed /usr/bin/php on PATH
+
+PHP_ALT_SLAVES=()
+if [ -f "/usr/share/man/man1/php${PHP_FALLBACK_VERSION}.1.gz" ]; then
+    # Without a slave declaration, selecting our alternative would drop the
+    # `man php` link that the versioned packages provide.
+    PHP_ALT_SLAVES=(--slave /usr/share/man/man1/php.1.gz php.1.gz \
+        "/usr/share/man/man1/php${PHP_FALLBACK_VERSION}.1.gz")
+fi
+
+sudo update-alternatives --install /usr/bin/php php \
+    /opt/mpd/assets/runtimes/php/tools/php 1000 "${PHP_ALT_SLAVES[@]}"
+sudo update-alternatives --set php /opt/mpd/assets/runtimes/php/tools/php
 
 # ── Composer ─────────────────────────────────────────────────────────────────
 bash /opt/mpd/assets/runtimes/php/tools/composer-install

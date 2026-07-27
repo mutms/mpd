@@ -1,19 +1,38 @@
 #!/bin/bash
 # Tool: project-aware PHP version dispatcher.
-# Resolves PHP version via $MPD_PHP_VERSION (the env var is the source of
-# truth — populated by the layered mpd.env: runtime defaults → type
-# defaults → user → project). Falls back to the system default outside a
-# project tree or if no version is configured.
 #
-# Lives at /opt/mpd/assets/runtimes/php/tools/php (bind-mounted live).
-# On PATH from the assets tree, and symlinked to /usr/local/bin/php at runtime
-# provision time so it's reachable both via PATH and via absolute path.
+# Registered with Debian's alternatives system as the `php` alternative at a
+# priority far above the Sury packages, so the Debian-standard interpreter
+# path resolves to it:
 #
-# Optimization: when called from a tool chain that already sourced mpd.env
-# (e.g. phpunit-init → phpunit), $MPD_PHP_VERSION is already exported and
-# this wrapper short-circuits — no extra fork. Only bare CLI invocations
-# from an SSH session pay the source-mpd-env.sh cost (~one jq + 4 file
-# reads, ~30ms).
+#     /usr/bin/php -> /etc/alternatives/php -> this script
+#
+# That is the whole point of the alternatives registration: IDEs (PhpStorm in
+# particular) probe /usr/bin/php the way they would on any Debian box and get
+# a single, stable interpreter path. Older runtimes shimmed this in as
+# /usr/local/bin/php, which shadowed /usr/bin/php on PATH and left the two
+# paths reporting different versions.
+#
+# Lives at /opt/mpd/assets/runtimes/php/tools/php (bind-mounted live, so edits
+# on the VM take effect inside every runtime immediately).
+#
+# Version resolution:
+#   1. $MPD_PHP_VERSION if already exported — a tool chain that already
+#      sourced mpd.env (e.g. phpunit-init → phpunit) short-circuits here with
+#      no extra fork.
+#   2. Inside /srv/projects/<name>: source the layered mpd.env (runtime
+#      defaults → type defaults → VM-wide → project). Costs ~one jq + 4 file
+#      reads (~30ms), paid only by bare CLI invocations.
+#   3. Outside a project tree, or when the configured version isn't
+#      installed: MPD_PHP_FALLBACK_VERSION below — the oldest supported PHP.
+#      Deliberately a fixed version rather than "whatever the system default
+#      is", so `php -v` from $HOME always answers the same thing.
+#
+# NEVER exec /usr/bin/php from here — it points back at this script through
+# the alternatives link. Always exec the versioned /usr/bin/phpX.Y.
+
+# Oldest supported PHP. Keep in sync with build.sh's PHP_FALLBACK_VERSION.
+MPD_PHP_FALLBACK_VERSION=8.2
 
 if [[ -z "${MPD_PHP_VERSION:-}" ]] && [[ "$PWD" =~ ^/srv/projects/([^/]+) ]]; then
     PROJECT_NAME="${BASH_REMATCH[1]}"
@@ -24,4 +43,10 @@ fi
 if [[ -n "${MPD_PHP_VERSION:-}" ]] && [[ -x "/usr/bin/php${MPD_PHP_VERSION}" ]]; then
     exec "/usr/bin/php${MPD_PHP_VERSION}" "$@"
 fi
-exec /usr/bin/php "$@"
+
+if [[ -x "/usr/bin/php${MPD_PHP_FALLBACK_VERSION}" ]]; then
+    exec "/usr/bin/php${MPD_PHP_FALLBACK_VERSION}" "$@"
+fi
+
+echo "php: no usable interpreter — neither /usr/bin/php${MPD_PHP_VERSION:-<unset>} nor the fallback /usr/bin/php${MPD_PHP_FALLBACK_VERSION} is executable." >&2
+exit 127

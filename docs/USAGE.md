@@ -279,7 +279,7 @@ either a human or an AI agent to invoke directly. Full taxonomy in
 
 | Tool               | What it does                                                                                                                                      |
 |--------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
-| `php`              | Project-aware PHP wrapper — picks the version pinned in `/srv/meta/<project>/project.json`, falls back to system default.                         |
+| `php`              | Project-aware PHP wrapper, registered as the Debian `php` alternative (so `/usr/bin/php` is it) — picks the project's `MPD_PHP_VERSION`, falls back to 8.2 outside a project tree. |
 | `composer`         | The Composer phar; installed at `/usr/local/bin/composer` by `composer-install` at provision time.                                                |
 | `composer-install` | Idempotent install of Composer to `/usr/local/bin/`. Re-runs no-op.                                                                               |
 | `composer-upgrade` | Force-reinstalls Composer (bypass idempotency). Use instead of `composer self-update` — the phar is root-owned and self-update can't write to it. |
