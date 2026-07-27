@@ -516,7 +516,7 @@ mpd start cftunnel                       # cloudflared connects to CF
 #      Subdomain:    moodle520
 #      Domain:       mpd-test.org
 #      Service Type: HTTPS
-#      Service URL:  moodle520.mpd.test
+#      Service URL:  moodle520.<NNN>.mpd.test
 #    (CF auto-creates the DNS CNAME for moodle520.mpd-test.org.)
 # 2. Strongly recommended: gate each route with Cloudflare Access
 #    so the URL is not reachable by the open internet.

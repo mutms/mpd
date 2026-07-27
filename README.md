@@ -7,9 +7,11 @@ on your laptop**. You edit code in your usual IDE; the language
 server, Xdebug, phpunit, composer, and the running Moodle all execute
 inside the container. The result, day to day:
 
-- **`https://<project>.mpd.test/` for every project** — browser-trusted
-  HTTPS via a name-constrained local CA (signs `*.mpd.test` only),
-  available the moment `mpd start <project>` returns.
+- **`https://<project>.<NNN>.mpd.test/` for every project** —
+  browser-trusted HTTPS via a name-constrained local CA (signs
+  `*.mpd.test` only), available the moment `mpd start <project>` returns.
+  `<NNN>` is the VM's own id, so several VMs can be up at once without
+  their names colliding (see [docs/NETWORKING.md](docs/NETWORKING.md)).
 - **Per-project PHP version.** `MPD_PHP_VERSION=8.4` on one project,
   `8.2` on the next, simultaneously. No system-wide `php-fpm` to
   juggle.
@@ -20,10 +22,10 @@ inside the container. The result, day to day:
 - **Reset to clean state in one verb.** `mdl-data-purge` drops the
   DB, wipes dataroots, removes the generated config — keeps `mpd.env`
   and the source tree.
-- **Mailpit per project** at `https://mail.<project>.mpd.test/` with
+- **Mailpit per project** at `https://mail.<project>.<NNN>.mpd.test/` with
   this project's mail pre-filtered.
 - **Behat + Selenium** auto-wired when a project asks for it
-  (`https://behat.<project>.mpd.test/`).
+  (`https://behat.<project>.<NNN>.mpd.test/`).
 - **No host pollution.** No Homebrew PHP, no system Apache, no
   `brew upgrade` ever broke your Moodle dev environment because of an
   unrelated OpenSSL bump.

@@ -745,7 +745,7 @@ Per-runtime sidecars (attached to the runtime pod, not global):
   shared by all projects on it (the SMTP black hole is per-pod). Canonical
   UI at `https://mail.<runtime>.<NNN>.mpd.test/`; per-project shortcut URLs
   `https://mail.<project>.<NNN>.mpd.test/` 302-redirect to the canonical with
-  `?q=<project>.mpd.test`, so the user lands on a filtered view of the
+  `?q=<project>.<NNN>.mpd.test`, so the user lands on a filtered view of the
   shared inbox. Runtime-level URL meta lives at
   `/srv/meta/_runtime-<rt>/` (a pseudo-project that flows through the same
   Caddy/cert/dnsmasq plumbing as real projects).
