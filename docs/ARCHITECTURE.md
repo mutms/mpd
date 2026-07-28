@@ -759,8 +759,10 @@ control-plane Go code never hard-codes per-runtime URL shapes.
 
 ### Laptop-side split DNS (Windows note)
 
-macOS (`/etc/resolver/mpd.test`) and Linux (`systemd-resolved` drop-in) handle
-split DNS natively, so `mpd --vm-setup` prints a one-line recipe and is done.
+macOS (`/etc/resolver/<NNN>.mpd.test`) and Linux (`systemd-resolved` drop-in)
+handle split DNS natively, so `mpd --vm-setup` prints a one-line recipe and is
+done. One file per VM zone, not one for `mpd.test` — see
+[`NETWORKING.md`](NETWORKING.md) for why the entry is scoped that way.
 
 Windows is the awkward case. The built-in NRPT mechanism
 (`Add-DnsClientNrptRule`) works for most queries but is bypassed by some
@@ -775,10 +777,12 @@ tray icon, one-file config. This is the established precedent on Windows:
 Laravel Valet for Windows (the `cretueusebiu/valet-windows` port and its
 descendants) ships Acrylic and configures it to resolve `*.test → 127.0.0.1`,
 mirroring what macOS Valet does with `/etc/resolver/`. So the split-DNS story
-is symmetric: macOS uses the OS-native `/etc/resolver/<tld>` mechanism (which
-Apple's own [`container`](https://github.com/apple/container) tool also uses),
-and Windows uses Acrylic because the OS has no native equivalent — both are
-the convention rather than a mpd-specific choice. Alternatives considered:
+is symmetric: macOS uses the OS-native `/etc/resolver/<domain>` mechanism,
+which Apple's own [`container`](https://github.com/apple/container) tool also
+uses. It takes any domain rather than only a TLD, which is what lets mpd give
+each VM its own file for `<NNN>.mpd.test` where Valet has one file covering
+all of `test`. Windows uses Acrylic because the OS has no native equivalent —
+both are the convention rather than a mpd-specific choice. Alternatives considered:
 `dnscrypt-proxy` (cross-platform, but its "encrypted DNS" framing confuses
 non-privacy users) and Deadwood from the MaraDNS suite (works, but obscure on
 Windows). We recommend Acrylic for the intended audience; the others are fine

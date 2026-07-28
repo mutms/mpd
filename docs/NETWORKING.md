@@ -69,6 +69,18 @@ on macOS, Linux, and Windows. A scoped route plus scoped DNS coexists
 cleanly with a corporate VPN; nothing has to be toggled on or off to
 use mpd.
 
+**One resolver entry per VM zone, not one for `mpd.test`.** The scope is
+the point: two VMs are two zones, and a catch-all entry for the whole
+tree would send both to whichever resolver was configured last. So the
+macOS file is `/etc/resolver/<NNN>.mpd.test`, and the Windows and Linux
+equivalents name the same zone.
+
+A catch-all `/etc/resolver/mpd.test` means something different and is not
+the mpd client contract: it hands the whole tree to one resolver that is
+authoritative for more than a single VM. That is a deliberate topology,
+and it *replaces* the per-VM entries rather than sitting alongside them,
+since a catch-all would shadow them.
+
 ## Per-VM addressing
 
 `<NNN>` above is the VM's `MPD_VM_ID` — the last octet of its static IP
