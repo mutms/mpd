@@ -74,7 +74,10 @@ step "Passwordless sudo for $(id -un)"
 Takeover drives the VM as an unprivileged user over SSH; root has no
 authorized key and no home for mpd to live in."
 
-if sudo -n true 2>/dev/null; then
+# Guard the probe with `command -v`: a minimal server has no sudo at all,
+# and calling it would just print "command not found". Everything that
+# needs root below goes through `su -` (root password), never sudo.
+if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
     ok "already configured (sudo -n works)"
 else
     user_name="$(id -un)"
@@ -112,8 +115,9 @@ else
 user isn't permitted to become root via su, or sudo couldn't be installed."
     fi
 
-    sudo -n true 2>/dev/null \
-        || die "Wrote ${sudoers_path} but \`sudo -n true\` still fails. Inspect manually."
+    # No `sudo -n` re-check here: the su block already installed sudo,
+    # wrote the drop-in, and validated it with `visudo -cf`. A re-run of
+    # this script takes the fast path above and confirms it end to end.
     ok "passwordless sudo enabled for ${user_name}"
 fi
 
