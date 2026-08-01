@@ -80,15 +80,26 @@ else
     user_name="$(id -un)"
     sudoers_path="/etc/sudoers.d/00-mpd-${user_name}"
     echo "    No passwordless sudo for ${user_name}. Asking for the root password"
-    echo "    (one-time setup). The prompt below comes from \`su\`."
+    echo "    (one-time setup — installs sudo if a minimal install lacks it)."
+    echo "    The prompt below comes from \`su\`."
     echo
 
     # `su - -c` runs one command as root in a login shell, so root's PATH
-    # (with /usr/sbin) finds visudo. visudo -cf validates the drop-in; an
-    # invalid file is removed rather than left to brick sudo. install
-    # -m 0440 writes it atomically with the mode sudoers requires.
+    # (with /usr/sbin) finds visudo/usermod. A minimal Debian server
+    # install ships neither sudo nor /etc/sudoers.d, so install sudo
+    # first; a desktop install already has both. Then make the dev user a
+    # real sudoer (sudo group) and drop in a NOPASSWD rule. visudo -cf
+    # validates the drop-in; an invalid file is removed rather than left
+    # to brick sudo. install -m 0440 writes it with the mode sudoers wants.
     if ! su - -c "
         set -e
+        if ! command -v sudo >/dev/null 2>&1; then
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq
+            apt-get install -y -qq sudo
+        fi
+        install -d -m 0755 /etc/sudoers.d
+        usermod -aG sudo '${user_name}'
         install -m 0440 -o root -g root /dev/null '${sudoers_path}'
         printf '%s ALL=(ALL) NOPASSWD:ALL\n' '${user_name}' > '${sudoers_path}'
         if ! visudo -cf '${sudoers_path}' >/dev/null; then
@@ -97,8 +108,8 @@ else
             exit 1
         fi
     "; then
-        die "Failed to write ${sudoers_path}. Wrong root password, or the user
-'${user_name}' isn't permitted to become root via su."
+        die "Failed to configure sudo for '${user_name}'. Wrong root password, the
+user isn't permitted to become root via su, or sudo couldn't be installed."
     fi
 
     sudo -n true 2>/dev/null \
