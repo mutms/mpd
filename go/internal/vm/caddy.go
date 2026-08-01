@@ -82,7 +82,17 @@ https://%s {
 func ConfigureCaddy(ctx context.Context, out io.Writer, user, bindIP,
 	certPath, keyPath string, sites []CaddySite, certChanged bool) error {
 
-	dropIn := fmt.Sprintf("[Service]\nUser=%s\nGroup=%s\n", user, user)
+	// Restart=on-failure with the rate limit lifted: at boot Caddy binds the
+	// podman bridge gateway, but podman only raises that address once the
+	// first container attaches to the network — so on a cold boot Caddy can
+	// start first, fail with "cannot assign requested address", and (under
+	// the packaged unit's Restart=on-abnormal, which ignores exit-code
+	// failures) stay down. Retrying every 2s until the gateway exists closes
+	// that race on a VM and in a container alike; StartLimitIntervalSec=0
+	// keeps systemd from giving up if the bridge takes more than a few
+	// seconds.
+	dropIn := fmt.Sprintf("[Unit]\nStartLimitIntervalSec=0\n\n[Service]\n"+
+		"User=%s\nGroup=%s\nRestart=on-failure\nRestartSec=2s\n", user, user)
 	dropInChanged, err := WriteRootOwnedFile(ctx, caddyDropIn, dropIn)
 	if err != nil {
 		return err
