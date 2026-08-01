@@ -24,7 +24,6 @@
 package net
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"strconv"
@@ -67,11 +66,6 @@ const (
 // util=.102); each runtime's configuration.json names its own octet.
 const FirstRuntimeHost = 100
 
-// PlatformEnvPath is where the VM's identity is recorded. Not under
-// /srv or any container-visible path: it lives beside the CA key and is
-// deliberately never bind-mounted into a container.
-const PlatformEnvPath = "/var/lib/mpd/conf/platform.env"
-
 // Net answers every addressing question for one VM.
 type Net struct {
 	octet int
@@ -87,53 +81,57 @@ func New(octet int) (Net, error) {
 	return Net{octet: octet, label: fmt.Sprintf("%03d", octet)}, nil
 }
 
-// Load reads the VM id from a platform.env-shaped file and builds a Net.
+// Current builds the Net for this VM by deriving its id from the
+// hostname (mpd-<NNN>) — the single source of truth for identity. There
+// is no platform.env: the hostname is what the hypervisor-side prep set,
+// what the user sees in their prompt, and what a re-imaged VM changes.
 //
-// A missing or malformed MPD_VM_ID is an error rather than a default:
-// every address and name mpd composes depends on it, so guessing means
-// either silently building the wrong subnet or answering for another
-// VM's zone. The message names the fix.
-func Load(path string) (Net, error) {
-	f, err := os.Open(path)
+// A hostname that is not of the form mpd-<NNN> is an error rather than a
+// default: every address and name mpd composes depends on the id, so
+// guessing means building the wrong subnet or answering for another VM's
+// zone. The message names the fix.
+func Current() (Net, error) {
+	id := VMIDFromHostname(readHostname())
+	if id == "" {
+		return Net{}, fmt.Errorf(
+			"hostname is not of the form mpd-<NNN>, so the VM id cannot be derived.\n" +
+				"Set it and re-run:\n" +
+				"    sudo hostnamectl set-hostname mpd-<NNN>")
+	}
+	octet, err := strconv.Atoi(id)
 	if err != nil {
-		return Net{}, fmt.Errorf("cannot read %s: %w\n%s", path, err, fixHint)
+		return Net{}, fmt.Errorf("hostname mpd-%s: %q is not a number", id, id)
 	}
-	defer f.Close()
-
-	raw := ""
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, value, found := strings.Cut(line, "=")
-		if !found {
-			continue
-		}
-		if strings.TrimSpace(key) == "MPD_VM_ID" {
-			raw = strings.TrimSpace(value)
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return Net{}, fmt.Errorf("cannot read %s: %w", path, err)
-	}
-	if raw == "" {
-		return Net{}, fmt.Errorf("MPD_VM_ID is missing or empty in %s\n%s", path, fixHint)
-	}
-	octet, err := strconv.Atoi(raw)
-	if err != nil {
-		return Net{}, fmt.Errorf("MPD_VM_ID=%q in %s is not a number\n%s", raw, path, fixHint)
-	}
-	n, err := New(octet)
-	if err != nil {
-		return Net{}, fmt.Errorf("%w (from %s)\n%s", err, path, fixHint)
-	}
-	return n, nil
+	return New(octet)
 }
 
-const fixHint = "Re-run the bootstrap step that writes it:\n" +
-	"    bash /opt/mpd/bootstrap/30-networking.sh <NNN>   # sandbox: 000; managed: 100..254"
+// VMIDFromHostname extracts the identifier from an mpd-<NNN> hostname,
+// or "" if the name is not of that form.
+func VMIDFromHostname(raw string) string {
+	host := strings.TrimSpace(raw)
+	// Strip any FQDN form: only the short name carries the identifier.
+	host, _, _ = strings.Cut(host, ".")
+	id, found := strings.CutPrefix(host, "mpd-")
+	if !found {
+		return ""
+	}
+	return id
+}
+
+// readHostname returns the VM's short hostname. /etc/hostname is the
+// authority on Debian; $MPD_HOSTNAME_FILE overrides it for tests, and
+// os.Hostname() is the last-resort fallback.
+func readHostname() string {
+	path := os.Getenv("MPD_HOSTNAME_FILE")
+	if path == "" {
+		path = "/etc/hostname"
+	}
+	if body, err := os.ReadFile(path); err == nil {
+		return string(body)
+	}
+	h, _ := os.Hostname()
+	return h
+}
 
 // VMID is the VM's 3-digit id, zero-padded ("022", "150").
 func (n Net) VMID() string { return n.label }

@@ -241,7 +241,7 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 	case f.web:
 		// Long-running, unlike every other flag here: the process is the
 		// service, so it blocks until the context is cancelled.
-		n, err := net.Load(net.PlatformEnvPath)
+		n, err := net.Current()
 		if err != nil {
 			return err
 		}
@@ -303,7 +303,7 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 	}
 
 	// No flag given (or only --vm-status): show status.
-	n, err := net.Load(net.PlatformEnvPath)
+	n, err := net.Current()
 	if err != nil {
 		return err
 	}
@@ -401,7 +401,7 @@ func dbAction(ctx context.Context, out interface{ Write([]byte) (int, error) },
 	return withLock(ctx, out, s, func() error {
 		switch {
 		case f.dbCreate != "":
-			n, err := net.Load(net.PlatformEnvPath)
+			n, err := net.Current()
 			if err != nil {
 				return err
 			}
@@ -429,7 +429,7 @@ func helpCmd() *cobra.Command {
 			if len(args) == 0 {
 				return c.Root().Help()
 			}
-			n, err := net.Load(net.PlatformEnvPath)
+			n, err := net.Current()
 			if err != nil {
 				return err
 			}
@@ -460,7 +460,6 @@ func versionCmd() *cobra.Command {
 // It reports this VM's addressing, which is the diagnostic to reach for
 // when a name resolves to the wrong place.
 func listCmd() *cobra.Command {
-	var platformEnv string
 	cmd := &cobra.Command{
 		Use:       "list [projects|runtimes|services|dbs|network]",
 		Short:     "List entities — projects (default), runtimes, services, DB containers, or this VM's addressing",
@@ -471,7 +470,7 @@ func listCmd() *cobra.Command {
 			if len(args) == 1 {
 				what = args[0]
 			}
-			n, err := net.Load(platformEnv)
+			n, err := net.Current()
 			if err != nil {
 				return err
 			}
@@ -496,9 +495,9 @@ func listCmd() *cobra.Command {
 				// container subnet — and the one you need to get back in.
 				// Empty on sandbox VMs, which take a DHCP lease.
 				host, _ := os.Hostname()
-				if id, err := vm.LoadPlatform(); err == nil && id.VMIP != "" {
+				if vmIP := vm.PrimaryIP(); vmIP != "" {
 					fmt.Fprintf(out, "vm          %s (ssh %s, %s)\n",
-						id.VMIP, host, n.VMServiceRecord())
+						vmIP, host, n.VMServiceRecord())
 				} else {
 					fmt.Fprintf(out, "vm          ssh %s (address is DHCP)\n", host)
 				}
@@ -510,11 +509,6 @@ func listCmd() *cobra.Command {
 			return nil
 		},
 	}
-	// Kept from the old top-level `net` command: tests point it at a
-	// fixture platform.env rather than the VM's own.
-	cmd.Flags().StringVar(&platformEnv, "platform-env", net.PlatformEnvPath,
-		"path to platform.env (override for testing)")
-
 	return cmd
 }
 
@@ -708,7 +702,7 @@ func devUser() string {
 }
 
 func runtimeDeps() (net.Net, *podman.Client, state.Store, dnsmasq.Manager, current.Observer, error) {
-	n, err := net.Load(net.PlatformEnvPath)
+	n, err := net.Current()
 	if err != nil {
 		return net.Net{}, nil, state.Store{}, dnsmasq.Manager{}, current.Observer{}, err
 	}
@@ -717,7 +711,7 @@ func runtimeDeps() (net.Net, *podman.Client, state.Store, dnsmasq.Manager, curre
 }
 
 func dbDeps() (*podman.Client, state.Store, dnsmasq.Manager, error) {
-	n, err := net.Load(net.PlatformEnvPath)
+	n, err := net.Current()
 	if err != nil {
 		return nil, state.Store{}, dnsmasq.Manager{}, err
 	}
@@ -726,7 +720,7 @@ func dbDeps() (*podman.Client, state.Store, dnsmasq.Manager, error) {
 }
 
 func projectDeps() (cli.ProjectDeps, error) {
-	n, err := net.Load(net.PlatformEnvPath)
+	n, err := net.Current()
 	if err != nil {
 		return cli.ProjectDeps{}, err
 	}

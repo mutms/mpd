@@ -3,7 +3,6 @@ package net
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -130,35 +129,49 @@ func TestHostOctet(t *testing.T) {
 	}
 }
 
-func writePlatformEnv(t *testing.T, body string) string {
+func TestVMIDFromHostname(t *testing.T) {
+	cases := map[string]string{
+		"mpd-150":          "150",
+		"mpd-000":          "000",
+		"mpd-136.mpd.test": "136", // FQDN form: only the short name counts
+		"  mpd-042\n":      "042", // whitespace trimmed
+		"debian":           "",    // not an mpd host
+		"":                 "",
+	}
+	for in, want := range cases {
+		if got := VMIDFromHostname(in); got != want {
+			t.Errorf("VMIDFromHostname(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// setHostname points Current() at a fixture /etc/hostname via the test
+// override, and returns nothing — the file is the source of truth.
+func setHostname(t *testing.T, body string) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "platform.env")
+	path := filepath.Join(t.TempDir(), "hostname")
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("writing fixture: %v", err)
 	}
-	return path
+	t.Setenv("MPD_HOSTNAME_FILE", path)
 }
 
-func TestLoad(t *testing.T) {
-	path := writePlatformEnv(t, `# mpd platform identity
-MPD_PLATFORM=managed
-MPD_VM_IP=10.211.55.150
-MPD_VM_ID=150
-`)
-	n, err := Load(path)
+func TestCurrent(t *testing.T) {
+	setHostname(t, "mpd-150\n")
+	n, err := Current()
 	if err != nil {
-		t.Fatalf("Load() failed: %v", err)
+		t.Fatalf("Current() failed: %v", err)
 	}
 	if n.Zone() != "150.mpd.test" {
 		t.Errorf("Zone() = %q, want %q", n.Zone(), "150.mpd.test")
 	}
 }
 
-func TestLoadSandboxKeepsLeadingZeros(t *testing.T) {
-	path := writePlatformEnv(t, "MPD_VM_ID=000\n")
-	n, err := Load(path)
+func TestCurrentSandboxKeepsLeadingZeros(t *testing.T) {
+	setHostname(t, "mpd-000\n")
+	n, err := Current()
 	if err != nil {
-		t.Fatalf("Load() failed: %v", err)
+		t.Fatalf("Current() failed: %v", err)
 	}
 	if n.VMID() != "000" || n.Subnet() != "10.163.0.0/24" {
 		t.Errorf("sandbox: VMID=%q Subnet=%q", n.VMID(), n.Subnet())
@@ -167,28 +180,19 @@ func TestLoadSandboxKeepsLeadingZeros(t *testing.T) {
 
 // Guessing an identity is worse than refusing to start: it means either
 // building the wrong subnet or answering for another VM's zone.
-func TestLoadRefusesRatherThanDefaulting(t *testing.T) {
+func TestCurrentRefusesRatherThanDefaulting(t *testing.T) {
 	cases := map[string]string{
-		"missing key":  "MPD_PLATFORM=managed\n",
-		"empty value":  "MPD_VM_ID=\n",
-		"not a number": "MPD_VM_ID=abc\n",
-		"out of range": "MPD_VM_ID=999\n",
+		"not an mpd host": "debian\n",
+		"empty":           "\n",
+		"not a number":    "mpd-abc\n",
+		"out of range":    "mpd-999\n",
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := Load(writePlatformEnv(t, body)); err == nil {
-				t.Fatal("Load() = nil error, want refusal")
+			setHostname(t, body)
+			if _, err := Current(); err == nil {
+				t.Fatal("Current() = nil error, want refusal")
 			}
 		})
-	}
-}
-
-func TestLoadMissingFileNamesTheFix(t *testing.T) {
-	_, err := Load(filepath.Join(t.TempDir(), "absent.env"))
-	if err == nil {
-		t.Fatal("Load() = nil error for a missing file")
-	}
-	if !strings.Contains(err.Error(), "30-networking.sh") {
-		t.Errorf("err = %v, want it to name the bootstrap step that fixes it", err)
 	}
 }

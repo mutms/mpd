@@ -90,7 +90,7 @@ func Setup(ctx context.Context, out io.Writer) error {
 	}
 	ui.OK(out, "Ensured %s/", vm.ConfDir)
 
-	n, identity, err := setupIdentity(ctx, out)
+	n, vmIP, err := setupIdentity(ctx, out)
 	if err != nil {
 		return err
 	}
@@ -166,7 +166,7 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 	m := dnsmasq.New(state.Dir, n, p)
-	if err := service.ReconcileDNSRecords(ctx, out, m, n, identity.VMIP, true); err != nil {
+	if err := service.ReconcileDNSRecords(ctx, out, m, n, vmIP, true); err != nil {
 		return err
 	}
 
@@ -183,7 +183,7 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 
-	if err := reconcileCaches(ctx, out, p, s, n, m, identity.VMIP, user.UID, certs.CAChanged); err != nil {
+	if err := reconcileCaches(ctx, out, p, s, n, m, vmIP, user.UID, certs.CAChanged); err != nil {
 		return err
 	}
 
@@ -283,36 +283,20 @@ func preflight(ctx context.Context, out io.Writer) error {
 	return vm.RequireSystemdResolvedActive(ctx, out)
 }
 
-// setupIdentity refreshes the VM ID from the hostname and returns the
-// addressing derived from it.
-//
-// Re-derived on every run rather than trusted from the file: the
-// hostname is what the hypervisor-side bootstrap set, so a VM cloned to
-// a new identity converges here. A hand-edited MPD_VM_ID therefore
-// survives only until the next `--vm-setup`, which is the documented
-// behaviour.
-//
-// This is also why net.Load runs here rather than at process start: a VM
-// whose platform.env holds a broken ID must still be repairable by
-// `mpd --vm-setup`, and a preflight resolve would refuse before we could
-// fix it.
-func setupIdentity(ctx context.Context, out io.Writer) (net.Net, vm.PlatformIdentity, error) {
+// setupIdentity derives the VM's addressing from its hostname and reads
+// its LAN IP off the interface. Both come live from the running VM — the
+// hostname (mpd-<NNN>) is the single source of truth, and the IP is a
+// fact about the box — so there is no platform.env to load or refresh.
+// It returns the Net and the VM's own IP (empty on a DHCP-less box).
+func setupIdentity(ctx context.Context, out io.Writer) (net.Net, string, error) {
 	ui.Step(out, "Platform identity")
-	identity, err := vm.LoadPlatform()
+	n, err := net.Current()
 	if err != nil {
-		return net.Net{}, identity, err
+		return net.Net{}, "", err
 	}
-	if derived := vm.DeriveVMID(); derived != identity.VMID {
-		identity.VMID = derived
-		if err := vm.WritePlatform(identity); err != nil {
-			return net.Net{}, identity, err
-		}
-	}
-	ui.OK(out, "Platform: %s, VM IP: %s, VM ID: %s",
-		identity.Platform, dashIfEmpty(identity.VMIP), dashIfEmpty(identity.VMID))
-
-	n, err := net.Load(vm.PlatformEnvPath)
-	return n, identity, err
+	vmIP := vm.PrimaryIP()
+	ui.OK(out, "VM ID: %s, VM IP: %s", n.VMID(), dashIfEmpty(vmIP))
+	return n, vmIP, nil
 }
 
 func dashIfEmpty(s string) string {
