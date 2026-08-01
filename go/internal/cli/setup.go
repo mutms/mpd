@@ -277,6 +277,12 @@ func preflight(ctx context.Context, out io.Writer) error {
 	if err := vm.EnsurePackages(ctx, out); err != nil {
 		return err
 	}
+	// Before podman is touched: an Apple container has /proc/sys read-only,
+	// which fails every podman sysctl write. Installs a boot-time remount
+	// unit (a no-op on a real VM) and applies it now for this run too.
+	if err := vm.EnsureProcSysWritable(ctx, out); err != nil {
+		return err
+	}
 	if err := vm.EnablePodmanRestart(ctx, out); err != nil {
 		return err
 	}
