@@ -29,6 +29,15 @@ import (
 //
 // ConditionPathIsDirectory keeps a VM whose volume has been removed from
 // failing the unit at boot: no source, no mount, no error.
+//
+// nofail,x-systemd.device-timeout: the source resolves onto a block device
+// (podman's volume store), so systemd auto-adds a Requires= on that
+// dev-*.device unit. On a VM udev announces the device and it activates; in
+// an Apple container there is no udev, so the device unit never appears,
+// times out after 90s, and fails the mount job even though the bind mount
+// itself succeeded instantly. nofail downgrades that device dependency to a
+// non-fatal Wants and the short timeout keeps `enable --now` from blocking;
+// on a real VM the device is present immediately, so neither is ever felt.
 func SrvMountUnit(source string) string {
 	return fmt.Sprintf(`[Unit]
 Description=mpd data volume at /srv
@@ -38,7 +47,7 @@ ConditionPathIsDirectory=%s
 What=%s
 Where=/srv
 Type=none
-Options=bind
+Options=bind,nofail,x-systemd.device-timeout=2s
 
 [Install]
 WantedBy=multi-user.target
