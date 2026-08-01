@@ -37,9 +37,9 @@ die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
 # --- 1. Hostname must be mpd-<NNN> -----------------------------------
 # The hostname is mpd's single source of truth: the id, zone, subnet and
-# every name derive from it. Managed ids are 100..254 (000 is the
-# sandbox; 001..099 is the hypervisor DHCP pool). You set this at install
-# time; prep only validates it.
+# every name derive from it. Managed ids are 001..254, a zero-padded
+# three-digit identifier (mpd-virt carves them into per-backend blocks).
+# You set this at install time; prep only validates it.
 step "Hostname"
 host="$(hostname -s 2>/dev/null || cut -d. -f1 /etc/hostname | tr -d '[:space:]')"
 case "${host}" in

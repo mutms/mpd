@@ -9,11 +9,11 @@
 // # Model
 //
 // Each VM owns one /24 and one DNS zone, both keyed on MPD_VM_ID: VM 150
-// serves 10.163.150.0/24 and the zone 150.mpd.test; the sandbox VM is
-// 000. The host part of an address never varies — the VM itself is always
-// .1, adminer always .6, runtimes always .100+ — only the third octet
-// moves, and it always equals the VM id. That is what lets a workstation
-// reach several VMs at once. See docs/NETWORKING.md.
+// serves 10.163.150.0/24 and the zone 150.mpd.test. Ids run 001–254 as
+// zero-padded identifiers. The host part of an address never varies — the
+// VM itself is always .1, adminer always .6, runtimes always .100+ — only
+// the third octet moves, and it always equals the VM id. That is what lets
+// a workstation reach several VMs at once. See docs/NETWORKING.md.
 //
 // # Why Net is a value, not a global
 //
@@ -71,11 +71,13 @@ type Net struct {
 	label string
 }
 
-// New builds a Net for a VM id. Valid ids are 100–254 (1–99 is the
-// hypervisor's DHCP pool); every VM — sandbox or managed — takes one.
+// New builds a Net for a VM id. Valid ids are 1–254: the id is a zero-padded
+// three-digit identifier (mpd-001), and its value doubles as the third octet
+// of the VM's /24. mpd-virt carves this range into per-backend blocks; mpd
+// itself only cares that the id names a legal octet.
 func New(octet int) (Net, error) {
-	if octet < 100 || octet > 254 {
-		return Net{}, fmt.Errorf("VM id %d is not in the managed range 100–254", octet)
+	if octet < 1 || octet > 254 {
+		return Net{}, fmt.Errorf("VM id %d is not in the managed range 001–254", octet)
 	}
 	return Net{octet: octet, label: fmt.Sprintf("%03d", octet)}, nil
 }

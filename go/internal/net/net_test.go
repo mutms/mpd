@@ -22,6 +22,9 @@ func TestAddressing(t *testing.T) {
 		subnet  string
 		gateway string
 	}{
+		// Low id: the zone is the zero-padded identifier, but the subnet
+		// and gateway octet stay the bare number.
+		{5, "005.mpd.test", "10.163.5.0/24", "10.163.5.1"},
 		{150, "150.mpd.test", "10.163.150.0/24", "10.163.150.1"},
 		{222, "222.mpd.test", "10.163.222.0/24", "10.163.222.1"},
 	}
@@ -40,7 +43,7 @@ func TestAddressing(t *testing.T) {
 }
 
 func TestVMIDIsThreeDigit(t *testing.T) {
-	for octet, want := range map[int]string{100: "100", 150: "150", 254: "254"} {
+	for octet, want := range map[int]string{1: "001", 22: "022", 99: "099", 100: "100", 254: "254"} {
 		if got := mustNew(t, octet).VMID(); got != want {
 			t.Errorf("New(%d).VMID() = %q, want %q", octet, got, want)
 		}
@@ -48,7 +51,7 @@ func TestVMIDIsThreeDigit(t *testing.T) {
 }
 
 func TestNewRejectsOutOfRange(t *testing.T) {
-	for _, octet := range []int{-1, 0, 42, 99, 255, 999} {
+	for _, octet := range []int{-1, 0, 255, 256, 999} {
 		if _, err := New(octet); err == nil {
 			t.Errorf("New(%d) = nil error, want rejection", octet)
 		}
