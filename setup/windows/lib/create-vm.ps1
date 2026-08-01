@@ -138,10 +138,10 @@ while (((Get-Date) - $start).TotalSeconds -lt 300) {
 Write-Ok "Cloud-init complete"
 
 # ── 8. Bootstrap step 20: clone mpd repository ────────────────────────────────
-# (Cloud-init already handled step 10's job: passwordless sudo, SSH key,
-# hostname, static IP, IPv6 disable. Bootstrap/30 is skipped — it's
-# NetworkManager-only while cloud-init Debian uses systemd-networkd.
-# platform.env was written via the seed ISO's write_files entry.)
+# (Cloud-init already handled the prep step's job: passwordless sudo, SSH
+# key, hostname, static IP, IPv6 disable, on a systemd-networkd image — no
+# network-stack conversion needed. mpd derives its id from the hostname
+# mpd-<NNN>; there is no platform.env.)
 
 $MpdBranch    = if ($env:MPD_BRANCH) { $env:MPD_BRANCH } else { "main" }
 $MpdRepoRaw   = "https://raw.githubusercontent.com/mutms/mpd/$MpdBranch"

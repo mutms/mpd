@@ -11,9 +11,8 @@ $PrefixLen      = 24
 # 150.mpd.test. Disjoint subnets and disjoint zones are what let several
 # VMs be reachable from this host at once.
 #
-# The VM id is the last octet of the VM's IP on the mpd switch --
-# bootstrap/30-networking.sh pins <switch>.<NNN> and writes
-# MPD_VM_ID=<NNN> from the same value.
+# The VM id is the VM's hostname suffix (mpd-<NNN>), which cloud-init
+# sets; the in-VM mpd derives everything from it.
 $MpdSubnetPrefix = "10.163"
 $MpdRootDomain   = "mpd.test"
 $VmNamePrefix   = "mpd-"

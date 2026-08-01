@@ -11,10 +11,10 @@
 #      mpd-template-<suffix>, mpd-sandbox-<suffix>, or mpd-NNN (3-digit).
 #      The -<suffix> forms exist so a developer can keep several
 #      pre-takeover templates and sandboxes side by side (e.g.
-#      mpd-template-trixie, mpd-sandbox-utm). After 30-networking.sh
-#      runs the hostname is canonicalized to mpd-NNN regardless of the
-#      initial form. Refuses anything else — accidental run on a
-#      workstation is fatal.
+#      mpd-template-trixie, mpd-sandbox-utm). The canonical mpd-NNN
+#      hostname is set directly (at install, by cloud-init, or by the
+#      developer) — mpd derives its identity from it. Refuses anything
+#      else — accidental run on a workstation is fatal.
 #   2. OS gate: Debian Trixie.
 #   3. If `sudo -n true` already works (cloud-init / pre-prepped VM):
 #      silent no-op.

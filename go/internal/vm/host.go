@@ -286,18 +286,16 @@ func sortedKeys(m map[string]string) []string {
 func RequireSystemdResolvedActive(ctx context.Context, out io.Writer) error {
 	if !unitIsActive(ctx, "systemd-resolved.service") {
 		return fmt.Errorf(`systemd-resolved is not active. mpd VM standardizes on
-systemd-resolved as the host DNS sink on every supported
-install profile.
+systemd-networkd + systemd-resolved, which the prepare script sets up.
 
-If your VM was just rebooted-in-place mid-provision, finish the
-reboot first:
+Most likely this VM has not been prepared (or a reboot was left
+unfinished). Run the prepare script on the VM and follow its reboot
+prompt until it reports ready:
 
-    sudo reboot
+    bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-prepare-takeover.sh)
 
-Then SSH back in and re-run mpd --vm-setup.
-
-Otherwise, see the README of your platform under
-/opt/mpd/setup/ for the expected network stack.`)
+(For a self-contained sandbox, mpd-sandbox-setup.sh does the same and
+then installs mpd.)`)
 	}
 	ui.OK(out, "systemd-resolved is active.")
 	return nil

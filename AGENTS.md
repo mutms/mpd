@@ -29,11 +29,12 @@ the user sits and where `mpd` runs:
 macOS-host orchestrator (`mpd-virt`) that drives Parallels lives in a
 separate repository.
 
-**Implementation note:** sandbox and mpd VM share the same
-`go/internal/cli/` + `go/internal/vm/` code paths; sandbox is
-`MPD_PLATFORM=sandbox` in platform.env, and from the user's perspective
-is a distinct mode, but the codebase treats it as a variant of the
-managed one.
+**Implementation note:** a sandbox and a managed VM are the *same* thing
+at runtime — same code paths, same hostname-derived identity (mpd-<NNN>,
+via `net.Current`). They differ only in *setup*: a sandbox generates its
+own self-signed CA in the VM, a managed VM gets a CA pushed by the
+host-side `mpd-virt`. There is no `MPD_PLATFORM` flag and no platform.env;
+a sandbox can be adopted as a managed VM later with no runtime change.
 
 Read `README.md` first for the user-facing overview.
 

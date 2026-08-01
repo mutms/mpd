@@ -95,8 +95,9 @@ func Current() (Net, error) {
 	if id == "" {
 		return Net{}, fmt.Errorf(
 			"hostname is not of the form mpd-<NNN>, so the VM id cannot be derived.\n" +
-				"Set it and re-run:\n" +
-				"    sudo hostnamectl set-hostname mpd-<NNN>")
+				"Set it, then re-run the prepare script on the VM:\n" +
+				"    sudo hostnamectl set-hostname mpd-<NNN>\n" +
+				"    bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-prepare-takeover.sh)")
 	}
 	octet, err := strconv.Atoi(id)
 	if err != nil {

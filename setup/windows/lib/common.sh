@@ -109,18 +109,6 @@ write_files:
       net.ipv6.conf.all.disable_ipv6 = 1
       net.ipv6.conf.default.disable_ipv6 = 1
       net.ipv6.conf.lo.disable_ipv6 = 1
-  - path: /var/lib/mpd/conf/platform.env
-    owner: ${vm_user}:${vm_user}
-    permissions: '0644'
-    defer: true
-    content: |
-      # mpd platform identity — written by cloud-init.
-      # Bootstrap/30-networking.sh is skipped on cloud-init flows
-      # (cloud-init owns hostname + netplan), so platform.env is
-      # written here so the in-VM mpd binary can read its identity.
-      MPD_PLATFORM=managed
-      MPD_VM_IP=${vm_ip}
-      MPD_VM_ID=$(printf '%03d' "${octet}")
 
 runcmd:
   - sysctl --load=/etc/sysctl.d/99-mpd-disable-ipv6.conf

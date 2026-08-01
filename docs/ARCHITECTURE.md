@@ -20,9 +20,10 @@ Current scope:
   lifecycle (`--vm-setup/--vm-start/--vm-stop/--vm-restart`, `--vm-status`,
   `mpd list`), runtime/project orchestration, per-runtime sidecar
   reconciliation.
-- The mode distinction is recorded in `/var/lib/mpd/conf/platform.env` as
-  `MPD_PLATFORM=machine|sandbox` and used by paths/messages that need
-  to differ slightly.
+- There is no runtime mode distinction: identity is derived from the
+  hostname `mpd-<NNN>` (`net.Current`), and sandbox vs managed differs
+  only in how the CA is provisioned at setup (self-signed in-VM vs pushed
+  by the host-side `mpd-virt`). No platform.env, no `MPD_PLATFORM`.
 - Outstanding work is project-type coverage under
   `assets/runtimes/<runtime>/project_types/` — not control-plane
   functionality.
@@ -625,48 +626,26 @@ layered env, generates config files, and emits resolved values into
 `/srv/meta/<n>/effective.json` (where mpd reads `dbTag` to provision the
 DB container).
 
-## 9) Platform identity: conf/platform.env
+## 9) Identity: the hostname
 
-`mpd` records the mode context — machine vs sandbox — in
-`/var/lib/mpd/conf/platform.env`, sibling to `caroot/` and `service/`. Lives
-under `/var/lib/mpd/conf/` so it's part of the persistent identity that
-survives runtime-state wipes.
+There is no platform.env. A VM's identity is derived from its **hostname**,
+`mpd-<NNN>`, by `net.Current()` — the id `NNN`, the zone `<NNN>.mpd.test`,
+the container subnet `10.163.<NNN>.0/24`, and every name keyed on it. The
+VM's own LAN IP is read live off the interface (`vm.PrimaryIP()`), not
+recorded. The hostname is the single source of truth: it's what the
+hypervisor-side prep (or cloud-init) sets, what the user sees in their
+prompt, and what a re-imaged VM changes.
 
-```
-MPD_PLATFORM=machine | sandbox
-MPD_VM_IP=<ip>                  # empty for sandbox
-MPD_INSTANCE_SUFFIX=<-suffix>   # e.g. "-161"; empty for the unsuffixed instance
-```
+Sandbox vs managed is **not** a runtime distinction — the same code paths
+run in both. They differ only at *setup* in how the CA is provisioned:
+`mpd --vm-setup` generates a self-signed CA in the VM when none was pushed
+(sandbox), or uses the name-constrained per-VM CA that host-side `mpd-virt`
+pushed (managed). A sandbox can be adopted as a managed VM later; the
+takeover re-roots the CA and the projects survive.
 
-`MPD_INSTANCE_SUFFIX` is the disambiguator for concurrent VMs. Auto-derived
-at `mpd --vm-setup` from the VM hostname (`mpd-<X>`), with the leading
-dash included (or empty when there's no suffix). Used as the hostname suffix
-on runtime **pods** (`mpd-runtime-<rt>-<X>`), so SSH'ing into
-`<rt>.runtime.<NNN>.mpd.test` gives a bash prompt that makes the instance
-unambiguous. DNS names are unaffected — they still resolve by IP via
-dnsmasq. Hand-edit to override; the next `mpd --vm-setup` will overwrite back
-to the auto-derived value.
-
-`Platform.write` preserves any other `MPD_*` keys it doesn't manage
-(e.g. `MPD_NETWORK_*` written by a bootstrap script) so bootstrap scripts
-and Platform can share the same file without clobbering each other.
-
-**Writers:**
-
-| Path                        | Writer                                                       | Values             | Behavior                                               |
-|-----------------------------|--------------------------------------------------------------|--------------------|--------------------------------------------------------|
-| `mpd VM` via mpd-virt  | `mpd-virt` orchestrator (host, separate repo, over SSH)      | `machine`, `${IP}` | written before `mpd --vm-setup` runs in the VM            |
-| `mpd VM` via sandbox   | `setup/sandbox/lib/provision.sh`                             | `sandbox`, `""`    | written before `mpd --vm-setup` runs inside the Debian VM |
-
-**Reader:** `vm.LoadPlatform()` (`go/internal/vm/platform.go`). Fails with a fix-it message
-when missing, pointing at the matching bootstrap script. The machine path
-records the VM's IP so the in-VM mpd can verify network identity; sandbox
-has no host side, so its `MPD_VM_IP` stays empty.
-
-**Why under `/var/lib/mpd/conf/`:** the platform identity is part of the
-persistent setup — the same answers should apply across rebuilds.
-`/var/lib/mpd/` (excluding `conf/`) is state cache; `/var/lib/mpd/conf/` is
-durable config (CA, certs, etc.).
+`/var/lib/mpd/conf/` remains the durable-config dir (CA under `caroot/`,
+service certs under `service/`) — it survives runtime-state wipes; the rest
+of `/var/lib/mpd/` is state cache.
 
 ## 10) Backup persistence
 

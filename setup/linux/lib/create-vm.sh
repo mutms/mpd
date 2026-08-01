@@ -192,18 +192,6 @@ write_files:
       net.ipv6.conf.all.disable_ipv6 = 1
       net.ipv6.conf.default.disable_ipv6 = 1
       net.ipv6.conf.lo.disable_ipv6 = 1
-  - path: /var/lib/mpd/conf/platform.env
-    owner: ${VM_USER}:${VM_USER}
-    permissions: '0644'
-    defer: true
-    content: |
-      # mpd platform identity — written by cloud-init.
-      # Bootstrap/30-networking.sh is skipped on cloud-init flows
-      # (cloud-init owns hostname + netplan), so platform.env is
-      # written here so the in-VM mpd binary can read its identity.
-      MPD_PLATFORM=managed
-      MPD_VM_IP=${VM_IP}
-      MPD_VM_ID=$(printf '%03d' "${VM_OCTET}")
 
 runcmd:
   - systemctl enable --now ssh
@@ -362,10 +350,10 @@ else
 fi
 
 # --- Bootstrap step 20: clone mpd repo ---
-# (Cloud-init already handled step 10's job: passwordless sudo, SSH key,
-# hostname, static IP, IPv6 disable. We skip bootstrap/30 entirely on
-# cloud-init flows — it's NetworkManager-only, while cloud-init Debian
-# uses systemd-networkd. platform.env was written via write_files above.)
+# (Cloud-init already handled the prep step's job: passwordless sudo, SSH
+# key, hostname, static IP, IPv6 disable, on a systemd-networkd image — so
+# no network-stack conversion is needed. mpd derives its id from the
+# hostname (mpd-<NNN>); there is no platform.env.)
 
 MPD_BRANCH="${MPD_BRANCH:-main}"
 MPD_REPO_RAW="https://raw.githubusercontent.com/mutms/mpd/${MPD_BRANCH}"

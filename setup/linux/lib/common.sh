@@ -26,8 +26,8 @@ BRIDGE_GATEWAY="${BRIDGE_SUBNET}.1"
 # workstation reach several VMs at once — the routes are to disjoint /24s
 # and the resolver drop-ins cover disjoint domains.
 #
-# The VM ID is the last octet of the VM's IP: bootstrap/30-networking.sh
-# pins <bridge>.<NNN> and writes MPD_VM_ID=<NNN> from the same value.
+# The VM ID is the VM's hostname suffix (mpd-<NNN>), which cloud-init
+# sets; the in-VM mpd derives everything from it (net.Current).
 MPD_SUBNET_PREFIX="10.163"
 MPD_ROOT_DOMAIN="mpd.test"
 

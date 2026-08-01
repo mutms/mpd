@@ -110,21 +110,27 @@ boot every day.
 
 **Provision the VM** — Debian Trixie (13) with the GNOME desktop, 8 GB
 RAM and 4 CPUs as a comfortable default (4 GB / 2 CPU minimum), 100 GB
-disk. When the installer asks for a hostname, type **`mpd-sandbox`**.
-Take a hypervisor snapshot after first boot — that's your safety net.
+disk. When the installer asks for a hostname, type **`mpd-<NNN>`** — a
+3-digit id in 100..254, e.g. `mpd-137`. Everything (zone, subnet, name)
+derives from it. Take a hypervisor snapshot after first boot — that's
+your safety net.
 
 **Inside the VM**, in a terminal, run:
 
 ```bash
-bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/sandbox/take-over-sandbox-vm.sh)
+bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-sandbox-setup.sh)
 ```
 
-(That syntax fetches the take-over script and runs it in one step.
-`wget` because Debian's base install ships it; `curl` isn't always
-present.)
+(That fetches the sandbox setup script and runs it in one step. It
+converts the network stack — asking for one reboot — then installs mpd
+and generates a self-signed CA in the VM. `wget` because Debian's base
+install ships it.)
 
-Open Firefox-ESR inside the VM and browse to https://000.mpd.test/
-(the sandbox VM's zone apex — see docs/NETWORKING.md).
+Open Firefox-ESR inside the VM and browse to https://<NNN>.mpd.test/
+(the VM's zone apex, e.g. https://137.mpd.test/ — see
+docs/NETWORKING.md). Because the same `mpd-<NNN>` hostname is what a
+managed VM uses, you can later adopt this sandbox from a Mac with
+`mpd-virt takeover <NNN> <IP>` — your projects survive.
 
 ### 2. `mpd VM` (host reaches into a Linux VM)
 
