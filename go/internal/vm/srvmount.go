@@ -58,9 +58,11 @@ WantedBy=multi-user.target
 // the same tree every container sees at /srv.
 //
 // Idempotent: an unchanged unit is not rewritten (WriteRootOwnedFile
-// short-circuits before sudo), and `enable --now` on an active mount is a
-// no-op. A changed unit is re-read and restarted, so a volume that moved
-// is followed rather than left pointing at the old path.
+// short-circuits before sudo) and starting an already-mounted unit is a
+// no-op; a changed unit is re-read and restarted, so a moved volume is
+// followed rather than left pointing at the old path. Success is judged by
+// `is-active`, not systemctl's exit code, because a udev-less container
+// fails the mount's phantom device dependency while the bind mount is up.
 func MountDataVolume(ctx context.Context, out io.Writer, source string) error {
 	if source == "" {
 		return fmt.Errorf("Cannot mount /srv: podman reported no mountpoint for the data volume.")
@@ -79,21 +81,34 @@ func MountDataVolume(ctx context.Context, out io.Writer, source string) error {
 		}
 	}
 
+	// Install the wants symlink. `enable` on its own starts nothing, so it
+	// never triggers the phantom dev-*.device job below and its exit is
+	// trustworthy.
 	if code, err := exec.Run(ctx, exec.Cmd{
-		Name: "systemctl", Args: []string{"enable", "--now", "srv.mount"}, Sudo: true,
+		Name: "systemctl", Args: []string{"enable", "srv.mount"}, Sudo: true,
 	}); err != nil || code != 0 {
 		return fmt.Errorf("Failed to enable srv.mount (source %s).", source)
 	}
 
-	// A changed unit needs the running mount replaced, not just reloaded:
-	// `enable --now` leaves an already-active mount alone, so without this
-	// a moved source would stay mounted from the old path until reboot.
+	// Bring the mount up — restarting it if the unit changed, so a moved
+	// source is followed rather than left mounted from the old path. In a
+	// udev-less container the auto-added dev-*.device dependency times out
+	// and makes systemctl exit non-zero even though the bind mount itself
+	// succeeded, so this exit is deliberately ignored; is-active below is
+	// the real success signal.
+	verb := "start"
 	if changed {
-		if code, err := exec.Run(ctx, exec.Cmd{
-			Name: "systemctl", Args: []string{"restart", "srv.mount"}, Sudo: true,
-		}); err != nil || code != 0 {
-			return fmt.Errorf("Failed to restart srv.mount (source %s).", source)
-		}
+		verb = "restart"
+	}
+	if _, err := exec.Run(ctx, exec.Cmd{
+		Name: "systemctl", Args: []string{verb, "srv.mount"}, Sudo: true,
+	}); err != nil {
+		return err
+	}
+	if code, err := exec.Run(ctx, exec.Cmd{
+		Name: "systemctl", Args: []string{"is-active", "--quiet", "srv.mount"},
+	}); err != nil || code != 0 {
+		return fmt.Errorf("srv.mount did not come up (source %s).", source)
 	}
 
 	ui.OK(out, "/srv mounted from %s.", source)
