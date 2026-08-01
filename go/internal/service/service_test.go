@@ -40,7 +40,7 @@ func TestNamesAndAddresses(t *testing.T) {
 // <name>.service.<zone>. Regressing this makes https://<id>.mpd.test/
 // stop resolving to the portal.
 func TestPortalIsTheZoneApex(t *testing.T) {
-	for _, octet := range []int{0, 150, 222} {
+	for _, octet := range []int{100, 150, 222} {
 		n := testNet(t, octet)
 		d, _ := Find("portal")
 		if d.DNS(n) != n.Zone() {

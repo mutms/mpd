@@ -6,10 +6,9 @@ import gonet "net"
 // the LAN address the workstation reaches it at, and the one DNS's
 // vm.service record points to.
 //
-// It replaces the MPD_VM_IP line the old platform.env carried: the
-// address is a fact about the running VM, so it is read live rather than
-// recorded. Empty when it can't be determined (e.g. a DHCP-less sandbox
-// mid-boot), which callers render as "—".
+// The address is a fact about the running VM, so it is read live rather
+// than recorded. Empty when it can't be determined (e.g. a DHCP-less
+// sandbox mid-boot), which callers render as "—".
 //
 // The mpd container bridge (10.163.x) is skipped: that is the VM as
 // containers see it, never the LAN address.

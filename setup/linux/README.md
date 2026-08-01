@@ -121,8 +121,7 @@ phase:
    disk/net, virtio-balloon for memory reclaim, virtio-rng).
 6. Boots, waits for SSH, waits for cloud-init to finish.
 7. Verifies the root filesystem grew to your requested size.
-8. `git clone`s the mpd repo, writes platform identity to
-   `/var/lib/mpd/conf/platform.env`.
+8. `git clone`s the mpd repo.
 9. Detaches the cloud-init CD via `virsh change-media --eject` and
    restarts the VM.
 10. In-VM provisioning over SSH: 4 GB swap, build dependencies
@@ -215,8 +214,7 @@ static IP is required because the bootstrap automation needs to
 SSH into the VM before it's fully up — DHCP would give an unknown
 address that the script can't predict.
 
-The IP is recorded in `conf/platform.env` inside the VM
-(`MPD_VM_IP=...`) and in `/var/lib/mpd-virt/<vmname>.env` on the host.
+The IP is read off the VM's interface and recorded in `/var/lib/mpd-virt/<vmname>.env` on the host.
 
 The active VM is tracked via the persistent route: the kernel route
 to `10.163.<NNN>.0/24` (that VM's container subnet) points at its IP, so

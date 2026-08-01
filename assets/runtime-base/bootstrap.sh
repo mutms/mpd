@@ -22,7 +22,7 @@ CONTAINER_NAME="$1"
 EXTUSER="$2"
 EXTUID="$3"
 # This VM's DNS zone (e.g. 222.mpd.test) — passed in because the container
-# has no access to /var/lib/mpd/conf/platform.env and /srv/meta/vm.json is
+# has no access to /var/lib/mpd/conf/ and /srv/meta/vm.json is
 # not guaranteed to exist yet this early in provisioning.
 MPD_ZONE="$4"
 

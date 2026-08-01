@@ -135,8 +135,8 @@ func main() {
 	//
 	// Before cobra, because building the command tree here would only
 	// produce handlers that cannot work — every one of them starts by
-	// loading platform.env. Forwarding the raw argv also means the VM
-	// parses it with its own command tree, which is the only one that
+	// resolving the VM's identity. Forwarding the raw argv also means the
+	// VM parses it with its own command tree, which is the only one that
 	// should decide what a verb means.
 	if _, inRuntime := control.RuntimeName(); inRuntime && !runsLocallyInRuntime(os.Args[1:]) {
 		code, err := control.Forward(os.Args[1:])

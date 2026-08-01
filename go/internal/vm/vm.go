@@ -33,8 +33,8 @@ const (
 
 	// VarLibDir is the persistent state root.
 	VarLibDir = "/var/lib/mpd"
-	// ConfDir holds the CA, the service cert and platform.env. PRIVATE —
-	// never bind-mounted into a container.
+	// ConfDir holds the CA and the service cert. PRIVATE — never
+	// bind-mounted into a container.
 	ConfDir = VarLibDir + "/conf"
 	// EnvDir holds mpd-vm.env, the user's VM-wide overrides.
 	EnvDir = VarLibDir + "/env"

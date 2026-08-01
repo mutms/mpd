@@ -141,7 +141,7 @@ Write-Ok "Cloud-init complete"
 # (Cloud-init already handled the prep step's job: passwordless sudo, SSH
 # key, hostname, static IP, IPv6 disable, on a systemd-networkd image — no
 # network-stack conversion needed. mpd derives its id from the hostname
-# mpd-<NNN>; there is no platform.env.)
+# mpd-<NNN>.)
 
 $MpdBranch    = if ($env:MPD_BRANCH) { $env:MPD_BRANCH } else { "main" }
 $MpdRepoRaw   = "https://raw.githubusercontent.com/mutms/mpd/$MpdBranch"

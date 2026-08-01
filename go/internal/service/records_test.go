@@ -64,7 +64,7 @@ func TestEveryServiceIsReachableByItsCanonicalName(t *testing.T) {
 }
 
 func TestRecordsFollowTheVM(t *testing.T) {
-	for _, octet := range []int{0, 150, 254} {
+	for _, octet := range []int{100, 150, 254} {
 		n := testNet(t, octet)
 		for _, r := range DNSRecords(n) {
 			if !n.IsInZone(r.Host) {

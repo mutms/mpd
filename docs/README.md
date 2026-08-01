@@ -56,8 +56,7 @@ Quick reference; full contract in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 - `/opt/mpd/` — code, assets, built binary (`/opt/mpd/bin/mpd`).
   Owned by the dev user.
-- `/var/lib/mpd/conf/` — persistent identity: CA, service certs,
-  `platform.env`. PRIVATE — never bind-mounted
+- `/var/lib/mpd/conf/` — persistent identity: CA, service certs. PRIVATE — never bind-mounted
   into containers.
 - `/var/lib/mpd/env/mpd-vm.env` — user-editable VM-wide env
   overrides. Bind-mounted RO into every runtime container.

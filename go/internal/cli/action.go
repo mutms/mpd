@@ -153,8 +153,8 @@ func writeVMMeta(ctx context.Context, d ProjectDeps) error {
 // Two audiences in different mount namespaces, same bytes:
 // runtime containers see /srv/meta/vm.json via the data volume; the
 // portal sees /mpd-state/vm.json via the state dir. Neither can read
-// /var/lib/mpd/conf/platform.env, which holds the CA key and is
-// deliberately never mounted into a container.
+// /var/lib/mpd/conf/, which holds the CA key and is deliberately never
+// mounted into a container.
 func VMMeta(ctx context.Context, p *podman.Client, n net.Net, stateDir string) error {
 	// No separate resolver address: it listens on the gateway, and a
 	// second key holding the same value is a second thing to keep true.

@@ -33,8 +33,8 @@ separate repository.
 at runtime — same code paths, same hostname-derived identity (mpd-<NNN>,
 via `net.Current`). They differ only in *setup*: a sandbox generates its
 own self-signed CA in the VM, a managed VM gets a CA pushed by the
-host-side `mpd-virt`. There is no `MPD_PLATFORM` flag and no platform.env;
-a sandbox can be adopted as a managed VM later with no runtime change.
+host-side `mpd-virt`. A sandbox can be adopted as a managed VM later with
+no runtime change.
 
 Read `README.md` first for the user-facing overview.
 
@@ -48,8 +48,8 @@ chowns), all enforced at runtime — do not propose alternates.
   container at the same path, so `/opt/mpd/assets/...` resolves identically
   on the VM and inside containers.
 - `/var/lib/mpd/conf/` — persistent identity. Trust anchor + this VM's
-  own signing CA + service cert, `platform.env`. PRIVATE — never
-  bind-mounted into containers.
+  own signing CA + service cert. PRIVATE — never bind-mounted into
+  containers.
 - `/var/lib/mpd/env/` — user-editable env overrides. Holds `mpd-vm.env`
   only. Bind-mounted RO into every runtime container at the same path
   (directory mount, so vim/nano atomic-rename writes propagate).
@@ -83,7 +83,7 @@ The binary is Go, built from `go/` into `bin/mpd` by `make install`:
 - `go/internal/cli/` — command implementations, listing and status
   rendering, setup orchestration, completion candidates
 - `go/internal/vm/` — VM-host operations (fixed paths, identity,
-  platform.env, CA trust stores, resolver drop-in, motd, shutdown unit)
+  CA trust stores, resolver drop-in, motd, shutdown unit)
 - `go/internal/runtime/` — runtime provisioning and its state cache
 - `go/internal/project/` — project scaffolding, env mutation, certs, rescan
 - `go/internal/service/` — the infra service registry (dnsmasq and the

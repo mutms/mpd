@@ -94,8 +94,8 @@ unset -f _mpd_load_env_file
 # DNS record it isn't entitled to.
 #
 # Written by mpd (cli.VMMeta) on every --vm-setup / --vm-start.
-# /var/lib/mpd/conf/platform.env — the original source — is deliberately not
-# mounted into containers, so the data volume is the only path in.
+# The conf dir it derives from is deliberately not mounted into
+# containers, so the data volume is the only path in.
 _mpd_vm_meta="/srv/meta/vm.json"
 if [ -f "$_mpd_vm_meta" ] && command -v jq >/dev/null 2>&1; then
     MPD_ZONE=$(jq -r '.zone // empty' "$_mpd_vm_meta" 2>/dev/null)

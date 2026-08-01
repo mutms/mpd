@@ -62,7 +62,7 @@ const BaseImagePull = "docker.io/library/postgres:17"
 //
 // Ordering is not arbitrary:
 //
-//   - identity (platform.env) before anything that composes a name or an
+//   - identity (the hostname) before anything that composes a name or an
 //     address, since all of them derive from the VM ID;
 //   - the CA before the service containers, whose rebuild is keyed on
 //     its fingerprint;
@@ -286,8 +286,8 @@ func preflight(ctx context.Context, out io.Writer) error {
 // setupIdentity derives the VM's addressing from its hostname and reads
 // its LAN IP off the interface. Both come live from the running VM — the
 // hostname (mpd-<NNN>) is the single source of truth, and the IP is a
-// fact about the box — so there is no platform.env to load or refresh.
-// It returns the Net and the VM's own IP (empty on a DHCP-less box).
+// fact about the box. It returns the Net and the VM's own IP (empty on a
+// DHCP-less box).
 func setupIdentity(ctx context.Context, out io.Writer) (net.Net, string, error) {
 	ui.Step(out, "Platform identity")
 	n, err := net.Current()

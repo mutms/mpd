@@ -39,8 +39,7 @@ Pick the path that matches your host:
   DNS/route/trust changes.
 
 End state of either path: a VM where `mpd` is on `PATH`, your laptop
-SSH key is in `~/.ssh/authorized_keys`, and `/var/lib/mpd/conf/platform.env`
-is set.
+SSH key is in `~/.ssh/authorized_keys`.
 
 ## `mpd --vm-setup`
 

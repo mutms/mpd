@@ -23,7 +23,7 @@ Current scope:
 - There is no runtime mode distinction: identity is derived from the
   hostname `mpd-<NNN>` (`net.Current`), and sandbox vs managed differs
   only in how the CA is provisioned at setup (self-signed in-VM vs pushed
-  by the host-side `mpd-virt`). No platform.env, no `MPD_PLATFORM`.
+  by the host-side `mpd-virt`).
 - Outstanding work is project-type coverage under
   `assets/runtimes/<runtime>/project_types/` — not control-plane
   functionality.
@@ -191,7 +191,6 @@ Directory ownership split:
     (`vmCA.pem`/`vmCA-key.pem`, constrained to its own zone)
   - `service/` — service TLS cert/key (the VM's zone apex, `<NNN>.mpd.test`)
   - `temp/` — short-lived cert operation files
-  - `platform.env` — platform identity (see §9)
 - `/var/lib/mpd/` (other subdirs) — state/cache (machine metadata, runtime/project state, transient runtime files)
 
 Project backups live inside the data volume at `/srv/backups/`, not on the
@@ -628,8 +627,8 @@ DB container).
 
 ## 9) Identity: the hostname
 
-There is no platform.env. A VM's identity is derived from its **hostname**,
-`mpd-<NNN>`, by `net.Current()` — the id `NNN`, the zone `<NNN>.mpd.test`,
+A VM's identity is derived from its **hostname**, `mpd-<NNN>`, by
+`net.Current()` — the id `NNN`, the zone `<NNN>.mpd.test`,
 the container subnet `10.163.<NNN>.0/24`, and every name keyed on it. The
 VM's own LAN IP is read live off the interface (`vm.PrimaryIP()`), not
 recorded. The hostname is the single source of truth: it's what the
@@ -776,8 +775,8 @@ See detailed docs:
 - `go/cmd/mpd/` — CLI entry: flag set, project verbs, dispatch
 - `go/internal/cli/` — command implementations, listing and status
   rendering, setup orchestration, completion
-- `go/internal/vm/` — VM-host operations (paths, identity, platform.env,
-  CA trust stores, resolver drop-in, motd, shutdown unit)
+- `go/internal/vm/` — VM-host operations (paths, identity, CA trust
+  stores, resolver drop-in, motd, shutdown unit)
 - `go/internal/runtime/`, `go/internal/project/`, `go/internal/db/`,
   `go/internal/sidecar/` — orchestration and records
 - `go/internal/service/` — always-on service lifecycle

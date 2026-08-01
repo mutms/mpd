@@ -24,9 +24,6 @@ func TestAddressing(t *testing.T) {
 	}{
 		{150, "150.mpd.test", "10.163.150.0/24", "10.163.150.1"},
 		{222, "222.mpd.test", "10.163.222.0/24", "10.163.222.1"},
-		// Sandbox is not a special case — just the zeroth VM. It keeps
-		// the 10.163.0.0/24 every VM shared before per-VM addressing.
-		{0, "000.mpd.test", "10.163.0.0/24", "10.163.0.1"},
 	}
 	for _, tc := range tests {
 		n := mustNew(t, tc.octet)
@@ -42,8 +39,8 @@ func TestAddressing(t *testing.T) {
 	}
 }
 
-func TestVMIDIsZeroPadded(t *testing.T) {
-	for octet, want := range map[int]string{0: "000", 22: "022", 150: "150"} {
+func TestVMIDIsThreeDigit(t *testing.T) {
+	for octet, want := range map[int]string{100: "100", 150: "150", 254: "254"} {
 		if got := mustNew(t, octet).VMID(); got != want {
 			t.Errorf("New(%d).VMID() = %q, want %q", octet, got, want)
 		}
@@ -51,7 +48,7 @@ func TestVMIDIsZeroPadded(t *testing.T) {
 }
 
 func TestNewRejectsOutOfRange(t *testing.T) {
-	for _, octet := range []int{-1, 255, 999} {
+	for _, octet := range []int{-1, 0, 42, 99, 255, 999} {
 		if _, err := New(octet); err == nil {
 			t.Errorf("New(%d) = nil error, want rejection", octet)
 		}
@@ -132,9 +129,9 @@ func TestHostOctet(t *testing.T) {
 func TestVMIDFromHostname(t *testing.T) {
 	cases := map[string]string{
 		"mpd-150":          "150",
-		"mpd-000":          "000",
+		"mpd-224":          "224",
 		"mpd-136.mpd.test": "136", // FQDN form: only the short name counts
-		"  mpd-042\n":      "042", // whitespace trimmed
+		"  mpd-137\n":      "137", // whitespace trimmed
 		"debian":           "",    // not an mpd host
 		"":                 "",
 	}
@@ -164,17 +161,6 @@ func TestCurrent(t *testing.T) {
 	}
 	if n.Zone() != "150.mpd.test" {
 		t.Errorf("Zone() = %q, want %q", n.Zone(), "150.mpd.test")
-	}
-}
-
-func TestCurrentSandboxKeepsLeadingZeros(t *testing.T) {
-	setHostname(t, "mpd-000\n")
-	n, err := Current()
-	if err != nil {
-		t.Fatalf("Current() failed: %v", err)
-	}
-	if n.VMID() != "000" || n.Subnet() != "10.163.0.0/24" {
-		t.Errorf("sandbox: VMID=%q Subnet=%q", n.VMID(), n.Subnet())
 	}
 }
 

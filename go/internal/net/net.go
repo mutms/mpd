@@ -17,10 +17,9 @@
 //
 // # Why Net is a value, not a global
 //
-// The Swift version resolved identity into process-wide cached state,
-// which made it untestable without a real /var/lib/mpd/conf/platform.env.
-// Here identity is a value: tests construct Net directly, and only the
-// command layer calls Load to read the real file.
+// Identity is a value, not process-wide cached state: tests construct Net
+// directly, and only the command layer calls Current to read the running
+// VM's hostname.
 package net
 
 import (
@@ -72,19 +71,19 @@ type Net struct {
 	label string
 }
 
-// New builds a Net for a VM id. Valid ids are 0–254: 0 is the sandbox VM,
-// 100–254 are managed VMs (1–99 is the hypervisor's DHCP pool).
+// New builds a Net for a VM id. Valid ids are 100–254 (1–99 is the
+// hypervisor's DHCP pool); every VM — sandbox or managed — takes one.
 func New(octet int) (Net, error) {
-	if octet < 0 || octet > 254 {
-		return Net{}, fmt.Errorf("VM id %d is not an octet in [0, 254]", octet)
+	if octet < 100 || octet > 254 {
+		return Net{}, fmt.Errorf("VM id %d is not in the managed range 100–254", octet)
 	}
 	return Net{octet: octet, label: fmt.Sprintf("%03d", octet)}, nil
 }
 
 // Current builds the Net for this VM by deriving its id from the
-// hostname (mpd-<NNN>) — the single source of truth for identity. There
-// is no platform.env: the hostname is what the hypervisor-side prep set,
-// what the user sees in their prompt, and what a re-imaged VM changes.
+// hostname (mpd-<NNN>) — the single source of truth for identity. The
+// hostname is what the hypervisor-side prep set, what the user sees in
+// their prompt, and what a re-imaged VM changes.
 //
 // A hostname that is not of the form mpd-<NNN> is an error rather than a
 // default: every address and name mpd composes depends on the id, so

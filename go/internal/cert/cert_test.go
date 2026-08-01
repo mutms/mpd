@@ -183,8 +183,8 @@ func TestLeafDays(t *testing.T) {
 }
 
 // TestSelfSignedInstallPath covers what a VM with no CA material does —
-// the sandbox VM (id 000) and the setup/linux, setup/windows flows before
-// anything is pushed in.
+// a sandbox VM, and the setup/linux, setup/windows flows before anything
+// is pushed in.
 //
 // Those installs have no orchestrator to hand them an intermediate, so
 // --vm-setup generates one CA and uses it as both anchor and signer. The

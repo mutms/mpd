@@ -353,7 +353,7 @@ fi
 # (Cloud-init already handled the prep step's job: passwordless sudo, SSH
 # key, hostname, static IP, IPv6 disable, on a systemd-networkd image — so
 # no network-stack conversion is needed. mpd derives its id from the
-# hostname (mpd-<NNN>); there is no platform.env.)
+# hostname mpd-<NNN>.)
 
 MPD_BRANCH="${MPD_BRANCH:-main}"
 MPD_REPO_RAW="https://raw.githubusercontent.com/mutms/mpd/${MPD_BRANCH}"

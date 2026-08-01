@@ -93,7 +93,6 @@ gateway `.1` because they run on the VM rather than in a container.
 ```
 VM 150:  10.163.150.0/24   zone 150.mpd.test   moodle45.150.mpd.test
 VM 180:  10.163.180.0/24   zone 180.mpd.test   moodle45.180.mpd.test
-sandbox: 10.163.0.0/24     zone 000.mpd.test
 ```
 
 This is what makes **several VMs reachable at the same time**. The host
@@ -239,7 +238,7 @@ In addition to the runtime / service / project records, dnsmasq serves
 one special record:
 
 ```
-vm.service.<NNN>.mpd.test → <MPD_VM_IP from /var/lib/mpd/conf/platform.env>
+vm.service.<NNN>.mpd.test → the VM's own LAN IP
 ```
 
 i.e. the **VM's own static IP** (e.g. `10.211.55.125` for a managed VM),
