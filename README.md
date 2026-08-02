@@ -201,15 +201,16 @@ letting an agent rip without thinking.
 
 ## Acknowledgments
 
-The design draws on 20 years of Moodle development, the OrbStack-era
-[MDC](https://github.com/skodak/mdc) tooling, and the
-[moodle-docker](https://github.com/moodlehq/moodle-docker) workflow as
-the public reference everyone reaches for first. mpd is also my first
-fully AI-driven project — the Go binary, asset scripts, and
-documentation are mostly written by [Claude Code](https://claude.ai/code)
-(Anthropic) and [Codex](https://openai.com/codex/) (OpenAI) under my
-direction. Open source so other Moodle developers can adopt the same
-workflow.
+Shaped by 20 years of Moodle development, and standing on two projects: my own
+OrbStack-era [MDC](https://github.com/skodak/mdc) tooling, and
+[moodle-docker](https://github.com/moodlehq/moodle-docker) — the public
+reference most Moodle developers reach for first.
+
+mpd and its related tools are my first fully AI-driven project — the Go, the
+asset scripts, and the docs are largely written by
+[Claude Code](https://claude.com/claude-code) (Anthropic) under my direction
+(design and review stay human). Open source so other Moodle developers can
+adopt the same workflow.
 
 ## License
 
