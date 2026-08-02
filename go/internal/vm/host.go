@@ -92,6 +92,9 @@ var requiredPackages = []struct{ Package, Binary string }{
 	{"catatonit", "/usr/bin/catatonit"},
 	{"uidmap", "/usr/bin/newuidmap"},
 	{"nftables", "/usr/sbin/nft"},
+	// WireGuard endpoint for the encrypted host↔VM overlay (mpd-virt/mpd-proxy):
+	// wg-quick brings up wg0, wg generates and inspects keys.
+	{"wireguard-tools", "/usr/bin/wg"},
 	// The VM's resolver. dnsmasq-base is the binary alone; the `dnsmasq`
 	// package would additionally install a second unit reading
 	// /etc/dnsmasq.conf, which is the sysadmin's file and not mpd's.

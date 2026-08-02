@@ -41,10 +41,10 @@ func DnsmasqConfBody(listenIP, iface, hostsDir string) string {
 # Bind only the podman bridge, never the VM's LAN address: mpd's
 # networking model promises nothing is published beyond the VM.
 #
-# bind-dynamic rather than bind-interfaces because the bridge does not
-# exist until podman first attaches a container to the network, which is
-# after this unit starts on a fresh VM. bind-dynamic watches for
-# interfaces appearing and binds then.
+# bind-dynamic rather than bind-interfaces: mpdbr0 is now a static networkd
+# bridge that is up at boot, but bind-dynamic — which watches for the
+# interface and binds when it appears — stays the robust choice: it tolerates
+# dnsmasq racing networkd and rebinds if the bridge is ever recreated.
 #
 # The interface line is what makes that work, and it is not decoration:
 # with listen-address alone dnsmasq binds nothing when the address shows
@@ -101,7 +101,7 @@ func DnsmasqUnitBody(confPath string) string {
 	return `[Unit]
 Description=mpd DNS resolver (dnsmasq)
 Documentation=file:///opt/mpd/docs/NETWORKING.md
-After=network.target systemd-resolved.service
+After=network.target systemd-resolved.service systemd-networkd.service
 
 [Service]
 Type=simple
