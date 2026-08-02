@@ -95,17 +95,6 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 
-	// Static container bridge + WireGuard endpoint, before the podman network
-	// and dnsmasq: mpdbr0 must exist at boot so the resolver and caddy bind the
-	// gateway without racing podman's on-demand bridge, and wg0 gives the Mac
-	// an encrypted path to 10.163.<NNN>.x (peer added by mpd-virt).
-	if err := vm.EnsureBridge(ctx, out, n.Gateway()+"/24"); err != nil {
-		return err
-	}
-	if err := vm.EnsureWireGuard(ctx, out, n.Octet()); err != nil {
-		return err
-	}
-
 	ui.Step(out, "VM-local SSH key")
 	if err := vm.EnsureSSHKey(ctx, out); err != nil {
 		return err
@@ -135,6 +124,19 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 	if err := setupNetworkAndVolume(ctx, out, p, n); err != nil {
+		return err
+	}
+
+	// After the podman network is *registered* (netavark records mpd-internal's
+	// subnet before any bridge owns it) but before dnsmasq and caddy bind the
+	// gateway: create the static networkd bridge mpdbr0 with the gateway
+	// address, so it exists at boot and netavark just attaches containers to it
+	// instead of creating one on demand. wg0 gives the Mac an encrypted path to
+	// 10.163.<NNN>.x (peer added by mpd-virt).
+	if err := vm.EnsureBridge(ctx, out, n.Gateway()+"/24"); err != nil {
+		return err
+	}
+	if err := vm.EnsureWireGuard(ctx, out, n.Octet()); err != nil {
 		return err
 	}
 
