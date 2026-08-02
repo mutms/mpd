@@ -129,10 +129,10 @@ func Setup(ctx context.Context, out io.Writer) error {
 
 	// After the podman network is *registered* (netavark records mpd-internal's
 	// subnet before any bridge owns it) but before dnsmasq and caddy bind the
-	// gateway: create the static networkd bridge mpdbr0 with the gateway
-	// address, so it exists at boot and netavark just attaches containers to it
-	// instead of creating one on demand. wg0 gives the Mac an encrypted path to
-	// 10.163.<NNN>.x (peer added by mpd-virt).
+	// gateway: create the static bridge mpdbr0 (a systemd oneshot) with the
+	// gateway address, so it exists at boot and netavark just attaches
+	// containers to it instead of creating one on demand. wg0 gives the Mac an
+	// encrypted path to 10.163.<NNN>.x (peer added by mpd-virt).
 	if err := vm.EnsureBridge(ctx, out, n.Gateway()+"/24"); err != nil {
 		return err
 	}

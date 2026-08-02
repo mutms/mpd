@@ -93,8 +93,13 @@ var requiredPackages = []struct{ Package, Binary string }{
 	{"uidmap", "/usr/bin/newuidmap"},
 	{"nftables", "/usr/sbin/nft"},
 	// WireGuard endpoint for the encrypted host↔VM overlay (mpd-virt/mpd-proxy):
-	// wg-quick brings up wg0, wg generates and inspects keys.
+	// wg-quick brings up wg0, wg generates and inspects keys. wireguard-go is
+	// the userspace implementation wg-quick falls back to automatically when the
+	// kernel has no WireGuard module — Apple containers run a lightweight VM
+	// kernel that ships none, so wg0 there is userspace; the Parallels VMs use
+	// the in-kernel module and leave wireguard-go installed but unused.
 	{"wireguard-tools", "/usr/bin/wg"},
+	{"wireguard-go", "/usr/bin/wireguard-go"},
 	// The VM's resolver. dnsmasq-base is the binary alone; the `dnsmasq`
 	// package would additionally install a second unit reading
 	// /etc/dnsmasq.conf, which is the sysadmin's file and not mpd's.
