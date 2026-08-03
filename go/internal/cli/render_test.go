@@ -11,9 +11,9 @@ import (
 	"github.com/mutms/mpd/go/internal/podman"
 )
 
-// Column padding must match Swift's helper exactly, including the
-// over-width case: Swift appends two spaces rather than truncating, so a
-// long name pushes the row instead of losing characters.
+// Column padding never truncates, including the over-width case: an
+// over-width name keeps all its characters and still gets two trailing
+// spaces, so a long name pushes the row instead of losing characters.
 func TestCol(t *testing.T) {
 	if got := Col("php", 14); got != "php           " {
 		t.Errorf("Col(short) = %q (len %d)", got, len(got))
@@ -27,7 +27,7 @@ func TestCol(t *testing.T) {
 }
 
 // Output is piped in tests, so colour must be off — otherwise escape
-// codes would break the diff against the Swift binary.
+// codes would leak into the rendered text.
 func TestStatusLabelIsPlainWhenNotATerminal(t *testing.T) {
 	got := StatusLabel(StatusRunning, colStatus)
 	if strings.Contains(got, "\033[") {

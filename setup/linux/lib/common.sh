@@ -3,8 +3,8 @@
 # Source from every lib/*.sh script:
 #   . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 #
-# Linux-side counterpart to the mpd-virt-macos orchestrator
-# (https://github.com/mutms/mpd-virt-macos): same job — clone or create
+# Linux-side counterpart to the mpd-virt orchestrator
+# (https://github.com/mutms/mpd-virt): same job — clone or create
 # a managed Debian Trixie VM and wire the host into it — using virsh +
 # libvirt, `ip route` instead of macOS's `route`, a systemd-resolved
 # drop-in instead of /etc/resolver/, and ca-certificates + NSS DB
@@ -397,8 +397,8 @@ remove_desktop_shortcut() {
 }
 
 # --- CA generation (host-side) ---
-# Bash twin of cert.GenerateCA in go/internal/cert/ca.go
-# and the Swift CA generator in mpd-virt-macos (CA.swift). KEEP IN SYNC
+# Bash twin of cert.GenerateCA in go/internal/cert/ca.go and the
+# mpd-virt repo's Go CA generator (go/internal/ca). KEEP IN SYNC
 # across all three.
 #
 # pathlen:1 is load-bearing. The root signs a per-VM intermediate (see
@@ -442,7 +442,8 @@ EOF
 }
 
 # --- Per-VM signing CA ---
-# Bash twin of MpdVirt.CA.generateVMCA in mpd-virt-macos (CA.swift).
+# Bash twin of the per-VM CA generator in the mpd-virt repo's Go `ca`
+# package (LoadOrGenerateVM in go/internal/ca).
 #
 # The root's private key stays on this host. What a VM gets is its own
 # intermediate, name-constrained to that VM's zone, which the in-VM `mpd`

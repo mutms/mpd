@@ -213,7 +213,7 @@ func discover(ctx context.Context, p *podman.Client, ev Event, audience Audience
 	case AudienceRuntime:
 		// base + per-runtime only. There is deliberately NO project-type
 		// layer for runtime-audience events: adding one would fire hooks
-		// the Swift implementation never fired (docs/HOOKS.md v1).
+		// outside the v1 hook contract (docs/HOOKS.md).
 		dirs = append(dirs, filepath.Join(assetsDir, "runtime-base", "hooks", ev.Name+".d"))
 		if runtime := containerLabel(ctx, p, container, "mpd.name"); runtime != "" {
 			dirs = append(dirs, filepath.Join(assetsDir, "runtimes", runtime, "hooks", ev.Name+".d"))

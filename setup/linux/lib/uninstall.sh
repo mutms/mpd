@@ -1,6 +1,6 @@
 #!/bin/bash
 # uninstall.sh — undo host networking + trust, then (per-VM y/N) delete
-# mpd VMs. Same shape as mpd-virt-macos's `mpd-virt uninstall`.
+# mpd VMs. Same shape as mpd-virt's `mpd-virt uninstall`.
 #
 # Order is deliberate: host cleanup runs first, VM deletion is the last
 # step. Ctrl-C during the per-VM prompts therefore leaves the host fully

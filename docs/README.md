@@ -13,7 +13,7 @@ In rough order of when you'll want them:
 - The bootstrap doc for your chosen mode (linked from the top-level
   README's "Get started" section):
   - [`../setup/sandbox/README.md`](../setup/sandbox/README.md) — Sandbox VM (any hypervisor)
-  - [`mpd-virt-macos`](https://github.com/mutms/mpd-virt-macos) (separate repo) — mpd VM on macOS via Parallels / UTM
+  - [`mpd-virt`](https://github.com/mutms/mpd-virt) (separate repo) — mpd VM on macOS via Parallels / UTM
   - [`../setup/linux/README.md`](../setup/linux/README.md) — mpd VM on Ubuntu via libvirt/KVM
   - [`../setup/windows/README.txt`](../setup/windows/README.txt) — mpd VM on Windows via Hyper-V
 - [`USAGE.md`](USAGE.md) — universal day-to-day handbook. Project

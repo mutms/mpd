@@ -12,8 +12,7 @@ GO_DIR := $(CURDIR)/go
 # Go's default GOTOOLCHAIN=auto silently downloads a whole toolchain —
 # 210 MB — when go.mod, or any dependency's go.mod, names a newer
 # version than the installed one. That happens per VM, at build time,
-# over the network, with no warning: exactly the cost we removed by
-# dropping the Swift toolchain. `local` turns it into an immediate,
+# over the network, with no warning. `local` turns it into an immediate,
 # legible build failure instead.
 #
 # If you hit that failure: lower the `go` directive in go/go.mod, or

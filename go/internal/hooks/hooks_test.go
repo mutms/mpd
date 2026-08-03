@@ -98,7 +98,7 @@ func TestScriptsAreOrderedWithinALayer(t *testing.T) {
 // before a more specific one.
 //
 // There is deliberately NO project-type layer for runtime-audience
-// events: the Swift implementation does not scan it, and firing hooks it
+// events: the Go implementation does not scan it, and firing hooks it
 // never fired would be a silent behaviour change. The type directory
 // below exists precisely to prove it is ignored.
 func TestLayerOrderExcludesProjectType(t *testing.T) {

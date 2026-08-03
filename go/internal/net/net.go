@@ -1,11 +1,6 @@
 // Package net is the single source of truth for mpd's addressing: the
 // container subnet and the DNS zone, both derived from the VM's id.
 //
-// Nothing outside this package should contain "10.163." or "mpd.test" as
-// a literal. The Swift implementation learned this the hard way — the
-// same two facts were spread across ~165 lines before Mpd.Net collected
-// them.
-//
 // # Model
 //
 // Each VM owns one /24 and one DNS zone, both keyed on MPD_VM_ID: VM 150

@@ -34,7 +34,7 @@ finalize (VS Code, GNOME launcher, `mpd --vm-setup`, pre-warm).
 bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/sandbox/take-over-sandbox-vm.sh)
 ```
 
-### Managed VM (mpd-virt-macos / mpd-virt-linux / mpd-virt-windows)
+### Managed VM (mpd-virt / mpd-virt-linux / mpd-virt-windows)
 
 Each orchestrator clones a **pure Debian template**, gets SSH access
 (`ssh-copy-id` or cloud-init-injected key), then runs the steps:

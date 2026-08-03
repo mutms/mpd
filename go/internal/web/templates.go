@@ -14,10 +14,9 @@ const shellHTML = `{{define "page"}}<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 {{/* The title is the VM hostname (mpd-NNN) and nothing else: it is a
-     cross-repo contract. mpd-virt diag curls https://<zone>/ and parses
-     this title to prove resolver + routing + TLS reach THIS VM, and to
-     catch another VM answering for the zone (mpd-virt-macos,
-     mpd-virt/Verbs/Diag.swift: parseTitleVmId). Zone goes in the
+     cross-repo contract. The host-side mpd-virt can curl https://<zone>/
+     and parse this title to prove resolver + routing + TLS reach THIS VM,
+     and to catch another VM answering for the zone. Zone goes in the
      heading, not here. */}}
 <title>{{.Host}}</title>
 <script src="/static/htmx.min.js"></script>

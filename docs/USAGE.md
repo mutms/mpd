@@ -11,8 +11,8 @@ You need a Debian Trixie VM with `mpd` built and reachable over SSH.
 Pick the path that matches your host:
 
 - **macOS + Parallels / UTM (automated)** —
-  [`mpd-virt-macos`](https://github.com/mutms/mpd-virt-macos) (separate
-  repo). Swift CLI orchestrator `mpd-virt`: `clone` against a Parallels
+  [`mpd-virt`](https://github.com/mutms/mpd-virt) (separate
+  repo). CLI orchestrator `mpd-virt`: `clone` against a Parallels
   template VM or `create` against UTM via cloud-init, then the
   bootstrap pipeline runs over SSH and applies macOS networking (route,
   resolver, CA trust). `mpd-virt diag` re-applies host

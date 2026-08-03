@@ -141,12 +141,12 @@ across docs.
   proposal is deleted once it ships — the code and the canonical docs
   become the record, and git keeps the reasoning.
 - *(Architecture proposals for the host-side `mpd-virt` orchestrator
-  live in the separate `mpd-virt-macos` repo under
+  live in the separate `mpd-virt` repo under
   `docs/proposals/`.)*
 - `docs/USAGE.md` — day-to-day workflow (bootstrap → first project → SSH-into-runtime)
 - `docs/NETWORKING.md` — networking model (static route via mpd-virt)
 - `docs/SECURITY.md` — security model
-- macOS automation (Parallels / UTM) lives in the sibling `mpd-virt-macos` repo: <https://github.com/mutms/mpd-virt-macos>
+- macOS automation (Parallels / UTM) lives in the sibling `mpd-virt` repo: <https://github.com/mutms/mpd-virt>
 - `setup/linux/README.md` — Ubuntu host + libvirt/KVM automation
 - `setup/windows/README.txt` — Windows host + Hyper-V automation
 - `setup/sandbox/README.md` — graphical "live in the VM" Debian sandbox
