@@ -44,6 +44,16 @@ WantedBy=default.target`
 
 // InstallShutdownUnit writes, enables and starts the unit. Idempotent:
 // it rewrites and re-enables on every call.
+//
+// The start is `--no-block`, and that is load-bearing. This runs inside
+// `mpd --vm-setup`, which holds mpd's command flock; the unit's
+// ExecStart (`mpd --vm-start`) takes that same lock. A blocking start
+// would deadlock — vm-setup waits for `systemctl start` to return,
+// `start` waits for --vm-start, --vm-start waits for the lock vm-setup
+// holds — breaking only at TimeoutStartSec (the unit lands `failed` after
+// a 5-minute hang). `--no-block` enqueues the job and returns, so
+// vm-setup finishes and releases the lock, then --vm-start proceeds and
+// the unit reaches active.
 func InstallShutdownUnit(ctx context.Context, user string) error {
 	unitDir := filepath.Join(Home(), ".config", "systemd", "user")
 	if err := os.MkdirAll(unitDir, 0o755); err != nil {
@@ -57,7 +67,7 @@ func InstallShutdownUnit(ctx context.Context, user string) error {
 	for _, args := range [][]string{
 		{"--user", "daemon-reload"},
 		{"--user", "enable", "mpd.service"},
-		{"--user", "start", "mpd.service"},
+		{"--user", "start", "--no-block", "mpd.service"},
 	} {
 		_, _ = exec.Run(ctx, exec.Cmd{Name: "systemctl", Args: args})
 	}
