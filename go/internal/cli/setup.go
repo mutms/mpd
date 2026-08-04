@@ -139,6 +139,13 @@ func Setup(ctx context.Context, out io.Writer) error {
 	if err := vm.EnsureWireGuard(ctx, out, n.Octet()); err != nil {
 		return err
 	}
+	// Seal the container subnet from outside: the Mac and LAN reach services
+	// only via caddy/dnsmasq on the gateway .1 and SSH ProxyJump, never a
+	// container IP directly, so nothing external needs to route into
+	// 10.163.<NNN>.0/24. Container outbound NAT is untouched.
+	if err := vm.EnsureFirewall(ctx, out, n.Subnet()); err != nil {
+		return err
+	}
 
 	// Before anything touches /srv: this is what makes the path exist on
 	// the VM at all, and it must resolve to the same tree containers see.

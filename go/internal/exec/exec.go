@@ -48,6 +48,7 @@ var binaries = map[string]string{
 	// mpd itself, so `--vm-upgrade` can apply the binary it just built
 	// rather than the one it is running.
 	"mpd":                    "/opt/mpd/bin/mpd",
+	"nft":                    "/usr/sbin/nft",
 	"openssl":                "/usr/bin/openssl",
 	"ping":                   "/usr/bin/ping",
 	"podman":                 "/usr/bin/podman",
