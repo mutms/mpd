@@ -113,19 +113,17 @@ the expense of the asset designed to be thrown away.
 
 ```
 Laptop (macOS)
-  |
-  | hypervisor network + host static route (10.163.<NNN>.0/24 → VM IP)
-  |
-VM host (Debian Trixie)
-  |
-  net.ipv4.ip_forward=1; mpdbr0 bridge (10.163.<NNN>.1/24)
-  |   Two VM processes bind here, neither a container:
-  |     dnsmasq :53  — resolver for .test, for the VM, the laptop and
-  |                    every container (podman's own DNS is disabled)
-  |     caddy  :443  — terminates TLS for the zone apex → mpd --web on
-  |                    127.0.0.1, and for adminer → .6
-  |
-  mpd-internal network (10.163.<NNN>.0/24)
+  │  reaches the VM two ways, both cryptographic:
+  │    • WireGuard overlay (udp/51820, via mpd-proxy) → the VM gateway .1
+  │    • SSH (tcp/22) → management, ProxyJump into runtimes, SOCKS fallback
+  │
+VM host (Debian Trixie)     exposes ONLY :22 (sshd) + :51820 (wg) on its LAN IP
+  │
+  │  mpdbr0 bridge  10.163.<NNN>.1/24 — internal; nothing binds the LAN IP
+  │    dnsmasq :53  — resolver for .test (bound to .1 only)
+  │    caddy  :443  — TLS for the zone apex → mpd --web (127.0.0.1), adminer → .6
+  │
+  mpd-internal network (10.163.<NNN>.0/24) — SEALED from outside (nft firewall)
     +-- mpd-service-adminer    (10.163.<NNN>.6)
     +-- DB containers          (10.163.<NNN>.30–.99)
     +-- runtime pods           (10.163.<NNN>.100+, with per-runtime sidecars)
@@ -134,23 +132,40 @@ VM host (Debian Trixie)
 DNS zone (<NNN>.mpd.test) — see docs/NETWORKING.md.
 ```
 
-The container subnet is reachable from anything that can reach the VM
-*and* has a route for `10.163.<NNN>.0/24` pointing at it. The boundary is
-therefore whatever network the VM sits on:
+**The container subnet is not reachable from outside the VM.** Only the
+gateway `.1` (caddy + dnsmasq) is exposed to the laptop, and only through
+the WireGuard overlay; the container IPs behind it are sealed by an in-VM
+nftables firewall (`mpd-firewall.service`, installed by `mpd --vm-setup`)
+that drops any forwarded packet into `10.163.<NNN>.0/24` from an interface
+other than the bridge itself. Container→internet (masquerade) is untouched.
 
-- **Desktop hypervisor** (Parallels shared, libvirt default, Hyper-V
-  Default Switch) — the VM is on a NAT'd network the developer's own
-  machine owns. Nothing on the wider LAN can reach it.
-- **LAN-hosted hypervisor** (Proxmox) — the VM is on the local
-  network, so any machine on that LAN can install the same route and
-  reach the containers. This is **accepted, and on balance preferred**:
-  the untrusted environment moves off the workstation entirely. What is
-  exposed is a machine whose whole purpose is to run untrusted code.
+So the VM's exposed attack surface is exactly **two ports, both
+cryptographically authenticated**:
 
-No container port is published beyond the VM in either case, and
-authentication of individual endpoints is per-service — SSH keys for
-runtimes, none for the read-only portal. So a LAN
-neighbour who adds the route gets the portal and the DBs, not a shell.
+- **`udp/51820` — WireGuard.** mpd-proxy on the laptop is the only
+  authorised peer; wg silently drops anything else.
+- **`tcp/22` — SSH.** Pubkey-only, root login disabled.
+
+Everything else — portal, adminer, databases, runtimes — lives behind
+those two doors: HTTP(S) via caddy on `.1` (over the overlay, or over a
+SOCKS tunnel through sshd), shells via ProxyJump through sshd. Nothing is
+published on the VM's LAN address.
+
+**Topology therefore no longer matters — and that is the security win.**
+Because the only things reachable across the network are wg and ssh, a VM
+is safe to run anywhere the laptop can reach it by IP:
+
+- **Desktop hypervisor** (Parallels, UTM, Hyper-V) — a NAT'd host-only
+  network the laptop owns.
+- **LAN- or datacentre-hosted** (Proxmox, a cloud VM) — a routable IP,
+  even a public one. A LAN neighbour or an internet scanner sees only wg
+  (silent) and ssh (pubkey-only); the container subnet is invisible to
+  them. This is **preferred**: the untrusted environment moves off the
+  workstation entirely, and the hardened surface makes the exposure safe.
+
+Under the previous routed-subnet model any host that added the route
+reached the portal and DBs. That is no longer true: caddy no longer binds
+the LAN IP, and the firewall drops inbound routing into the subnet.
 
 **Who is trusted**: the developer. They have full access to
 everything — SSH into runtimes, read/write all source code, admin
@@ -162,17 +177,21 @@ guests that happen to be given a comfortable cage.
 
 ## Network access control
 
-Nothing is published on the VM's own LAN address. caddy binds only the
-podman bridge gateway `10.163.<NNN>.1`, and every container address is
-inside `10.163.<NNN>.0/24` — so the whole environment, status page
-included, is reachable only by a host that routes that subnet through
-the VM.
+Nothing is published on the VM's own LAN address. caddy and dnsmasq bind
+only the podman bridge gateway `10.163.<NNN>.1`, every container address
+is inside `10.163.<NNN>.0/24`, and an nftables firewall
+(`mpd-firewall.service`, installed by `mpd --vm-setup`) drops new inbound
+connections into that subnet from any interface but the bridge. So the
+container subnet is reachable only *by the VM itself* — caddy proxying to
+a container, sshd jumping into a runtime — never directly from the laptop
+or the LAN.
 
-The VM has `net.ipv4.ip_forward=1` (set by
-`bootstrap/30-networking.sh`) — needed to route between the VM's
-external NIC and `mpdbr0`. It forwards for anyone who can reach the
-VM and has the route; on a LAN-hosted VM that means the LAN. Don't put
-an mpd VM on a network you don't trust.
+`net.ipv4.ip_forward=1` stays on (netavark needs it for the
+container→internet masquerade), but forwarding *into* the subnet is what
+the firewall blocks. The two are independent: outbound NAT keeps working,
+inbound routing is denied — so an mpd VM is safe even on an untrusted
+network, its only exposed ports being sshd and WireGuard. See
+`docs/NETWORKING.md`.
 
 ## Portal security
 
@@ -196,9 +215,10 @@ name from the project name (see "Database credentials" below).
 
 The package doc states these constraints, and they hold regardless of
 authentication: a password would change who may look, not what the page
-is allowed to do. There is no authentication today; anything with a
-route to the container subnet — including project code running in a
-runtime, which reaches the gateway — can read it.
+is allowed to do. There is no authentication today; anything that can reach the gateway
+`.1` can read it — the laptop over the overlay or the SOCKS tunnel, and
+project code running in a runtime (which reaches the gateway from inside).
+It is not reachable from the LAN.
 
 ## TLS and the certificate authority
 
@@ -380,20 +400,20 @@ File transfer has no endpoint of its own. The data volume is mounted on
 the VM at `/srv`, so `/srv/backups/` is reached over the VM's own sshd —
 the connection the developer already has.
 
-Reachable via the routed container subnet or via SSH ProxyJump
-through the VM — no published ports.
+Reachable via SSH ProxyJump through the VM's sshd — the alias mpd-virt
+writes (`mpd-<NNN>-php` etc.). The runtimes are not directly reachable
+from the laptop; the jump lands on the VM's sshd, which reaches the
+runtime over the internal bridge. No published ports.
 
 SSH agent forwarding (`ssh -A`) is optional for runtimes that need
 host-agent-backed git/auth inside the container. It passes the
 developer's key into the container for the session — the private key
 never touches the container filesystem.
 
-**Lost the laptop's private key?** The simplest recovery is to
-re-clone the template via `mpd-virt clone` and side-by-side it with
-the old VM until you've migrated anything you care about. If you want
-to rescue the existing VM instead, boot it via the hypervisor's
-console into single-user mode and replace
-`~/.ssh/authorized_keys` directly.
+**Lost the laptop's private key?** Reach the VM through the hypervisor's
+own guest console (or single-user mode) and replace
+`~/.ssh/authorized_keys` with your new public key directly — there is no
+network path in without a trusted key.
 
 ### Database credentials
 
@@ -405,8 +425,10 @@ Dev-only credentials — not designed for security:
 | MariaDB    | user/pass/db = `<project>` | `root` / `root`         |
 | MySQL      | user/pass/db = `<project>` | `root` / `root`         |
 
-Databases are reachable only from the routed container subnet (or from
-inside containers). No DB ports are exposed on `0.0.0.0` of the LAN.
+Databases are reachable from inside containers, and from the laptop only
+by tunnelling through the VM's sshd (`ssh -L`) or the SOCKS proxy — their
+container IPs are sealed from direct outside access by the firewall. No DB
+ports are exposed on the VM's LAN address.
 
 ## Key and credential storage
 
@@ -439,9 +461,11 @@ same data volume — a process in the `php` runtime can read files
 belonging to `node` runtime projects. This is intentional for a
 single-developer environment.
 
-Containers are unreachable from the laptop until the host static route
-for `10.163.<NNN>.0/24` is installed. The VM host can reach containers
-natively via `mpdbr0`.
+Container IPs are unreachable from the laptop and the LAN: the in-VM
+firewall drops inbound routing into `10.163.<NNN>.0/24`, and the laptop's
+overlay carries only the gateway `.1`. The VM host itself reaches
+containers natively via `mpdbr0` (caddy proxies to them, sshd jumps into
+them).
 
 ## What mpd does NOT protect against
 
@@ -468,7 +492,7 @@ would be unacceptable in production.
 | Compromise                                                   | Rationale                                                                                                                                                                                                                                    |
 |--------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Passwordless `sudo` inside containers                        | Dev needs root for package installs, service restarts, config changes. No security boundary between the dev user and root inside a container.                                                                                                |
-| Apache `Require all granted` + `AllowOverride All`           | Every project is fully accessible — no auth, no IP restrictions. Access control is at the network level (the container subnet is routed only from the developer's own machine), not the web server level.                                                                                        |
+| Apache `Require all granted` + `AllowOverride All`           | Every project is fully accessible — no auth, no IP restrictions. Access control is at the network level (the container subnet is sealed from outside the VM by the firewall and reached only over the developer's authenticated WireGuard/SSH), not the web server level.                                                                                        |
 | PostgreSQL `synchronous_commit=off`                           | Trades a little crash durability for speed: an unclean shutdown loses at most the last fraction of a second of commits. Bounded, and no corruption. `full_page_writes` is deliberately left ON — turning it off risks a torn page postgres cannot repair, and unclean shutdowns are routine here (an OOM'd VM never runs `mpd --vm-stop`, so the graceful-shutdown hooks never fire). Losing seconds of work is an acceptable dev tradeoff; losing the database is not. |
 | Behat uses a separate subdomain                              | Behat runs on `behat.<project>.<NNN>.mpd.test` (HTTPS, same cert). The mpd CA is installed in the Selenium container so Chromium trusts `*.mpd.test` certificates.                                                                                 |
 | Shared data volume across all containers                     | All runtimes, DB containers, and services mount `mpd-data-volume` at `/srv/`. A process in one container can read/write data belonging to another. This is the single-volume design — simplicity over isolation.                             |
@@ -488,21 +512,23 @@ operation during setup, then every project and runtime gets a trusted
 certificate automatically. No browser warnings, no `--insecure` flags,
 no per-cert trust clicks. Name constraints limit the blast radius.
 
-**Why a routed subnet instead of port forwarding?** Direct IP access
-to every container: SSH on standard port 22, HTTPS on standard port
-443, multiple runtimes with the same ports, no port conflict
-management. One persistent static route plus a scoped resolver entry
-per VM, installed once by `mpd-virt` — nothing to toggle daily, and it
-coexists with a corporate VPN instead of fighting it for a tunnel
-slot.
+**Why a WireGuard overlay (mpd-proxy) for daily use?** The laptop needs
+each VM's gateway `.1` for HTTPS and DNS, and the container subnet must
+*not* be exposed on the LAN. mpd-proxy runs one WireGuard `utun` on the
+laptop and adds each VM as a peer routing only `10.163.<NNN>.1/32`, with
+one split-DNS resolver — so several VMs are reachable at once through one
+encrypted tunnel, no per-VM route or `/etc/resolver` file, coexisting with
+a corporate VPN. It is the daily driver for anyone running more than one
+VM. (It supersedes both the earlier *flat* host-only WireGuard tunnel —
+which allowed only one active tunnel and so reached one VM — and the
+interim routed-subnet model, which exposed container IPs on the LAN and is
+now sealed by the firewall.)
 
-**Why not WireGuard any more?** mpd previously tunnelled host → VM
-because the container network of the day couldn't be routed into from
-the host at all — the tunnel was the only way to get direct container
-IPs. Once mpd moved to its own VM under a real hypervisor, a plain
-static route does the same job. The tunnel then only cost: macOS
-allows one active tunnel at a time, so it could never reach two mpd
-VMs at once and it competed with the developer's work VPN for that
-single slot. Removing it trades an authenticated transport for a
-network-level boundary — see "Trust boundaries" above for what that
-means on a LAN-hosted VM.
+**Why SOCKS-over-SSH as the simple path?** mpd-proxy needs `sudo` (it
+creates a utun) — more than an occasional user needs. `ssh -N
+mpd-<NNN>-socks` opens a SOCKS5 proxy on `127.0.0.1:1080` that tunnels
+through the VM over plain SSH; point a dedicated browser at it (remote DNS
+on) and `*.mpd.test` resolves and serves via the VM's own caddy — no sudo,
+no overlay, one VM at a time. Trust the CA in that browser (or the System
+Keychain) and HTTPS just works. **This is the recommended starting point
+for a new developer;** graduate to mpd-proxy when you run VMs every day.

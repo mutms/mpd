@@ -669,7 +669,7 @@ Read/write contract:
   `scp <vm>:/srv/backups/<file> .` pulls a backup off; reverse direction
   stages a restore. No dedicated endpoint and no extra host key — this
   is the same SSH connection the developer already uses to reach the
-  `mpd` CLI, so it works in both modes and needs no static route.
+  `mpd` CLI, so it works in both modes and needs no overlay or proxy.
 
 Wipe contract:
 
@@ -681,20 +681,23 @@ Wipe contract:
 
 ## 11) Networking, DNS, and TLS (Summary)
 
-- Laptop ↔ VM transport is the hypervisor's own network plus a
-  persistent static route for the container subnet `10.163.<NNN>.0/24`
-  via the VM's IP (installed by the host-side `mpd-virt` orchestrator,
-  separate repo). No tunnel.
+- Laptop ↔ VM transport reaches only the VM's gateway `.1`, two ways: the
+  **mpd-proxy WireGuard overlay** (daily, transparent, several VMs at once)
+  or a **SOCKS-over-SSH** tunnel (`ssh -N mpd-<NNN>-socks`, sudo-free, one
+  VM — the simple path for a new dev). Both driven by the host-side
+  `mpd-virt` orchestrator + its `mpd-proxy` helper (separate repos). The
+  container subnet itself is sealed from outside by an in-VM nft firewall,
+  so the VM exposes only sshd + WireGuard.
 - Addressing is per-VM: `<NNN>` is the VM's `MPD_VM_ID`, used as both the
   third octet of the subnet and the first label of the DNS zone, so
   several VMs are reachable from one workstation at once. `Mpd.Net`
   (`go/internal/net/net.go`) is the single source of truth; nothing else should
   contain `10.163.` or `mpd.test` as a literal.
 - dnsmasq runs **on the VM** (not in a container) and is authoritative for
-  `.test`; the host gets a *scoped* resolver entry pointing the VM's zone
-  at `10.163.<NNN>.1` (`/etc/resolver/<NNN>.mpd.test` on macOS, NRPT on
-  Windows, a systemd-resolved drop-in on Linux). Podman's own DNS is
-  disabled on the network so nothing else holds port 53 on the gateway.
+  `.test`, bound to the gateway `.1`. The laptop reaches it through the
+  overlay's split-DNS resolver (`/etc/resolver/mpd.test` → mpd-proxy → the
+  right VM) or the SOCKS tunnel's remote DNS. Podman's own DNS is disabled
+  on the network so nothing else holds port 53 on the gateway.
 - All TLS certs (per-project, per-runtime, services) are signed by
   the local `mpd` CA generated on the host and pushed into the VM.
 
@@ -735,12 +738,14 @@ Project URLs are project-type-driven (via `configure.sh` writing
 `/srv/meta/<project>/urls.json`) and surfaced via the frontdoor sidecar — the
 control-plane Go code never hard-codes per-runtime URL shapes.
 
-### Laptop-side split DNS (Windows note)
+### Laptop-side split DNS
 
-macOS (`/etc/resolver/<NNN>.mpd.test`) and Linux (`systemd-resolved` drop-in)
-handle split DNS natively, so `mpd --vm-setup` prints a one-line recipe and is
-done. One file per VM zone, not one for `mpd.test` — see
-[`NETWORKING.md`](NETWORKING.md) for why the entry is scoped that way.
+With the **mpd-proxy** overlay the laptop has a single
+`/etc/resolver/mpd.test` (→ mpd-proxy's forwarder on `127.0.0.1:5354`),
+which fans `*.mpd.test` out to each VM's own dnsmasq through the tunnel —
+written once, untouched as VMs come and go. With the **SOCKS** path there
+is no host resolver entry at all: the dedicated browser does remote DNS
+through the proxy. See [`NETWORKING.md`](NETWORKING.md).
 
 Windows is the awkward case. The built-in NRPT mechanism
 (`Add-DnsClientNrptRule`) works for most queries but is bypassed by some

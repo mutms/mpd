@@ -2,31 +2,32 @@
 
 How the host laptop reaches mpd's container subnet inside the VM.
 
-The host-side bits (static route, scoped DNS, CA trust) are configured
-by the **mpd-virt** orchestrator binary (separate repo) — not by the
-in-VM `mpd` binary. This document describes the topology and the
-host↔VM↔containers data path; for the actual host commands see
-`mpd-virt`'s own documentation.
+The host-side bits (the WireGuard overlay or the SOCKS fallback, split
+DNS, CA trust) are configured by the **mpd-virt** orchestrator and its
+**mpd-proxy** helper (separate repos) — not by the in-VM `mpd` binary.
+This document describes the topology and the host↔VM↔containers data path;
+for the actual host commands see `mpd-virt`'s own documentation.
 
 ## Topology
 
 ```text
-Laptop (macOS — primary)
-  |
-  | hypervisor network + static route:  10.163.<NNN>.0/24 → <VM IP>
-  |
-VM (Debian Trixie)              hostname: mpd-<NNN>
-  |
-  Podman (rootful) bridge:  mpdbr0  10.163.<NNN>.1/24
-   |    Three VM processes bind this address, and nothing else does:
-   |      dnsmasq :53   — DNS for *.test
-   |      caddy   :443  — the zone apex (mpd --web) and adminer, both HTTPS
-   |
-   `mpd-internal` Podman network    10.163.<NNN>.0/24  (podman DNS disabled)
-     |
-     +-- mpd-service-adminer     10.163.<NNN>.6   (plain HTTP; caddy fronts it)
-     +-- DB containers           10.163.<NNN>.30–.99
-     +-- runtime containers      10.163.<NNN>.100+ (full dev access via SSH)
+Laptop (macOS — primary)      reaches the VM by IP; needs only :22 + :51820
+  │
+  │  WireGuard overlay (mpd-proxy)          → the VM gateway .1 only
+  │  or  SOCKS over SSH (ssh -N mpd-<NNN>-socks) → the VM's resolver + caddy
+  │
+VM (Debian Trixie)   hostname mpd-<NNN>;  LAN IP exposes ONLY sshd + wg
+  │
+  │  Podman (rootful) bridge:  mpdbr0  10.163.<NNN>.1/24
+  │    Two VM processes bind this address (nothing binds the LAN IP):
+  │      dnsmasq :53   — DNS for *.test
+  │      caddy   :443  — the zone apex (mpd --web) and adminer, both HTTPS
+  │
+  `mpd-internal` Podman network    10.163.<NNN>.0/24  (podman DNS disabled)
+    │   SEALED from outside by an nft firewall (mpd-firewall.service)
+    +-- mpd-service-adminer     10.163.<NNN>.6   (plain HTTP; caddy fronts it)
+    +-- DB containers           10.163.<NNN>.30–.99
+    +-- runtime containers      10.163.<NNN>.100+ (dev shell via SSH ProxyJump)
 ```
 
 The bridge is named `mpdbr0` rather than taking podman's
@@ -42,44 +43,53 @@ exists but is a Wireguard interface"*. A VM created before the rename
 keeps whatever name its network was made with; mpd reads the interface
 back from podman rather than assuming, so both work.
 
-The VM runs `net.ipv4.ip_forward=1` (set by `bootstrap/30-networking.sh`)
-so packets from the laptop transit the VM and reach containers via
-`mpdbr0`.
+The VM runs `net.ipv4.ip_forward=1` (netavark needs it for the
+container→internet masquerade), but an nft firewall
+(`mpd-firewall.service`) drops any *inbound* forwarded packet into
+`10.163.<NNN>.0/24`. So the laptop reaches the gateway `.1`, never a
+container IP directly — container access is indirect by design (caddy
+proxies HTTP on `.1`; sshd ProxyJump reaches shells). See "The
+container-subnet firewall" below.
 
-## How the laptop reaches containers
+## How the laptop reaches the VM
 
-There is no tunnel. The laptop already reaches the VM over the
-hypervisor's own network (Parallels Shared, libvirt default, Hyper-V
-Default Switch), and the container subnet hangs off that:
+The laptop never reaches a container IP directly. It reaches the VM's
+gateway `.1`, where caddy (HTTPS) and dnsmasq (DNS) answer, and the VM
+does the container hop internally. There are two host-side paths, both set
+up by `mpd-virt`:
 
-- **Route** — `10.163.<NNN>.0/24` via the VM's IP, installed on the host by
-  `mpd-virt` (persistent where the OS supports it; re-asserted on
-  `start` otherwise). This is what makes container IPs reachable.
-- **DNS** — a *scoped* resolver entry pointing `*.<NNN>.mpd.test` at that
-  VM's resolver (`10.163.<NNN>.1`): `/etc/resolver/<NNN>.mpd.test` on
-  macOS, an NRPT rule for `.<NNN>.mpd.test` on Windows, a
-  systemd-resolved drop-in with `Domains=~<NNN>.mpd.test` on Linux.
-  Scoped, so only that VM's zone goes to that VM — everything else keeps
-  using the host's normal resolvers.
-- **Trust** — mpd's local CA is installed in the host's system trust
-  store (one-time at setup) so HTTPS just works.
+- **Simple — SOCKS over SSH (recommended for a new developer).** `ssh -N
+  mpd-<NNN>-socks` opens a SOCKS5 proxy on `127.0.0.1:1080` that tunnels
+  through the VM over plain SSH. Point a *dedicated browser* at it with
+  remote DNS on, and `*.mpd.test` resolves and serves via the VM's own
+  caddy/dnsmasq. No `sudo`, no overlay; one VM at a time. Trust the mpd CA
+  in that browser (or the System Keychain) and HTTPS just works.
+- **Advanced — WireGuard overlay (mpd-proxy, for daily multi-VM use).**
+  `mpd-proxy` runs one WireGuard `utun` on the laptop and adds each VM as
+  a peer routing only `10.163.<NNN>.1/32`, plus one split-DNS resolver
+  (`/etc/resolver/mpd.test` → mpd-proxy → the right VM's dnsmasq). Several
+  VMs are reachable at once, transparently, for *every* app — not just a
+  browser. Needs `sudo mpd-proxy up` once.
 
-Those three facts are the whole client contract, and they're identical
-on macOS, Linux, and Windows. A scoped route plus scoped DNS coexists
-cleanly with a corporate VPN; nothing has to be toggled on or off to
-use mpd.
+Both terminate at `.1`; neither exposes the container subnet (the
+mpd-proxy peer is scoped to `.1/32`, and the firewall drops inbound
+routing into the subnet regardless). Both coexist with a corporate VPN.
+**Trust** is the same either way: the mpd root CA in the System Keychain
+(transparent, every app) or imported into the dedicated browser (no
+`sudo`) makes `*.mpd.test` HTTPS trusted.
 
-**One resolver entry per VM zone, not one for `mpd.test`.** The scope is
-the point: two VMs are two zones, and a catch-all entry for the whole
-tree would send both to whichever resolver was configured last. So the
-macOS file is `/etc/resolver/<NNN>.mpd.test`, and the Windows and Linux
-equivalents name the same zone.
+### The container-subnet firewall
 
-A catch-all `/etc/resolver/mpd.test` means something different and is not
-the mpd client contract: it hands the whole tree to one resolver that is
-authoritative for more than a single VM. That is a deliberate topology,
-and it *replaces* the per-VM entries rather than sitting alongside them,
-since a catch-all would shadow them.
+`mpd --vm-setup` installs `mpd-firewall.service` — an independent nftables
+table whose forward chain drops NEW connections into `10.163.<NNN>.0/24`
+from any interface but `mpdbr0`, while leaving `established,related` and
+the container→internet masquerade (netavark's own table) untouched. So a
+container reaches out to the internet, and the VM reaches its own
+containers, but nothing *outside* the VM — laptop, LAN, a compromised
+overlay — can open a connection to a container IP. Combined with caddy and
+dnsmasq binding only `.1` (never the LAN address), the VM's whole external
+surface is `tcp/22` (sshd) + `udp/51820` (WireGuard), both cryptographic —
+which is what lets an mpd VM run safely anywhere reachable by IP.
 
 ## Per-VM addressing
 
@@ -131,7 +141,7 @@ Everything asks it at the same address, `10.163.<NNN>.1`:
 | --- | --- |
 | Containers | `--dns 10.163.<NNN>.1` at create time, one nameserver, no fallback |
 | The VM | systemd-resolved drop-in: `DNS=10.163.<NNN>.1`, `Domains=~mpd.test` |
-| The laptop | scoped resolver entry (see above) |
+| The laptop | mpd-proxy split DNS (`/etc/resolver/mpd.test`), or SOCKS remote DNS — see above |
 
 Podman's own DNS is **off** (`--disable-dns` on the network). Otherwise
 aardvark-dns would hold port 53 on the gateway, which is where dnsmasq
@@ -246,8 +256,9 @@ not a container subnet address. It's written into `services.hosts` by
 `dnsmasq.Manager.EnsureServiceRecords` and skipped on sandbox VMs (where
 `MPD_VM_IP` is empty).
 
-The purpose is identity verification: `mpd-virt diag` on the Mac queries
-this name and compares the answer to the VM's known IP. A match proves
+The purpose is identity verification: `mpd-virt`'s reachability check on
+the Mac queries this name and compares the answer to the VM's known IP. A
+match proves
 the Mac is talking to **this specific VM's** dnsmasq — not some other
 resolver that happens to know about the zone. With per-VM subnets a
 reply from `10.163.<NNN>.1` can only be that VM's resolver, so this is
@@ -256,20 +267,14 @@ catches registry IP drift on the host side.
 
 ## SSH access to runtime containers
 
-Two parallel paths, both fine:
-
-**Direct** — container names resolve and container IPs route, so:
-
-```
-ssh user@php.runtime.<NNN>.mpd.test
-```
-
-**Via SSH ProxyJump through the VM** — works even without host-side
-route/DNS config, since the VM's address is reachable via the
-hypervisor's own network:
+From the laptop, **via SSH ProxyJump through the VM** — the runtime's
+container IP is not reachable directly (the firewall seals the subnet), so
+the jump lands on the VM's sshd, which reaches the runtime over the
+internal bridge. This also needs no overlay or SOCKS: it rides plain SSH
+to the VM, so it works even when mpd-proxy is down.
 
 ```
-# ~/.ssh/config:
+# ~/.ssh/config (written automatically by mpd-virt):
 Host mpd-<octet>-php
     HostName php.runtime.<NNN>.mpd.test
     User user
@@ -277,7 +282,7 @@ Host mpd-<octet>-php
 ```
 
 IDEs (PHPStorm Gateway, VS Code Remote-SSH) configure ProxyJump the same
-way. mpd-virt writes these SSH config entries automatically.
+way.
 
 **From a terminal inside the VM** — `mpd --vm-setup` writes the same
 `mpd-<NNN>-<rt>` aliases into the VM's own `~/.ssh/config`, minus the

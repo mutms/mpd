@@ -20,10 +20,10 @@ In rough order of when you'll want them:
   lifecycle, SSH into the runtime, tools list, git auth via agent
   forwarding, project backups. Applies to both modes once setup
   has completed.
-- [`NETWORKING.md`](NETWORKING.md) — host ↔ VM ↔ container routing
-  model for laptop-driven setups (static route, scoped DNS,
-  ProxyJump SSH config). Read when reachability isn't working or
-  you're curious about the path packets take.
+- [`NETWORKING.md`](NETWORKING.md) — host ↔ VM ↔ container reachability
+  model: the WireGuard overlay (mpd-proxy) or the SOCKS-over-SSH fallback,
+  split DNS, the container-subnet firewall, ProxyJump SSH config. Read when
+  reachability isn't working or you're curious about the path packets take.
 - [`SECURITY.md`](SECURITY.md) — trust boundaries, threat model,
   what mpd is and isn't designed to protect. Read when you're
   deciding whether to let an AI agent loose, or when something

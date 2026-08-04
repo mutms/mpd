@@ -10,14 +10,14 @@ out where they matter.
 You need a Debian Trixie VM with `mpd` built and reachable over SSH.
 Pick the path that matches your host:
 
-- **macOS + Parallels / UTM (automated)** —
-  [`mpd-virt`](https://github.com/mutms/mpd-virt) (separate
-  repo). CLI orchestrator `mpd-virt`: `clone` against a Parallels
-  template VM or `create` against UTM via cloud-init, then the
-  bootstrap pipeline runs over SSH and applies macOS networking (route,
-  resolver, CA trust). `mpd-virt diag` re-applies host
-  config when needed; `mpd-virt delete` / `uninstall` tear everything
-  down. VM start / suspend / shutdown via `mpd-virt start|stop` or the
+- **macOS + Parallels / UTM / Proxmox / cloud (automated)** —
+  [`mpd-virt`](https://github.com/mutms/mpd-virt) (separate repo).
+  `mpd-virt takeover <NNN> <IP>` adopts any reachable Debian Trixie box:
+  it runs the bootstrap pipeline over SSH, installs `mpd`, and wires host
+  reachability — the **mpd-proxy WireGuard overlay** for daily transparent
+  access, or a **SOCKS-over-SSH** fallback (`ssh -N mpd-<NNN>-socks`) that
+  needs no sudo. `mpd-virt delete` / `uninstall` tear things down; VM power
+  (where the backend supports it) via `mpd-virt start|stop` or the
   hypervisor's GUI.
 - **Ubuntu 26.04 LTS + libvirt/KVM (automated)** —
   [`setup/linux/`](../setup/linux/README.md).
@@ -69,14 +69,14 @@ orchestrator (own repo); see its README for the host-side flow.
 
 ## Hooking up your laptop (laptop-driven platforms only)
 
-The laptop-driven platforms (macos, linux, windows)
-reach that VM's container subnet (`10.163.<NNN>.0/24`) over a static route to
-the VM, with split DNS pointing that VM's zone at its dnsmasq. **Each
-platform's bootstrap script applies all of this on the host
-automatically** — `setup.command`, `setup.sh`, or `setup.cmd` does
-the route + resolver + CA trust in one shot. You normally don't have
-to do anything by hand. Concrete network recipes (for the curious or
-for recovery) live in [NETWORKING.md](NETWORKING.md).
+The laptop reaches only the VM's gateway `.1` (caddy + dnsmasq) — the
+container subnet is sealed from outside. Two host-side paths, both set up
+by `mpd-virt`: the **mpd-proxy WireGuard overlay** (transparent, every
+app, several VMs at once — needs sudo once) for daily use, or the
+sudo-free **SOCKS-over-SSH** tunnel (`ssh -N mpd-<NNN>-socks` + a dedicated
+browser) as the simple starting point. Either way CA trust makes
+`*.mpd.test` HTTPS work. Concrete network recipes (for the curious or for
+recovery) live in [NETWORKING.md](NETWORKING.md).
 
 The **sandbox platform has no laptop side** — mpd lives entirely
 inside the VM, so there's no host route, no host resolver drop-in, and
@@ -171,13 +171,17 @@ For a session rather than a command, SSH in.
 ## SSH into the runtime
 
 This is where the AI-friendly part comes alive. Once a project is
-running, the runtime container has a real SSH endpoint at
-`<runtime>.runtime.<NNN>.mpd.test`. From your laptop, with the static route
-and DNS resolver in place:
+running, the runtime container has a real SSH endpoint. From your laptop,
+use the ProxyJump alias `mpd-virt` wrote — the container IP itself is
+sealed, so the jump rides the VM's sshd (which also means it works with no
+overlay or proxy running):
 
 ```bash
-ssh -A user@php.runtime.<NNN>.mpd.test
+ssh -A mpd-<NNN>-php
 ```
+
+Inside the VM the same alias works without the jump. Add `-A` only when
+that runtime genuinely needs your SSH agent — see [SECURITY.md](SECURITY.md).
 
 You land in the runtime as your local user (UID matched), with
 passwordless sudo, agent-forwarded git auth, and the project tree at
