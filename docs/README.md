@@ -1,17 +1,17 @@
 # mpd documentation
 
-Index for the `docs/` tree. The user-facing pitch + mode picker
-lives in [`../README.md`](../README.md) — start there if you
-haven't already.
+Index for the `docs/` tree. The top-level [`../README.md`](../README.md) is
+deliberately terse — what mpd is and the sandbox quickstart; the background
+(motivation, comparisons, workflow shape) lives in
+[`../AGENTS.md`](../AGENTS.md).
 
 ## If you're installing or using mpd
 
 In rough order of when you'll want them:
 
-- [`../README.md`](../README.md) — pitch + "Two modes" picker + first
-  bootstrap. The single starting point.
-- The bootstrap doc for your chosen mode (linked from the top-level
-  README's "Get started" section):
+- [`../README.md`](../README.md) — overview + sandbox quickstart. The
+  starting point.
+- The bootstrap doc for your chosen mode:
   - [`../setup/mpd-sandbox-setup.sh`](../setup/mpd-sandbox-setup.sh) — Sandbox VM (any
     hypervisor; run via the wget one-liner in the top-level README)
   - [`mpd-virt`](https://github.com/mutms/mpd-virt) (separate repo) — mpd VM on macOS via Parallels / UTM

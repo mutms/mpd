@@ -37,7 +37,78 @@ own self-signed CA in the VM, a managed VM gets a CA pushed by the
 host-side `mpd-virt`. A sandbox can be adopted as a managed VM later with
 no runtime change.
 
-Read `README.md` first for the user-facing overview.
+`README.md` is deliberately terse; this file carries the depth. The
+background below is the long-form context that used to live there — keep it
+here, not in README.
+
+## Background and positioning
+
+**Why mpd exists.** It grew out of a personal security stance plus a working
+pattern: the owner uses AI agents (Claude Code, Codex) to build and maintain
+Moodle plugins and wants them inside a sandbox — no Homebrew, MacPorts, Node,
+PHP, or Apache on the laptop, and no AI agent loose on it either. mpd's
+predecessor ([MDC](https://github.com/skodak/mdc)) automated OrbStack, but
+OrbStack is closed-source — for a tool that decides what your browser trusts,
+the trust-deciding code should be readable. mpd lives entirely in this repo:
+Go control plane plus shell tooling on top of Podman, with a name-constrained
+local CA that can only sign for `*.mpd.test`. The Sandbox VM is the
+recommended starting point — a whole hypervisor between dev work and host,
+with snapshot/revert as the safety net for letting an agent rip.
+
+**What it gives, day to day:**
+
+- `https://<project>.<NNN>.mpd.test/` for every project — browser-trusted
+  HTTPS via the name-constrained local CA, live the moment
+  `mpd start <project>` returns. `<NNN>` is the VM's id, so several VMs
+  coexist without name collisions (see `docs/NETWORKING.md`).
+- Per-project PHP version (`MPD_PHP_VERSION=8.4` on one project, `8.2` on the
+  next, simultaneously) and per-project database (`MPD_DB=postgres:18` —
+  `<engine>:<version>`, not a port; provisioned on demand, no shared DB
+  server with table prefixes).
+- One-verb reset: `mdl-data-purge` drops the DB, wipes dataroots, removes the
+  generated config — keeps `mpd.env` and the source tree.
+- Mailpit per project (`https://mail.<project>.<NNN>.mpd.test/`, pre-filtered)
+  and Behat + Selenium auto-wired when a project asks
+  (`https://behat.<project>.<NNN>.mpd.test/`).
+- No host pollution: no Homebrew PHP, no system Apache, no `brew upgrade`
+  breakage.
+
+**The IDE/agent workflow.** The IDE (VS Code Remote-SSH, PhpStorm Gateway)
+connects to the runtime container over SSH — the IDE process stays on the
+host; language server, Xdebug, and terminal execute inside. The AI agent is
+installed inside the runtime (`claude-install`) and runs as a process in the
+container, sharing the same files and tools the IDE edits. SSH is the clean
+integration point — no filesystem-mount layer papering over the network.
+(When the work is on mpd itself — Go sources, asset scripts — the agent runs
+in the VM instead, where the checkout and toolchain live.)
+
+**Coming from other tooling:** vs. Homebrew-native PHP+MariaDB — per-project
+containers instead of a shared stack; tradeoff is a few seconds of container
+startup vs. millisecond-fast native invocation. Vs.
+[moodle-docker](https://github.com/moodlehq/moodle-docker) — same
+daily-driver pattern plus per-project URLs with real HTTPS, per-project
+Mailpit, automatic Behat/Selenium wiring, the SSH-into-runtime endpoint, and
+the VM boundary. Vs. [DDEV](https://ddev.com/) / [Lando](https://lando.dev/)
+— the Moodle-specific cousin of the same per-project-URL + auto-TLS
+philosophy, hardened with a VM boundary and shaped around AI agents as a
+first-class consumer.
+
+**Both modes ship GNOME.** Sandbox boots into it; mpd VM defaults to headless
+but GNOME is installed and toggleable — `gnome-start` brings the desktop up
+(and pins it as the boot target until you flip back), `gnome-stop` returns to
+headless. Useful for an occasional in-VM Firefox session or GUI debugging.
+
+**Timing expectations:** first-time VM bootstrap 5–15 min (image download,
+apt, Go toolchain, build); first runtime build after `mpd --vm-setup` 3–5 min;
+subsequent `mpd start <project>` a few seconds; `demo <recipe> <name>` a few
+minutes the first time, near-instant on re-runs; VM resume from suspend,
+seconds.
+
+**Top-level repo layout:** `bin/` (built `bin/mpd` plus committed VM tools:
+`demo`, `claude-install`, `gnome-start`/`gnome-stop`), `go/` (control plane),
+`assets/` (runtime/service/sidecar definitions and shell), `bootstrap/`
+(VM bring-up steps), `setup/` (per-platform host orchestration), `docs/`.
+Runtime state lives at `/var/lib/mpd/` (see Fixed in-VM paths below).
 
 ## Fixed in-VM paths
 
