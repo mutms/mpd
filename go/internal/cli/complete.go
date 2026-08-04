@@ -120,7 +120,7 @@ func firstTokenCandidates(prefix string) []string {
 	}
 	out := append([]string{}, ProjectVerbs...)
 	sort.Strings(out)
-	return append(append(out, "list"), globalFlags...)
+	return append(append(out, "list", "version"), globalFlags...)
 }
 
 func optionValues(flag string, s state.Store, a assets.Tree) []string {

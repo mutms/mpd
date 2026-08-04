@@ -93,8 +93,10 @@ which is what lets an mpd VM run safely anywhere reachable by IP.
 
 ## Per-VM addressing
 
-`<NNN>` above is the VM's `MPD_VM_ID` — the last octet of its static IP
-(`000` for a sandbox VM). It is the discriminator in **both** halves of
+`<NNN>` above is the VM's id, taken from its hostname `mpd-<NNN>`
+(`net.Current()`; ids run 100..254 — managed platforms also use the id
+as the last octet of the VM's static IP). It is the discriminator in
+**both** halves of
 the addressing: the third octet of the container subnet, and the first
 label of the DNS zone. Nothing else varies: adminer is always `.6`,
 runtimes `.100+`, and both the resolver and the status page answer on the
@@ -251,10 +253,10 @@ one special record:
 vm.service.<NNN>.mpd.test → the VM's own LAN IP
 ```
 
-i.e. the **VM's own static IP** (e.g. `10.211.55.125` for a managed VM),
+i.e. the **VM's own LAN IP** (e.g. `10.211.55.125` for a managed VM),
 not a container subnet address. It's written into `services.hosts` by
-`dnsmasq.Manager.EnsureServiceRecords` and skipped on sandbox VMs (where
-`MPD_VM_IP` is empty).
+`dnsmasq.Manager.EnsureServiceRecords` and skipped when no address can
+be read off an interface (`vm.PrimaryIP()` — read live, never recorded).
 
 The purpose is identity verification: `mpd-virt`'s reachability check on
 the Mac queries this name and compares the answer to the VM's known IP. A

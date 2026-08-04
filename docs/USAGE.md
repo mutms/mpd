@@ -31,12 +31,12 @@ Pick the path that matches your host:
   `setup.cmd` does the same end-to-end and also configures Windows
   networking (route, NRPT DNS, CA certificate import).
 - **Sandbox (graphical, any hypervisor)** —
-  [`setup/sandbox/`](../setup/sandbox/README.md).
+  [`setup/mpd-sandbox-setup.sh`](../setup/mpd-sandbox-setup.sh).
   You install Debian Trixie with the GNOME desktop in your hypervisor
   of choice (UTM / Parallels / Hyper-V / VirtualBox / virt-manager /
-  VMware), snapshot, and run `bash take-over-sandbox-vm.sh` from inside
-  the VM. mpd lives entirely inside the VM; the host gets zero
-  DNS/route/trust changes.
+  VMware), snapshot, and run the script from inside the VM (wget
+  one-liner in the top-level README). mpd lives entirely inside the
+  VM; the host gets zero DNS/route/trust changes.
 
 End state of either path: a VM where `mpd` is on `PATH`, your laptop
 SSH key is in `~/.ssh/authorized_keys`.
@@ -57,12 +57,14 @@ Idempotent — safe to re-run any time. Walks you through:
 - mounting the data volume on the VM at `/srv`
 - installing and configuring caddy, the VM's TLS frontdoor
 - starting `mpd --web`, the status page at `https://<NNN>.mpd.test/`
-- bringing up the always-on infra containers (dnsmasq, Adminer)
+- bringing up the always-on infra services (dnsmasq as a VM unit, the
+  Adminer container)
 - a final DNS sanity check
 
-(VM-side apt installs, network stack setup, hostname/IP canonicalization,
-`mpd` build, and `/opt/mpd/bin/` on PATH all happen earlier in the
-`bootstrap/30..50` steps and don't re-run here. See `bootstrap/README.md`.)
+(VM-side apt installs, the `mpd` build, and `/opt/mpd/bin/` on PATH all
+happen earlier in the `bootstrap/40..50` steps and don't re-run here;
+the network stack and hostname are the platform bootstrap's job. See
+`bootstrap/README.md`.)
 
 Host-side trust + networking setup lives in the separate `mpd-virt`
 orchestrator (own repo); see its README for the host-side flow.
@@ -196,26 +198,6 @@ passwordless sudo, agent-forwarded git auth, and the project tree at
   runs composer / phpunit / behat, pushes to GitHub via your
   forwarded agent key.
 
-### IDE connection details from the portal
-
-Open `https://<NNN>.mpd.test/`, click **details** on a running project, and
-the popover shows an *Open in IDE* section:
-
-- **VS Code** → one-click `vscode://` Remote-SSH link with host +
-  path pre-filled. First click prompts to install the "Remote - SSH"
-  extension; subsequent clicks open the project directly.
-- **PHPStorm** → connection details (Username / Host / Port / Project
-  directory) printed as plain text. JetBrains Gateway's URL-launch
-  scheme is restrictive and varies between versions, so we don't ship
-  a clickable link — open Gateway, *New Connection → SSH*, and paste
-  the four values. Gateway remembers the connection on subsequent
-  launches.
-
-The section appears only when the project is running. Project types
-that don't hold editable code (e.g. `cftunnel`) opt out via
-`"ideLinks": false` in their `configuration.json` and don't render
-the section.
-
 If you're inside the VM (e.g. a GNOME terminal in a desktop-in-VM
 setup), use the VM-local SSH key instead of `-A` — and there is a short
 alias for every runtime:
@@ -273,8 +255,8 @@ it. Because your terminal's own file descriptors are handed to the process
 on the VM, output streams live and in colour, exit codes propagate into
 `$?`, and a confirmation prompt like `mpd delete`'s reads your keystrokes.
 
-**Only project verbs**: `create`, `configure`, `start`, `stop`, `delete`,
-`show`, `help`. Everything that acts on the VM or its infrastructure
+**Only project verbs**: `create`, `configure`, `start`, `stop`, `reset`,
+`delete`, `show`, `help`. Everything that acts on the VM or its infrastructure
 stays in a VM terminal — no `--vm-*`, no `--runtime-*`, no `--db-*`. A
 runtime has no business building runtimes or database containers.
 `mpd run` is refused too: you are already in the runtime, so run the
@@ -464,6 +446,7 @@ the wrong site. `--yes` skips the question for scripted use.
 mpd                              # status (a bare mpd falls through to --vm-status)
 mpd --vm-status                     # text status of services + projects
 
+mpd --vm-upgrade                    # pull + rebuild mpd, then re-run --vm-setup (see below)
 mpd --vm-start                      # reconcile current → requested (start runtimes/projects with state=running)
 mpd --vm-stop                       # graceful DB shutdown via EventMpdPreStop, then sudo systemctl poweroff
 mpd --vm-restart                    # graceful stop, then sudo systemctl reboot; mpd auto-starts on boot
@@ -473,8 +456,9 @@ mpd list                         # list all projects (default)
 mpd list runtimes                # list runtime containers
 mpd list services                # list always-on infra services
 mpd list dbs                     # list DB containers
+mpd list network                 # this VM's addressing: id, zone, subnet, gateway
 
-mpd <project>                    # show project info
+mpd show <project>               # show project info
 mpd create <project> [...]       # scaffold a new project
 mpd configure <project> [K=V]    # apply mpd.env, (re)provision DB
 mpd start <project> / stop       # run/halt the project
@@ -484,11 +468,27 @@ mpd help <project>               # all verbs for this project type
 
 mpd --runtime=<name>             # show one runtime's details
 mpd --runtime-create=<name>      # provision a new runtime
+mpd --runtime-start=<name>       # start a stopped one
 mpd --runtime-stop=<name>        # stop one
 mpd --runtime-delete=<name>      # remove one (prompts unless --yes)
 
 mpd --help                       # full flag reference
 ```
+
+## Updating mpd
+
+```bash
+mpd --vm-upgrade
+```
+
+Pulls the `/opt/mpd` checkout forward, rebuilds the binary, updates the
+mudev checkout and the `/srv/extra` catalogues, then re-runs
+`mpd --vm-setup` with the new binary — the step a bare `git pull && make
+install` would miss, since asset scripts, systemd units and the
+resolver's config only reach the VM through setup. Refuses if `/opt/mpd`
+has uncommitted changes (commit, stash or discard first). Idempotent —
+an up-to-date VM just gets a rebuild and a fresh setup pass. A checkout
+you have re-pointed at your own remote is left alone and reported.
 
 ## Sharing a project externally (Cloudflare Tunnel)
 
@@ -579,7 +579,7 @@ rm -rf /var/lib/mpd                    # blow away state + identity in the VM
 
 # Delete the VM itself: hypervisor's VM-delete operation (or, for sandbox,
 # revert to your pre-take-over snapshot), then re-bootstrap from any
-# setup/<name>/. On macOS hosts: `mpd-virt uninstall <octet>` (separate
+# setup/<name>/. On macOS hosts: `mpd-virt uninstall` (separate
 # orchestrator binary, own repo) handles the host side cleanly.
 ```
 
@@ -589,6 +589,3 @@ rm -rf /var/lib/mpd                    # blow away state + identity in the VM
 - [../README.md](../README.md) — top-level pitch + mode picker + first bootstrap
 - [NETWORKING.md](NETWORKING.md) — host ↔ VM ↔ container routing
 - [SECURITY.md](SECURITY.md) — trust boundaries
-- [ARCHITECTURE.md](ARCHITECTURE.md) — full architecture
-- [CLI_BEHAVIOR.md](CLI_BEHAVIOR.md) — CLI behavior contract
-- [ROADMAP.md](ROADMAP.md) — what's queued next

@@ -2,7 +2,8 @@
 
 Automation for `mpd VM` on **Ubuntu 26.04 LTS** using
 **libvirt + KVM**. For a "live in the VM" graphical alternative on
-any hypervisor, see the [sandbox platform](../sandbox/README.md).
+any hypervisor, see the sandbox path in the top-level README
+(<https://github.com/mutms/mpd#get-started>).
 
 This directory ships polished, single-developer-laptop scripts that
 mirror the macos flow — sudo recipe affordance, host-only CA
@@ -37,7 +38,8 @@ enabled) for daily SSH access — that part *is* one-click.
 
 - **Ubuntu 26.04 LTS** (Resolute Raccoon). The script refuses to run
   on other versions; older Ubuntu LTS releases work in concept but
-  aren't tested. Try the [sandbox platform](../sandbox/README.md)
+  aren't tested. Try the sandbox path
+  (<https://github.com/mutms/mpd#get-started>)
   if you'd rather work inside the VM directly.
 - **Hardware virtualization enabled in BIOS/UEFI** (Intel VT-x /
   AMD-V). Preflight checks `/dev/kvm` and the CPU flag.
@@ -311,16 +313,9 @@ ssh-keygen -R mpd-158
 
 ## Shared CA story
 
-`setup.sh` keeps a single host CA alive in two real-file locations
-and mirrors between them on every run:
-
-- `/var/lib/mpd/conf/caroot/{rootCA.pem,rootCA-key.pem}` — the
-  canonical mpd location. Populated only when `/var/lib/mpd/conf/`
-  already exists.
-- `/var/lib/mpd-virt/ca/{rootCA.pem,rootCA-key.pem}` — the platform
-  copy. Always populated after the first `setup.sh` run.
-
-Wipe either side and the next `setup.sh` restores from the other.
+`setup.sh` keeps a single host CA at
+`~/.mpd-virt/ca/{rootCA.pem,rootCA-key.pem}`, generated on the first
+run and reused ever after.
 Delete the cert from the system trust store (or `~/.pki/nssdb` for
 Chromium, or `/etc/firefox/policies/mpd-rootCA.crt` for Firefox)
 and the next `setup.sh` re-imports — no manual recovery dance.
@@ -339,15 +334,15 @@ This is why the host CA is generated with `pathlen:1`: a root asserting
 intermediate. `setup.sh` refuses to reuse a `pathlen:0` root left over
 from before this change, and tells you to regenerate it.
 
-CAs flow host → VM only. Neither caroot nor `/var/lib/mpd-virt/ca/` is
-ever populated from a VM source. If somehow neither location is
-populated when you run the existing-VM `setup.sh` path (e.g. you
+CAs flow host → VM only. `~/.mpd-virt/ca/` is
+never populated from a VM source. If it is empty
+when you run the existing-VM `setup.sh` path (e.g. you
 imported a libvirt domain definition created on another host),
 host networking is configured but CA import is skipped — copy a
-`rootCA.pem`+`rootCA-key.pem` pair into either location yourself
+`rootCA.pem`+`rootCA-key.pem` pair into it yourself
 and re-run.
 
 `uninstall.sh` removes the System trust cert, the Firefox policy +
-cert, the NSS DB entry, and `/var/lib/mpd-virt/` — but leaves
-`/var/lib/mpd/conf/caroot/` alone (mirrors mpd's own
+cert, and the NSS DB entry — but leaves
+`~/.mpd-virt/ca/` alone (mirrors mpd's own
 "persisted, not removed by --uninstall" convention).

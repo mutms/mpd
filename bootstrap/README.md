@@ -19,44 +19,58 @@ invokable; callers list them explicitly.
 
 Steps `10` and `20` are wgettable because they must run before the mpd
 repo exists on disk. They inline their own helpers and don't source
-`00-common.sh`. Everything from `30` on lives in the repo and sources
-`00-common.sh` for shared logging helpers.
+`00-common.sh`. Everything from `40` on lives in the repo and sources
+`00-common.sh` for shared logging helpers. There is no networking step:
+hostname, static IP and the systemd-networkd/-resolved stack are the
+platform bootstrap's job (cloud-init on the automated platforms;
+`setup/mpd-sandbox-setup.sh` or `setup/mpd-prepare-takeover.sh` on a
+hand-installed box).
 
 ## Invocation flows
 
 ### Sandbox VM (user-driven, inside the VM)
 
-The user-facing wrapper at `setup/sandbox/take-over-sandbox-vm.sh` is
-itself wgettable; it chains 10 + 20 + 30..50 + sandbox-specific
+The user-facing wrapper at `setup/mpd-sandbox-setup.sh` is
+itself wgettable; it converts the network stack, chains 10 + 20 +
+40 + 50, and adds the sandbox-specific
 finalize (VS Code, GNOME launcher, `mpd --vm-setup`, pre-warm).
 
 ```bash
-bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/sandbox/take-over-sandbox-vm.sh)
+bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-sandbox-setup.sh)
 ```
 
-### Managed VM (mpd-virt / mpd-virt-linux / mpd-virt-windows)
+### Managed VM (mpd-virt on macOS; `setup/linux/`, `setup/windows/`)
 
-Each orchestrator clones a **pure Debian template**, gets SSH access
-(`ssh-copy-id` or cloud-init-injected key), then runs the steps:
+Each orchestrator clones a **pure Debian template** (or builds from a
+cloud image), gets SSH access (`ssh-copy-id` or cloud-init-injected
+key), then runs the steps:
 
 ```text
 ssh -t … bash <(wget -qO- …/bootstrap/10-passwordless-sudo.sh)   # one interactive root pw
 ssh    … bash <(wget -qO- …/bootstrap/20-git-clone.sh)
-ssh    … bash /opt/mpd/bootstrap/30-networking.sh <NNN>          # SSH drops on IP change
-# reconnect at new static IP
 ssh    … bash /opt/mpd/bootstrap/40-install-software.sh
 ssh    … bash /opt/mpd/bootstrap/50-build.sh
 ssh    … mpd --vm-setup
 ```
 
-Cloud-init flows (KVM, Hyper-V) handle the sudo bit via their
-`user-data` natively, so step 10 is a silent no-op there.
+Cloud-init flows (KVM, Hyper-V, UTM) handle the sudo bit via their
+`user-data` natively, so step 10 is a silent no-op there — and they own
+hostname + netplan, so there is no networking step. A hand-installed
+box headed for `mpd-virt takeover` gets its hostname + network stack
+from `setup/mpd-prepare-takeover.sh` first.
 
 ### Upgrade (any VM)
 
 ```bash
+mpd --vm-upgrade
+```
+
+which pulls, rebuilds and re-runs `mpd --vm-setup`; `99-update.sh` is
+the script-shaped equivalent used by `mpd-virt update`. The manual
+chain is:
+
+```bash
 cd /opt/mpd && git pull --ff-only
-bash bootstrap/30-networking.sh <NNN>
 bash bootstrap/40-install-software.sh
 bash bootstrap/50-build.sh
 ```

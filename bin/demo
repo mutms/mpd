@@ -1,6 +1,6 @@
 #!/bin/bash
 # demo — one command from a recipe to a running, installed Moodle site.
-# Available on the mpd VM after `mpd --vm-setup` adds bin/ to PATH.
+# Available on the mpd VM after `bootstrap/50-build.sh` puts /opt/mpd/bin on PATH.
 #
 # Usage: demo <recipe> <projectname>
 #   demo moodle/release/4.5.12 moodle45

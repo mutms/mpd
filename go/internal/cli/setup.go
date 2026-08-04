@@ -281,8 +281,8 @@ func Setup(ctx context.Context, out io.Writer) error {
 	}
 
 	// Deliberately terse: anything about "what to do next" belongs to
-	// whatever orchestration called us — `mpd-virt setup` for a managed
-	// VM, sandbox/provision.sh for the sandbox.
+	// whatever orchestration called us — `mpd-virt` for a managed
+	// VM, mpd-sandbox-setup.sh for the sandbox.
 	fmt.Fprintf(out, "\n\033[1;32m✓ mpd --vm-setup complete.\033[0m\n")
 	return nil
 }

@@ -847,7 +847,7 @@ func ensureRuntime(ctx context.Context, out io.Writer, name string, d ProjectDep
 func ShowHelp(out io.Writer, project string, n net.Net) {
 	fmt.Fprintf(out, "Usage: mpd <verb> %s [options...]\n", project)
 	fmt.Fprintln(out, "\nVerbs:")
-	fmt.Fprintf(out, "  show       %s                       project details (also: bare `mpd show %s`)\n", project, project)
+	fmt.Fprintf(out, "  show       %s                       project details\n", project)
 	fmt.Fprintf(out, "  create     %s [--type=<type>]       (default type: moodle)\n", project)
 	fmt.Fprintf(out, "  configure  %s [KEY=VALUE ...]       (e.g. MPD_DB=postgres:18, MPD_PHP_VERSION=8.4;\n", project)
 	fmt.Fprintf(out, "                                              full set lives in /srv/projects/%s/mpd.env)\n", project)

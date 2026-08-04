@@ -12,7 +12,8 @@ In rough order of when you'll want them:
   bootstrap. The single starting point.
 - The bootstrap doc for your chosen mode (linked from the top-level
   README's "Get started" section):
-  - [`../setup/sandbox/README.md`](../setup/sandbox/README.md) — Sandbox VM (any hypervisor)
+  - [`../setup/mpd-sandbox-setup.sh`](../setup/mpd-sandbox-setup.sh) — Sandbox VM (any
+    hypervisor; run via the wget one-liner in the top-level README)
   - [`mpd-virt`](https://github.com/mutms/mpd-virt) (separate repo) — mpd VM on macOS via Parallels / UTM
   - [`../setup/linux/README.md`](../setup/linux/README.md) — mpd VM on Ubuntu via libvirt/KVM
   - [`../setup/windows/README.txt`](../setup/windows/README.txt) — mpd VM on Windows via Hyper-V
@@ -39,9 +40,9 @@ Or you're an AI agent helping out:
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — repo architecture, mode
   split, networking summary, configuration model, verb/tool
   contract in depth. The "under the hood" reference.
-- [`CLI_BEHAVIOR.md`](CLI_BEHAVIOR.md) — **behavioral contract** for
-  CLI changes. Spec, not a manual: if implementation diverges,
-  align code to this doc or update the doc in the same change.
+- [`CLI_BEHAVIOR.md`](CLI_BEHAVIOR.md) — behavioral reference for
+  CLI changes, kept in sync with the implementation: update it in
+  the same change that alters CLI behavior.
 - [`HOOKS.md`](HOOKS.md) — typed `Event` lifecycle hooks: events,
   audiences, asset-side `hooks/<event>.d/` scripts. Read when
   adding a hook trigger or authoring a hook script.

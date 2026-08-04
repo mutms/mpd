@@ -16,7 +16,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${SCRIPT_DIR}/00-common.sh"
 
 # --- DNS sanity check ---------------------------------------------------
-# bootstrap/30 just reconfigured networking. If DNS is broken — e.g.
+# The platform bootstrap (sandbox/takeover prep script, or cloud-init)
+# reconfigured networking not long ago. If DNS is broken — e.g.
 # networkd hasn't pushed DNS to systemd-resolved yet — apt-get update
 # below would fail with "Temporary failure resolving". Probe once, try
 # to recover by restarting networkd + resolved, then die loud if it

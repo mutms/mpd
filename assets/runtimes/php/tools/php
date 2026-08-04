@@ -24,14 +24,15 @@
 #      defaults → type defaults → VM-wide → project). Costs ~one jq + 4 file
 #      reads (~30ms), paid only by bare CLI invocations.
 #   3. Outside a project tree, or when the configured version isn't
-#      installed: MPD_PHP_FALLBACK_VERSION below — the oldest supported PHP.
+#      installed: MPD_PHP_FALLBACK_VERSION below — a pinned fallback.
 #      Deliberately a fixed version rather than "whatever the system default
 #      is", so `php -v` from $HOME always answers the same thing.
 #
 # NEVER exec /usr/bin/php from here — it points back at this script through
 # the alternatives link. Always exec the versioned /usr/bin/phpX.Y.
 
-# Oldest supported PHP. Keep in sync with build.sh's PHP_FALLBACK_VERSION.
+# Pinned fallback (8.1 is also installed, for legacy branches). Keep in
+# sync with build.sh's PHP_FALLBACK_VERSION.
 MPD_PHP_FALLBACK_VERSION=8.2
 
 if [[ -z "${MPD_PHP_VERSION:-}" ]] && [[ "$PWD" =~ ^/srv/projects/([^/]+) ]]; then

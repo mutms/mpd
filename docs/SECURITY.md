@@ -128,7 +128,8 @@ VM host (Debian Trixie)     exposes ONLY :22 (sshd) + :51820 (wg) on its LAN IP
     +-- DB containers          (10.163.<NNN>.30–.99)
     +-- runtime pods           (10.163.<NNN>.100+, with per-runtime sidecars)
 
-<NNN> is the VM's MPD_VM_ID. Each VM owns a distinct /24 and a distinct
+<NNN> is the VM's id, from its hostname mpd-<NNN>. Each VM owns a
+distinct /24 and a distinct
 DNS zone (<NNN>.mpd.test) — see docs/NETWORKING.md.
 ```
 
@@ -391,11 +392,14 @@ commands serialise whichever side they came from.
 
 Two SSH endpoints, both pubkey-only:
 
+- **The VM** (`tcp/22` on its LAN IP) — management shell, the ProxyJump
+  base for runtimes, and the SOCKS fallback. Root login disabled.
 - **Runtime containers** (`<runtime>.runtime.<NNN>.mpd.test`) — full dev
   shell, passwordless sudo, the developer's UID. Each runtime creates
   a user account matching the developer's username and UID; the public
   key from `~/.ssh/authorized_keys` is propagated into the container.
   Root login disabled.
+
 File transfer has no endpoint of its own. The data volume is mounted on
 the VM at `/srv`, so `/srv/backups/` is reached over the VM's own sshd —
 the connection the developer already has.

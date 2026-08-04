@@ -4,7 +4,7 @@ Windows + Hyper-V bootstrap
 Automation for mpd VM on Windows using Hyper-V (free with
 Windows 10/11 Pro and Enterprise). For a "live in the VM" graphical
 alternative on any hypervisor (including Hyper-V), see the sandbox
-platform at https://github.com/mutms/mpd/tree/main/setup/sandbox/README.md
+path in the top-level README: https://github.com/mutms/mpd#get-started
 
 Files in this directory:
 
@@ -229,9 +229,9 @@ The simplest path is scp:
   # Copy a file from the VM to Windows:
   scp yourname@10.164.0.158:~/file.txt "C:\Users\yourname\Downloads\"
 
-For bulk transfers, the mpd fileaccess service exposes /srv/backups/
-inside the VM as an SSH endpoint at fileaccess.service.<NNN>.mpd.test after
-"mpd --vm-setup" has run.
+For bulk transfers and project backups: /srv is mounted on the VM, so
+/srv/backups/ is reachable over the same SSH connection, e.g.
+scp yourname@10.164.0.158:/srv/backups/file.tar.gz "C:\Users\yourname\Downloads\"
 
 Do not copy private keys or the caroot/ directory out of the VM.
 Private material stays in /var/lib/mpd/conf/ inside the VM.

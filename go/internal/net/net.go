@@ -3,7 +3,8 @@
 //
 // # Model
 //
-// Each VM owns one /24 and one DNS zone, both keyed on MPD_VM_ID: VM 150
+// Each VM owns one /24 and one DNS zone, both keyed on the VM's id (read
+// from its hostname, mpd-<NNN>): VM 150
 // serves 10.163.150.0/24 and the zone 150.mpd.test. Ids run 001–254 as
 // zero-padded identifiers. The host part of an address never varies — the
 // VM itself is always .1, adminer always .6, runtimes always .100+ — only

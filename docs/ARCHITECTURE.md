@@ -11,7 +11,7 @@ Purpose: describe how `mpd` is structured, what is currently in scope, and where
   orchestrator (own repo); headless by default, GNOME toggleable
   on demand. Primary target.
 - `sandbox`: same Debian Trixie VM but with a GNOME desktop, set up
-  in-VM via `setup/sandbox/take-over-sandbox-vm.sh`. Same `mpd` binary;
+  in-VM via `setup/mpd-sandbox-setup.sh`. Same `mpd` binary;
   the host stays untouched.
 
 Current scope:
@@ -90,19 +90,19 @@ the dev user; `sudo` is for individual privileged commands; whole
 scripts are never wrapped in `sudo`; identity-switching to a non-root
 user (`sudo -u <user>`, `runuser`, `su - <user>`) is forbidden. Full
 text in [`AGENTS.md` §"Mandatory privilege rule"](../AGENTS.md), with
-the in-depth tool-level explanation in §7 below. Enforced by `make
-check-privilege-boundary`.
+the in-depth tool-level explanation in §7 below. Enforced in review;
+`make lint-shell` (shellcheck) is the automated shell gate.
 
-### Sister rule: host-side fenced `sudo` (macos + linux bootstrap)
+### Sister rule: host-side fenced `sudo` (linux bootstrap)
 
 Bootstrap-stage shell scripts under
-`setup/{macos,linux}/lib/` run on the dev host
+`setup/linux/lib/` run on the dev host
 (not in a container or VM) and need `sudo` for a fixed set of operations
 — route to the container subnet, DNS resolver pointing the VM's zone at
 the in-VM dnsmasq, system-trust import of the mpd CA, plus
 platform-specific extras (Firefox enterprise policy + cert under
-`/etc/firefox/policies/` on Ubuntu, mpd CA into the System keychain on
-macOS). The pattern these scripts follow:
+`/etc/firefox/policies/`, Chromium's NSS DB). The pattern these
+scripts follow:
 
 1. **Detect first, no `sudo`.** Read current state with unprivileged
    tools (`route get`, `cat /etc/resolver/...`,
@@ -114,7 +114,7 @@ macOS). The pattern these scripts follow:
    terminated by an explicit `sudo -k` to invalidate the cached
    credential immediately.
 3. **No `sudo` outside the fence.** Discovery, reporting, and state
-   writes (`/var/lib/mpd-virt/`, `~/.ssh/config`, `~/Desktop/`) all run
+   writes (`~/.mpd-virt/`, `~/.ssh/config`, `~/Desktop/`) all run
    as the user with no cached creds — a later bug cannot accidentally
    piggy-back on the elevated session.
 4. **EXIT trap as backstop.** `trap 'sudo -k' EXIT` ensures cached
@@ -125,11 +125,11 @@ macOS). The pattern these scripts follow:
    sees no password prompt at all.
 6. **Generate the CA on the host before VM creation, and only on
    the host.** `prepare_host_ca` in `lib/common.sh` keeps the host
-   CA at `/var/lib/mpd-virt/ca/` (platform-owned; always present after
-   the first `setup.command` run).
+   CA at `~/.mpd-virt/ca/` (platform-owned; always present after
+   the first `setup.sh` run).
 
-   On a wipe, the next `setup.command` regenerates and re-imports
-   into the System keychain. Generation uses the bash twin of
+   On a wipe, the next `setup.sh` regenerates and re-imports
+   into the system trust store. Generation uses the bash twin of
    `cert.GenerateCA` (`go/internal/cert/ca.go`);
    the two generators must stay in sync. The CA is then uploaded into
    the VM, where mpd's reuse check (`go/internal/cli/setup.go`)
@@ -137,12 +137,12 @@ macOS). The pattern these scripts follow:
    single upfront fenced block, after which the long unattended
    VM-creation phase runs holding no sudo creds.
 
-   **Boundary rule:** CAs flow host → VM only. The macOS keychain
+   **Boundary rule:** CAs flow host → VM only. The host trust store
    only ever trusts certificates the host generated itself.
    `configure-client.sh` will not pull a CA off a VM and import it
-   into the keychain — that would invert the trust direction by
+   into the trust store — that would invert the trust direction by
    accepting a cert of unknown provenance from inside an SSH session.
-   On a Mac with `/var/lib/mpd-virt/ca/` empty (e.g. an imported VM
+   On a host with `~/.mpd-virt/ca/` empty (e.g. an imported VM
    created elsewhere), `configure-client.sh` configures route + DNS
    but skips CA import; the user has to bring a host CA across
    themselves.
@@ -159,9 +159,11 @@ Reference implementations: `lib/setup.sh` (new-VM path: upfront fence,
 host-first CA), `lib/configure-client.sh` (existing-VM and `start.sh`
 warm path), and `lib/uninstall.sh` (teardown path).
 
-This rule applies to the two automated `mpd VM` platforms whose
-bootstrap runs as the dev user on the host: **macos** and
-**linux**. The other platforms differ:
+This rule applies to the automated `mpd VM` platform whose
+bootstrap runs shell as the dev user on the host: **linux**. The
+macOS host side lives in the `mpd-virt` repo (Go, not shell; it keeps
+its root CA at `~/.mpd-virt/conf/caroot/` and follows the same
+host-first CA discipline). The other platforms differ:
 
 - **windows** runs each entry script wholesale via UAC
   elevation (the `.cmd` shim's `Start-Process -Verb RunAs` is the
@@ -171,10 +173,10 @@ bootstrap runs as the dev user on the host: **macos** and
   (`lib/common.sh`) via `wsl -d Debian -u root`; no `openssl` or
   `genisoimage` runs in PowerShell.
 - **sandbox** runs entirely inside the VM, so there is no "host-side
-  bootstrap" to fence. `take-over-sandbox-vm.sh` enables passwordless sudo
-  on the VM as part of taking it over (the hostname-rename gate is
-  the user's deliberate consent), then hands off to `lib/provision.sh`
-  which sudo's individual privileged commands per the in-VM rule.
+  bootstrap" to fence. `mpd-sandbox-setup.sh` enables passwordless sudo
+  on the VM as part of taking it over (the hostname gate is
+  the user's deliberate consent), then sudo's individual privileged
+  commands per the in-VM rule.
 - **Inside the VM and runtime containers**, the previous sister rule
   applies (per-command `sudo`, no whole-script elevation).
 
@@ -184,7 +186,7 @@ Fixed source checkout path: `/opt/mpd`
 
 Directory ownership split:
 
-- `bin/` — local built binaries (`bin/mpd`); executable path checks depend on this.
+- `bin/` — the built binary (`bin/mpd`) plus committed VM tools (`demo`, `claude-install`, `gnome-start`/`gnome-stop`), on PATH via `bootstrap/50-build.sh`.
 - `/var/lib/mpd/conf/` — persistent local trust/network material:
   - `caroot/` — the trust anchor (`rootCA.pem`; public only, on a
     `mpd-virt`-provisioned VM) plus the CA this VM signs leaves with
@@ -225,13 +227,12 @@ mpd splits resource state into two distinct concepts:
 - **`requested`** — persisted intent, written to disk. Mutated *only*
   by explicit user verbs (`mpd <p> create/start/stop/delete`, `mpd
   --runtime-create/start/stop/delete`). Survives reboots. Lives in
-  `RegisteredProjectRecord.requested` and `RuntimeStateEntry.requested`
+  `state.Project.Requested` and `state.Runtime.Requested`
   (`go/internal/state/state.go`).
 - **`current`** — live observation, computed on each query from
-  `Mpd.Podman` (no persistence). Domain: `running`, `stopped`,
+  podman (no persistence). Domain: `running`, `stopped`,
   `missing` (no container exists). Accessors:
-  `Mpd.Runtime.current(_:)`, `Mpd.Project.current(_:)`,
-  `Mpd.Runtime.DB.current(engine:version:)` —
+  `current.Observer.Runtime`, `.Project`, `.DB` —
   `go/internal/current/current.go`.
 
 Reconciliation closes the gap: `mpd --vm-start` walks `requested` and
@@ -248,18 +249,16 @@ Display layers show both columns side-by-side (`mpd list runtimes`,
 `requested=running, current=stopped` after a reboot but before
 `mpd --vm-start` — is legible from the listing alone.
 
-Out-of-process consumers (in-runtime tools)
+Out-of-process consumers
 don't have podman access, so they can't compute `current` themselves.
 mpd writes a snapshot to
-`/var/lib/mpd/state/current-state.json` (`CurrentStateSnapshot` —
+`/var/lib/mpd/state/current-state.json` (`current.Snapshot` —
 runtimes/projects/databases name → status map plus a `refreshedAt`
-timestamp). The snapshot is refreshed automatically by `mpd list`,
-`mpd --vm-status`, `mpd --vm-start` / `--vm-stop` / `--vm-restart`, `mpd --vm-setup`,
-and at every state-mutator save (`saveProjects`,
-`saveRuntimeStateEntry`, `deleteProject`, `deleteRuntimeStateEntry`).
-The portal reads this through `current.Observer` in-process; in-runtime
-tools bind-mount the file at `/mpd-state/current-state.json` and
-prefers it over the persisted intent files for live status display.
+timestamp), refreshed by the lifecycle commands
+(`current.Observer.Refresh`). The portal reads live state through
+`current.Observer` in-process. Nothing under `/var/lib/mpd/state/` is
+mounted into containers; what runtimes get instead is this VM's
+addressing at `/srv/meta/vm.json` on the data volume.
 
 ## 6) Assets and Extension Contract
 
@@ -342,7 +341,8 @@ useful signal and is worth keeping.
 
 Verbs are **Go**: cobra commands in `go/cmd/mpd/main.go`, handlers in
 `go/internal/cli/project.go`. The verb set is fixed and small —
-`create`, `configure`, `start`, `stop`, `delete`, `show` — all
+`create`, `configure`, `start`, `stop`, `reset`, `run`, `delete`,
+`show`, `help` — all
 control-plane code with direct access to `internal/podman`, the state
 APIs, and sidecar reconciliation. There is no asset-shipped-verb
 mechanism: project-type-specific operations live inside the runtime as
@@ -490,20 +490,19 @@ rule (1) can hold, so exactly one root-context script
 (`assets/runtime-base/bootstrap.sh`) runs as root to create the user
 plus the rest of the runtime base. The orchestrator is the only
 caller. After it returns, phase 2 (`assets/runtimes/<rt>/build.sh`)
-runs as the dev user via `podman exec -u`. `make
-check-privilege-boundary` enforces shapes (1) and (2).
+runs as the dev user via `podman exec -u`. Shapes (1) and (2) are
+enforced in review.
 
 ### Naming conventions
 
 **Bare names** are used for tools whose name matches a well-known
 upstream package or whose meaning is clear from the bare word:
-`composer`, `php`, `node`, `phpunit`, `behat`, `grunt`, `mpci`,
-`site-install`.
+`composer`, `php`, `node`, `phpunit`, `behat`, `grunt`, `mpci`.
 
 **`mdl-` prefix** for Moodle-project-type tools whose bare name would
 be too generic or collide with system commands: `mdl-install`,
-`mdl-cache-purge`, `mdl-cron`, `mdl-upgrade`, `mdl-backup`,
-`mdl-restore`. The prefix is also a usability cue — when an AI agent
+`mdl-cache-purge`, `mdl-cron`, `mdl-upgrade`,
+`mdl-data-purge`. The prefix is also a usability cue — when an AI agent
 or a human sees `mdl-cron` on PATH, it's unambiguously the
 mpd-installed Moodle cron, not the system cron daemon.
 
@@ -517,7 +516,7 @@ mpd-installed Moodle cron, not the system cron daemon.
   Project-scoped. May include some installation as a side effect (npm
   packages, composer deps, test DB), but the operation is "ready this
   project for the tool," not "fetch the tool." Examples: `phpunit-init`,
-  `behat-init`, `node-init`.
+  `behat-init`.
 
 The bare name (no suffix) is the wrapper that does the work on demand:
 `phpunit`, `composer`, `php`, `node`. Suffixed tools sort adjacent to
@@ -596,8 +595,8 @@ sensible default (`MPD_DB=postgres:latest` for moodle).
 
 **How `mpd-vm.env` reaches the runtime:** the host file
 `/var/lib/mpd/env/mpd-vm.env` is bind-mounted RO into every runtime
-container at the same absolute path (`Mpd.envMountRO` in
-`go/internal/vm/vm.go`). Directory mount, so vim/nano
+container at the same absolute path (`podman.EnvMountRO` in
+`go/internal/podman/podman.go`). Directory mount, so vim/nano
 atomic-rename writes on the host propagate inside the container
 immediately. No sync, no restart needed.
 
@@ -611,8 +610,9 @@ immediately. No sync, no restart needed.
   former `MPD_DNS_UPSTREAM` is gone — dnsmasq reads the host's
   systemd-resolved upstream and follows whatever the host has configured).
 - **Reserved keys:** `MPD_DB` is owned by `db.ParseTag`
-  (engine whitelist + version regex); other reserved keys go in the same map
-  in `ProjectOperations.sanitiseEnvValue` as they're added.
+  (engine whitelist + version regex); other reserved keys get strict
+  validators in `project.ParseMutations` (`go/internal/project/env.go`)
+  as they're added.
 
 **CLI surface for editing:** `mpd configure <project> KEY=VALUE [...]`
 parses positional pairs matching `^MPD_[A-Z0-9_]+=.*$`, sanitises in Go
@@ -688,9 +688,11 @@ Wipe contract:
   `mpd-virt` orchestrator + its `mpd-proxy` helper (separate repos). The
   container subnet itself is sealed from outside by an in-VM nft firewall,
   so the VM exposes only sshd + WireGuard.
-- Addressing is per-VM: `<NNN>` is the VM's `MPD_VM_ID`, used as both the
+- Addressing is per-VM: `<NNN>` is the VM's id (from its hostname
+  `mpd-<NNN>`), used as both the
   third octet of the subnet and the first label of the DNS zone, so
-  several VMs are reachable from one workstation at once. `Mpd.Net`
+  several VMs are reachable from one workstation at once. The `net`
+  package
   (`go/internal/net/net.go`) is the single source of truth; nothing else should
   contain `10.163.` or `mpd.test` as a literal.
 - dnsmasq runs **on the VM** (not in a container) and is authoritative for
@@ -792,8 +794,8 @@ See detailed docs:
 - `go/internal/net/`, `go/internal/dnsmasq/`, `go/internal/cert/` —
   addressing, DNS records, TLS
 - `assets/` — runtime/type/service scripts/config/templates + `runtime-base/skel/`
-- `bootstrap/` — VM bring-up steps 10–50 (passwordless sudo, repo clone, networking, apt, build)
-- `setup/` — per-platform host-side orchestration (sandbox, macos, linux, windows)
+- `bootstrap/` — VM bring-up steps 10–50 (passwordless sudo, repo clone, apt, build)
+- `setup/` — host-side bootstrap: the sandbox + takeover-prep scripts, `linux/`, `windows/` (macOS lives in the `mpd-virt` repo)
 - `docs/` — behavioral and architecture contracts
 
 ## 13) Contributor Change Map
@@ -812,9 +814,7 @@ If you change:
 
 ## 15) Related Docs
 
-- `README.md`
-- `docs/README.md`
-- `docs/CLI_BEHAVIOR.md`
-- `docs/USAGE.md`
-- `docs/ROADMAP.md`
+- `docs/README.md` — documentation index
+- `docs/CLI_BEHAVIOR.md` — CLI behavioral reference
+- `docs/HOOKS.md` — typed lifecycle hooks
 - `AGENTS.md` — practical authoring guidance for verbs and tools (§"Authoring verbs and tools")

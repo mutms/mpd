@@ -16,8 +16,8 @@ If you're new and don't know which to pick — start with **sandbox**.
 
 | Platform | Path | What it gives you |
 |---|---|---|
-| **Sandbox** (any hypervisor — UTM, Parallels, Hyper-V, VirtualBox, VMware, virt-manager, …) | [`sandbox/`](sandbox/README.md) | Install Debian Trixie with the GNOME desktop in your hypervisor, set the hostname to `mpd-sandbox`, snapshot, run `take-over-sandbox-vm.sh`. mpd lives entirely inside the VM; the host gets zero DNS/route/trust changes. The hypervisor owns VM lifecycle from its own GUI. |
-| **macOS + Parallels / UTM** | [`mpd-virt`](https://github.com/mutms/mpd-virt) (separate repo) | CLI orchestrator (`mpd-virt`). `clone` against a Parallels template VM, or `create` against UTM via cloud-init. Drives the bootstrap pipeline over SSH and applies macOS networking (route, DNS resolver, CA trust). `mpd-virt diag` re-applies host config after a reboot; `mpd-virt delete` / `uninstall` tear everything down. |
+| **Sandbox** (any hypervisor — UTM, Parallels, Hyper-V, VirtualBox, VMware, virt-manager, …) | [`mpd-sandbox-setup.sh`](mpd-sandbox-setup.sh) | Install Debian Trixie with the GNOME desktop in your hypervisor, set the hostname to `mpd-<NNN>` (a 3-digit id in 100..254), snapshot, run the script inside the VM (wget one-liner in the top-level README). mpd lives entirely inside the VM; the host gets zero DNS/route/trust changes. The hypervisor owns VM lifecycle from its own GUI. |
+| **macOS + Parallels / UTM** | [`mpd-virt`](https://github.com/mutms/mpd-virt) (separate repo) | CLI orchestrator (`mpd-virt`). `create` provisions a VM (Parallels or UTM via cloud-init); `takeover <NNN> <IP>` adopts any Debian Trixie box prepared with [`mpd-prepare-takeover.sh`](mpd-prepare-takeover.sh). Drives the bootstrap pipeline over SSH and wires host reachability (mpd-proxy overlay or SOCKS, DNS resolver, CA trust). `mpd-virt delete` / `uninstall` tear everything down. |
 | **Ubuntu + KVM** (Linux desktop) | [`linux/`](linux/README.md) | `bash setup.sh` from a terminal: preflight (KVM, libvirt-daemon-system + friends, libvirt group, libvirt default network, `/var/lib/mpd-virt/$USER/`) with the same `(a)` run-yourself / `(b)` press-Enter sudo recipe affordance as macos; libvirt-driven VM creation against the default `virbr0` network with cloud-init for static IP; host configuration (`ip route` + systemd-resolved drop-in + `update-ca-certificates` + Firefox policies + `~/.pki/nssdb`); pre-warm + `mpd VM.desktop` launcher in GNOME Activities. Ubuntu 26.04 LTS only. |
 | **Windows + Hyper-V** | [`windows/`](windows/README.txt) | PowerShell bootstrap: `setup.cmd` downloads the Debian cloud image, provisions a Hyper-V Generation 2 VM with cloud-init, builds `bin/mpd` inside the VM, and configures Windows networking (route, NRPT DNS, CA certificate). |
 
@@ -134,9 +134,10 @@ What that means for the contents:
   build/setup flow, and the user has the full repo.
 
 The sandbox platform is the natural exception that proves the rule:
-its `take-over-sandbox-vm.sh` is a *single* file that's also published
-as a raw URL for `curl | bash` distribution, so it doesn't need a zip
-bundle at all.
+`mpd-sandbox-setup.sh` is a *single* file at the top of `setup/`,
+published as a raw URL for `wget | bash` distribution, so it doesn't
+need a zip bundle at all. `mpd-prepare-takeover.sh` (the pre-step for
+`mpd-virt takeover`) follows the same single-file shape.
 
 **Note for AI agents working in this repo:** when modifying or adding
 files under `setup/<name>/`, don't introduce relative paths pointing

@@ -126,7 +126,8 @@ Fires per project stop, while the project's runtime is still running.
 Use cases: drain in-flight work, flush per-project caches, graceful
 shutdown of project-specific services running inside the runtime.
 Today's `sudo systemctl stop mpd-<project>` for project types with
-`stopSystemd: true` is still a Go control-plane code path
+`"stop": {"systemdStop": true}` in their `configuration.json` is still
+a Go control-plane code path
 (`go/internal/cli/project.go`); that one-liner is a
 candidate to migrate into a project-type hook here.
 
@@ -306,7 +307,7 @@ classes of warning:
   layer's container kind is no longer in the event's audiences.
   → "Hook X subscribed to event Y, but Y no longer fires on this audience."
 - **Revision bump** — event's `revision` increased since the last
-  `mpd --vm-setup` run (tracked in `/var/lib/mpd/hooks-state.json`).
+  `mpd --vm-setup` run (tracked in `/var/lib/mpd/state/hooks-state.json`).
   → "Event X revised; review env-var contract for hooks under hooks/X.d/."
 
 Diagnostics are warnings, never hard failures — orphan hooks just
@@ -328,8 +329,8 @@ Before=shutdown.target reboot.target halt.target suspend.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=-/home/<user>/Developer/mpd/bin/mpd --vm-start
-ExecStop=/home/<user>/Developer/mpd/bin/mpd --vm-stop
+ExecStart=-/opt/mpd/bin/mpd --vm-start
+ExecStop=/opt/mpd/bin/mpd --vm-stop
 TimeoutStartSec=300
 TimeoutStopSec=180
 

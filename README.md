@@ -44,6 +44,18 @@ code "really" lives. (When the work is on **mpd itself** — Go
 sources, asset scripts — the agent runs in the VM instead, where
 the source checkout and toolchain live.)
 
+## The mpd family
+
+Four sibling repos, one workflow. This one is the in-VM control plane;
+the others meet it at well-defined seams:
+
+| Repo | Runs | Does |
+|------|------|------|
+| **mpd** (this repo) | inside the VM | runtimes, projects, DNS, TLS — the control plane |
+| [mpd-virt](https://github.com/mutms/mpd-virt) | on the Mac | creates/adopts VMs, host reachability + CA trust |
+| [mpd-proxy](https://github.com/mutms/mpd-proxy) | on the Mac, as root | optional network helper: transparent `*.mpd.test` for every app via a WireGuard overlay |
+| [mudev](https://github.com/mutms/mudev) | on the VM + in runtimes | assembles Moodle trees from recipes; the plugin/recipe catalogues |
+
 ## Coming from…
 
 - **Homebrew-native PHP + MariaDB.** mpd replaces the
@@ -73,9 +85,9 @@ the source checkout and toolchain live.)
 |----------------------|------------------------------------------------------------------------------------------|-----------------------------------------------------------------------|
 | **Where `mpd` runs** | Inside the VM                                                                            | Inside a VM (headless by default; GNOME on-demand)                    |
 | **Where you sit**    | Inside the VM (full GNOME desktop)                                                       | On your host (browser + SSH-into-VM)                                  |
-| **Host OS**          | Any (UTM, Parallels, Hyper-V, VirtualBox, virt-manager, VMware…)                         | macOS (primary) — Linux/Windows speculative                           |
-| **Bootstrap**        | Install Debian Trixie + GNOME, snapshot, run one script in the VM                        | `mpd-virt setup` (separate orchestrator binary on the host)           |
-| **Network**          | Internal to the VM (host untouched)                                                      | Static route host→VM container subnet                                 |
+| **Host OS**          | Any (UTM, Parallels, Hyper-V, VirtualBox, virt-manager, VMware…)                         | macOS (primary) — Linux/Windows automated in-repo, less exercised     |
+| **Bootstrap**        | Install Debian Trixie + GNOME, snapshot, run one script in the VM                        | `mpd-virt create` / `takeover` (separate orchestrator binary on the host) |
+| **Network**          | Internal to the VM (host untouched)                                                      | Host reaches the VM gateway: WireGuard overlay or SOCKS on macOS, static route on Linux/Windows |
 | **Best for**         | Experiments, AI-driven workloads (the VM is the wall; snapshot/revert is the safety net) | Daily-driver Moodle work — host browser/IDE see `*.mpd.test` directly |
 
 **Pick Sandbox if you're unsure or just want to try mpd out quickly.**
@@ -132,12 +144,29 @@ docs/NETWORKING.md). Because the same `mpd-<NNN>` hostname is what a
 managed VM uses, you can later adopt this sandbox from a Mac with
 `mpd-virt takeover <NNN> <IP>` — your projects survive.
 
+**Your first Moodle** — in a terminal inside the VM:
+
+```bash
+mpd --vm-setup                       # idempotent; a no-op if the setup script already ran it
+demo moodle/release/4.5.12 demo45    # fully installed Moodle in one command
+```
+
+`demo` prints the URL and admin credentials when it finishes — open the
+URL in the VM's Firefox, and `ssh mpd-<NNN>-php` for a shell inside the
+runtime that serves it. The first argument is a recipe — a Moodle branch
+plus a plugin set plus config — from the sibling
+[mudev](https://github.com/mutms/mudev) repo, whose catalogues
+`mpd --vm-setup` clones automatically; `demo` with no arguments lists
+the recipes present on this VM. Later, `mpd --vm-upgrade` updates mpd
+in place (see [docs/USAGE.md](docs/USAGE.md#updating-mpd)).
+
 ### 2. `mpd VM` (host reaches into a Linux VM)
 
 Pick this when you want your laptop's own browser/IDE to resolve
 `*.mpd.test` directly. The matched-host bootstrap configures the host
-side (static route + DNS resolver + CA trust) so the
-laptop sees the VM's container subnet:
+side (reachability — WireGuard overlay or SOCKS on macOS, a static
+route on Linux/Windows — plus DNS resolver and CA trust) so the
+laptop sees the VM's gateway:
 
 | Host                          | Bootstrap                                                        |
 |-------------------------------|------------------------------------------------------------------|
@@ -147,9 +176,12 @@ laptop sees the VM's container subnet:
 
 The `mpd-virt` repo ships a `mpd-virt` host binary that drives
 Parallels Desktop Pro and UTM (via cloud-init), runs the in-VM
-bootstrap pipeline over SSH, and configures the macOS side (route, DNS
-resolver, CA trust) in one shot. Sibling `mpd-virt-linux` /
-`mpd-virt-windows` repos are planned along the same shape.
+bootstrap pipeline over SSH, and configures the macOS side (overlay,
+DNS resolver, CA trust) in one shot. The Linux and Windows automation
+lives in this repo (`setup/linux/`, `setup/windows/`) and is less
+exercised than the macOS path; separate `mpd-virt-linux` /
+`mpd-virt-windows` repos are a distant idea — on Windows, WSL support
+is the likelier shape.
 
 ## What to expect, timing-wise
 
@@ -166,10 +198,10 @@ resolver, CA trust) in one shot. Sibling `mpd-virt-linux` /
 
 ## Repository layout
 
-- `bin/` — local built binaries (`bin/mpd`)
+- `bin/` — the built binary (`bin/mpd`) plus committed VM tools: `demo`, `claude-install`, `gnome-start` / `gnome-stop`
 - `go/` — Go control-plane sources (`cmd/mpd/`, `internal/cli/`, `internal/vm/`, `internal/runtime/`, `internal/service/`, …)
 - `assets/` — runtime/service/sidecar definitions and shell scripts
-- `bootstrap/` — VM bring-up steps (passwordless sudo, repo clone, networking, apt, build)
+- `bootstrap/` — VM bring-up steps (passwordless sudo, repo clone, apt, build)
 - `setup/` — per-platform host orchestration (sandbox + matched-host platforms)
 - `docs/` — full documentation tree
 - `/var/lib/mpd/` — runtime state at runtime (created by bootstrap, populated by `mpd --vm-setup`)

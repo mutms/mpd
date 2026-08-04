@@ -60,8 +60,7 @@ subdirectory) it defaults to that project.`
 
 // otherCommands are the read-only queries that are neither a project
 // verb nor a VM action.
-const otherCommands = `  list       [projects|runtimes|services|dbs]  (default: projects)
-  net                                          this VM's container subnet and DNS zone
+const otherCommands = `  list       [projects|runtimes|services|dbs|network]  (default: projects)
   version                                      print the mpd version`
 
 // usage is the short form shown when a command is misspelled.

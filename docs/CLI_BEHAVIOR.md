@@ -1,4 +1,4 @@
-# CLI Behavior (Source of Truth)
+# CLI Behavior
 
 Purpose: define expected CLI behavior for `mpd` operations.
 
@@ -22,9 +22,9 @@ from the laptop with scp off the VM; see
 
 ## Contract level
 
-This document is a behavioral contract for AI assistants and contributors implementing CLI changes.
+This document is a behavioral reference for AI assistants and contributors implementing CLI changes.
 
-If implementation and docs diverge, align code to this contract or update this file in the same change.
+It is kept in sync with the implementation: a change that alters CLI behavior updates this file in the same change.
 
 ## Entry routing contract
 
@@ -35,9 +35,8 @@ From `go/cmd/mpd/main.go`:
    - `mpd <verb> <project> [args...]`
 3. Otherwise, route to the global flag command path.
 
-Hard preconditions enforced before command execution:
-- non-root execution only
-- executable location check against expected build path
+Non-root execution is policy, not an enforced precondition — see
+[`SECURITY.md`](SECURITY.md#non-root-execution-policy).
 
 ## Global command behavior
 
@@ -46,6 +45,9 @@ Global command dispatch is first-match, single-action per invocation.
 Operational flags include:
 - `--vm-status` — context-aware status (text)
 - `--vm-setup` — idempotent first-run/reset; takes no argument (see below).
+- `--vm-upgrade` — pull and rebuild mpd (plus mudev and the `/srv/extra`
+  catalogues), then re-run `--vm-setup`. Refuses over uncommitted changes
+  in `/opt/mpd`. See [`USAGE.md`](USAGE.md#updating-mpd).
 - `--vm-start` / `--vm-stop` — daily on/off; act on the active host adopted
   by `--vm-setup`. `--vm-start` reconciles `current` toward `requested` (see
   "Resource lifecycle model" in `docs/HOOKS.md`); `--vm-stop` fires
@@ -53,7 +55,7 @@ Operational flags include:
 - `--vm-restart` — graceful stop + restart. On mpd VM, runs
   `sudo systemctl reboot` and lets the user-systemd `mpd.service` unit
   drive the chain (ExecStop=`mpd --vm-stop` on shutdown, ExecStart=
-  `mpd --vm-start` on boot). User runs `mpd --vm-start` afterward to restore projects.
+  `mpd --vm-start` on boot), so projects come back without further commands.
 - `--web` — run the status page in the foreground on `127.0.0.1:8099`.
   Long-running, unlike every other flag here: the process *is* the
   service. Started by the `mpd-web.service` user unit, which
@@ -74,9 +76,11 @@ Operational flags include:
     deletes that directory — `list dbs` enumerates containers, so a
     container-only delete would leave data no mpd command can see.
 
-Listing is **a verb**, not a flag — `mpd list [projects|runtimes|services|dbs]`
-(default `projects`). Read-only entity queries; services are always-on
-infra started by `--vm-start`.
+Listing is **a verb**, not a flag — `mpd list
+[projects|runtimes|services|dbs|network]` (default `projects`).
+Read-only entity queries; services are always-on infra started by
+`--vm-start`; `network` prints this VM's addressing (id, zone, subnet,
+gateway).
 
 Operational preflight is not globally enforced before command dispatch.
 Setup/start/stop paths perform their own environment-specific checks where needed.
@@ -88,10 +92,9 @@ host environment rather than provisioning one:
 
 `mpd --vm-setup` validates the supported distro (Debian Trixie across every 
 platform), verifies `systemd-resolved` is active (a precondition the
-platform bootstrap is responsible for), and proceeds. The
-active-machine label is always pinned to `mpd VM` regardless of
-the OS hostname (which may be `mpd-<digits>` for concurrent
-cloud-init VMs or `mpd-sandbox` for the sandbox platform).
+platform bootstrap is responsible for), and proceeds. Identity is
+derived from the hostname `mpd-<NNN>` (ids 100..254 — the same on
+managed and sandbox VMs; see [`ARCHITECTURE.md` §9](ARCHITECTURE.md#9-identity-the-hostname)).
 
 Among the per-user files it maintains, `--vm-setup` writes a marked block
 into the dev user's `~/.ssh/config` giving every runtime in the assets
@@ -146,7 +149,8 @@ Note:
 - mpd should then attach/register that existing directory as a project without requiring mpd-managed clone.
 
 Project-first bootstrap workflow:
-1. create project from git repo + branch + name (+ optional runtime)
+1. stage the source tree under `/srv/projects/<name>/` yourself
+   (ordinary shell: `git clone`, `mudev clone`), then `mpd create`
 2. default runtime is `php` when not specified
 3. project type defaults to `moodle` when `--type` is not provided
 
@@ -160,11 +164,8 @@ Runtime-level global CLI (no project required):
 
 Contract intent:
 - runtime lifecycle must be usable independently from project lifecycle
-- project create path must support both "create from git" and "attach existing directory" workflows
-
-## Runtime-specific verbs
-
-1. runtime-level verbs (`assets/runtimes/<runtime>/verbs/*.json`)
+- project create must attach an existing directory without requiring an
+  mpd-managed clone — `create` never fetches source
 
 ## Project command behavior
 

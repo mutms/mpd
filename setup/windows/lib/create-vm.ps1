@@ -231,9 +231,9 @@ fi
 "@
 Write-Ok "Swap ready"
 
-# Bootstrap steps 40 + 50 + 60: apt install set, mpd build, optional WG.
-# Step 30 (networking) is skipped on cloud-init flows -- cloud-init owns
-# hostname + netplan on this VM, and bootstrap/30 is NetworkManager-only.
+# Bootstrap steps 40 + 50: apt install set, mpd build.
+# Networking (hostname + netplan) is cloud-init's job on this flow, so
+# there is no separate networking step to run.
 
 Write-Step "Bootstrap 40: apt install package set"
 Invoke-Ssh -User $VmUser -RemoteHost $VmIp `

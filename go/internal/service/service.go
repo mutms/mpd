@@ -60,9 +60,9 @@ type Descriptor struct {
 	// accessHint renders the human-facing "how do I reach this" column.
 	accessHint func(n net.Net) string
 	// Proxy, when set, means this service is not reached at its own
-	// address: its names resolve to the portal, which terminates TLS and
-	// proxies to the address below. Adminer works this way — it speaks
-	// plain HTTP and has no certificate of its own.
+	// address: its names resolve to the gateway, where caddy terminates
+	// TLS and proxies to the address below. Adminer works this way — it
+	// speaks plain HTTP and has no certificate of its own.
 	Proxy *PortalProxy
 	// Unit names the systemd unit backing this service, for services that
 	// are NOT containers. `mpd --web` and the resolver both run on the VM

@@ -14,16 +14,17 @@ the user sits and where `mpd` runs:
 
 - **Sandbox VM** — full GNOME desktop *inside* the VM, `mpd` runs in
   the VM. User installs Debian Trixie desktop in any hypervisor,
-  snapshots, runs `setup/sandbox/take-over-sandbox-vm.sh` inside the
+  snapshots, runs `setup/mpd-sandbox-setup.sh` inside the
   VM. Host stays untouched.
 - **mpd VM** — automated Debian Trixie VM driven by a matched-host
-  bootstrap (Parallels Desktop Pro on macOS — primary; libvirt/KVM on
-  Ubuntu and Hyper-V on Windows are speculative). Defaults to
+  bootstrap (Parallels Desktop Pro / UTM on macOS via `mpd-virt` —
+  primary; libvirt/KVM on Ubuntu and Hyper-V on Windows are automated
+  in-repo but less exercised). Defaults to
   headless; GNOME is installed and toggleable on demand via
   `gnome-start` / `gnome-stop` (persistent across reboots). User stays
   on their host: host browser visits `*.<NNN>.mpd.test` directly via
-  a static route + CA trust; host terminal SSHes into the VM to use the
-  `mpd` CLI.
+  the mpd-proxy WireGuard overlay or a SOCKS-over-SSH tunnel + CA
+  trust; host terminal SSHes into the VM to use the `mpd` CLI.
 
 `mpd` itself is a single Linux binary that runs **inside the VM**. The
 macOS-host orchestrator (`mpd-virt`) that drives Parallels lives in a
@@ -140,16 +141,15 @@ across docs.
   directory when you write one; it is absent when there are none, and a
   proposal is deleted once it ships — the code and the canonical docs
   become the record, and git keeps the reasoning.
-- *(Architecture proposals for the host-side `mpd-virt` orchestrator
-  live in the separate `mpd-virt` repo under
-  `docs/proposals/`.)*
+- *(Host-side design notes for the `mpd-virt` orchestrator live in
+  that repo's own `docs/`.)*
 - `docs/USAGE.md` — day-to-day workflow (bootstrap → first project → SSH-into-runtime)
-- `docs/NETWORKING.md` — networking model (static route via mpd-virt)
+- `docs/NETWORKING.md` — networking model (WireGuard overlay / SOCKS via mpd-virt + mpd-proxy)
 - `docs/SECURITY.md` — security model
 - macOS automation (Parallels / UTM) lives in the sibling `mpd-virt` repo: <https://github.com/mutms/mpd-virt>
 - `setup/linux/README.md` — Ubuntu host + libvirt/KVM automation
 - `setup/windows/README.txt` — Windows host + Hyper-V automation
-- `setup/sandbox/README.md` — graphical "live in the VM" Debian sandbox
+- `setup/mpd-sandbox-setup.sh` — graphical "live in the VM" Debian sandbox (wgettable single script)
 
 ## Mandatory architecture rule
 
@@ -246,9 +246,9 @@ this section is the "how to write one" follow-up.
 > A capability is a **verb** if and only if it does work that the
 > runtime container can't do for itself. Otherwise it's a **tool**.
 
-Almost everything is a tool. The verb set is fixed and tiny — `create`,
-`configure`, `start`, `stop`, `delete`, `show` — all Go, all in the
-control plane. Project-type-specific functionality (cron, phpunit,
+Almost everything is a tool. The verb set is fixed and small — `create`,
+`configure`, `start`, `stop`, `reset`, `run`, `delete`, `show`, `help`
+— all Go, all in the control plane. Project-type-specific functionality (cron, phpunit,
 composer, …) is exposed inside the runtime container where SSH sessions
 and AI agents run; you reach it via PATH after `ssh mpd-<NNN>-<runtime>`
 (the alias `mpd --vm-setup` writes into the VM's `~/.ssh/config`; the
@@ -438,12 +438,14 @@ found." Internal sudo on specific operations is the right shape.
 **Build / static checks** (run after any code or asset change):
 - `make install` (writes `bin/mpd`)
 - `make test vet fmt-check`
+- `make lint-shell` after any shell-asset change (shellcheck over
+  every shell file in the repo)
 - skim affected docs for stale path / link references when moving or
   renaming files.
 
 **Throw-away-VM smoke checks** (rerun freely — all idempotent):
-- fresh VM via `setup/sandbox/take-over-sandbox-vm.sh` (or the
-  matched-host bootstrap once `mpd-virt` lands)
+- fresh VM via `setup/mpd-sandbox-setup.sh` (or `mpd-virt takeover`
+  from a Mac)
 - `mpd --vm-setup`, `mpd --vm-start`, `mpd --vm-status`
 - optional: `mpd create/start/stop <project>` end-to-end including HTTPS hit
 - `mpd --vm-stop`

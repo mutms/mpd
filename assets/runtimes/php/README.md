@@ -17,7 +17,7 @@ mariadb, mysql).
 PHP version is resolved per project from the layered MPD_PHP_VERSION
 (runtime default → type default → user → project) — see the `php`
 wrapper and `source-mpd-env.sh`. Outside `/srv/projects/<n>/` it falls
-back to the oldest supported version (8.2), so `php -v` from `$HOME`
+back to a pinned version (8.2), so `php -v` from `$HOME`
 always answers the same thing — which is what IDE interpreter probes
 need. Point PhpStorm at `/usr/bin/php` for the dispatcher, or at
 `/usr/bin/php8.3` (etc.) to pin one version.
