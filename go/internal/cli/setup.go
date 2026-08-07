@@ -217,6 +217,12 @@ func Setup(ctx context.Context, out io.Writer) error {
 	if err := vm.EnsureDnsmasqResolving(ctx, out, n.Gateway(), n.Zone()); err != nil {
 		return err
 	}
+	// Fatal, unlike the report verifyDNS makes: without an upstream the
+	// runtime build below cannot install a single package, and failing
+	// here says why in one screen instead of a hundred lines of apt.
+	if err := vm.RequireDNSUpstream(out, n.Gateway(), net.RootDomain); err != nil {
+		return err
+	}
 	verifyDNS(ctx, out, n)
 
 	// The unified runtime: created here rather than lazily, so setup

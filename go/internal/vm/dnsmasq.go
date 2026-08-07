@@ -6,6 +6,7 @@ import (
 	"io"
 	gonet "net"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/mutms/mpd/go/internal/exec"
@@ -275,3 +276,79 @@ func ForwardsUpstream(ctx context.Context, listenIP string) bool {
 // probeTimeout is generous for a resolver on the same host; it exists so a
 // wedged resolver cannot hang setup rather than to tune anything.
 const probeTimeout = 2 * time.Second
+
+// resolvedUpstreamPath is where systemd-resolved publishes the servers it
+// forwards to. dnsmasq's resolv-file: see DnsmasqConfBody.
+const resolvedUpstreamPath = "/run/systemd/resolve/resolv.conf"
+
+// systemResolvConfPath is what glibc reads — a symlink to resolved's stub
+// on a VM where resolved is in charge.
+const systemResolvConfPath = "/etc/resolv.conf"
+
+// RequireDNSUpstream fails when the resolver would have no upstream to
+// forward to.
+//
+// dnsmasq discards any nameserver that is one of its own addresses
+// ("ignoring nameserver <ip> - local interface"). Where systemd-resolved
+// has no per-link DNS — an interface it does not manage, so nothing ever
+// told it the network's servers — the only entry it publishes is the one
+// mpd put there pointing at dnsmasq itself. Every entry is then dropped
+// and the resolver forwards nowhere.
+//
+// That state is invisible from inside the zone: those names come from the
+// local hostsdir and answer normally. It surfaces minutes later as the
+// runtime's first apt-get failing to resolve deb.debian.org, which is why
+// this is checked rather than discovered.
+func RequireDNSUpstream(out io.Writer, resolverIP, rootDomain string) error {
+	usable := upstreamsExcluding(resolvedUpstreamPath, resolverIP)
+	if len(usable) > 0 {
+		ui.OK(out, "Upstream DNS: %s.", strings.Join(usable, ", "))
+		return nil
+	}
+
+	// The servers the VM itself is using are the ones resolved should
+	// have had. Naming them turns the fix into a copy-paste.
+	candidates := upstreamsExcluding(systemResolvConfPath, resolverIP)
+	suggestion := "<the network's DNS server>"
+	if len(candidates) > 0 {
+		suggestion = strings.Join(candidates, " ")
+	}
+
+	return fmt.Errorf(`the DNS resolver has no upstream to forward to.
+
+systemd-resolved publishes no nameserver in %s
+except mpd's own (%s), and dnsmasq discards that one as a local
+interface — so names outside %s resolve nowhere and the runtime's
+first apt-get will fail.
+
+This happens when systemd-resolved manages nothing: an interface set up
+outside systemd-networkd never hands it the network's DNS servers. In
+"resolvectl status" a healthy link reads "Current Scopes: DNS", and the
+global reads "resolv.conf mode: stub".
+
+Give resolved the upstream explicitly, then re-run this command:
+
+    printf '[Resolve]\nDNS=%s\n' | sudo tee /etc/systemd/resolved.conf.d/00-upstream.conf
+    sudo systemctl reload systemd-resolved
+    sudo systemctl restart %s`,
+		resolvedUpstreamPath, resolverIP, rootDomain, suggestion, DnsmasqUnit)
+}
+
+// upstreamsExcluding reads the nameserver lines from a resolv.conf-shaped
+// file, dropping the address mpd's own resolver answers on — the one
+// dnsmasq will discard.
+func upstreamsExcluding(path, own string) []string {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, line := range strings.Split(string(body), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || fields[0] != "nameserver" || fields[1] == own {
+			continue
+		}
+		out = append(out, fields[1])
+	}
+	return out
+}
