@@ -465,11 +465,11 @@ same data volume — a process in the `php` runtime can read files
 belonging to `node` runtime projects. This is intentional for a
 single-developer environment.
 
-Container IPs are unreachable from the laptop and the LAN: the in-VM
-firewall drops inbound routing into `10.163.<NNN>.0/24`, and the laptop's
-overlay carries only the gateway `.1`. The VM host itself reaches
-containers natively via `mpdbr0` (caddy proxies to them, sshd jumps into
-them).
+Container IPs are unreachable from the LAN: the in-VM firewall drops
+routing into `10.163.<NNN>.0/24` from every interface except the bridge
+itself and `wg0`. The developer's laptop, by contrast, reaches the whole
+subnet — via the WireGuard overlay (mpd-proxy routes the `/24` through
+`wg0`) or via SOCKS/ProxyJump through sshd on the VM.
 
 ## What mpd does NOT protect against
 
@@ -517,16 +517,16 @@ certificate automatically. No browser warnings, no `--insecure` flags,
 no per-cert trust clicks. Name constraints limit the blast radius.
 
 **Why a WireGuard overlay (mpd-proxy) for daily use?** The laptop needs
-each VM's gateway `.1` for HTTPS and DNS, and the container subnet must
-*not* be exposed on the LAN. mpd-proxy runs one WireGuard `utun` on the
-laptop and adds each VM as a peer routing only `10.163.<NNN>.1/32`, with
-one split-DNS resolver — so several VMs are reachable at once through one
-encrypted tunnel, no per-VM route or `/etc/resolver` file, coexisting with
-a corporate VPN. It is the daily driver for anyone running more than one
-VM. (It supersedes both the earlier *flat* host-only WireGuard tunnel —
-which allowed only one active tunnel and so reached one VM — and the
-interim routed-subnet model, which exposed container IPs on the LAN and is
-now sealed by the firewall.)
+each VM's whole container subnet — project URLs are served at container
+IPs — while the subnet must *not* be exposed on the LAN. mpd-proxy runs
+one WireGuard `utun` on the laptop and adds each VM as a peer routing
+`10.163.<NNN>.0/24`, with one split-DNS resolver — so several VMs are
+reachable at once through one encrypted tunnel, no per-VM route or
+`/etc/resolver` file, coexisting with a corporate VPN. It is the daily
+driver for anyone running more than one VM. (It supersedes the earlier
+*flat* host-only WireGuard tunnel, which allowed only one active tunnel
+and so reached one VM. The LAN side stays sealed by the in-VM firewall,
+which exempts only the bridge and `wg0`.)
 
 **Why SOCKS-over-SSH as the simple path?** mpd-proxy needs `sudo` (it
 creates a utun) — more than an occasional user needs. `ssh -N

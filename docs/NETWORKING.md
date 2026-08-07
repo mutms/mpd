@@ -66,14 +66,14 @@ up by `mpd-virt`:
   in that browser (or the System Keychain) and HTTPS just works.
 - **Advanced — WireGuard overlay (mpd-proxy, for daily multi-VM use).**
   `mpd-proxy` runs one WireGuard `utun` on the laptop and adds each VM as
-  a peer routing only `10.163.<NNN>.1/32`, plus one split-DNS resolver
+  a peer routing the whole `10.163.<NNN>.0/24`, plus one split-DNS resolver
   (`/etc/resolver/mpd.test` → mpd-proxy → the right VM's dnsmasq). Several
   VMs are reachable at once, transparently, for *every* app — not just a
   browser. Needs `sudo mpd-proxy up` once.
 
-Both terminate at `.1`; neither exposes the container subnet (the
-mpd-proxy peer is scoped to `.1/32`, and the firewall drops inbound
-routing into the subnet regardless). Both coexist with a corporate VPN.
+Both reach the whole container subnet — SOCKS via sshd on the VM, the
+overlay via `wg0` (which the in-VM firewall exempts; routing into the
+subnet from the LAN is dropped). Both coexist with a corporate VPN.
 **Trust** is the same either way: the mpd root CA in the System Keychain
 (transparent, every app) or imported into the dedicated browser (no
 `sudo`) makes `*.mpd.test` HTTPS trusted.

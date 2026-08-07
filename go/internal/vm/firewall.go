@@ -9,25 +9,24 @@ import (
 	"github.com/mutms/mpd/go/internal/ui"
 )
 
-// The container subnet 10.163.<NNN>.0/24 must never be reachable from outside
-// the VM. Everything the Mac (and anything on the LAN) legitimately needs is
-// served by the VM itself on the gateway .1 — caddy (the TLS frontdoor that
-// reverse-proxies to the containers) and dnsmasq — plus SSH ProxyJump through
-// the box for shells into runtime containers. In every case the container hop
-// is made *inside* the VM, so no external party ever needs a route to a
-// container IP.
+// The container subnet 10.163.<NNN>.0/24 must never be reachable from the
+// LAN/public side of the VM (eth0). The developer's Mac, however, reaches the
+// *whole* subnet — project URLs served at runtime-container IPs, databases,
+// service containers — through the WireGuard overlay (wg0, fed by mpd-proxy),
+// or through SOCKS-over-SSH / ProxyJump, which terminate at sshd on the VM and
+// therefore never traverse the forward chain at all.
 //
 // This installs an independent nftables table that drops NEW forwarded
-// connections into the subnet from any interface but the bridge itself, while
-// leaving the container→internet masquerade (netavark's rules, a separate
-// table) and all established/return traffic untouched. An nft `drop` verdict is
-// terminal across base chains at the same hook, so this wins regardless of
-// netavark's accepts, and living in its own table means netavark never flushes
-// it.
+// connections into the subnet from any interface but the bridge itself and
+// wg0, while leaving the container→internet masquerade (netavark's rules, a
+// separate table) and all established/return traffic untouched. An nft `drop`
+// verdict is terminal across base chains at the same hook, so this wins
+// regardless of netavark's accepts, and living in its own table means netavark
+// never flushes it.
 //
-// mpd-virt independently narrows the WireGuard AllowedIPs to just the gateway
-// .1/32, so the Mac cannot even put a container-subnet packet onto the tunnel —
-// this box-side drop is the belt to that braces.
+// mpd-virt sets the WireGuard peer's AllowedIPs to the full 10.163.<NNN>.0/24,
+// so the tunnel carries container-subnet traffic by design — only non-tunnel,
+// non-bridge ingress (the LAN) is sealed out here.
 const (
 	firewallTable    = "mpd_firewall"
 	firewallUnit     = "mpd-firewall.service"
@@ -41,8 +40,10 @@ const (
 // other table (netavark's included).
 func firewallRuleBody(subnet string) string {
 	return fmt.Sprintf(`#!%[4]s -f
-# Managed by mpd vm-setup. Seals the container subnet %[2]s from outside the VM;
-# container outbound (masquerade) and all return traffic are left untouched.
+# Managed by mpd vm-setup. Seals the container subnet %[2]s from the LAN/public
+# side of the VM; the WireGuard overlay (wg0) legitimately carries the whole
+# subnet to the developer's Mac. Container outbound (masquerade) and all return
+# traffic are left untouched.
 add table inet %[1]s
 delete table inet %[1]s
 table inet %[1]s {
@@ -51,9 +52,10 @@ table inet %[1]s {
 		# Return traffic for container-initiated flows always passes.
 		ct state established,related accept
 		# Drop NEW connections into the container subnet arriving on anything
-		# but the bridge itself (wg0 from the Mac, eth0 from the LAN, …).
-		# Container outbound (iif %[3]s) and VM-local traffic are unaffected.
-		ip daddr %[2]s iifname != "%[3]s" ct state new drop
+		# but the bridge itself or the WireGuard overlay (i.e. eth0 from the
+		# LAN, …). Container outbound (iif %[3]s) and VM-local traffic are
+		# unaffected.
+		ip daddr %[2]s iifname != { "%[3]s", "wg0" } ct state new drop
 	}
 }
 `, firewallTable, subnet, BridgeName, nftBin)
@@ -83,7 +85,7 @@ WantedBy=multi-user.target
 // Idempotent — the ruleset self-replaces and the unit is reloaded only when it
 // changes.
 func EnsureFirewall(ctx context.Context, out io.Writer, subnet string) error {
-	ui.Step(out, "Container-subnet firewall (nftables — seal %s from outside)", subnet)
+	ui.Step(out, "Container-subnet firewall (nftables — seal %s from the LAN; wg0 allowed)", subnet)
 
 	if _, err := WriteRootOwnedFile(ctx, firewallRulePath, firewallRuleBody(subnet)); err != nil {
 		return err
@@ -106,6 +108,6 @@ func EnsureFirewall(ctx context.Context, out io.Writer, subnet string) error {
 		return fmt.Errorf("systemctl restart %s failed — check `journalctl -u %s`", firewallUnit, firewallUnit)
 	}
 
-	ui.OK(out, "container subnet %s sealed from outside; outbound NAT kept (nft table %s)", subnet, firewallTable)
+	ui.OK(out, "container subnet %s sealed from the LAN; wg0 carries it, outbound NAT kept (nft table %s)", subnet, firewallTable)
 	return nil
 }
