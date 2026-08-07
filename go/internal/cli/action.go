@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mutms/mpd/go/internal/dnsmasq"
 	"github.com/mutms/mpd/go/internal/exec"
 	"github.com/mutms/mpd/go/internal/hooks"
 	"github.com/mutms/mpd/go/internal/srv"
@@ -58,6 +59,14 @@ func Start(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) e
 	}
 
 	fmt.Fprintln(out, "\n\033[1m==> DNS resolution\033[0m")
+	// Republish the derived records: the vm.<zone> record carries the
+	// VM's LAN address, and a VM that rebooted on a different network
+	// (DHCP) must not keep answering with the old one. writeIfChanged
+	// makes this free when nothing moved.
+	if err := dnsmasq.Reconcile(ctx, out, d.Dnsmasq,
+		ServiceDNSRecords(d.Net, d.State), vm.PrimaryIP(), false); err != nil {
+		return err
+	}
 	// After the containers, so the podman bridge exists: at boot the
 	// resolver starts before podman has created it, and an interface
 	// appearing in the wrong instant is missed permanently. This is where
@@ -113,6 +122,12 @@ func verifyDNS(ctx context.Context, out io.Writer, n net.Net) {
 		{n.Zone(), n.Gateway()},
 		{n.RuntimeFQDN(), n.IP(net.HostRuntime)},
 	}
+	// vm.<zone> answers with the VM's own LAN address. Checked against
+	// the live address, which is also what publishing uses — and skipped
+	// when there is none to compare (a DHCP-less sandbox mid-boot).
+	if vmIP := vm.PrimaryIP(); vmIP != "" {
+		checks = append(checks, struct{ host, want string }{n.VMServiceRecord(), vmIP})
+	}
 
 	healthy := true
 	for _, c := range checks {
@@ -134,8 +149,11 @@ func verifyDNS(ctx context.Context, out io.Writer, n net.Net) {
 		fmt.Fprintf(out, "  Verify: resolvectl status; getent hosts %s\n", c.host)
 	}
 	if healthy {
-		fmt.Fprintf(out, "\033[1;32m✓ DNS: %s → %s, %s → %s\033[0m\n",
-			n.Zone(), n.Gateway(), n.RuntimeFQDN(), n.IP(net.HostRuntime))
+		parts := make([]string, len(checks))
+		for i, c := range checks {
+			parts[i] = c.host + " → " + c.want
+		}
+		fmt.Fprintf(out, "\033[1;32m✓ DNS: %s\033[0m\n", strings.Join(parts, ", "))
 	}
 }
 
