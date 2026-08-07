@@ -67,9 +67,12 @@ BUILD_PKGS=(
 )
 
 # qemu-guest-agent improves hypervisor↔guest integration on KVM/Parallels.
-# Harmless on hypervisors that ignore it.
+# avahi-daemon advertises <hostname>.local over mDNS, which is how
+# `mpd-virt takeover <NNN>` finds a box when no IP is given. Both are
+# harmless where the hypervisor or network ignores them.
 EXTRA_PKGS=(
     qemu-guest-agent
+    avahi-daemon
 )
 
 ALL_PKGS=("${RUNTIME_PKGS[@]}" "${BUILD_PKGS[@]}" "${EXTRA_PKGS[@]}")
@@ -86,4 +89,24 @@ else
     apt_get install -y --no-install-recommends \
         "${missing[@]}"
     ok "installed ${#missing[@]} package(s): ${missing[*]}"
+fi
+
+step "Guest integration services"
+# Debian enables+starts avahi-daemon on install; converge explicitly so a
+# box where it was stopped or disabled still comes back. Not fatal: on an
+# exotic box mDNS discovery just won't work and takeover takes an
+# explicit IP instead.
+if sudo systemctl enable --now avahi-daemon >/dev/null 2>&1; then
+    ok "avahi-daemon active ($(hostname -s).local over mDNS)"
+else
+    warn "avahi-daemon could not be enabled — mDNS discovery unavailable"
+fi
+# qemu-guest-agent has no [Install] section on Debian — udev starts it
+# when the hypervisor's virtio-serial device exists, and does so on
+# every boot. This start only matters for the current boot; it fails
+# harmlessly where there is no device (Parallels, containers).
+if sudo systemctl start qemu-guest-agent >/dev/null 2>&1; then
+    ok "qemu-guest-agent running"
+else
+    ok "qemu-guest-agent installed (idle — no hypervisor device on this box)"
 fi

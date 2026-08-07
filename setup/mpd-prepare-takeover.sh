@@ -10,10 +10,10 @@
 # systemd-networkd + systemd-resolved). When every check is green it
 # prints the exact command to run on the Mac:
 #
-#     mpd-virt takeover <NNN> <IP>
+#     mpd-virt takeover <NNN> --backend=<backend>
 #
-# reading both the id (from the hostname) and the IP off the VM, so you
-# never type either by hand.
+# with the id read from the hostname and the IP left to mDNS discovery
+# (avahi is set up below) — plus the explicit-IP variant as a fallback.
 #
 # Wgettable / self-contained: it runs before the mpd repo is cloned, so
 # it inlines its own helpers rather than sourcing bootstrap/00-common.sh.
@@ -24,15 +24,16 @@
 #
 # Steps: (1) hostname gate mpd-<NNN>, (2) passwordless sudo, (3) convert
 # the network stack to systemd-networkd + systemd-resolved (desktop:
-# NetworkManager; server: ifupdown), (4) readiness check → prints the
-# `mpd-virt takeover <NNN> <IP>` line. Step 3 asks for one reboot; the
-# re-run finishes and prints the command.
+# NetworkManager; server: ifupdown), (4) guest integration (avahi mDNS +
+# qemu-guest-agent), (5) readiness check → prints the takeover command.
+# Step 3 asks for one reboot; the re-run finishes and prints the command.
 
 set -euo pipefail
 
 # --- Inline helpers (the mpd repo may not be cloned yet) --------------
 step() { printf '\n==> %s\n' "$*"; }
 ok()   { printf '    ok: %s\n' "$*"; }
+warn() { printf '    warn: %s\n' "$*"; }
 die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
 # --- 1. Hostname must be mpd-<NNN> -----------------------------------
@@ -226,11 +227,47 @@ if dpkg -s network-manager >/dev/null 2>&1; then
     ok "NetworkManager purged"
 fi
 
+# --- Guest integration: mDNS advertisement + hypervisor agent ---------
+# avahi-daemon advertises <host>.local over mDNS — that is how
+# `mpd-virt takeover <NNN>` finds this box when you don't hand it an IP.
+# qemu-guest-agent lets KVM-family hypervisors (UTM, Proxmox,
+# virt-manager) see the guest; on Debian it is udev-activated only where
+# the virtio device exists, so it sits idle everywhere else. Installed
+# here (not by `mpd --vm-setup`) so the packages arrive with the
+# platform prep, before takeover needs the mDNS name — and so mpd itself
+# never assumes it runs under a hypervisor.
+step "Guest integration (avahi-daemon, qemu-guest-agent)"
+need=()
+dpkg -s avahi-daemon     >/dev/null 2>&1 || need+=(avahi-daemon)
+dpkg -s qemu-guest-agent >/dev/null 2>&1 || need+=(qemu-guest-agent)
+if [ "${#need[@]}" -gt 0 ]; then
+    sudo apt-get update -qq
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${need[@]}"
+    ok "installed: ${need[*]}"
+else
+    ok "already installed"
+fi
+if sudo systemctl enable --now avahi-daemon >/dev/null 2>&1; then
+    ok "avahi-daemon active (${host}.local over mDNS)"
+else
+    warn "avahi-daemon could not be enabled — pass the IP to takeover explicitly"
+fi
+sudo systemctl start qemu-guest-agent >/dev/null 2>&1 \
+    && ok "qemu-guest-agent running" \
+    || ok "qemu-guest-agent installed (idle — no hypervisor device on this box)"
+
 vm_ip="$(ip -4 -o addr show "${iface}" | awk '{print $4}' | cut -d/ -f1 | head -1)"
 echo
 echo "================================================================"
 echo "  ${host} is ready for takeover."
 echo
-echo "  On your Mac, run:"
-echo "      mpd-virt takeover ${nnn} ${vm_ip}"
+echo "  On your Mac, run (--backend = where the box runs:"
+echo "  generic | parallels | container | utm | proxmox):"
+echo
+echo "      mpd-virt takeover ${nnn} --backend=<backend>"
+echo
+echo "  The box advertises itself over mDNS; if that doesn't reach"
+echo "  your Mac, give the IP explicitly:"
+echo
+echo "      mpd-virt takeover ${nnn} ${vm_ip} --backend=<backend>"
 echo "================================================================"
