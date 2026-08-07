@@ -58,7 +58,8 @@ Same VM, headless, with your laptop's own browser and IDE resolving
 creates or adopts the VM and wires the host side in one shot; on Linux and
 Windows the in-repo automation is [setup/linux/](setup/linux/README.md) and
 [setup/windows/](setup/windows/README.txt) (less exercised). A sandbox is
-adopted with `mpd-virt takeover <NNN> <IP>` — projects survive.
+adopted with `mpd-virt takeover <NNN> --backend=<backend>` (the box is
+found over mDNS; pass the IP if that can't reach it) — projects survive.
 
 ## Documentation
 
