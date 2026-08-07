@@ -205,10 +205,24 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 
+	// Before the runtime, not after it: building the runtime base runs
+	// apt inside a container that resolves through this resolver, so a
+	// resolver that is not answering yet fails that build minutes in,
+	// with the cause several screens up. This used to sit at the end of
+	// setup because the resolver binds the podman bridge and podman only
+	// created that bridge once a container attached — no longer true:
+	// mpd-bridge.service brings mpdbr0 up at boot, and the dnsmasq unit
+	// orders itself after it.
+	ui.Step(out, "DNS resolution")
+	if err := vm.EnsureDnsmasqResolving(ctx, out, n.Gateway(), n.Zone()); err != nil {
+		return err
+	}
+	verifyDNS(ctx, out, n)
+
 	// The unified runtime: created here rather than lazily, so setup
 	// leaves the VM fully usable. Everything it needs exists by now —
-	// the CA (certificates step), /srv (volume mount), DNS (resolver
-	// step) — and reconcileCaches has just adopted any existing entry.
+	// the CA (certificates step), /srv (volume mount), DNS (just
+	// verified) — and reconcileCaches has just adopted any existing entry.
 	if err := setupRuntime(ctx, out, p, s, m, n, user); err != nil {
 		return err
 	}
@@ -261,18 +275,6 @@ func Setup(ctx context.Context, out io.Writer) error {
 		certs.ServiceCertChanged); err != nil {
 		return err
 	}
-
-	// Last, not next to the resolver step: the resolver binds the podman
-	// bridge, and podman only creates that bridge when the first container
-	// attaches to the network. On a fresh VM that is adminer, above — so
-	// checking any earlier reports a failure that setup is about to fix,
-	// and repairing any earlier would restart the resolver before the
-	// thing it needs exists.
-	ui.Step(out, "DNS resolution")
-	if err := vm.EnsureDnsmasqResolving(ctx, out, n.Gateway(), n.Zone()); err != nil {
-		return err
-	}
-	verifyDNS(ctx, out, n)
 
 	ui.Step(out, "Installing shutdown unit")
 	if err := vm.InstallShutdownUnit(ctx, user.User); err != nil {

@@ -254,6 +254,24 @@ func resolverAnswers(ctx context.Context, listenIP, name string) bool {
 	return err == nil && len(addrs) > 0
 }
 
+// UpstreamProbeName is the name mpd forwards to prove the resolver has a
+// working upstream. Debian's mirror rather than an arbitrary name: it is
+// what every container's first apt run asks for, so a VM that answers
+// here is a VM whose runtime can be built.
+const UpstreamProbeName = "deb.debian.org"
+
+// ForwardsUpstream reports whether the resolver can answer for a name it
+// must forward.
+//
+// Separate from the zone checks because the two prove different things
+// and fail independently. Every name in the zone is served from the local
+// hostsdir, so they all answer even when the resolver has no upstream at
+// all — which is precisely the state that lets `mpd --vm-setup` report
+// healthy DNS and then fail inside the runtime's first apt-get.
+func ForwardsUpstream(ctx context.Context, listenIP string) bool {
+	return resolverAnswers(ctx, listenIP, UpstreamProbeName)
+}
+
 // probeTimeout is generous for a resolver on the same host; it exists so a
 // wedged resolver cannot hang setup rather than to tune anything.
 const probeTimeout = 2 * time.Second

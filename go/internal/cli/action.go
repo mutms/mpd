@@ -155,6 +155,23 @@ func verifyDNS(ctx context.Context, out io.Writer, n net.Net) {
 		}
 		fmt.Fprintf(out, "\033[1;32m✓ DNS: %s\033[0m\n", strings.Join(parts, ", "))
 	}
+
+	// Forwarding is a separate question from any of the above: every name
+	// checked so far is served from the local hostsdir, so they answer
+	// even when the resolver has no upstream at all.
+	if vm.ForwardsUpstream(ctx, n.Gateway()) {
+		fmt.Fprintf(out, "\033[1;32m✓ DNS: %s forwarded upstream\033[0m\n", vm.UpstreamProbeName)
+		return
+	}
+	fmt.Fprintf(out, "DNS check: the resolver answers for %s but cannot resolve %s.\n",
+		n.Zone(), vm.UpstreamProbeName)
+	fmt.Fprintln(out, "  Names in the zone are served locally, so they work regardless — but")
+	fmt.Fprintln(out, "  containers resolve through this resolver, so apt inside the runtime")
+	fmt.Fprintln(out, "  will fail. dnsmasq forwards to the servers systemd-resolved lists,")
+	fmt.Fprintln(out, "  ignoring any that are its own address. Inspect:")
+	fmt.Fprintln(out, "    resolvectl status")
+	fmt.Fprintln(out, "    grep nameserver /run/systemd/resolve/resolv.conf")
+	fmt.Fprintf(out, "    journalctl -u %s | tail\n", vm.DnsmasqUnit)
 }
 
 func dnsmasqReachable(ctx context.Context) bool {
