@@ -94,7 +94,11 @@ func Start(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) e
 	return nil
 }
 
-// verifyDNS checks that the VM's own resolver answers for the zone apex.
+// verifyDNS checks that the VM's own resolver answers for the two fixed
+// names every VM publishes: the zone apex (→ gateway) and the runtime
+// (→ its fixed address, published ahead of the container existing).
+// The apex proves the resolver answers at all; the runtime proves the
+// reconciled record set actually landed.
 // Reports rather than fails: a VM with broken DNS is still worth having
 // started, and the message says what to inspect.
 func verifyDNS(ctx context.Context, out io.Writer, n net.Net) {
@@ -105,24 +109,34 @@ func verifyDNS(ctx context.Context, out io.Writer, n net.Net) {
 	}
 	// The apex answers at the gateway — the portal is VM infra behind
 	// caddy on .1, not a container with an address of its own.
-	want := n.Gateway()
+	checks := []struct{ host, want string }{
+		{n.Zone(), n.Gateway()},
+		{n.RuntimeFQDN(), n.IP(net.HostRuntime)},
+	}
 
-	got := resolveHost(ctx, n.Zone())
-	if got == want {
-		fmt.Fprintf(out, "\033[1;32m✓ DNS: %s → %s\033[0m\n", n.Zone(), got)
-		return
+	healthy := true
+	for _, c := range checks {
+		got := resolveHost(ctx, c.host)
+		if got == c.want {
+			continue
+		}
+		healthy = false
+		if got == "" {
+			fmt.Fprintf(out, "DNS check: no result — nothing answered for %s.\n", c.host)
+			// The overwhelmingly likely cause, and not an obvious one: the
+			// resolver binds the podman bridge, which podman does not create
+			// until a container attaches to the network.
+			fmt.Fprintf(out, "  If no container has ever started, the bridge does not exist yet\n"+
+				"  and the resolver has nothing to bind. Start one, or run: mpd --vm-setup\n")
+		} else {
+			fmt.Fprintf(out, "DNS check: %s resolved to %s, expected %s\n", c.host, got, c.want)
+		}
+		fmt.Fprintf(out, "  Verify: resolvectl status; getent hosts %s\n", c.host)
 	}
-	if got == "" {
-		fmt.Fprintln(out, "DNS check: no result — nothing answered for the zone.")
-		// The overwhelmingly likely cause, and not an obvious one: the
-		// resolver binds the podman bridge, which podman does not create
-		// until a container attaches to the network.
-		fmt.Fprintf(out, "  If no container has ever started, the bridge does not exist yet\n"+
-			"  and the resolver has nothing to bind. Start one, or run: mpd --vm-setup\n")
-	} else {
-		fmt.Fprintf(out, "DNS check: got %s, expected %s\n", got, want)
+	if healthy {
+		fmt.Fprintf(out, "\033[1;32m✓ DNS: %s → %s, %s → %s\033[0m\n",
+			n.Zone(), n.Gateway(), n.RuntimeFQDN(), n.IP(net.HostRuntime))
 	}
-	fmt.Fprintf(out, "  Verify: resolvectl status; getent hosts %s\n", n.Zone())
 }
 
 func dnsmasqReachable(ctx context.Context) bool {
