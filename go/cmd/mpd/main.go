@@ -285,7 +285,11 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 	case f.vmSetup:
 		return withLock(ctx, out, state.New(), func() error { return cli.Setup(ctx, out) })
 	case f.vmUpgrade:
-		return withLock(ctx, out, state.New(), func() error { return cli.Upgrade(ctx, out) })
+		// No lock: the upgrade mutates the checkout and bin/mpd, never
+		// the state files. The state-mutating part is the `mpd --vm-setup`
+		// child it spawns at the end — which takes the lock itself, and
+		// would wait forever on a lock held here (same trap as --control).
+		return cli.Upgrade(ctx, out)
 	case f.vmStart:
 		d, err := projectDeps()
 		if err != nil {
