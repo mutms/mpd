@@ -7,6 +7,7 @@ import (
 
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
+	"github.com/mutms/mpd/go/internal/runtime"
 	"github.com/mutms/mpd/go/internal/service"
 	"github.com/mutms/mpd/go/internal/state"
 	"github.com/mutms/mpd/go/internal/vm"
@@ -59,15 +60,29 @@ func ListServices(ctx context.Context, out io.Writer, n net.Net, p *podman.Clien
 	}
 }
 
-// ListInfra renders the `list infra` table — the VM-integral systemd
-// pieces (dnsmasq, portal), always on, distinct from the optional
-// services. unitActive is passed in so the listing stays testable
-// without a systemd on the other end.
-func ListInfra(ctx context.Context, out io.Writer, n net.Net,
+// ListInfra renders the `list infra` table — the runtime container plus
+// the VM-integral systemd pieces (dnsmasq, portal), always on, distinct
+// from the optional services. unitActive is passed in so the listing
+// stays testable without a systemd on the other end.
+func ListInfra(ctx context.Context, out io.Writer, n net.Net, p *podman.Client,
 	unitActive func(context.Context, string, bool) bool) {
 
 	fmt.Fprintln(out, Col("INFRA", colService)+Col("STATUS", colStatus)+"ACCESS")
 	fmt.Fprintln(out, Rule(72))
+
+	// The runtime is a container, not a unit; no access column — how to
+	// reach it is the host-side orchestrator's business.
+	rtStatus := "missing (run mpd --vm-setup)"
+	for _, item := range p.Ps(ctx, "label=mpd.runtime") {
+		if item.Label("mpd.name") != runtime.Name {
+			continue
+		}
+		rtStatus = StatusStopped
+		if item.State == "running" {
+			rtStatus = StatusRunning
+		}
+	}
+	fmt.Fprintln(out, Col(runtime.Name, colService)+StatusLabel(rtStatus, colStatus))
 
 	for _, inf := range vm.InfraServices() {
 		status := StatusStopped

@@ -67,10 +67,9 @@ const shellHTML = `{{define "page"}}<!doctype html>
 </header>
 
 {{template "projects" .}}
-{{template "runtimes" .}}
+{{template "services" .}}
 {{template "databases" .}}
 {{template "infra" .}}
-{{template "services" .}}
 </html>{{end}}`
 
 const projectsHTML = `{{define "projects"}}
@@ -95,24 +94,6 @@ const projectsHTML = `{{define "projects"}}
     {{end}}
   </table>
   {{else}}<p class="empty">No projects yet — <code>mpd create &lt;name&gt;</code>.</p>{{end}}
-</section>
-{{end}}`
-
-const runtimesHTML = `{{define "runtimes"}}
-<section id="runtimes" hx-get="/section/runtimes" hx-trigger="every 5s" hx-swap="outerHTML">
-  <h2>Runtimes</h2>
-  <table>
-    <tr><th>Runtime</th><th>Requested</th><th>Status</th><th>Address</th><th>Projects</th></tr>
-    {{range .Runtimes}}
-    <tr>
-      <td class="name">{{.Name}}</td>
-      <td class="meta">{{.Requested}}</td>
-      <td><span class="badge {{if .Running}}on{{end}}">{{.Status}}</span></td>
-      <td class="meta">{{.IP}}{{if .Created}}<br>{{.DNS}}{{end}}</td>
-      <td class="meta">{{.Projects}}</td>
-    </tr>
-    {{end}}
-  </table>
 </section>
 {{end}}`
 

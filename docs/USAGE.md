@@ -501,9 +501,8 @@ mpd --vm-restart                    # graceful stop, then sudo systemctl reboot;
 mpd --check-hooks                # cross-reference asset hook dirs against the Event catalogue
 
 mpd list                         # list all projects (default)
-mpd list runtimes                # the runtime container
 mpd list services                # the optional extra services (mailpit, adminer, seleniumv1)
-mpd list infra                   # VM-integral infra: dnsmasq + the portal (systemd units)
+mpd list infra                   # infra: the runtime container, dnsmasq + the portal (systemd units)
 mpd list dbs                     # list DB containers
 mpd list network                 # this VM's addressing: id, zone, subnet, gateway
 

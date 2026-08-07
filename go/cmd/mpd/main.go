@@ -62,7 +62,7 @@ subdirectory) it defaults to that project.`
 
 // otherCommands are the read-only queries that are neither a project
 // verb nor a VM action.
-const otherCommands = `  list       [projects|runtimes|services|infra|dbs|network]  (default: projects)
+const otherCommands = `  list       [projects|services|infra|dbs|network]  (default: projects)
   version                                      print the mpd version`
 
 // usage is the short form shown when a command is misspelled.
@@ -489,9 +489,9 @@ func versionCmd() *cobra.Command {
 // when a name resolves to the wrong place.
 func listCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:       "list [projects|runtimes|services|infra|dbs|network]",
-		Short:     "List entities — projects (default), the runtime, extra services, VM infra, DB containers, or this VM's addressing",
-		ValidArgs: []string{"projects", "runtimes", "services", "infra", "dbs", "network"},
+		Use:       "list [projects|services|infra|dbs|network]",
+		Short:     "List entities — projects (default), extra services, VM infra, DB containers, or this VM's addressing",
+		ValidArgs: []string{"projects", "services", "infra", "dbs", "network"},
 		Args:      cobra.MatchAll(cobra.MaximumNArgs(1), cobra.OnlyValidArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			what := "projects"
@@ -504,17 +504,15 @@ func listCmd() *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			ctx := cmd.Context()
-			p, s, a := podman.New(), state.New(), assets.New()
+			p, s := podman.New(), state.New()
 
 			switch what {
 			case "projects":
 				cli.ListProjects(ctx, out, s, current.NewObserver(n.VMID(), p))
-			case "runtimes":
-				cli.ListRuntimes(ctx, out, n, p, s, a)
 			case "services":
 				cli.ListServices(ctx, out, n, p, s)
 			case "infra":
-				cli.ListInfra(ctx, out, n, vm.UnitActive)
+				cli.ListInfra(ctx, out, n, p, vm.UnitActive)
 			case "dbs":
 				cli.ListDatabases(ctx, out, n, p, s)
 			case "network":

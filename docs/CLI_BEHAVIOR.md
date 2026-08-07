@@ -99,11 +99,11 @@ Operational flags include:
     container-only delete would leave data no mpd command can see.
 
 Listing is **a verb**, not a flag — `mpd list
-[projects|runtimes|services|infra|dbs|network]` (default `projects`).
+[projects|services|infra|dbs|network]` (default `projects`).
 Read-only entity queries. `services` lists the optional extra
-containers only (with intent-aware status); `infra` lists the
-VM-integral systemd units (dnsmasq, the portal); `network` prints this
-VM's addressing (id, zone, subnet, gateway).
+containers only (with intent-aware status); `infra` lists the runtime
+container plus the VM-integral systemd units (dnsmasq, the portal);
+`network` prints this VM's addressing (id, zone, subnet, gateway).
 
 Operational preflight is not globally enforced before command dispatch.
 Setup/start/stop paths perform their own environment-specific checks where needed.
@@ -192,7 +192,7 @@ Project-first bootstrap workflow:
 2. project type defaults to `moodle` when `--type` is not provided
 
 Runtime-level global CLI (no project required):
-- `mpd list runtimes` — the runtime's status
+- `mpd list infra` — the runtime's status, alongside dnsmasq and the portal
 - `--runtime-rebuild` / `--runtime-backup` / `--runtime-restore`
 
 Contract intent:

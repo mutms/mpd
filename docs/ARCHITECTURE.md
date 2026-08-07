@@ -254,8 +254,8 @@ published to `/srv/meta/services.json` so in-runtime consumers
 (`configure.sh`) can read it. The single runtime's record lives at
 `/var/lib/mpd/state/runtimes/runtime/meta.json`.
 
-Display layers show both columns side-by-side (`mpd list runtimes`,
-`mpd list`, `mpd <project> show`). Divergence — e.g.
+Display layers show both columns side-by-side (`mpd list`,
+`mpd <project> show`). Divergence — e.g.
 `requested=running, current=stopped` after a reboot but before
 `mpd --vm-start` — is legible from the listing alone.
 

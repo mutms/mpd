@@ -7,66 +7,20 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mutms/mpd/go/internal/assets"
 	"github.com/mutms/mpd/go/internal/current"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
-	"github.com/mutms/mpd/go/internal/runtime"
 	"github.com/mutms/mpd/go/internal/state"
 )
 
-// Column widths for the runtime and DB tables.
+// Column widths for the project and DB tables.
 const (
-	colRuntimeName = 18
-	colRequested   = 12
-	colCurrent     = 10
-	colDNS         = 28
-	colDatabase    = 16
-	colDBStatus    = 10
+	colRequested = 12
+	colCurrent   = 10
+	colDNS       = 28
+	colDatabase  = 16
+	colDBStatus  = 10
 )
-
-// ListRuntimes renders `list runtimes` — a single row now that there is
-// exactly one runtime per VM. It still renders when the container is
-// missing ("missing" with no address), pointing at `mpd --vm-setup`.
-func ListRuntimes(ctx context.Context, out io.Writer, n net.Net, p *podman.Client, s state.Store, a assets.Tree) {
-	ip, dns := "—", "—"
-	requested, current := "-", "missing (run mpd --vm-setup)"
-
-	// Filter on the *presence* of mpd.runtime, not on a type label:
-	// the runtime container carries mpd.runtime=runtime, and there is
-	// no mpd.type=runtime label.
-	for _, item := range p.Ps(ctx, "label=mpd.runtime") {
-		if item.Label("mpd.name") != runtime.Name {
-			continue
-		}
-		ip = item.Label("mpd.ip")
-		if ip == "" {
-			ip = p.ContainerIP(ctx, item.Name(), "mpd-internal")
-		}
-		dns = n.RuntimeFQDN()
-		// Persisted intent drives reconciliation; live observation
-		// drives the display of what actually is.
-		if entry, ok := s.Runtime(runtime.Name); ok && entry.Requested != "" {
-			requested = entry.Requested
-		}
-		if item.State == "running" {
-			current = StatusRunning
-		} else {
-			current = StatusStopped
-		}
-	}
-
-	fmt.Fprintln(out, Col("NAME", colRuntimeName)+Col("REQUESTED", colRequested)+
-		Col("STATUS", colCurrent)+Col("IP", colIP)+Col("DNS", colDNS)+"PROJECTS")
-	fmt.Fprintln(out, Rule(100))
-
-	count := len(s.Projects())
-	label := fmt.Sprintf("%d project%s", count, plural(count))
-	fmt.Fprintln(out, Col(runtime.Name, colRuntimeName)+
-		StatusLabel(requested, colRequested)+
-		StatusLabel(current, colCurrent)+
-		Col(ip, colIP)+Col(dns, colDNS)+label)
-}
 
 // ListDatabases renders `list dbs`.
 //
@@ -159,11 +113,4 @@ func labelOr(item podman.PsItem, key, fallback string) string {
 		return v
 	}
 	return fallback
-}
-
-func plural(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "s"
 }

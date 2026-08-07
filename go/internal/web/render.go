@@ -19,7 +19,7 @@ import (
 // per section. A section is addressable on its own
 // (`page.ExecuteTemplate(w, "services", …)`), which is what htmx fetches.
 var page = template.Must(template.New("page").Parse(
-	shellHTML + projectsHTML + runtimesHTML + databasesHTML + infraHTML + servicesHTML))
+	shellHTML + projectsHTML + servicesHTML + databasesHTML + infraHTML))
 
 // View is what the templates render. Everything on it is derived here,
 // not in the template: a template that can only range over prepared
@@ -28,10 +28,9 @@ type View struct {
 	Zone      string
 	Host      string
 	Projects  []ProjectRow
-	Runtimes  []RuntimeRow
+	Services  []ServiceRow
 	Databases []DatabaseRow
 	Infra     []InfraRow
-	Services  []ServiceRow
 }
 
 // ProjectRow carries both because they answer different questions:
@@ -62,25 +61,14 @@ type ProjectRow struct {
 	Links []service.Link
 }
 
-// InfraRow is one VM-integral infrastructure piece (dnsmasq, portal) as
-// the page shows it — systemd units on the VM, distinct from the
-// optional service containers.
+// InfraRow is one VM-integral infrastructure piece (the runtime
+// container, dnsmasq, portal) as the page shows it — always-on parts of
+// mpd itself, distinct from the optional service containers.
 type InfraRow struct {
 	Name    string
 	Status  string
 	Running bool
 	Access  string
-}
-
-type RuntimeRow struct {
-	Name      string
-	Requested string
-	Status    string
-	Running   bool
-	Created   bool
-	IP        string
-	DNS       string
-	Projects  int
 }
 
 type DatabaseRow struct {
@@ -119,10 +107,9 @@ func pageData(ctx context.Context, d Deps) View {
 	live := liveServices(ctx, d)
 
 	v.Projects = projectRows(ctx, d, projects, dbUp, live)
-	v.Runtimes = runtimeRows(ctx, d, projects)
+	v.Services = serviceRows(ctx, d, live)
 	v.Databases = databaseRows(ctx, d, projects)
 	v.Infra = infraRows(ctx, d)
-	v.Services = serviceRows(ctx, d, live)
 	return v
 }
 
@@ -174,17 +161,16 @@ func projectLinks(d Deps, p state.Project, dbUp map[string]bool, live map[string
 	return links
 }
 
-// runtimeRows lists runtimes that exist AND runtime types the assets tree
-// offers even before it has been created — "missing" tells the reader
-// to run `mpd --vm-setup`.
-func runtimeRows(ctx context.Context, d Deps, projects []state.Project) []RuntimeRow {
-	row := RuntimeRow{
-		Name:      runtime.Name,
-		Requested: "—",
-		Status:    "missing (run mpd --vm-setup)",
-		IP:        "—",
-		DNS:       "—",
-		Projects:  len(projects),
+// runtimeInfraRow is the unified runtime container as an Infra row: one
+// fixed, always-on piece of mpd, so it lives with dnsmasq and the portal
+// rather than in a section of its own.
+func runtimeInfraRow(ctx context.Context, d Deps) InfraRow {
+	// No Access value: how to reach the runtime is the host-side
+	// orchestrator's business, not the dashboard's.
+	row := InfraRow{
+		Name:   runtime.Name,
+		Status: "missing (run mpd --vm-setup)",
+		Access: "—",
 	}
 	// Filter on the presence of mpd.runtime, not on a type label: the
 	// runtime container carries mpd.runtime=runtime and there is no
@@ -193,21 +179,13 @@ func runtimeRows(ctx context.Context, d Deps, projects []state.Project) []Runtim
 		if item.Label("mpd.name") != runtime.Name {
 			continue
 		}
-		row.Created = true
-		row.IP = dash(item.Label("mpd.ip"))
-		row.DNS = d.Net.RuntimeFQDN()
 		row.Running = item.State == "running"
 		row.Status = "stopped"
 		if row.Running {
 			row.Status = "running"
 		}
-		// Persisted intent drives reconciliation; live observation
-		// drives what is shown as current.
-		if entry, ok := d.State.Runtime(runtime.Name); ok && entry.Requested != "" {
-			row.Requested = entry.Requested
-		}
 	}
-	return []RuntimeRow{row}
+	return row
 }
 
 func databaseRows(ctx context.Context, d Deps, projects []state.Project) []DatabaseRow {
@@ -241,10 +219,11 @@ func databaseRows(ctx context.Context, d Deps, projects []state.Project) []Datab
 	return rows
 }
 
-// infraRows lists the VM-integral infrastructure: systemd units on the
-// VM, always on, distinct from the optional service containers.
+// infraRows lists the VM-integral infrastructure: the runtime container
+// plus the systemd units on the VM, always on, distinct from the
+// optional service containers.
 func infraRows(ctx context.Context, d Deps) []InfraRow {
-	var rows []InfraRow
+	rows := []InfraRow{runtimeInfraRow(ctx, d)}
 	for _, inf := range vm.InfraServices() {
 		row := InfraRow{Name: inf.Name, Status: "stopped"}
 		switch inf.Name {

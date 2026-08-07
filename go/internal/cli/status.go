@@ -10,19 +10,19 @@ import (
 
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
+	"github.com/mutms/mpd/go/internal/runtime"
 	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
 	"github.com/mutms/mpd/go/internal/vm"
 )
 
-// Status prints a context-aware overview: every runtime, the projects
-// inside it, and the two kinds of thing that need the developer's
-// attention — projects whose runtime is gone, and project directories on
-// the volume that mpd does not know about.
+// Status prints a context-aware overview: the projects, plus the two
+// kinds of thing that need the developer's attention — a runtime that is
+// not up, and project directories on the volume that mpd does not know
+// about.
 //
-// Grouped by runtime rather than listed flat because that is the shape
-// the developer works in: a runtime is the machine they SSH into, and a
-// project only means something inside one.
+// The runtime is infrastructure, so it earns no line of its own when
+// healthy — connection details are the host-side orchestrator's job.
 func Status(ctx context.Context, out io.Writer, s state.Store, p *podman.Client, n net.Net, uid string) {
 	if _, err := os.Stat(vm.VarLibDir); err != nil {
 		fmt.Fprint(out, "mpd is not set up on this machine.\n\n"+
@@ -35,61 +35,30 @@ func Status(ctx context.Context, out io.Writer, s state.Store, p *podman.Client,
 	fmt.Fprint(out, "mpd  —  Moodle Plugin Development Environment\n\n")
 
 	projects := s.Projects()
-	byRuntime := map[string][]state.Project{}
+	sort.Slice(projects, func(i, j int) bool { return projects[i].Name < projects[j].Name })
+	if len(projects) == 0 {
+		fmt.Fprintln(out, "  No projects yet — mpd create <name>")
+	}
 	for _, pr := range projects {
-		if pr.RuntimeName != "" {
-			byRuntime[pr.RuntimeName] = append(byRuntime[pr.RuntimeName], pr)
+		url := ""
+		if pr.Requested == "running" {
+			url = "   https://" + n.Host(pr.Name) + "/"
 		}
+		fmt.Fprintf(out, "  %s   %s%s\n", pr.Name, pr.Requested, url)
 	}
 
-	containers := p.Ps(ctx, "label=mpd.runtime")
-	live := map[string]bool{}
-	var names []string
-	for _, item := range containers {
-		name := item.Label("mpd.name")
-		if name == "" {
-			continue
-		}
-		names = append(names, name)
-		live[name] = item.State == "running"
-	}
-	sort.Strings(names)
-
-	for _, name := range names {
-		status := "stopped"
-		if live[name] {
-			status = "running"
-		}
-		fmt.Fprintf(out, "\n%s  %s  ssh %s\n", name, status, n.RuntimeFQDN())
-
-		group := byRuntime[name]
-		sort.Slice(group, func(i, j int) bool { return group[i].Name < group[j].Name })
-		for _, pr := range group {
-			url := ""
-			if pr.Requested == "running" {
-				url = "   https://" + n.Host(pr.Name) + "/"
-			}
-			fmt.Fprintf(out, "  %s   %s%s\n", pr.Name, pr.Requested, url)
+	runtimeExists, runtimeUp := false, false
+	for _, item := range p.Ps(ctx, "label=mpd.runtime") {
+		if item.Label("mpd.name") == runtime.Name {
+			runtimeExists = true
+			runtimeUp = item.State == "running"
 		}
 	}
-
-	existing := map[string]bool{}
-	for _, name := range names {
-		existing[name] = true
-	}
-	var orphaned []state.Project
-	for _, pr := range projects {
-		if pr.RuntimeName == "" || !existing[pr.RuntimeName] {
-			orphaned = append(orphaned, pr)
-		}
-	}
-	if len(orphaned) > 0 {
-		fmt.Fprintln(out, "\nOrphaned projects without runtime:")
-		sort.Slice(orphaned, func(i, j int) bool { return orphaned[i].Name < orphaned[j].Name })
-		for _, pr := range orphaned {
-			fmt.Fprintf(out, "  %s%s→ mpd %s start\n",
-				Col(pr.Name, 16), Col(pr.Requested, 16), pr.Name)
-		}
+	switch {
+	case !runtimeExists:
+		fmt.Fprintln(out, "\nThe runtime is missing — run: mpd --vm-setup")
+	case !runtimeUp:
+		fmt.Fprintln(out, "\nThe runtime is stopped — run: mpd --vm-start")
 	}
 
 	known := map[string]bool{}

@@ -101,7 +101,7 @@ func candidates(cword int, words []string, s state.Store, a assets.Tree) []strin
 		return optionValues(first, s, a)
 	}
 	if cword == 2 && first == "list" {
-		return []string{"projects", "runtimes", "services", "infra", "dbs", "network"}
+		return []string{"projects", "services", "infra", "dbs", "network"}
 	}
 	// Verb-first form: the second token is a project name. `create` takes
 	// a NEW name, so no suggestion list applies there.
