@@ -11,6 +11,7 @@ import (
 	"github.com/mutms/mpd/go/internal/current"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
+	"github.com/mutms/mpd/go/internal/runtime"
 	"github.com/mutms/mpd/go/internal/state"
 )
 
@@ -24,80 +25,47 @@ const (
 	colDBStatus    = 10
 )
 
-// ListRuntimes renders `list runtimes`.
-//
-// The table unions two sources: runtimes that exist as containers, and
-// runtimes the asset tree says could be created. That is why a runtime
-// mpd has never built still appears — as "available" with no address —
-// rather than being invisible until first use.
+// ListRuntimes renders `list runtimes` — a single row now that there is
+// exactly one runtime per VM. It still renders when the container is
+// missing ("missing" with no address), pointing at `mpd --vm-setup`.
 func ListRuntimes(ctx context.Context, out io.Writer, n net.Net, p *podman.Client, s state.Store, a assets.Tree) {
-	created := map[string]podman.PsItem{}
+	ip, dns := "—", "—"
+	requested, current := "-", "missing (run mpd --vm-setup)"
+
 	// Filter on the *presence* of mpd.runtime, not on a type label:
-	// runtime containers carry mpd.runtime=<name>, and there is no
-	// mpd.type=runtime label. Matching a value here silently finds
-	// nothing and every runtime renders as "available".
+	// the runtime container carries mpd.runtime=runtime, and there is
+	// no mpd.type=runtime label.
 	for _, item := range p.Ps(ctx, "label=mpd.runtime") {
-		name := item.Label("mpd.name")
-		if name == "" {
-			name = item.Name()
+		if item.Label("mpd.name") != runtime.Name {
+			continue
 		}
-		if name != "" {
-			created[name] = item
+		ip = item.Label("mpd.ip")
+		if ip == "" {
+			ip = p.ContainerIP(ctx, item.Name(), "mpd-internal")
+		}
+		dns = n.RuntimeFQDN()
+		// Persisted intent drives reconciliation; live observation
+		// drives the display of what actually is.
+		if entry, ok := s.Runtime(runtime.Name); ok && entry.Requested != "" {
+			requested = entry.Requested
+		}
+		if item.State == "running" {
+			current = StatusRunning
+		} else {
+			current = StatusStopped
 		}
 	}
-
-	nameSet := map[string]bool{}
-	for name := range created {
-		nameSet[name] = true
-	}
-	for _, name := range a.RuntimeNames() {
-		nameSet[name] = true
-	}
-	if len(nameSet) == 0 {
-		fmt.Fprintln(out, "No runtimes found.")
-		return
-	}
-	names := make([]string, 0, len(nameSet))
-	for name := range nameSet {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
-	projectCounts := state.ProjectsByRuntime(s.Projects())
 
 	fmt.Fprintln(out, Col("NAME", colRuntimeName)+Col("REQUESTED", colRequested)+
 		Col("STATUS", colCurrent)+Col("IP", colIP)+Col("DNS", colDNS)+"PROJECTS")
 	fmt.Fprintln(out, Rule(100))
 
-	for _, name := range names {
-		ip, dns := "—", "—"
-		requested, current := "-", "available"
-
-		if item, ok := created[name]; ok {
-			ip = item.Label("mpd.ip")
-			if ip == "" {
-				ip = p.ContainerIP(ctx, item.Name(), "mpd-internal")
-			}
-			dns = n.Runtime(name)
-			// Persisted intent drives reconciliation; live observation
-			// drives the display of what actually is.
-			if entry, ok := s.Runtime(name); ok && entry.Requested != "" {
-				requested = entry.Requested
-			}
-			if item.State == "running" {
-				current = StatusRunning
-			} else {
-				current = StatusStopped
-			}
-		}
-
-		count := projectCounts[name]
-		label := fmt.Sprintf("%d project%s", count, plural(count))
-		fmt.Fprintln(out, Col(name, colRuntimeName)+
-			StatusLabel(requested, colRequested)+
-			StatusLabel(current, colCurrent)+
-			Col(ip, colIP)+Col(dns, colDNS)+label)
-	}
+	count := len(s.Projects())
+	label := fmt.Sprintf("%d project%s", count, plural(count))
+	fmt.Fprintln(out, Col(runtime.Name, colRuntimeName)+
+		StatusLabel(requested, colRequested)+
+		StatusLabel(current, colCurrent)+
+		Col(ip, colIP)+Col(dns, colDNS)+label)
 }
 
 // ListDatabases renders `list dbs`.

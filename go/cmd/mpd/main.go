@@ -6,7 +6,7 @@
 //     myproject --type=moodle`. It reads like git and is what a developer
 //     types dozens of times a day.
 //   - Everything that acts on the VM or its infrastructure is a flag —
-//     `mpd --vm-setup`, `mpd --runtime-create=php`, `mpd --db-start`.
+//     `mpd --vm-setup`, `mpd --runtime-rebuild`, `mpd --db-start`.
 //
 // The split exists so `mpd stop myproject` and `mpd --vm-stop` can never
 // be confused for each other. A bare `mpd stop` acting on the VM next to
@@ -31,6 +31,8 @@ import (
 	"github.com/mutms/mpd/go/internal/hooks"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
+	"github.com/mutms/mpd/go/internal/runtime"
+	"github.com/mutms/mpd/go/internal/service"
 	"github.com/mutms/mpd/go/internal/state"
 	"github.com/mutms/mpd/go/internal/vm"
 	"github.com/mutms/mpd/go/internal/web"
@@ -60,7 +62,7 @@ subdirectory) it defaults to that project.`
 
 // otherCommands are the read-only queries that are neither a project
 // verb nor a VM action.
-const otherCommands = `  list       [projects|runtimes|services|dbs|network]  (default: projects)
+const otherCommands = `  list       [projects|runtimes|services|infra|dbs|network]  (default: projects)
   version                                      print the mpd version`
 
 // usage is the short form shown when a command is misspelled.
@@ -100,16 +102,19 @@ type flags struct {
 	vmRestart bool
 	vmStatus  bool
 
-	runtimeCreate string
-	runtimeStart  string
-	runtimeStop   string
-	runtimeDelete string
-	runtimeShow   string
+	runtimeRebuild bool
+	runtimeBackup  bool
+	runtimeRestore bool
 
 	dbCreate string
 	dbStart  string
 	dbStop   string
 	dbDelete string
+
+	serviceEnable    string
+	serviceDisable   string
+	serviceUninstall string
+	servicePurge     string
 
 	checkHooks bool
 	web        bool
@@ -178,16 +183,26 @@ func main() {
 	root.Flags().BoolVar(&f.vmStatus, "vm-status", false,
 		"Show context-aware status (text output).")
 
-	root.Flags().StringVar(&f.runtimeCreate, "runtime-create", "", "Provision a new runtime named `name`.")
-	root.Flags().StringVar(&f.runtimeStart, "runtime-start", "", "Start a stopped runtime `name`.")
-	root.Flags().StringVar(&f.runtimeStop, "runtime-stop", "", "Stop a running runtime `name`.")
-	root.Flags().StringVar(&f.runtimeDelete, "runtime-delete", "", "Stop and remove runtime `name` (prompts unless --yes).")
-	root.Flags().StringVar(&f.runtimeShow, "runtime", "", "Show runtime `name` and its projects.")
+	root.Flags().BoolVar(&f.runtimeRebuild, "runtime-rebuild", false,
+		"Delete and re-provision the runtime container (prompts unless --yes).")
+	root.Flags().BoolVar(&f.runtimeBackup, "runtime-backup", false,
+		"Back up non-project runtime data (Claude config, shell history) to /srv/backups/runtime/.")
+	root.Flags().BoolVar(&f.runtimeRestore, "runtime-restore", false,
+		"Restore the newest runtime backup into the (rebuilt) runtime; binaries are reinstalled fresh, not copied.")
 
 	root.Flags().StringVar(&f.dbCreate, "db-create", "", "Create (or start) a DB container, e.g. `postgres:17`.")
 	root.Flags().StringVar(&f.dbStart, "db-start", "", "Start a stopped DB container `name`.")
 	root.Flags().StringVar(&f.dbStop, "db-stop", "", "Stop a running DB container `name`.")
 	root.Flags().StringVar(&f.dbDelete, "db-delete", "", "Remove a DB container `name` (prompts unless --yes).")
+
+	root.Flags().StringVar(&f.serviceEnable, "service-enable", "",
+		"Install and start an extra service `name` (mailpit, adminer, seleniumv1); auto-starts after reboot.")
+	root.Flags().StringVar(&f.serviceDisable, "service-disable", "",
+		"Stop an extra service `name`; it will not auto-start until re-enabled.")
+	root.Flags().StringVar(&f.serviceUninstall, "service-uninstall", "",
+		"Remove an extra service `name`'s container, keeping its data volume.")
+	root.Flags().StringVar(&f.servicePurge, "service-purge", "",
+		"Remove an extra service `name` AND its data volume.")
 
 	root.Flags().BoolVar(&f.web, "web", false,
 		"Run the status web server in the foreground (systemd: mpd-web.service).")
@@ -259,17 +274,14 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 		// lock held here would be a different file description that the
 		// child would then wait on forever.
 		//
-		// A socket for every runtime the assets tree defines, not just the
-		// provisioned ones. Binding up front means a runtime created later
-		// already has its endpoint, so nothing has to reconcile sockets
-		// against runtime lifecycle — and a socket whose runtime does not
-		// exist is simply one nothing ever connects to.
-		a := assets.New()
-		runtimes := a.RuntimeNames()
+		// One socket for the one runtime. Bound up front, so a runtime
+		// rebuilt later already has its endpoint — nothing reconciles
+		// sockets against runtime lifecycle.
+		runtimes := []string{runtime.Name}
 		if err := control.PruneSockets(runtimes); err != nil {
 			return err
 		}
-		return control.Serve(ctx, out, runtimes, control.RunDir, state.New(), a)
+		return control.Serve(ctx, out, runtimes, control.RunDir, state.New(), assets.New())
 	case f.vmSetup:
 		return withLock(ctx, out, state.New(), func() error { return cli.Setup(ctx, out) })
 	case f.vmUpgrade:
@@ -293,12 +305,38 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 		return nil
 	}
 
-	if name := firstNonEmpty(f.runtimeCreate, f.runtimeStart, f.runtimeStop,
-		f.runtimeDelete, f.runtimeShow); name != "" {
-		return runtimeAction(ctx, out, c, f, name)
+	if f.runtimeRebuild {
+		n, p, s, dns, o, err := runtimeDeps()
+		if err != nil {
+			return err
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		return withLock(ctx, out, s, func() error {
+			return cli.RuntimeRebuild(ctx, out, c.InOrStdin(), p, s, dns, o, n,
+				devUser(), devUID(), home, f.yes)
+		})
+	}
+	if f.runtimeBackup || f.runtimeRestore {
+		_, p, s, _, o, err := runtimeDeps()
+		if err != nil {
+			return err
+		}
+		return withLock(ctx, out, s, func() error {
+			if f.runtimeBackup {
+				return cli.RuntimeBackup(ctx, out, p, o, devUser())
+			}
+			return cli.RuntimeRestore(ctx, out, p, o, devUser())
+		})
 	}
 	if name := firstNonEmpty(f.dbCreate, f.dbStart, f.dbStop, f.dbDelete); name != "" {
 		return dbAction(ctx, out, c, f, name)
+	}
+	if name := firstNonEmpty(f.serviceEnable, f.serviceDisable,
+		f.serviceUninstall, f.servicePurge); name != "" {
+		return serviceAction(ctx, out, f, name)
 	}
 
 	// No flag given (or only --vm-status): show status.
@@ -358,33 +396,24 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func runtimeAction(ctx context.Context, out interface{ Write([]byte) (int, error) },
-	c *cobra.Command, f *flags, name string) error {
+func serviceAction(ctx context.Context, out interface{ Write([]byte) (int, error) },
+	f *flags, name string) error {
 
-	n, p, s, dns, o, err := runtimeDeps()
+	n, p, s, dns, _, err := runtimeDeps()
 	if err != nil {
 		return err
 	}
-	// --runtime-show reads; everything else here mutates.
-	if f.runtimeShow != "" {
-		return cli.ShowRuntime(ctx, out, name, s, p, o, n)
-	}
+	vmIP := vm.PrimaryIP()
 	return withLock(ctx, out, s, func() error {
 		switch {
-		case f.runtimeCreate != "":
-			home, err := os.UserHomeDir()
-			if err != nil {
-				return err
-			}
-			return cli.RuntimeCreate(ctx, out, name, p, s, dns, o, n, assets.New(), devUser(), devUID(), home)
-		case f.runtimeStart != "":
-			return cli.RuntimeStart(ctx, out, name, p, s, dns, o, n, devUser(), devUID())
-		case f.runtimeStop != "":
-			return cli.RuntimeStop(ctx, out, name, p, s, dns, o)
-		case f.runtimeDelete != "":
-			return cli.RuntimeDelete(ctx, out, c.InOrStdin(), name, p, s, dns, o, devUser(), f.yes)
+		case f.serviceEnable != "":
+			return cli.ServiceEnable(ctx, out, name, p, s, dns, n, vmIP)
+		case f.serviceDisable != "":
+			return cli.ServiceDisable(ctx, out, name, p, s, dns, n, vmIP)
+		case f.serviceUninstall != "":
+			return cli.ServiceUninstall(ctx, out, name, p, s, dns, n, vmIP)
 		default:
-			return cli.ShowRuntime(ctx, out, name, s, p, o, n)
+			return cli.ServicePurge(ctx, out, name, p, s, dns, n, vmIP)
 		}
 	})
 }
@@ -460,9 +489,9 @@ func versionCmd() *cobra.Command {
 // when a name resolves to the wrong place.
 func listCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:       "list [projects|runtimes|services|dbs|network]",
-		Short:     "List entities — projects (default), runtimes, services, DB containers, or this VM's addressing",
-		ValidArgs: []string{"projects", "runtimes", "services", "dbs", "network"},
+		Use:       "list [projects|runtimes|services|infra|dbs|network]",
+		Short:     "List entities — projects (default), the runtime, extra services, VM infra, DB containers, or this VM's addressing",
+		ValidArgs: []string{"projects", "runtimes", "services", "infra", "dbs", "network"},
 		Args:      cobra.MatchAll(cobra.MaximumNArgs(1), cobra.OnlyValidArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			what := "projects"
@@ -483,7 +512,9 @@ func listCmd() *cobra.Command {
 			case "runtimes":
 				cli.ListRuntimes(ctx, out, n, p, s, a)
 			case "services":
-				cli.ListServices(ctx, out, n, p, vm.UnitActive)
+				cli.ListServices(ctx, out, n, p, s)
+			case "infra":
+				cli.ListInfra(ctx, out, n, vm.UnitActive)
 			case "dbs":
 				cli.ListDatabases(ctx, out, n, p, s)
 			case "network":
@@ -503,7 +534,11 @@ func listCmd() *cobra.Command {
 				fmt.Fprintf(out, "gateway     %s\n", n.Gateway())
 				fmt.Fprintf(out, "dnsmasq     %s (the VM itself: resolver for .test)\n", n.Gateway())
 				fmt.Fprintf(out, "portal      %s (the VM itself: mpd --web behind caddy)\n", n.Gateway())
-				fmt.Fprintf(out, "adminer     %s\n", n.IP(net.HostAdminer))
+				fmt.Fprintf(out, "runtime     %s\n", n.IP(net.HostRuntime))
+				fmt.Fprintf(out, "databases   %s-%d\n", n.IP(net.DBHostFirst), net.DBHostLast)
+				for _, svc := range service.All() {
+					fmt.Fprintf(out, "%-12s%s\n", svc.Name, svc.IP(n))
+				}
 			}
 			return nil
 		},

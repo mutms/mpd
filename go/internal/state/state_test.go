@@ -111,10 +111,6 @@ func TestGroupings(t *testing.T) {
 		{Name: "c", RuntimeName: "node"},
 		{Name: "d"}, // no runtime, no db — must not be counted anywhere
 	}
-	counts := ProjectsByRuntime(projects)
-	if counts["php"] != 2 || counts["node"] != 1 || len(counts) != 2 {
-		t.Errorf("ProjectsByRuntime() = %v", counts)
-	}
 	byDB := ProjectNamesByDatabase(projects)
 	got := byDB["postgres-latest"]
 	if len(got) != 2 || got[0] != "a" || got[1] != "b" {

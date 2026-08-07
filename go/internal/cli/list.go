@@ -4,92 +4,85 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"sort"
-	"strconv"
-	"strings"
 
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/service"
+	"github.com/mutms/mpd/go/internal/state"
+	"github.com/mutms/mpd/go/internal/vm"
 )
 
-// serviceFilter selects the always-on service containers. Note this is a
+// serviceFilter selects the extra service containers. Note this is a
 // compose label rather than mpd.managed — kept as-is so this and the
-// other listings
-// listings see exactly the same set.
+// other listings see exactly the same set.
 const serviceFilter = "label=com.docker.compose.project=mpd-service"
 
-// ListServices renders the `list services` table.
-//
-// One `podman ps` snapshot is taken and indexed by container name, rather
-// than inspecting each service in turn: per-service inspects race against
-// a service restarting mid-listing and can report a mix of before and
-// after.
-// unitActive reports whether a systemd-backed service is running. Passed
-// in rather than called directly so the listing stays testable without a
-// systemd on the other end.
-func ListServices(ctx context.Context, out io.Writer, n net.Net, p *podman.Client,
-	unitActive func(context.Context, string, bool) bool) {
-	stateByContainer := map[string]string{}
+// ListServices renders the `list services` table — the OPTIONAL extra
+// service containers, with their persisted intent joined against a
+// single `podman ps` snapshot (per-service inspects race a service
+// restarting mid-listing).
+func ListServices(ctx context.Context, out io.Writer, n net.Net, p *podman.Client, s state.Store) {
+	live := map[string]string{}
 	for _, item := range p.Ps(ctx, serviceFilter) {
-		if name := item.Name(); name != "" {
-			stateByContainer[name] = item.State
+		if name := item.Label("mpd.name"); name != "" {
+			live[name] = item.State
 		}
+	}
+	intent := map[string]bool{}
+	installed := map[string]bool{}
+	for _, entry := range s.Services() {
+		intent[entry.Name] = entry.Enabled
+		installed[entry.Name] = true
 	}
 
 	fmt.Fprintln(out, Col("SERVICE", colService)+Col("STATUS", colStatus)+Col("IP", colIP)+"ACCESS")
 	fmt.Fprintln(out, Rule(92))
 
-	for _, d := range sortedByIP(n) {
-		status := StatusNotCreated
-		if d.Unit != "" {
-			// VM-hosted: systemd owns it, podman has never heard of it.
+	for _, d := range service.All() {
+		status := "not installed"
+		access := "mpd --service-enable=" + d.Name
+		switch {
+		case live[d.Name] == "running":
+			status = StatusRunning
+			access = d.AccessHint(n)
+		case installed[d.Name] && !intent[d.Name]:
+			status = "disabled"
+			access = d.AccessHint(n)
+		case installed[d.Name]:
 			status = StatusStopped
-			if unitActive != nil && unitActive(ctx, d.Unit, d.UnitUser) {
-				status = StatusRunning
-			}
-		} else if state, ok := stateByContainer[d.Container]; ok {
-			status = StatusStopped
-			if state == "running" {
-				status = StatusRunning
-			}
+			access = d.AccessHint(n)
 		}
 		fmt.Fprintln(out, Col(d.Name, colService)+
 			StatusLabel(status, colStatus)+
 			Col(d.IP(n), colIP)+
-			d.AccessHint(n))
+			access)
 	}
 }
 
-// sortedByIP orders services by address, falling back to name. Sorting on
-// the numeric octets rather than the string keeps .30 before .100, which
-// a lexicographic sort would get wrong once DB containers are listed.
-func sortedByIP(n net.Net) []service.Descriptor {
-	all := service.All()
-	sort.SliceStable(all, func(i, j int) bool {
-		li, lj := ipSortKey(all[i].IP(n)), ipSortKey(all[j].IP(n))
-		for k := 0; k < len(li) && k < len(lj); k++ {
-			if li[k] != lj[k] {
-				return li[k] < lj[k]
-			}
-		}
-		if len(li) != len(lj) {
-			return len(li) < len(lj)
-		}
-		return all[i].Name < all[j].Name
-	})
-	return all
-}
+// ListInfra renders the `list infra` table — the VM-integral systemd
+// pieces (dnsmasq, portal), always on, distinct from the optional
+// services. unitActive is passed in so the listing stays testable
+// without a systemd on the other end.
+func ListInfra(ctx context.Context, out io.Writer, n net.Net,
+	unitActive func(context.Context, string, bool) bool) {
 
-func ipSortKey(ip string) []int {
-	parts := strings.Split(ip, ".")
-	key := make([]int, 0, len(parts))
-	for _, p := range parts {
-		v, err := strconv.Atoi(p)
-		if err != nil {
-			continue
+	fmt.Fprintln(out, Col("INFRA", colService)+Col("STATUS", colStatus)+"ACCESS")
+	fmt.Fprintln(out, Rule(72))
+
+	for _, inf := range vm.InfraServices() {
+		status := StatusStopped
+		if unitActive != nil && unitActive(ctx, inf.Unit, inf.UnitUser) {
+			status = StatusRunning
 		}
-		key = append(key, v)
+		access := ""
+		switch inf.Name {
+		case "dnsmasq":
+			access = fmt.Sprintf("DNS resolver (%s:53)", n.Gateway())
+		case "portal":
+			access = fmt.Sprintf("https://%s/", n.Zone())
+		}
+		fmt.Fprintln(out, Col(inf.Name, colService)+
+			StatusLabel(status, colStatus)+
+			access)
 	}
-	return key
 }

@@ -1,35 +1,196 @@
-// Package service is the registry of mpd's always-on infra services.
+// Package service is the registry and lifecycle of mpd's OPTIONAL extra
+// service containers — mailpit, adminer, seleniumv1.
 //
-// One descriptor per service, holding everything discoverability needs:
-// container name, host octet, DNS name, and the access hint shown to the
-// developer. Addresses and names are composed from internal/net, so a
-// descriptor is correct on every VM without change.
+// "Service" means exactly this: an opt-in container the developer
+// enables with `mpd --service-enable=<name>`. The VM-integral pieces
+// (dnsmasq, the portal) are infra, not services — they live in
+// internal/vm (vm.InfraServices).
+//
+// Services are HTTP-only, reached at their own address in the service
+// range (net.ServiceHostFirst–Last) via `http://<name>.svc.<zone>:<port>`
+// — no TLS, no proxying through the VM's caddy. The laptop reaches them
+// over the WireGuard overlay (which carries the whole /24) or
+// SOCKS-over-SSH, both inside the trust boundary.
 package service
 
 import (
-	"context"
 	"fmt"
-	"io"
-
-	"github.com/mutms/mpd/go/internal/podman"
+	"net/url"
 
 	"github.com/mutms/mpd/go/internal/net"
 )
 
-// Revision labels let setup tell a container built by an older mpd from
-// one built by this mpd. Bump the relevant one whenever a service's
+// Revision labels let mpd tell a container built by an older asset
+// revision from a current one. Bump a service's Revision whenever its
 // image, mounts, command or environment change: the label mismatch is
-// what makes `--vm-setup` rebuild the container instead of reporting an
-// out-of-date one as healthy.
-const (
-	RevisionLabel      = "mpd.service.revision"
-	CAFingerprintLabel = "mpd.ca.fingerprint"
+// what makes the next enable/reconcile rebuild the container instead of
+// reporting an out-of-date one as healthy.
+const RevisionLabel = "mpd.service.revision"
 
-	adminerRevision = "7"
-)
+// Service describes one optional extra service container.
+type Service struct {
+	// Name is the service name ("mailpit") — the enable/disable handle,
+	// the DNS label, and the mpd.name container label.
+	Name string
+	// HostOctet is its fixed address inside the VM's /24, from the
+	// service range.
+	HostOctet int
+	// Image is the container image. Pulled, unless BuildContext is set.
+	Image string
+	// BuildContext, when non-empty, names the assets/services/<dir> the
+	// image is built from instead of pulled.
+	BuildContext string
+	// Revision versions the built/derived container (see RevisionLabel).
+	Revision string
+	// Volume, when non-empty, is a named podman volume mounted at
+	// VolumePath — the data that survives --service-uninstall and dies
+	// with --service-purge.
+	Volume     string
+	VolumePath string
+	// Port is the primary HTTP UI/API port, for links and hints.
+	Port int
+	// RunArgs are extra `podman run` arguments (env vars, --shm-size…).
+	RunArgs []string
+	// projectLinks, when set, contributes per-project dashboard links
+	// (see ProjectLinks). This is the pluggable half of the portal
+	// integration: the portal ranges over services and asks, instead of
+	// hardcoding any service's URL scheme.
+	projectLinks func(s Service, n net.Net, info ProjectInfo) []Link
+}
 
-// AdminerImage is the one service image mpd builds rather than pulls.
-const AdminerImage = "localhost/mpd-adminer:latest"
+// ProjectInfo is what a ProjectLinks hook may build links from.
+type ProjectInfo struct {
+	Name     string
+	DBEngine string
+	DBHost   string
+	DBUser   string
+	DBName   string
+}
+
+// Link is one per-project link a service contributes to the dashboard.
+type Link struct{ Label, URL string }
+
+// ProjectLinks returns the links this service offers for one project,
+// or nil. The caller gates on the service being enabled and running and
+// on the database being up — a link to a connection error is worse than
+// no link.
+func (s Service) ProjectLinks(n net.Net, info ProjectInfo) []Link {
+	if s.projectLinks == nil {
+		return nil
+	}
+	return s.projectLinks(s, n, info)
+}
+
+// All returns every known extra service, in registry order.
+func All() []Service {
+	return []Service{
+		{
+			// SMTP catch-all for every project. Mail is stored on a
+			// volume so the inbox survives an uninstall/enable cycle.
+			Name:       "mailpit",
+			HostOctet:  100,
+			Image:      "docker.io/axllent/mailpit:latest",
+			Revision:   "1",
+			Volume:     "mpd-svc-mailpit",
+			VolumePath: "/data",
+			Port:       8025,
+			RunArgs:    []string{"-e", "MP_DATABASE=/data/mailpit.db"},
+		},
+		{
+			// DB administration UI. Built from Debian rather than pulled:
+			// the docker.io/library/adminer image is Alpine-based, and
+			// libpq on musl fails to resolve multi-label hostnames like
+			// `postgres-latest.db.<zone>` — which is every database name
+			// mpd publishes. The symptom is an opaque
+			// `SQLSTATE[08006] could not translate host name`.
+			Name:         "adminer",
+			HostOctet:    102,
+			Image:        "localhost/mpd-adminer:latest",
+			BuildContext: "adminer",
+			Revision:     "8",
+			Port:         8080,
+			projectLinks: adminerProjectLinks,
+		},
+		{
+			// Behat's WebDriver endpoint. Versioned name ("v1") so future
+			// Moodle releases can require a different selenium alongside
+			// this one. ~2 GB image — enabling announces the pull.
+			Name:      "seleniumv1",
+			HostOctet: 103,
+			Image:     "docker.io/selenium/standalone-chromium:latest",
+			Revision:  "1",
+			Port:      4444,
+			RunArgs: []string{
+				"--shm-size=2g",
+				"-e", "SE_NODE_MAX_SESSIONS=10",
+				"-e", "SE_NODE_OVERRIDE_MAX_SESSIONS=true",
+				"-e", "SE_SCREEN_WIDTH=1400",
+				"-e", "SE_SCREEN_HEIGHT=800",
+			},
+		},
+	}
+}
+
+// Find returns the service with the given name.
+func Find(name string) (Service, bool) {
+	for _, s := range All() {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return Service{}, false
+}
+
+// Names lists every known service name, in registry order.
+func Names() []string {
+	var out []string
+	for _, s := range All() {
+		out = append(out, s.Name)
+	}
+	return out
+}
+
+// Container is the podman container name: mpd-svc-<name>.
+func (s Service) Container() string { return "mpd-svc-" + s.Name }
+
+// IP is this service's address on the given VM.
+func (s Service) IP(n net.Net) string { return n.IP(s.HostOctet) }
+
+// DNS is this service's name on the given VM: <name>.svc.<zone>.
+func (s Service) DNS(n net.Net) string { return n.Service(s.Name) }
+
+// AccessHint is the human-facing "how do I reach this" string. Plain
+// HTTP at the service's own name and port — services have no TLS.
+func (s Service) AccessHint(n net.Net) string {
+	return fmt.Sprintf("http://%s:%d/", s.DNS(n), s.Port)
+}
+
+// adminerProjectLinks builds a prefilled Adminer link for a project's
+// database.
+//
+// Adminer takes the driver as the parameter NAME, not a value: postgres
+// is `?pgsql=<host>`, while MySQL and MariaDB are `?server=<host>`. Get
+// that wrong and Adminer shows its own login form with nothing filled
+// in, which looks like the link is broken rather than mistyped.
+func adminerProjectLinks(s Service, n net.Net, info ProjectInfo) []Link {
+	if info.DBHost == "" {
+		return nil
+	}
+	driver := "server"
+	if info.DBEngine == "postgres" {
+		driver = "pgsql"
+	}
+	q := url.Values{}
+	q.Set(driver, info.DBHost)
+	q.Set("username", info.DBUser)
+	if info.DBName != "" {
+		q.Set("db", info.DBName)
+	}
+	return []Link{{
+		Label: "Adminer",
+		URL:   fmt.Sprintf("http://%s:%d/?%s", s.DNS(n), s.Port, q.Encode()),
+	}}
+}
 
 // commonLabels are on every service container: mpd.managed marks it as
 // ours to reconcile, and the compose label groups the services together
@@ -41,203 +202,4 @@ func commonLabels(name string) []string {
 		"--label", "mpd.name=" + name,
 		"--label", "com.docker.compose.project=mpd-service",
 	}
-}
-
-// Descriptor describes one always-on service.
-type Descriptor struct {
-	// Name is the short service name ("portal").
-	Name string
-	// Container is the podman container name.
-	Container string
-	// HostOctet is its address inside the VM's /24.
-	HostOctet int
-	// dns overrides the default "<name>.service.<zone>" when non-empty;
-	// the portal answers at the zone apex instead.
-	dns func(n net.Net) string
-	// aliases lists every name that must resolve to this service, when
-	// more than the canonical one does. Nil means just DNS().
-	aliases func(n net.Net) []string
-	// accessHint renders the human-facing "how do I reach this" column.
-	accessHint func(n net.Net) string
-	// Proxy, when set, means this service is not reached at its own
-	// address: its names resolve to the gateway, where caddy terminates
-	// TLS and proxies to the address below. Adminer works this way — it
-	// speaks plain HTTP and has no certificate of its own.
-	Proxy *PortalProxy
-	// Unit names the systemd unit backing this service, for services that
-	// are NOT containers. `mpd --web` and the resolver both run on the VM
-	// itself, so their status comes from systemd and podman has never
-	// heard of them.
-	Unit string
-	// UnitUser distinguishes a `systemctl --user` unit from a system one.
-	// Not derivable from the name, and the two are queried with different
-	// commands, so it is stated rather than guessed.
-	UnitUser bool
-}
-
-// PortalProxy describes an upstream the portal reverse-proxies to.
-type PortalProxy struct {
-	// Scheme is the upstream protocol; empty means http.
-	Scheme string
-	// Port is the upstream port on the service's own address.
-	Port int
-}
-
-// UpstreamURL is what the rendered vhost proxies to.
-func (p PortalProxy) UpstreamURL(ip string) string {
-	scheme := p.Scheme
-	if scheme == "" {
-		scheme = "http"
-	}
-	return fmt.Sprintf("%s://%s:%d", scheme, ip, p.Port)
-}
-
-// All returns every service descriptor, in registry order.
-func All() []Descriptor {
-	return []Descriptor{
-		{
-			// dnsmasq from Debian's dnsmasq-base, running on the VM under
-			// mpd's own unit rather than in a container. It listens on the
-			// podman bridge gateway, which is the one address the laptop,
-			// the VM and every container can all reach — so all three use
-			// the same resolver without a second hop.
-			Name:      "dnsmasq",
-			Unit:      "mpd-dnsmasq.service",
-			HostOctet: net.HostGateway,
-			accessHint: func(n net.Net) string {
-				return fmt.Sprintf("DNS resolver (%s:53)", n.Gateway())
-			},
-		},
-		{
-			// The status page: `mpd --web` on the VM behind the VM's own
-			// Caddy, not a container. Its address is the podman bridge
-			// gateway, which the laptop reaches over its static route and
-			// every container reaches as its gateway.
-			Name:      "portal",
-			Unit:      "mpd-web.service",
-			UnitUser:  true,
-			HostOctet: net.HostGateway,
-			// The portal is the zone apex, not a *.service name.
-			dns: func(n net.Net) string { return n.Zone() },
-			// Both names answer: the apex is what a developer types,
-			// portal.service.<zone> is what the uniform service naming
-			// makes them expect to work.
-			aliases: func(n net.Net) []string { return []string{n.Zone(), n.Service("portal")} },
-			accessHint: func(n net.Net) string {
-				return fmt.Sprintf("https://%s/", n.Zone())
-			},
-		},
-		{
-			Name:      "adminer",
-			Container: "mpd-service-adminer",
-			HostOctet: net.HostAdminer,
-			Proxy:     &PortalProxy{Port: 8080},
-			accessHint: func(n net.Net) string {
-				return fmt.Sprintf("https://%s/", n.Service("adminer"))
-			},
-		},
-	}
-}
-
-// IP is this service's address on the given VM.
-func (d Descriptor) IP(n net.Net) string { return n.IP(d.HostOctet) }
-
-// DNS is this service's canonical name on the given VM.
-func (d Descriptor) DNS(n net.Net) string {
-	if d.dns != nil {
-		return d.dns(n)
-	}
-	return n.Service(d.Name)
-}
-
-// Aliases lists every name that must resolve to this service.
-func (d Descriptor) Aliases(n net.Net) []string {
-	if d.aliases != nil {
-		return d.aliases(n)
-	}
-	return []string{d.DNS(n)}
-}
-
-// AccessHint is the human-facing "how do I reach this" string.
-func (d Descriptor) AccessHint(n net.Net) string { return d.accessHint(n) }
-
-// DNSRecord is one name mpd publishes for a service.
-type DNSRecord struct {
-	Host string
-	IP   string
-}
-
-// DNSRecords is every service name mpd publishes, in registry order.
-//
-// A proxied service's names point at the PORTAL's address, not its own:
-// the portal is what terminates TLS for it, so resolving straight to the
-// service would reach a plain-HTTP port with no certificate.
-func DNSRecords(n net.Net) []DNSRecord {
-	var out []DNSRecord
-	// Proxied services resolve to whatever terminates their TLS, which is
-	// the portal's own address — read from the registry rather than a
-	// hardcoded octet, so moving the portal moves them with it.
-	portalIP := ""
-	if d, ok := Find("portal"); ok {
-		portalIP = d.IP(n)
-	}
-	for _, d := range All() {
-		target := d.IP(n)
-		if d.Proxy != nil {
-			target = portalIP
-		}
-		for _, alias := range d.Aliases(n) {
-			out = append(out, DNSRecord{Host: alias, IP: target})
-		}
-	}
-	return out
-}
-
-// Proxied returns the services the portal reverse-proxies for.
-func Proxied() []Descriptor {
-	var out []Descriptor
-	for _, d := range All() {
-		if d.Proxy != nil {
-			out = append(out, d)
-		}
-	}
-	return out
-}
-
-// Find returns the descriptor with the given name.
-func Find(name string) (Descriptor, bool) {
-	for _, d := range All() {
-		if d.Name == name {
-			return d, true
-		}
-	}
-	return Descriptor{}, false
-}
-
-// --- Lifecycle --------------------------------------------------------
-
-// Start starts a service container that already exists.
-//
-// Deliberately does NOT create a missing one: `--vm-start` is the daily
-// path and must stay fast and predictable, while creating a service
-// means building images and generating certs. A missing container means
-// setup has not run, and saying so is more useful than silently doing
-// setup's job.
-// Every message names the service the same way — "Service: <name>",
-// "<name> running.", "<name> already running." — so a scrolling setup or
-// start log reads uniformly.
-func Start(ctx context.Context, out io.Writer, d Descriptor, n net.Net, p *podman.Client) error {
-	fmt.Fprintf(out, "\n\033[1m==> Service: %s\033[0m\n", d.Name)
-	if !p.Exists(ctx, d.Container) {
-		return fmt.Errorf("%s not found. Run: mpd --vm-setup", d.Container)
-	}
-	if p.Running(ctx, d.Container) {
-		fmt.Fprintf(out, "\033[1;32m✓ %s already running.\033[0m\n", d.Name)
-		return nil
-	}
-	if code, err := p.Start(ctx, d.Container); err != nil || code != 0 {
-		return fmt.Errorf("Failed to start %s. Run: mpd --vm-setup", d.Container)
-	}
-	fmt.Fprintf(out, "\033[1;32m✓ %s running.\033[0m\n", d.Name)
-	return nil
 }

@@ -172,9 +172,9 @@ ok "mpd built at /opt/mpd/bin/mpd"
 step "mpd --vm-setup (self-signed CA, generated in this VM)"
 mpd --vm-setup
 
-# --- 6. Pre-warm a runtime + database (best-effort) ------------------
-step "Pre-warming PHP runtime + postgres (best-effort)"
-mpd --runtime-create=php   && ok "PHP runtime ready"   || warn "PHP pre-warm deferred to first use"
+# --- 6. Pre-warm a database (best-effort) ----------------------------
+# (The runtime container itself is created by `mpd --vm-setup` above.)
+step "Pre-warming postgres (best-effort)"
 mpd --db-create=postgres:latest && ok "postgres ready" || warn "postgres pre-warm deferred to first use"
 
 # --- 7. GNOME launcher (only if a desktop is present) ---------------

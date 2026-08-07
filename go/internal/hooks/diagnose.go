@@ -23,7 +23,7 @@ import (
 //  2. Wrong audience — the event exists but does not fire on this
 //     layer's container kind. This is the one that caught a real mistake
 //     during the port: project-pre-start fires on the DATABASE, so a
-//     copy under runtimes/<rt>/hooks/ silently does nothing.
+//     copy under runtime/hooks/ silently does nothing.
 //  3. Revision bump — the event's contract changed since the last run,
 //     so a hook may be reading env vars that moved.
 
@@ -122,17 +122,15 @@ func walkHookDirs() []foundDir {
 		filepath.Join(assetsDir, "runtime-base", "hooks"),
 		"assets/runtime-base/hooks", AudienceRuntime)...)
 
-	for _, rt := range subdirs(filepath.Join(assetsDir, "runtimes")) {
-		found = append(found, scanLayer(
-			filepath.Join(assetsDir, "runtimes", rt, "hooks"),
-			"assets/runtimes/"+rt+"/hooks", AudienceRuntime)...)
+	found = append(found, scanLayer(
+		filepath.Join(assetsDir, "runtime", "hooks"),
+		"assets/runtime/hooks", AudienceRuntime)...)
 
-		typesDir := filepath.Join(assetsDir, "runtimes", rt, "project_types")
-		for _, ty := range subdirs(typesDir) {
-			found = append(found, scanLayer(
-				filepath.Join(typesDir, ty, "hooks"),
-				"assets/runtimes/"+rt+"/project_types/"+ty+"/hooks", AudienceRuntime)...)
-		}
+	typesDir := filepath.Join(assetsDir, "runtime", "project_types")
+	for _, ty := range subdirs(typesDir) {
+		found = append(found, scanLayer(
+			filepath.Join(typesDir, ty, "hooks"),
+			"assets/runtime/project_types/"+ty+"/hooks", AudienceRuntime)...)
 	}
 	for _, engine := range subdirs(filepath.Join(assetsDir, "databases")) {
 		found = append(found, scanLayer(

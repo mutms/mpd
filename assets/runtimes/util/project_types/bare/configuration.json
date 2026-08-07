@@ -1,9 +1,0 @@
-{
-  "stop": {
-    "systemdStop": false
-  },
-  "nextSteps": [
-    "ssh -A util.runtime.%%ZONE%%",
-    "cd /srv/projects/%%PROJECT%%"
-  ]
-}

@@ -55,10 +55,15 @@ Idempotent — safe to re-run any time. Walks you through:
 - installing the CA into the VM's system trust store + Firefox + NSS DB
 - creating the Podman network and data volume
 - mounting the data volume on the VM at `/srv`
-- installing and configuring caddy, the VM's TLS frontdoor
-- starting `mpd --web`, the status page at `https://<NNN>.mpd.test/`
-- bringing up the always-on infra services (dnsmasq as a VM unit, the
-  Adminer container)
+- installing and configuring the VM's caddy, which serves the portal at
+  `https://<NNN>.mpd.test/` (project HTTPS terminates inside the
+  runtime — see [NETWORKING.md](NETWORKING.md))
+- starting `mpd --web`, the portal backend
+- bringing up the infra units (dnsmasq, the portal) and reconciling any
+  enabled extra services (none by default — see
+  [Extra services](#extra-services-mailpit-adminer-seleniumv1))
+- **creating and starting the runtime container** `mpd-<NNN>-runtime` —
+  the one container every project runs in
 - a final DNS sanity check
 
 (VM-side apt installs, the `mpd` build, and `/opt/mpd/bin/` on PATH all
@@ -71,12 +76,13 @@ orchestrator (own repo); see its README for the host-side flow.
 
 ## Hooking up your laptop (laptop-driven platforms only)
 
-The laptop reaches only the VM's gateway `.1` (caddy + dnsmasq) — the
-container subnet is sealed from outside. Two host-side paths, both set up
-by `mpd-virt`: the **mpd-proxy WireGuard overlay** (transparent, every
-app, several VMs at once — needs sudo once) for daily use, or the
-sudo-free **SOCKS-over-SSH** tunnel (`ssh -N mpd-<NNN>-socks` + a dedicated
-browser) as the simple starting point. Either way CA trust makes
+The container subnet is sealed from the LAN — only the laptop's overlay
+or tunnel reaches in. Two host-side paths, both set up by `mpd-virt`:
+the **mpd-proxy WireGuard overlay** (transparent, carries the whole
+per-VM `/24`, every app, several VMs at once — needs sudo once) for
+daily use, or the sudo-free **SOCKS-over-SSH** tunnel
+(`ssh -N mpd-<NNN>-socks` + a dedicated browser) as the simple starting
+point. Either way CA trust makes
 `*.mpd.test` HTTPS work. Concrete network recipes (for the curious or for
 recovery) live in [NETWORKING.md](NETWORKING.md).
 
@@ -100,8 +106,8 @@ plus config — resolved from `/srv/extra/mdl-recipes/` by identifier, or
 read from a path. The second is the project name. Run `demo` with no
 arguments to list the recipes present on this VM.
 
-`mudev clone` assembles the tree, then mpd provisions the runtime and
-database, installs Moodle, and prints the URL and admin credentials.
+`mudev clone` assembles the tree, then mpd provisions the database,
+installs Moodle, and prints the URL and admin credentials.
 Takes a few minutes. Idempotent — re-running just starts the existing
 project.
 
@@ -134,26 +140,66 @@ mpd start moodle51
 ```
 
 From your laptop, open `https://moodle51.<NNN>.mpd.test/`. Real cert (signed
-by the local CA), no warnings. Outbound mail: visit
-`https://mail.moodle51.<NNN>.mpd.test/` and you land on the runtime's shared
-Mailpit UI with this project's mail pre-filtered (302-redirect to
-`mail.<runtime>.<NNN>.mpd.test/?q=moodle51.<NNN>.mpd.test`). If the project has a
-`kind: behat` URL declared, `https://behat.moodle51.<NNN>.mpd.test/` is
-wired automatically.
+by the local CA), no warnings.
 
-VM-wide defaults (Moodle admin password, Behat preferences, Cloudflare
-Tunnel domain, etc.) live in `/var/lib/mpd/env/mpd-vm.env` *inside the VM*
-and are bind-mounted RO into every runtime container — edit on the host
-and the new values are visible to the next command run inside any runtime.
+**Outbound mail** is off by default — the generated config carries
+`$CFG->noemailever = true` until you opt in to Mailpit, which is an
+[extra service](#extra-services-mailpit-adminer-seleniumv1):
+
+```bash
+mpd --service-enable=mailpit
+mpd configure moodle51        # regenerate config-mpd.php → $CFG->smtphosts
+```
+
+The project then publishes an informational "mail" link —
+`http://mailpit.svc.<NNN>.mpd.test:8025/?q=moodle51.<NNN>.mpd.test`, the
+shared Mailpit inbox pre-filtered to this project.
+
+**Behat**: set `MPD_PHP_MOODLE_BEHAT=1` and re-run `mpd configure` —
+that auto-enables the `seleniumv1` service, points `wd_host` at it, and
+wires `https://behat.moodle51.<NNN>.mpd.test/` automatically.
+
+VM-wide defaults (Moodle admin password, Behat preferences, etc.)
+live in `/var/lib/mpd/env/mpd-vm.env` *inside the VM*
+and are bind-mounted RO into the runtime container — edit on the host
+and the new values are visible to the next command run inside it.
 The full layered
 configuration model — file paths, sourcing order, reserved keys — is
 documented in
 [`ARCHITECTURE.md` §8](ARCHITECTURE.md#8-configuration-model-mpdenv).
 
+## Extra services (mailpit, adminer, seleniumv1)
+
+Nothing beyond the runtime is installed by default. Optional extras are
+containers you enable by name:
+
+```bash
+mpd --service-enable=mailpit      # install + start + auto-start on boot
+mpd --service-disable=mailpit     # stop; stays off across reboots
+mpd --service-uninstall=mailpit   # remove the container, KEEP its data volume
+mpd --service-purge=mailpit       # remove the container AND the volume
+mpd list services                 # the three extras with their status
+```
+
+The three services and where they answer (HTTP only — their addresses
+are inside the trust boundary, reached via the WireGuard overlay or the
+SOCKS tunnel like everything else; no TLS, no proxying):
+
+| Service      | URL                                        | Notes                                                        |
+|--------------|--------------------------------------------|---------------------------------------------------------------|
+| `mailpit`    | `http://mailpit.svc.<NNN>.mpd.test:8025/`  | Shared mail catch-all; SMTP on `:1025`. Data volume survives uninstall. |
+| `adminer`    | `http://adminer.svc.<NNN>.mpd.test:8080/`  | DB web UI; the portal offers pre-filled per-project links.    |
+| `seleniumv1` | `http://seleniumv1.svc.<NNN>.mpd.test:4444/` | Behat browser; auto-enabled by `mpd configure` on a Behat-enabled Moodle project. |
+
+Enabled services survive reboots (`mpd --vm-start` reconciles them) and
+their enabled-set is visible to project `configure` scripts — which is
+why toggling mailpit calls for a `mpd configure <project>` re-run on
+mail-aware projects.
+
 ## Running runtime commands from the VM
 
-`mpd run` forwards a command into the runtime that owns the project you
-are standing in, so a one-off does not need an SSH hop:
+`mpd run` forwards a command into the runtime, so a one-off standing in
+a project directory does not need an SSH hop:
 
 ```bash
 cd /srv/projects/moodle51
@@ -172,62 +218,57 @@ For a session rather than a command, SSH in.
 
 ## SSH into the runtime
 
-This is where the AI-friendly part comes alive. Once a project is
-running, the runtime container has a real SSH endpoint. From your laptop,
-use the ProxyJump alias `mpd-virt` wrote — the container IP itself is
-sealed, so the jump rides the VM's sshd (which also means it works with no
-overlay or proxy running):
+This is where the AI-friendly part comes alive. The runtime container
+has a real SSH endpoint. From your laptop, use the ProxyJump alias
+`mpd-virt` wrote — the jump rides the VM's sshd, so it works with no
+overlay or proxy running:
 
 ```bash
-ssh -A mpd-<NNN>-php
+ssh -A mpd-<NNN>-runtime
 ```
 
 Inside the VM the same alias works without the jump. Add `-A` only when
-that runtime genuinely needs your SSH agent — see [SECURITY.md](SECURITY.md).
+the session genuinely needs your SSH agent — see [SECURITY.md](SECURITY.md).
 
 You land in the runtime as your local user (UID matched), with
 passwordless sudo, agent-forwarded git auth, and the project tree at
 `/srv/projects/<project>/`. From there:
 
-- **VS Code Remote-SSH** → connect to `php.runtime.<NNN>.mpd.test`, open
+- **VS Code Remote-SSH** → connect to `runtime.<NNN>.mpd.test`, open
   `/srv/projects/<project>/`. Language server, debugger, terminals
   all run inside the runtime.
 - **PHPStorm Gateway** → same endpoint, same shape.
-- **Claude Code over SSH** → `ssh -A user@php.runtime.<NNN>.mpd.test` and
+- **Claude Code over SSH** → `ssh -A user@runtime.<NNN>.mpd.test` and
   start a session inside the runtime. The agent reads/writes files,
   runs composer / phpunit / behat, pushes to GitHub via your
   forwarded agent key.
 
 If you're inside the VM (e.g. a GNOME terminal in a desktop-in-VM
-setup), use the VM-local SSH key instead of `-A` — and there is a short
-alias for every runtime:
+setup), use the VM-local SSH key instead of `-A`:
 
 ```bash
-ssh mpd-<NNN>-php                         # the short alias mpd writes for you
-ssh php                                   # same thing, in-VM shorthand
-ssh user@php.runtime.<NNN>.mpd.test       # the long form still works
+ssh mpd-<NNN>-runtime                # the alias mpd writes for you
+ssh runtime                          # same thing, in-VM shorthand
+ssh user@runtime.<NNN>.mpd.test      # the long form still works
 ```
 
-All three use `~/.ssh/id_ed25519`, so no `-A` is needed. The aliases are
+All three use `~/.ssh/id_ed25519`, so no `-A` is needed. The alias is
 a managed block `mpd --vm-setup` writes into the dev user's
-`~/.ssh/config`, one entry per runtime in the assets tree — it fills in
-the user, points the alias at the real name, and skips host-key
-verification, which a container that gets recreated on demand would
-otherwise trip over on every rebuild. Only the FQDN is in DNS; the short
-names are an ssh-level convenience, so they work for `ssh`, `scp` and
-`rsync` but not in a browser.
+`~/.ssh/config` — it fills in the user, points the alias at the real
+name, and skips host-key verification, which a container that gets
+rebuilt on demand would otherwise trip over on every rebuild. Only the
+FQDN is in DNS; the short names are an ssh-level convenience, so they
+work for `ssh`, `scp` and `rsync` but not in a browser.
 
 Anything you write *outside* the `# >>> mpd runtimes ... >>>` markers is
-preserved across re-runs; anything inside them is regenerated. An alias
-for a runtime you haven't provisioned yet fails to resolve, exactly as
-the long form would.
+preserved across re-runs; anything inside them is regenerated.
 
-`mpd-<NNN>-php` is also the runtime container's own hostname, so your
+`mpd-<NNN>-runtime` is also the runtime container's own hostname, so your
 shell prompt after connecting echoes what you typed. It's the same
 string the workstation's `~/.ssh/config` uses for the hop in from
 outside, so the command reads the same in both places.
 
-`mpd --vm-setup` populates each runtime's `authorized_keys` with two key
+`mpd --vm-setup` populates the runtime's `authorized_keys` with two key
 sources: the laptop key (from the VM's `~/.ssh/authorized_keys`) and
 the VM-local key (from `~/.ssh/id_*.pub`, generated by setup if
 absent). On the sandbox platform the "laptop key" is just whatever
@@ -237,12 +278,12 @@ ever access the sandbox via the hypervisor's console).
 ## `mpd` from inside the runtime
 
 You don't need a second terminal to drive mpd. `mpd` is on `PATH` inside
-every runtime and the project verbs work there:
+the runtime and the project verbs work there:
 
 ```bash
-ssh mpd-<NNN>-php
+ssh mpd-<NNN>-runtime
 cd /srv/projects/newproject          # a directory that isn't a project yet
-mpd create --type=moodle             # scaffolds it, in THIS runtime
+mpd create --type=moodle             # scaffolds it
 mpd configure newproject
 mpd start newproject
 mpd show newproject
@@ -256,29 +297,18 @@ on the VM, output streams live and in colour, exit codes propagate into
 `$?`, and a confirmation prompt like `mpd delete`'s reads your keystrokes.
 
 **Only project verbs**: `create`, `configure`, `start`, `stop`, `reset`,
-`delete`, `show`, `help`. Everything that acts on the VM or its infrastructure
-stays in a VM terminal — no `--vm-*`, no `--runtime-*`, no `--db-*`. A
-runtime has no business building runtimes or database containers.
-`mpd run` is refused too: you are already in the runtime, so run the
-command directly.
-
-**You can only touch your own runtime's projects.** From the `php`
-runtime, a `node` project is refused by name, and so is standing in its
-directory:
-
-```
-$ mpd start site
-Error: cannot act on project 'site' from the 'php' runtime — it belongs to 'node'.
-Run it from a VM terminal, or from that runtime.
-```
+`delete`, `show`, `help`. Everything that acts on the VM or its
+infrastructure stays in a VM terminal — no `--vm-*`, no `--runtime-*`,
+no `--db-*`, no `--service-*`. A runtime has no business rebuilding
+itself or toggling infrastructure. `mpd run` is refused too: you are
+already in the runtime, so run the command directly.
 
 Two details worth knowing:
 
-- **`--type` is constrained, not optional.** It still says what kind of
-  project to build, but it must be a type this runtime serves — otherwise
-  `mpd create --type=astro` from `php` would quietly build the whole
-  `node` runtime. Where a runtime serves exactly one type (php serves
-  only `moodle`), you can leave `--type` out and mpd fills it in.
+- **`--type` must exist.** A declared `--type` is checked against the
+  types the assets tree defines (`moodle`, `astro`); leave it out and
+  mpd infers it exactly as on the VM (name match, else the `moodle`
+  default).
 - **`cd` where it matters.** Inside `/srv/projects/<name>/` the project
   name is inferred, exactly as on the VM. Elsewhere — including the
   `$HOME` you land in when you SSH in — name the project explicitly;
@@ -291,13 +321,13 @@ The trade-off it exists for is in
 
 ### Pushing to git from inside the runtime
 
-Runtimes don't carry your private SSH key. Authenticate to
+The runtime doesn't carry your private SSH key. Authenticate to
 GitHub/GitLab/private remotes via **SSH agent forwarding** (`ssh -A`):
 
 ```bash
 ssh-add ~/.ssh/id_ed25519           # load the key into your laptop's agent
                                     # (once per laptop session)
-ssh -A user@php.runtime.<NNN>.mpd.test    # -A forwards the agent socket in
+ssh -A user@runtime.<NNN>.mpd.test  # -A forwards the agent socket in
 cd /srv/projects/moodle51
 git push origin main                # forwarded agent signs; the remote
                                     # sees your laptop's key
@@ -330,14 +360,14 @@ project-aware (cwd-walk to find the current project) and ready for
 either a human or an AI agent to invoke directly. Full taxonomy in
 [`ARCHITECTURE.md` §7](ARCHITECTURE.md).
 
-**Base tools (available in every runtime):**
+**Base tools (`assets/runtime-base/tools/`):**
 
 | Tool             | What it does                                                                                                                                                                                                                 |
 |------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `claude-install` | Idempotent install of Claude Code (Anthropic's CLI) to `~/.local/bin/claude` via the upstream `curl \| bash` installer. Re-runs no-op.                                                                                       |
 | `node-install`   | Idempotent install of nvm + Node.js (LTS by default) into `$HOME/.nvm/` (upstream-standard). After install, `nvm`/`node`/`npm` are on PATH for new login shells; `nvm install <ver>` then works without sudo. Re-runs no-op. |
 
-**Runtime-level (PHP runtime):**
+**Runtime-level (`assets/runtime/tools/`):**
 
 | Tool               | What it does                                                                                                                                      |
 |--------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -345,9 +375,9 @@ either a human or an AI agent to invoke directly. Full taxonomy in
 | `composer`         | The Composer phar; installed at `/usr/local/bin/composer` by `composer-install` at provision time.                                                |
 | `composer-install` | Idempotent install of Composer to `/usr/local/bin/`. Re-runs no-op.                                                                               |
 | `composer-upgrade` | Force-reinstalls Composer (bypass idempotency). Use instead of `composer self-update` — the phar is root-owned and self-update can't write to it. |
-| `mudev`            | Assembles a Moodle tree from a recipe. Built on the VM by `mpd --vm-setup` at `/opt/mudev`, bind-mounted read-only into every runtime, so the same binary answers on the VM and in any runtime. Its catalogues live in `/srv/extra/`. |
+| `mudev`            | Assembles a Moodle tree from a recipe. Built on the VM by `mpd --vm-setup` at `/opt/mudev`, bind-mounted read-only into the runtime, so the same binary answers on both sides. Its catalogues live in `/srv/extra/`. |
 
-**Project-type-level (Moodle — available when a Moodle project is in the runtime):**
+**Project-type-level (Moodle — `assets/runtime/project_types/moodle/tools/`):**
 
 | Tool                                        | What it does                                                                                                                                                                                                                                                                                            |
 |---------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -359,14 +389,14 @@ either a human or an AI agent to invoke directly. Full taxonomy in
 | `phpunit` / `phpunit-init` / `phpunit-util` | Run, initialize, and inspect Moodle's PHPUnit suite.                                                                                                                                                                                                                                                    |
 | `behat` / `behat-init` / `behat-util`       | Run, initialize, and inspect Moodle's Behat suite.                                                                                                                                                                                                                                                      |
 | `grunt`                                     | Wraps `npm install` + `grunt` for the current project's Moodle JS build.                                                                                                                                                                                                                                |
-| `mpci` / `mpci-install`                     | Moodle Plugin CI runner and installer. Lives at `/opt/mpd/mpci/` (dev-owned, in the container overlay — re-provision on runtime recreate, like `~/.nvm`).                                                                                                                                               |
+| `mpci` / `mpci-install`                     | Moodle Plugin CI runner and installer. Lives at `/opt/mpd/mpci/` (dev-owned, in the container overlay — re-provision after `mpd --runtime-rebuild`, like `~/.nvm`).                                                                                                                                               |
 
 The `mdl-` prefix marks Moodle-specific operations whose bare name
 would otherwise collide with system commands or be too generic
 (`mdl-cron` vs system `cron`). Bare names match upstream tools
 (`phpunit`, `behat`, `grunt`).
 
-**Project-type-level (Astro — when an Astro project is in the runtime):**
+**Project-type-level (Astro — `assets/runtime/project_types/astro/tools/`):**
 
 | Tool            | What it does                                                                  |
 |-----------------|-------------------------------------------------------------------------------|
@@ -377,10 +407,10 @@ The `astro-` prefix follows the same rule as `mdl-` — disambiguation
 for project-type-specific operations whose bare name (`rebuild`,
 `upgrade`) would be too generic.
 
-## Project backups (today)
+## Backups
 
-Backup verbs are on the [roadmap](ROADMAP.md). Today the workflow
-is:
+**Project backups** (`mdl-backup` / `mdl-restore`) are on the
+[roadmap](ROADMAP.md). Today the workflow is:
 
 - Inside the runtime, write whatever bundle you want into
   `/srv/backups/` (a data-volume subdirectory).
@@ -389,6 +419,24 @@ is:
   ```bash
   scp <vm>:/srv/backups/<file> ~/Downloads/
   ```
+
+**Runtime backups** exist now and cover something different: the
+home-directory pieces that live only inside the runtime container and
+die with it — Claude Code configuration (`~/.claude`, `~/.claude.json`)
+and shell history. Configuration and history only, never binaries: a
+rebuilt runtime reinstalls its tools fresh (the restore hook re-runs
+`claude-install` for you), so nothing stale is ever copied back in:
+
+```bash
+mpd --runtime-backup       # → /srv/backups/runtime/<UTC-timestamp>/ + manifest.json
+mpd --runtime-rebuild      # fresh runtime from current assets
+mpd --runtime-restore      # replays the newest backup into it
+```
+
+The work is asset-side — every `assets/runtime/backup.d/NN-*.sh`
+(and `restore.d/` on the way back) runs inside the runtime as the dev
+user with the backup directory as `$1`, so adding a topic is dropping
+a script there, no Go change.
 
 `/srv/backups/` is wiped when the data volume is wiped (`podman volume
 rm`, VM reset, etc.). Always pull off before destructive ops you
@@ -405,7 +453,7 @@ Two things it is for:
 mpd reset moodle45
 mpd configure moodle45            # fresh, empty database
 mpd start moodle45
-# then install Moodle again from the runtime: ssh mpd-<NNN>-php, mdl-install
+# then install Moodle again from the runtime: ssh mpd-<NNN>-runtime, mdl-install
 
 # Switch database engine on an existing site.
 mpd reset moodle45
@@ -447,14 +495,15 @@ mpd                              # status (a bare mpd falls through to --vm-stat
 mpd --vm-status                     # text status of services + projects
 
 mpd --vm-upgrade                    # pull + rebuild mpd, then re-run --vm-setup (see below)
-mpd --vm-start                      # reconcile current → requested (start runtimes/projects with state=running)
+mpd --vm-start                      # reconcile current → requested (runtime, projects with state=running, enabled services)
 mpd --vm-stop                       # graceful DB shutdown via EventMpdPreStop, then sudo systemctl poweroff
 mpd --vm-restart                    # graceful stop, then sudo systemctl reboot; mpd auto-starts on boot
 mpd --check-hooks                # cross-reference asset hook dirs against the Event catalogue
 
 mpd list                         # list all projects (default)
-mpd list runtimes                # list runtime containers
-mpd list services                # list always-on infra services
+mpd list runtimes                # the runtime container
+mpd list services                # the optional extra services (mailpit, adminer, seleniumv1)
+mpd list infra                   # VM-integral infra: dnsmasq + the portal (systemd units)
 mpd list dbs                     # list DB containers
 mpd list network                 # this VM's addressing: id, zone, subnet, gateway
 
@@ -466,11 +515,15 @@ mpd reset <project>              # destroy DB + data, keep the code (type the na
 mpd delete <project>             # remove the project entirely (type the name to confirm)
 mpd help <project>               # all verbs for this project type
 
-mpd --runtime=<name>             # show one runtime's details
-mpd --runtime-create=<name>      # provision a new runtime
-mpd --runtime-start=<name>       # start a stopped one
-mpd --runtime-stop=<name>        # stop one
-mpd --runtime-delete=<name>      # remove one (prompts unless --yes)
+mpd --runtime-rebuild            # delete + re-provision the runtime (prompts unless --yes),
+                                 # restores running projects afterwards
+mpd --runtime-backup             # save runtime home-dir pieces to /srv/backups/runtime/
+mpd --runtime-restore            # replay the newest runtime backup
+
+mpd --service-enable=<name>      # install + start an extra service; auto-starts on boot
+mpd --service-disable=<name>     # stop it; stays off until re-enabled
+mpd --service-uninstall=<name>   # remove the container, keep its data volume
+mpd --service-purge=<name>       # remove the container AND the volume
 
 mpd --help                       # full flag reference
 ```
@@ -490,72 +543,19 @@ has uncommitted changes (commit, stash or discard first). Idempotent —
 an up-to-date VM just gets a rebuild and a fresh setup pass. A checkout
 you have re-pointed at your own remote is left alone and reported.
 
-## Sharing a project externally (Cloudflare Tunnel)
-
-A single mpd cftunnel project runs one `cloudflared` connector
-(authenticated by a CF tunnel token). The Cloudflare dashboard
-controls *which* public hostnames map to *which* internal mpd
-projects — one tunnel can serve many moodles. Each target moodle
-opts in to external exposure via its own flag, which is the per-
-project access control.
-
-**One-time per developer** (host):
-```bash
-# Add to /var/lib/mpd/env/mpd-vm.env (replace with the public domain you own):
-MPD_UTIL_CFTUNNEL_DOMAIN=.mpd-test.org
-```
-
-**Set up the connector** (once per VM, or whenever you rotate tokens):
-```bash
-# 1. CF dashboard → Networks → Tunnels → Create a Tunnel; copy the token.
-mpd create cftunnel                      # name matches the type → autodetected
-mpd configure cftunnel MPD_CFTUNNEL_TOKEN=<token-from-cf>
-mpd start cftunnel                       # cloudflared connects to CF
-```
-
-**Expose a moodle project** (repeat per project to share):
-```bash
-# 1. CF dashboard → Tunnel → Public Hostnames → Add a public hostname:
-#      Subdomain:    moodle520
-#      Domain:       mpd-test.org
-#      Service Type: HTTPS
-#      Service URL:  moodle520.<NNN>.mpd.test
-#    (CF auto-creates the DNS CNAME for moodle520.mpd-test.org.)
-# 2. Strongly recommended: gate each route with Cloudflare Access
-#    so the URL is not reachable by the open internet.
-# 3. Enable the moodle-side opt-in:
-mpd configure moodle520 MPD_PHP_MOODLE_CFTUNNEL=1
-mpd start moodle520
-```
-
-That last step is the real gate — Caddy frontdoor only serves the
-tunnel hostname for moodles where `MPD_PHP_MOODLE_CFTUNNEL=1` is
-set. A moodle project without the flag is unreachable via the tunnel
-even if the CF dashboard has a route pointing at it. moodle's
-generated URLs (form actions, asset paths) auto-rewrite to the
-tunnel hostname when the request arrives via the tunnel; direct
-`.mpd.test` access stays internal.
-
-**To unshare**:
-```bash
-mpd configure moodle520 MPD_PHP_MOODLE_CFTUNNEL=
-mpd start moodle520
-# (and remove the route in the CF dashboard if you want)
-```
-
-**Naming**: project name autodetects the type if it matches a known
-type exactly (`mpd create cftunnel` → cftunnel) or ends with
-`-<type>` (`mpd create share-cftunnel` → cftunnel). Otherwise pass
-`--type=cftunnel` explicitly. The name is purely cosmetic — pick
-whatever feels right.
-
 ## When you want to start over
 
 A few flavors, increasing severity:
 
 ```bash
-mpd --runtime-delete php         # delete a runtime, keep projects + DBs
-                                 # (the data volume keeps /srv/projects, /srv/dbs)
+# Rebuild the runtime container from current assets. Keeps projects + DBs
+# (the data volume keeps /srv/projects, /srv/dbs) and restores running
+# projects afterwards; only the container's home directory is lost —
+# `mpd --runtime-backup` first, `mpd --runtime-restore` after, carries
+# the pieces worth keeping.
+mpd --runtime-backup
+mpd --runtime-rebuild
+mpd --runtime-restore
 
 # Container-layer reset. The first thing to try after upgrading mpd across
 # changes that alter container shape — new mounts, labels, images, or a
@@ -565,14 +565,14 @@ mpd --runtime-delete php         # delete a runtime, keep projects + DBs
 sudo podman rm -af               # every mpd container, running or not
 sudo podman network rm mpd-internal
 
-mpd --vm-setup                   # network + services + units, from scratch
-mpd --runtime-create=php         # runtimes are NOT recreated by `mpd start`:
-                                 # it starts what exists and says so if it does not
-mpd --db-create=postgres:latest  # nor are DB containers. Their data survives in
-                                 # /srv/dbs/<id>/, so the databases come back with
-                                 # the container — but until it exists, every
-                                 # project answers "Database connection failed"
-mpd start <project>              # per project you want back up
+mpd --vm-setup                   # network + infra + units, from scratch —
+                                 # including the runtime container, which setup
+                                 # creates (restoring running projects), and any
+                                 # enabled extra services
+mpd start <project>              # per project still missing. Recreates the
+                                 # project's DB container on demand; its data
+                                 # survived in /srv/dbs/<id>/, so the databases
+                                 # come back with the container
 
 # Manual in-VM reset (no --uninstall verb on mpd):
 rm -rf /var/lib/mpd                    # blow away state + identity in the VM

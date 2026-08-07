@@ -22,11 +22,11 @@ const (
 // accept for it, and the name it actually connects to.
 //
 // Name composition stays with the caller, which has net.Net — this
-// package must not know that a runtime's FQDN is "<rt>.runtime.<zone>".
+// package must not know that the runtime's FQDN is "runtime.<zone>".
 type RuntimeHost struct {
 	// Patterns are the `Host` patterns, in the order a developer is
 	// likely to type them. Conventionally the VM-qualified alias
-	// ("mpd-130-php"), the bare runtime name ("php"), and the FQDN.
+	// ("mpd-130-runtime"), the bare name ("runtime"), and the FQDN.
 	Patterns []string
 	// HostName is what ssh resolves and connects to — the FQDN dnsmasq
 	// actually answers for.
@@ -34,18 +34,18 @@ type RuntimeHost struct {
 }
 
 // EnsureSSHConfig writes the runtime aliases into the dev user's
-// ~/.ssh/config, so `ssh mpd-130-php` reaches php.runtime.130.mpd.test
+// ~/.ssh/config, so `ssh mpd-130-runtime` reaches runtime.130.mpd.test
 // from a terminal on the VM.
 //
 // The aliases exist because only the FQDN is in DNS. Publishing short
 // names in dnsmasq instead was rejected: this VM's resolver is
 // authoritative for the whole `.test` tree (`local=/test/`), so a name
-// it answers for is answered *finally* — and a bare `php` record would
+// it answers for is answered *finally* — and a bare `runtime` record would
 // be a name with no zone, resolving inside every container on the VM and
 // colliding with anything else that wanted it. An ssh alias is scoped to
 // the one program that needs it, and to this user.
 //
-// One self-contained block per runtime rather than a wildcard plus a
+// One self-contained block rather than a wildcard plus a
 // shared options block: `ssh` has no captures in Host patterns, so the
 // alias→FQDN mapping has to be enumerated anyway, and enumerating the
 // options too removes the first-value-wins ordering subtlety entirely.

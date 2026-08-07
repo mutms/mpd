@@ -523,12 +523,8 @@ bash "${SCRIPT_DIR}/create-vm.sh" \
 # ============================================================
 # Best-effort: a failure here just means lazy provisioning later.
 
-step "Pre-warming demo runtime and database"
-if ssh_cmd "$VM_IP" "$VM_USER" 'mpd --runtime-create=php'; then
-    ok "PHP runtime built"
-else
-    warn "PHP runtime pre-warm failed; demo will provision on first run"
-fi
+# The runtime container itself is created by `mpd --vm-setup` (stage 5).
+step "Pre-warming demo database"
 if ssh_cmd "$VM_IP" "$VM_USER" 'mpd --db-create=postgres:latest'; then
     ok "postgres:latest ready"
 else

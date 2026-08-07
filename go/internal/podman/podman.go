@@ -205,6 +205,20 @@ func (c *Client) Restart(ctx context.Context, name string) (int, error) {
 	return c.stream(ctx, []string{"restart", name})
 }
 
+// UpdateRestartPolicy changes an existing container's restart policy
+// ("always", "no"). This is what makes --service-disable stick across
+// reboots: podman-restart.service resurrects anything left on "always".
+func (c *Client) UpdateRestartPolicy(ctx context.Context, name, policy string) error {
+	res, err := c.run(ctx, []string{"update", "--restart", policy, name})
+	if err != nil {
+		return err
+	}
+	if res.Code != 0 {
+		return fmt.Errorf("podman update --restart %s %s failed", policy, name)
+	}
+	return nil
+}
+
 // Remove force-removes a container.
 func (c *Client) Remove(ctx context.Context, name string) (int, error) {
 	return c.stream(ctx, []string{"rm", "-f", name})
@@ -259,27 +273,6 @@ func (c *Client) Pull(ctx context.Context, image string) (int, error) {
 // Run creates and starts a container (`podman run`).
 func (c *Client) Run(ctx context.Context, args []string) (int, error) {
 	return c.stream(ctx, append([]string{"run"}, args...))
-}
-
-// --- Pods -------------------------------------------------------------
-//
-// A runtime is a pod: the main container plus its sidecars share one
-// network namespace and one address, so lifecycle operations apply to
-// the pod rather than to each container.
-
-// PodStart starts every container in a pod.
-func (c *Client) PodStart(ctx context.Context, pod string) (int, error) {
-	return c.stream(ctx, []string{"pod", "start", pod})
-}
-
-// PodStop stops every container in a pod.
-func (c *Client) PodStop(ctx context.Context, pod string) (int, error) {
-	return c.stream(ctx, []string{"pod", "stop", pod})
-}
-
-// PodRemove force-removes a pod and its containers.
-func (c *Client) PodRemove(ctx context.Context, pod string) (int, error) {
-	return c.stream(ctx, []string{"pod", "rm", "-f", pod})
 }
 
 // VolumeRemove removes a named volume. `pod rm` leaves named volumes
@@ -480,12 +473,6 @@ func (c *Client) ExecWithOptions(ctx context.Context, container string, options 
 	return c.stream(ctx, args)
 }
 
-// PodExists reports whether a pod exists.
-func (c *Client) PodExists(ctx context.Context, pod string) bool {
-	res, err := c.run(ctx, []string{"pod", "exists", pod})
-	return err == nil && res.Code == 0
-}
-
 // ImageExists reports whether an image is present locally.
 func (c *Client) ImageExists(ctx context.Context, image string) bool {
 	res, err := c.run(ctx, []string{"image", "exists", image})
@@ -605,11 +592,6 @@ func ControlMountRO(runtime string) []string {
 // root — the same trap MudevMountRO documents — and a root-owned directory
 // here is one the daemon cannot bind its socket in.
 func ControlDir(runtime string) string { return ControlRunDir + "/" + runtime }
-
-// PodCreate creates a pod.
-func (c *Client) PodCreate(ctx context.Context, args []string) (int, error) {
-	return c.stream(ctx, append([]string{"pod", "create"}, args...))
-}
 
 // Copy copies between host and container (`podman cp`); either side may
 // be `container:/path`.

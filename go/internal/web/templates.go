@@ -69,6 +69,7 @@ const shellHTML = `{{define "page"}}<!doctype html>
 {{template "projects" .}}
 {{template "runtimes" .}}
 {{template "databases" .}}
+{{template "infra" .}}
 {{template "services" .}}
 </html>{{end}}`
 
@@ -86,10 +87,9 @@ const projectsHTML = `{{define "projects"}}
       <td><span class="badge {{if .Running}}on{{end}}">{{.Status}}</span></td>
       <td class="meta">{{.Type}}</td>
       <td class="meta">{{.Runtime}}</td>
-      <td class="meta">{{if .DBHost}}
-          {{if .AdminerURL}}<a href="{{.AdminerURL}}" title="Open in Adminer">{{.DBHost}}</a>
-          {{else}}{{.DBHost}}{{end}}<br>
-          <span class="cred">{{.DBUser}} / {{.DBPass}}</span>{{else}}—{{end}}</td>
+      <td class="meta">{{if .DBHost}}{{.DBHost}}<br>
+          <span class="cred">{{.DBUser}} / {{.DBPass}}</span>
+          {{range .Links}}<br><a href="{{.URL}}">{{.Label}}</a>{{end}}{{else}}—{{end}}</td>
       <td class="meta">{{if .URL}}<a href="{{.URL}}">{{.URL}}</a>{{else}}—{{end}}</td>
     </tr>
     {{end}}
@@ -136,6 +136,22 @@ const databasesHTML = `{{define "databases"}}
 </section>
 {{end}}`
 
+const infraHTML = `{{define "infra"}}
+<section id="infra" hx-get="/section/infra" hx-trigger="every 5s" hx-swap="outerHTML">
+  <h2>Infra</h2>
+  <table>
+    <tr><th>Name</th><th>Status</th><th>Access</th></tr>
+    {{range .Infra}}
+    <tr>
+      <td class="name">{{.Name}}</td>
+      <td><span class="badge {{if .Running}}on{{end}}">{{.Status}}</span></td>
+      <td class="meta">{{.Access}}</td>
+    </tr>
+    {{end}}
+  </table>
+</section>
+{{end}}`
+
 const servicesHTML = `{{define "services"}}
 <section id="services" hx-get="/section/services" hx-trigger="every 5s" hx-swap="outerHTML">
   <h2>Services</h2>
@@ -146,7 +162,7 @@ const servicesHTML = `{{define "services"}}
       <td class="name">{{.Name}}</td>
       <td><span class="badge {{if .Running}}on{{end}}">{{.Status}}</span></td>
       <td class="meta">{{.IP}}<br>{{.DNS}}</td>
-      <td class="meta">{{.Access}}</td>
+      <td class="meta">{{if .Running}}<a href="{{.Access}}">{{.Access}}</a>{{else}}{{.Access}}{{end}}</td>
     </tr>
     {{end}}
   </table>

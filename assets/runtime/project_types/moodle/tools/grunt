@@ -1,0 +1,29 @@
+#!/bin/bash
+# grunt — directory-aware grunt runner for Moodle.
+# Can be run from the project root or any subdirectory (e.g. a plugin).
+# Grunt runs in the current directory — Moodle's Gruntfile.js handles subplugin detection.
+# All arguments are passed through to grunt.
+set -euo pipefail
+
+source /opt/mpd/assets/runtime/project_types/moodle/scripts/mpd-env.sh
+
+# Load nvm so node/npm/npx are available
+source /opt/mpd/assets/runtime-base/lib/nvm-env.sh
+
+# Ensure we're somewhere within the project
+if [[ ! "$PWD" =~ ^/srv/projects/${PROJECT} ]]; then
+    cd "${PROJECT_DIR}"
+fi
+
+# Install node_modules if missing (at project root)
+if [ ! -d "${PROJECT_DIR}/node_modules" ]; then
+    echo "Installing node_modules..."
+    (cd "${PROJECT_DIR}" && npm install)
+fi
+
+# Use project-local grunt if available, otherwise npx
+if [ -x "${PROJECT_DIR}/node_modules/.bin/grunt" ]; then
+    exec "${PROJECT_DIR}/node_modules/.bin/grunt" "$@"
+else
+    exec npx grunt "$@"
+fi

@@ -3,9 +3,9 @@
 # any of the four layered files is in the environment.
 #
 # Layering (last assignment wins):
-#   1. /opt/mpd/assets/runtimes/<rt>/mpd-defaults.env — runtime-wide defaults.
+#   1. /opt/mpd/assets/runtime/mpd-defaults.env — runtime-wide defaults.
 #      Single source of truth for "the default value of MPD_<RT>_*".
-#   2. /opt/mpd/assets/runtimes/<rt>/project_types/<type>/mpd-defaults.env —
+#   2. /opt/mpd/assets/runtime/project_types/<type>/mpd-defaults.env —
 #      project-type defaults (override the runtime layer).
 #   3. /var/lib/mpd/env/mpd-vm.env — VM-wide cross-project overrides.
 #      Bind-mounted RO from the host into runtime containers at the same
@@ -17,9 +17,9 @@
 # which win over runtime defaults. Explicit `KEY=""` in any layer blocks
 # fall-through from earlier layers (last-assignment-wins, even when empty).
 #
-# Runtime + type are read from /srv/meta/<project>/project.json (written by
-# mpd on every project configure/start). If that file is missing or fields
-# are absent, layers 1+2 are silently skipped — layers 3+4 always load.
+# The type is read from /srv/meta/<project>/project.json (written by
+# mpd on every project configure/start). If that file is missing or the
+# field is absent, layer 2 is silently skipped — layers 3+4 always load.
 #
 # SECURITY: env files are NOT bash-sourced. They are read line by line by a
 # whitelist parser that:
@@ -65,20 +65,17 @@ _mpd_load_env_file() {
     done < "$file"
 }
 
-# Layer 1+2: runtime + type defaults. Read runtime/type from project.json
-# (written by mpd on configure/start). Both fields are required for the
-# defaults files to load; if either is empty, defaults are silently skipped.
+# Layer 1+2: runtime + type defaults. There is one runtime, so layer 1 is
+# unconditional; the type comes from project.json (written by mpd on
+# configure/start) and layer 2 is silently skipped when it is absent.
+_mpd_load_env_file "/opt/mpd/assets/runtime/mpd-defaults.env"
 _mpd_meta="/srv/meta/${PROJECT_NAME}/project.json"
 if [ -f "$_mpd_meta" ] && command -v jq >/dev/null 2>&1; then
-    _mpd_runtime=$(jq -r '.runtime // empty' "$_mpd_meta" 2>/dev/null)
     _mpd_type=$(jq -r '.type // empty' "$_mpd_meta" 2>/dev/null)
-    if [ -n "$_mpd_runtime" ]; then
-        _mpd_load_env_file "/opt/mpd/assets/runtimes/${_mpd_runtime}/mpd-defaults.env"
-        if [ -n "$_mpd_type" ]; then
-            _mpd_load_env_file "/opt/mpd/assets/runtimes/${_mpd_runtime}/project_types/${_mpd_type}/mpd-defaults.env"
-        fi
+    if [ -n "$_mpd_type" ]; then
+        _mpd_load_env_file "/opt/mpd/assets/runtime/project_types/${_mpd_type}/mpd-defaults.env"
     fi
-    unset _mpd_runtime _mpd_type
+    unset _mpd_type
 fi
 unset _mpd_meta
 

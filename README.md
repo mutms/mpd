@@ -2,11 +2,11 @@
 
 The environment I use for my own daily Moodle work. Every dev tool — PHP,
 Composer, Postgres/MariaDB, Node, even the AI coding agent — lives in
-per-project containers inside a Linux VM, not on your laptop. Each project
-gets its own `https://<project>.<NNN>.mpd.test/` URL with browser-trusted
-TLS, its own PHP version and database, per-project Mailpit, and automatic
-Behat/Selenium wiring. You edit in your usual IDE over SSH; the host stays
-clean, and everything an agent can touch is disposable.
+containers inside a Linux VM, not on your laptop. Each project gets its
+own `https://<project>.<NNN>.mpd.test/` URL with browser-trusted TLS, its
+own PHP version and database, and automatic Behat/Selenium wiring; Mailpit
+and Adminer are one command away. You edit in your usual IDE over SSH; the
+host stays clean, and everything an agent can touch is disposable.
 
 The details — design, motivation, comparisons with moodle-docker/DDEV, the
 IDE and agent workflow — live in [AGENTS.md](AGENTS.md) and
@@ -17,7 +17,7 @@ assistant at this repo and ask.
 
 | Repo                                            | Runs                    | Does                                                                     |
 |-------------------------------------------------|-------------------------|--------------------------------------------------------------------------|
-| **mpd** (this repo)                             | inside the VM           | runtimes, projects, DNS, TLS — the control plane                         |
+| **mpd** (this repo)                             | inside the VM           | the runtime, projects, DNS, TLS — the control plane                      |
 | [mpd-virt](https://github.com/mutms/mpd-virt)   | on the Mac              | creates/adopts VMs, host reachability + CA trust                         |
 | [mpd-proxy](https://github.com/mutms/mpd-proxy) | on the Mac, as root     | optional: transparent `*.mpd.test` for every app via a WireGuard overlay |
 | [mudev](https://github.com/mutms/mudev)         | on the VM + in runtimes | assembles Moodle trees from recipes; the plugin/recipe catalogues        |
@@ -47,7 +47,7 @@ demo moodle/release/4.5.12 demo45    # fully installed Moodle in one command
 ```
 
 `demo` prints the URL and admin credentials — open it in the VM's Firefox,
-and `ssh mpd-<NNN>-php` for a shell inside the runtime serving it. Recipes
+and `ssh mpd-<NNN>-runtime` for a shell inside the runtime serving it. Recipes
 come from [mudev](https://github.com/mutms/mudev); `demo` with no arguments
 lists what's available. `mpd --vm-upgrade` updates mpd in place later.
 
@@ -64,7 +64,7 @@ adopted with `mpd-virt takeover <NNN> <IP>` — projects survive.
 
 - [docs/README.md](docs/README.md) — index, audience-shaped
 - [docs/USAGE.md](docs/USAGE.md) — day-to-day handbook (projects, SSH into
-  runtimes, tools, updating)
+  the runtime, tools, updating)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — under the hood
 - [AGENTS.md](AGENTS.md) — background, layout, and conventions, for AI
   agents and humans alike

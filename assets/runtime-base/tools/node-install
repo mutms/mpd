@@ -6,9 +6,8 @@
 #
 # Available in any runtime: the skel-shipped ~/.bashrc puts this
 # directory (/opt/mpd/assets/runtime-base/tools) on the dev user's PATH
-# for every login shell. The php and node runtimes'
-# build.sh also invoke it directly during provisioning to seed the LTS
-# Node version.
+# for every login shell. The runtime's build.sh also invokes it directly
+# during provisioning to seed the LTS Node version.
 #
 # Shell hookup: skel/.bashrc already sources $HOME/.nvm/nvm.sh when
 # present, so opening a new login shell after install picks up nvm/node

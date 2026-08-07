@@ -233,7 +233,7 @@ func Generate(ctx context.Context, sans []string, certPath, keyPath string) erro
 // appendChain concatenates the signing CA onto the leaf file, leaf first.
 //
 // Everything that serves these files hands the whole file to the client:
-// caddy's `tls <cert> <key>`, the per-project caddy sidecar, the portal.
+// caddy's `tls <cert> <key>` — the VM's own and the in-runtime frontdoor.
 // So the file *is* the chain, and a leaf alone would fail verification
 // everywhere the intermediate is not already installed — which is
 // everywhere, since only the root is ever distributed.

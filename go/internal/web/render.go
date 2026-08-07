@@ -4,21 +4,22 @@ import (
 	"context"
 	"fmt"
 	"html/template"
-	"net/url"
 	"os"
 	"sort"
 	"strings"
 
 	"github.com/mutms/mpd/go/internal/podman"
+	"github.com/mutms/mpd/go/internal/runtime"
 	"github.com/mutms/mpd/go/internal/service"
 	"github.com/mutms/mpd/go/internal/state"
+	"github.com/mutms/mpd/go/internal/vm"
 )
 
 // page holds the whole template set: the shell plus one named template
 // per section. A section is addressable on its own
 // (`page.ExecuteTemplate(w, "services", …)`), which is what htmx fetches.
 var page = template.Must(template.New("page").Parse(
-	shellHTML + projectsHTML + runtimesHTML + databasesHTML + servicesHTML))
+	shellHTML + projectsHTML + runtimesHTML + databasesHTML + infraHTML + servicesHTML))
 
 // View is what the templates render. Everything on it is derived here,
 // not in the template: a template that can only range over prepared
@@ -29,6 +30,7 @@ type View struct {
 	Projects  []ProjectRow
 	Runtimes  []RuntimeRow
 	Databases []DatabaseRow
+	Infra     []InfraRow
 	Services  []ServiceRow
 }
 
@@ -52,10 +54,22 @@ type ProjectRow struct {
 	DBHost string
 	DBUser string
 	DBPass string
-	// AdminerURL opens Adminer with this project's connection prefilled.
-	// Empty unless both the database and Adminer are up — a link that
-	// leads to a connection error is worse than no link.
-	AdminerURL string
+	// Links are per-project links contributed by enabled, running extra
+	// services (service.Service.ProjectLinks) — Adminer's prefilled
+	// connection, and whatever future services offer. Only populated
+	// when the pieces the link needs are actually up: a link that leads
+	// to a connection error is worse than no link.
+	Links []service.Link
+}
+
+// InfraRow is one VM-integral infrastructure piece (dnsmasq, portal) as
+// the page shows it — systemd units on the VM, distinct from the
+// optional service containers.
+type InfraRow struct {
+	Name    string
+	Status  string
+	Running bool
+	Access  string
 }
 
 type RuntimeRow struct {
@@ -102,17 +116,18 @@ func pageData(ctx context.Context, d Deps) View {
 	// database is up before offering to open it, and asking podman per
 	// project would both duplicate work and let rows disagree.
 	dbUp := runningDatabases(ctx, d)
-	adminerUp := containerRunning(ctx, d, "adminer")
+	live := liveServices(ctx, d)
 
-	v.Projects = projectRows(ctx, d, projects, dbUp, adminerUp)
+	v.Projects = projectRows(ctx, d, projects, dbUp, live)
 	v.Runtimes = runtimeRows(ctx, d, projects)
 	v.Databases = databaseRows(ctx, d, projects)
-	v.Services = serviceRows(ctx, d)
+	v.Infra = infraRows(ctx, d)
+	v.Services = serviceRows(ctx, d, live)
 	return v
 }
 
 func projectRows(ctx context.Context, d Deps, projects []state.Project,
-	dbUp map[string]bool, adminerUp bool) []ProjectRow {
+	dbUp map[string]bool, live map[string]string) []ProjectRow {
 
 	rows := make([]ProjectRow, 0, len(projects))
 	for _, p := range projects {
@@ -128,71 +143,71 @@ func projectRows(ctx context.Context, d Deps, projects []state.Project,
 			DBHost:    dbHost(d, p),
 			DBUser:    p.Name,
 			DBPass:    p.Name,
-			AdminerURL: adminerURL(d, p.DatabaseEngine, dbHost(d, p),
-				p.Name, p.Name, dbUp[p.DatabaseID] && adminerUp),
+			Links:     projectLinks(d, p, dbUp, live),
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
 	return rows
 }
 
+// projectLinks collects what every enabled-and-running extra service
+// offers for one project, gated on the project's database being up —
+// the links all point at database views today.
+func projectLinks(d Deps, p state.Project, dbUp map[string]bool, live map[string]string) []service.Link {
+	if !dbUp[p.DatabaseID] {
+		return nil
+	}
+	info := service.ProjectInfo{
+		Name:     p.Name,
+		DBEngine: p.DatabaseEngine,
+		DBHost:   dbHost(d, p),
+		DBUser:   p.Name,
+		DBName:   p.Name,
+	}
+	var links []service.Link
+	for _, svc := range service.All() {
+		if live[svc.Name] != "running" {
+			continue
+		}
+		links = append(links, svc.ProjectLinks(d.Net, info)...)
+	}
+	return links
+}
+
 // runtimeRows lists runtimes that exist AND runtime types the assets tree
-// offers but that have never been created — "available" is a useful
-// answer to "what could I run this in?".
+// offers even before it has been created — "missing" tells the reader
+// to run `mpd --vm-setup`.
 func runtimeRows(ctx context.Context, d Deps, projects []state.Project) []RuntimeRow {
-	created := map[string]podman.PsItem{}
-	// Filter on the presence of mpd.runtime, not on a type label: runtime
-	// containers carry mpd.runtime=<name> and there is no
-	// mpd.type=runtime, so matching a value finds nothing at all and
-	// every runtime renders as "available".
+	row := RuntimeRow{
+		Name:      runtime.Name,
+		Requested: "—",
+		Status:    "missing (run mpd --vm-setup)",
+		IP:        "—",
+		DNS:       "—",
+		Projects:  len(projects),
+	}
+	// Filter on the presence of mpd.runtime, not on a type label: the
+	// runtime container carries mpd.runtime=runtime and there is no
+	// mpd.type=runtime, so matching a value would find nothing.
 	for _, item := range d.Podman.Ps(ctx, "label=mpd.runtime") {
-		name := item.Label("mpd.name")
-		if name == "" {
-			name = item.Name()
+		if item.Label("mpd.name") != runtime.Name {
+			continue
 		}
-		if name != "" {
-			created[name] = item
+		row.Created = true
+		row.IP = dash(item.Label("mpd.ip"))
+		row.DNS = d.Net.RuntimeFQDN()
+		row.Running = item.State == "running"
+		row.Status = "stopped"
+		if row.Running {
+			row.Status = "running"
+		}
+		// Persisted intent drives reconciliation; live observation
+		// drives what is shown as current.
+		if entry, ok := d.State.Runtime(runtime.Name); ok && entry.Requested != "" {
+			row.Requested = entry.Requested
 		}
 	}
-
-	names := map[string]bool{}
-	for name := range created {
-		names[name] = true
-	}
-	for _, name := range d.Assets.RuntimeNames() {
-		names[name] = true
-	}
-
-	counts := state.ProjectsByRuntime(projects)
-	rows := make([]RuntimeRow, 0, len(names))
-	for name := range names {
-		row := RuntimeRow{
-			Name:      name,
-			Requested: "—",
-			Status:    "available",
-			IP:        "—",
-			DNS:       "—",
-			Projects:  counts[name],
-		}
-		if item, ok := created[name]; ok {
-			row.Created = true
-			row.IP = dash(item.Label("mpd.ip"))
-			row.DNS = d.Net.Runtime(name)
-			row.Running = item.State == "running"
-			row.Status = "stopped"
-			if row.Running {
-				row.Status = "running"
-			}
-			// Persisted intent drives reconciliation; live observation
-			// drives what is shown as current.
-			if entry, ok := d.State.Runtime(name); ok && entry.Requested != "" {
-				row.Requested = entry.Requested
-			}
-		}
-		rows = append(rows, row)
-	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
-	return rows
+	return []RuntimeRow{row}
 }
 
 func databaseRows(ctx context.Context, d Deps, projects []state.Project) []DatabaseRow {
@@ -226,12 +241,47 @@ func databaseRows(ctx context.Context, d Deps, projects []state.Project) []Datab
 	return rows
 }
 
-func serviceRows(ctx context.Context, d Deps) []ServiceRow {
-	stateByContainer := map[string]string{}
-	for _, item := range d.Podman.Ps(ctx, podmanServiceFilter) {
-		if name := item.Name(); name != "" {
-			stateByContainer[name] = item.State
+// infraRows lists the VM-integral infrastructure: systemd units on the
+// VM, always on, distinct from the optional service containers.
+func infraRows(ctx context.Context, d Deps) []InfraRow {
+	var rows []InfraRow
+	for _, inf := range vm.InfraServices() {
+		row := InfraRow{Name: inf.Name, Status: "stopped"}
+		switch inf.Name {
+		case "dnsmasq":
+			row.Access = fmt.Sprintf("DNS resolver (%s:53)", d.Net.Gateway())
+		case "portal":
+			row.Access = fmt.Sprintf("https://%s/", d.Net.Zone())
 		}
+		if d.UnitActive != nil && d.UnitActive(ctx, inf.Unit, inf.UnitUser) {
+			row.Running = true
+			row.Status = "running"
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// liveServices maps each extra service name to its container state
+// ("running", "exited", …); absent means not installed.
+func liveServices(ctx context.Context, d Deps) map[string]string {
+	live := map[string]string{}
+	for _, item := range d.Podman.Ps(ctx, podmanServiceFilter) {
+		if name := item.Label("mpd.name"); name != "" {
+			live[name] = item.State
+		}
+	}
+	return live
+}
+
+// serviceRows lists the OPTIONAL extra services with their intent
+// (services.json) joined against what podman actually has.
+func serviceRows(ctx context.Context, d Deps, live map[string]string) []ServiceRow {
+	intent := map[string]bool{}
+	installed := map[string]bool{}
+	for _, entry := range d.State.Services() {
+		intent[entry.Name] = entry.Enabled
+		installed[entry.Name] = true
 	}
 
 	var rows []ServiceRow
@@ -241,32 +291,28 @@ func serviceRows(ctx context.Context, d Deps) []ServiceRow {
 			IP:     svc.IP(d.Net),
 			DNS:    svc.DNS(d.Net),
 			Access: svc.AccessHint(d.Net),
-			Status: "not created",
+			Status: "not installed",
 		}
 		switch {
-		case svc.Unit != "":
-			// Runs on the VM under systemd; podman has never heard of it.
-			row.Running = d.UnitActive != nil && d.UnitActive(ctx, svc.Unit, svc.UnitUser)
-			row.Status = "stopped"
-		case stateByContainer[svc.Container] != "":
-			row.Running = stateByContainer[svc.Container] == "running"
+		case live[svc.Name] == "running":
+			row.Running = true
+			row.Status = "running"
+		case installed[svc.Name] && !intent[svc.Name]:
+			row.Status = "disabled"
+		case installed[svc.Name]:
 			row.Status = "stopped"
 		}
-		if row.Running {
-			row.Status = "running"
+		if !installed[svc.Name] {
+			row.Access = "mpd --service-enable=" + svc.Name
 		}
 		rows = append(rows, row)
 	}
 	return rows
 }
 
-// podmanServiceFilter matches the label every mpd service container
-// carries. Mirrors cli.serviceFilter; duplicated rather than exported to
-// keep the page from importing the CLI layer.
-//
-// The compose label, not mpd.type: dnsmasq and the portal predate the
-// mpd.* label set and carry only this one, so filtering on mpd.type
-// would silently report them as not created.
+// podmanServiceFilter matches the label every mpd extra service
+// container carries. Mirrors cli.serviceFilter; duplicated rather than
+// exported to keep the page from importing the CLI layer.
 const podmanServiceFilter = "label=com.docker.compose.project=mpd-service"
 
 func label(item podman.PsItem, key, fallback string) string {
@@ -296,42 +342,6 @@ func runningDatabases(ctx context.Context, d Deps) map[string]bool {
 		}
 	}
 	return up
-}
-
-func containerRunning(ctx context.Context, d Deps, serviceName string) bool {
-	svc, ok := service.Find(serviceName)
-	if !ok {
-		return false
-	}
-	for _, item := range d.Podman.Ps(ctx, podmanServiceFilter) {
-		if item.Name() == svc.Container {
-			return item.State == "running"
-		}
-	}
-	return false
-}
-
-// adminerURL builds a prefilled Adminer link.
-//
-// Adminer takes the driver as the parameter NAME, not a value: postgres
-// is `?pgsql=<host>`, while MySQL and MariaDB are `?server=<host>`. Get
-// that wrong and Adminer shows its own login form with nothing filled
-// in, which looks like the link is broken rather than mistyped.
-func adminerURL(d Deps, engine, host, user, db string, offer bool) string {
-	if !offer || host == "" {
-		return ""
-	}
-	driver := "server"
-	if engine == "postgres" {
-		driver = "pgsql"
-	}
-	q := url.Values{}
-	q.Set(driver, host)
-	q.Set("username", user)
-	if db != "" {
-		q.Set("db", db)
-	}
-	return fmt.Sprintf("https://%s/?%s", d.Net.Service("adminer"), q.Encode())
 }
 
 func dash(s string) string {

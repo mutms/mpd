@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/mutms/mpd/go/internal/assets"
+	"github.com/mutms/mpd/go/internal/service"
 	"github.com/mutms/mpd/go/internal/state"
 )
 
@@ -46,11 +47,13 @@ var globalFlags = []string{
 	"--vm-start",
 	"--vm-stop",
 	"--vm-restart",
-	"--runtime-create",
-	"--runtime-start",
-	"--runtime-stop",
-	"--runtime-delete",
-	"--runtime",
+	"--runtime-rebuild",
+	"--runtime-backup",
+	"--runtime-restore",
+	"--service-enable",
+	"--service-disable",
+	"--service-uninstall",
+	"--service-purge",
 	"--db-create",
 	"--db-start",
 	"--db-stop",
@@ -98,7 +101,7 @@ func candidates(cword int, words []string, s state.Store, a assets.Tree) []strin
 		return optionValues(first, s, a)
 	}
 	if cword == 2 && first == "list" {
-		return []string{"projects", "runtimes", "services", "dbs", "network"}
+		return []string{"projects", "runtimes", "services", "infra", "dbs", "network"}
 	}
 	// Verb-first form: the second token is a project name. `create` takes
 	// a NEW name, so no suggestion list applies there.
@@ -125,16 +128,14 @@ func firstTokenCandidates(prefix string) []string {
 
 func optionValues(flag string, s state.Store, a assets.Tree) []string {
 	switch flag {
-	case "--runtime-start", "--runtime-stop", "--runtime-delete", "--runtime":
-		return s.RuntimeNames()
 	case "--db-start", "--db-stop", "--db-delete":
 		return databaseNames(s)
 	case "--db-create":
 		// The DB layer accepts a bare engine (version defaulted) as well
 		// as engine:version, so offer both shapes.
 		return []string{"postgres", "postgres:17", "mariadb", "mariadb:10.11", "mysql", "mysql:8.4"}
-	case "--runtime-create":
-		return uncreatedRuntimes(s, a)
+	case "--service-enable", "--service-disable", "--service-uninstall", "--service-purge":
+		return service.Names()
 	default:
 		return nil
 	}
@@ -171,23 +172,6 @@ func databaseNames(s state.Store) []string {
 		names = append(names, d.DatabaseID)
 	}
 	return names
-}
-
-// uncreatedRuntimes are runtimes with an asset definition but no state
-// entry — the only ones `--runtime-create` can act on.
-func uncreatedRuntimes(s state.Store, a assets.Tree) []string {
-	created := map[string]bool{}
-	for _, n := range s.RuntimeNames() {
-		created[n] = true
-	}
-	var out []string
-	for _, n := range a.RuntimeNames() {
-		if !created[n] {
-			out = append(out, n)
-		}
-	}
-	sort.Strings(out)
-	return out
 }
 
 // CompleteFromArgs is the `--complete` entry point: it parses the raw

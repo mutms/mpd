@@ -60,7 +60,7 @@ func Status(ctx context.Context, out io.Writer, s state.Store, p *podman.Client,
 		if live[name] {
 			status = "running"
 		}
-		fmt.Fprintf(out, "\n%s  %s  ssh %s\n", name, status, n.Runtime(name))
+		fmt.Fprintf(out, "\n%s  %s  ssh %s\n", name, status, n.RuntimeFQDN())
 
 		group := byRuntime[name]
 		sort.Slice(group, func(i, j int) bool { return group[i].Name < group[j].Name })

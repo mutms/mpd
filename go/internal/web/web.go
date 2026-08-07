@@ -65,7 +65,7 @@ func Serve(ctx context.Context, out io.Writer, d Deps) error {
 	// without touching the rest — and it is why an open popover survives
 	// a refresh, rather than being restored afterwards from the URL hash
 	// the way the PHP portal had to.
-	for _, name := range []string{"projects", "runtimes", "databases", "services"} {
+	for _, name := range []string{"projects", "runtimes", "databases", "infra", "services"} {
 		section := name // captured per handler
 		mux.HandleFunc("GET /section/"+section, func(w http.ResponseWriter, r *http.Request) {
 			renderFragment(w, r, section, d)

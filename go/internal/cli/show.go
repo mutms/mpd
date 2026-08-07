@@ -63,7 +63,7 @@ func ShowProject(ctx context.Context, out io.Writer, name string, s state.Store,
 	if entry.Requested == "running" && rtRunning {
 		fmt.Fprintln(out, field("Runtime:", rt))
 		writeURLs(out, entry.URLs)
-		fmt.Fprintln(out, field("SSH:", "ssh "+n.RuntimeAlias(rt)))
+		fmt.Fprintln(out, field("SSH:", "ssh "+n.RuntimeAlias()))
 		fmt.Fprintln(out, field("Directory:", "/srv/projects/"+name))
 		writeSettings(out, name)
 		return
@@ -133,61 +133,6 @@ func configurationDisplay(p state.Project) string {
 		return ""
 	}
 	return p.DatabaseEngine + ":" + p.DatabaseVersion
-}
-
-// ShowRuntime renders `mpd --runtime <name>`.
-func ShowRuntime(ctx context.Context, out io.Writer, name string, s state.Store,
-	p *podman.Client, o current.Observer, n net.Net) error {
-
-	container := o.RuntimeContainer(name)
-	if !p.Exists(ctx, container) {
-		return fmt.Errorf("Runtime '%s' does not exist.", name)
-	}
-
-	ip := p.Label(ctx, container, "mpd.ip")
-	requested := "-"
-	if entry, ok := s.Runtime(name); ok && entry.Requested != "" {
-		requested = entry.Requested
-	}
-
-	fmt.Fprintln(out, showField("Name:", name))
-	fmt.Fprintln(out, showField("IP:", orDash(ip)))
-	fmt.Fprintln(out, showField("SSH:", "ssh "+n.RuntimeAlias(name)))
-	fmt.Fprintln(out, showField("URL:", "https://"+n.Runtime(name)))
-	fmt.Fprintln(out, showField("Requested:", requested))
-	fmt.Fprintln(out, showField("Current:", string(o.Runtime(ctx, name))))
-
-	var projects []state.Project
-	for _, p := range s.Projects() {
-		if p.RuntimeName == name {
-			projects = append(projects, p)
-		}
-	}
-	if len(projects) == 0 {
-		fmt.Fprintln(out, showField("Projects:", "(none)"))
-		return nil
-	}
-	for i, proj := range projects {
-		prefix := strings.Repeat(" ", 12)
-		if i == 0 {
-			prefix = pad("Projects:", 12)
-		}
-		// Composed from the project name and this VM's zone — NOT from
-		// urls.json. This line answers "where would this project be",
-		// which is well defined even before configure.sh has written any
-		// URLs; MainURL() answers "what did the project type publish",
-		// which is empty until then.
-		url := ""
-		if proj.Requested == "running" {
-			url = "  → https://" + n.Host(proj.Name) + "/"
-		}
-		info := fmt.Sprintf("%s  %s  %s", proj.Name, proj.Requested, proj.Type)
-		if proj.DatabaseEngine != "" {
-			info += fmt.Sprintf("  [%s:%s]", proj.DatabaseEngine, proj.DatabaseVersion)
-		}
-		fmt.Fprintf(out, "%s%s%s\n", prefix, info, url)
-	}
-	return nil
 }
 
 func field(label, value string) string     { return pad(label, showLabelWidth) + value }

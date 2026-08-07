@@ -13,9 +13,6 @@ import (
 )
 
 // testGuard builds a Guard over a fake assets tree and state dir.
-//
-// The fake tree mirrors the real layout: php serves moodle, node serves
-// astro, util serves bare and cftunnel.
 func testGuard(t *testing.T, runtime string, projects ...state.Project) Guard {
 	t.Helper()
 	return Guard{
@@ -25,33 +22,19 @@ func testGuard(t *testing.T, runtime string, projects ...state.Project) Guard {
 	}
 }
 
-// testAssets writes a fake assets tree: php serves moodle, node serves
-// astro, util serves bare and cftunnel.
+// testAssets writes a fake assets tree mirroring the real layout: the
+// unified runtime serving moodle and astro.
 func testAssets(t *testing.T) assets.Tree {
 	t.Helper()
 
 	assetsDir := t.TempDir()
-	for rt, types := range map[string][]string{
-		"php":  {"moodle"},
-		"node": {"astro"},
-		"util": {"bare", "cftunnel"},
-	} {
-		base := filepath.Join(assetsDir, "runtimes", rt)
-		if err := os.MkdirAll(base, 0o755); err != nil {
+	for _, ty := range []string{"moodle", "astro"} {
+		dir := filepath.Join(assetsDir, "runtime", "project_types", ty)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		// RuntimeNames counts a directory as a runtime when it has build.sh.
-		if err := os.WriteFile(filepath.Join(base, "build.sh"), []byte("#!/bin/bash\n"), 0o755); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "configuration.json"), []byte("{}\n"), 0o644); err != nil {
 			t.Fatal(err)
-		}
-		for _, ty := range types {
-			dir := filepath.Join(base, "project_types", ty)
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(dir, "configuration.json"), []byte("{}\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
 		}
 	}
 
@@ -87,8 +70,7 @@ func TestAllowedVerbsTracksProjectVerbs(t *testing.T) {
 		// reset is project-scoped and needs VM privilege (drop the database,
 		// privileged removal under /srv), so it is a verb a runtime cannot
 		// perform for itself — and a corrupted database is something you
-		// discover while working inside the runtime. Allowed, confined by the
-		// scoping rule to the caller's own projects.
+		// discover while working inside the runtime. Allowed.
 		"reset": true,
 		"run":   false, // loops back into the calling runtime
 	}
@@ -112,7 +94,7 @@ func TestAllowedVerbsTracksProjectVerbs(t *testing.T) {
 }
 
 func TestEveryAllowedVerbPasses(t *testing.T) {
-	g := testGuard(t, "php", state.Project{Name: "moodle45", RuntimeName: "php"})
+	g := testGuard(t, "runtime", state.Project{Name: "moodle45", RuntimeName: "runtime"})
 	for _, verb := range AllowedVerbs() {
 		if _, err := g.Check(Request{Argv: []string{verb, "moodle45"}, Cwd: "/srv"}); err != nil {
 			t.Errorf("verb %q should be allowed, got: %v", verb, err)
@@ -121,11 +103,12 @@ func TestEveryAllowedVerbPasses(t *testing.T) {
 }
 
 func TestGlobalFlagsAndUnknownVerbsRefused(t *testing.T) {
-	g := testGuard(t, "php")
+	g := testGuard(t, "runtime")
 	for _, argv := range [][]string{
 		{"--vm-setup"},
-		{"--runtime-delete=php"},
+		{"--runtime-rebuild"},
 		{"--db-delete=mariadb-11-8"},
+		{"--service-enable=mailpit"},
 		{"--vm-stop"},
 		{"list"},
 		{"status"},
@@ -139,7 +122,7 @@ func TestGlobalFlagsAndUnknownVerbsRefused(t *testing.T) {
 
 // run must be refused even though it IS a project verb.
 func TestRunIsRefusedWithGuidance(t *testing.T) {
-	g := testGuard(t, "php")
+	g := testGuard(t, "runtime")
 	_, err := g.Check(Request{Argv: []string{"run", "php", "-v"}, Cwd: "/srv"})
 	if err == nil {
 		t.Fatal("run should be refused from inside a runtime")
@@ -151,11 +134,12 @@ func TestRunIsRefusedWithGuidance(t *testing.T) {
 
 // A global flag smuggled in after a legitimate verb must not slip through.
 func TestGlobalFlagAfterVerbRefused(t *testing.T) {
-	g := testGuard(t, "php", state.Project{Name: "moodle45", RuntimeName: "php"})
+	g := testGuard(t, "runtime", state.Project{Name: "moodle45", RuntimeName: "runtime"})
 	for _, argv := range [][]string{
 		{"start", "moodle45", "--vm-stop"},
-		{"create", "x", "--runtime-create=node"},
+		{"create", "x", "--runtime-rebuild"},
 		{"show", "moodle45", "--db-delete=x"},
+		{"configure", "moodle45", "--service-purge=mailpit"},
 	} {
 		if _, err := g.Check(Request{Argv: argv, Cwd: "/srv"}); err == nil {
 			t.Errorf("%v should be refused", argv)
@@ -163,72 +147,9 @@ func TestGlobalFlagAfterVerbRefused(t *testing.T) {
 	}
 }
 
-func TestForeignRuntimeProjectRefusedByName(t *testing.T) {
-	g := testGuard(t, "php",
-		state.Project{Name: "moodle45", RuntimeName: "php"},
-		state.Project{Name: "site", RuntimeName: "node"},
-	)
-	_, err := g.Check(Request{Argv: []string{"delete", "site"}, Cwd: "/srv"})
-	if err == nil {
-		t.Fatal("acting on another runtime's project should be refused")
-	}
-	// The message must name both sides, or it is not actionable.
-	for _, want := range []string{"site", "php", "node"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error should mention %q, got: %v", want, err)
-		}
-	}
-}
-
-// A scaffolded-but-unconfigured project has no runtimeName yet, so it must
-// be judged by its type. Otherwise `configure` from the wrong runtime would
-// provision another runtime — the thing the scoping rule exists to stop.
-func TestUnconfiguredProjectJudgedByItsType(t *testing.T) {
-	g := testGuard(t, "node",
-		// No RuntimeName: exactly what `create` leaves behind.
-		state.Project{Name: "moodle45", Type: "moodle"},
-	)
-	_, err := g.Check(Request{Argv: []string{"configure", "moodle45"}, Cwd: "/srv"})
-	if err == nil {
-		t.Fatal("configuring a moodle project from the node runtime should be refused")
-	}
-	for _, want := range []string{"moodle", "php", "node"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error should mention %q, got: %v", want, err)
-		}
-	}
-
-	// Its own type is fine.
-	own := testGuard(t, "node", state.Project{Name: "site", Type: "astro"})
-	if _, err := own.Check(Request{Argv: []string{"configure", "site"}, Cwd: "/srv"}); err != nil {
-		t.Errorf("configuring an astro project from node should be allowed, got: %v", err)
-	}
-}
-
-// Same refusal via cwd inference rather than an explicit name.
-func TestForeignRuntimeProjectRefusedByCwd(t *testing.T) {
-	g := testGuard(t, "php",
-		state.Project{Name: "site", RuntimeName: "node"},
-	)
-	_, err := g.Check(Request{Argv: []string{"start"}, Cwd: "/srv/projects/site/deep/inside"})
-	if err == nil {
-		t.Fatal("cwd inside another runtime's project should be refused")
-	}
-	if !strings.Contains(err.Error(), "node") {
-		t.Errorf("error should name the owning runtime, got: %v", err)
-	}
-}
-
-func TestOwnProjectAllowedByCwd(t *testing.T) {
-	g := testGuard(t, "php", state.Project{Name: "moodle45", RuntimeName: "php"})
-	if _, err := g.Check(Request{Argv: []string{"start"}, Cwd: "/srv/projects/moodle45/public"}); err != nil {
-		t.Errorf("own project via cwd should be allowed, got: %v", err)
-	}
-}
-
 // A malformed cwd means the peer is not mpd. Refused outright.
 func TestMalformedCwdRefused(t *testing.T) {
-	g := testGuard(t, "php")
+	g := testGuard(t, "runtime")
 	for _, cwd := range []string{
 		"",                        // no working directory at all
 		"relative/path",           // not absolute
@@ -245,7 +166,7 @@ func TestMalformedCwdRefused(t *testing.T) {
 // it cannot serve as context, because the same path on the VM is a different
 // directory. The command still runs, from /srv.
 func TestCwdOutsideSrvRunsFromSrv(t *testing.T) {
-	g := testGuard(t, "php", state.Project{Name: "moodle45", RuntimeName: "php"})
+	g := testGuard(t, "runtime", state.Project{Name: "moodle45", RuntimeName: "runtime"})
 	for _, cwd := range []string{"/home/skodak", "/etc", "/srvsomething", "/"} {
 		decision, err := g.Check(Request{Argv: []string{"show", "moodle45"}, Cwd: cwd})
 		if err != nil {
@@ -261,7 +182,7 @@ func TestCwdOutsideSrvRunsFromSrv(t *testing.T) {
 // Inside /srv, the caller's own directory is preserved — that is what makes
 // project inference and relative paths behave as they do on the VM.
 func TestCwdInsideSrvIsPreserved(t *testing.T) {
-	g := testGuard(t, "php", state.Project{Name: "moodle45", RuntimeName: "php"})
+	g := testGuard(t, "runtime", state.Project{Name: "moodle45", RuntimeName: "runtime"})
 	want := "/srv/projects/moodle45/public"
 	decision, err := g.Check(Request{Argv: []string{"show"}, Cwd: want})
 	if err != nil {
@@ -275,7 +196,7 @@ func TestCwdInsideSrvIsPreserved(t *testing.T) {
 // Outside /srv there is nothing to infer from, so a verb that needs a
 // project must be told which one.
 func TestCwdOutsideSrvCannotInferProject(t *testing.T) {
-	g := testGuard(t, "php", state.Project{Name: "moodle45", RuntimeName: "php"})
+	g := testGuard(t, "runtime", state.Project{Name: "moodle45", RuntimeName: "runtime"})
 	_, err := g.Check(Request{Argv: []string{"start"}, Cwd: "/home/skodak"})
 	if err == nil {
 		t.Fatal("a bare verb outside /srv should not resolve a project")
@@ -285,84 +206,54 @@ func TestCwdOutsideSrvCannotInferProject(t *testing.T) {
 	}
 }
 
-// A cwd outside /srv must not be usable to reach another runtime's project
-// either: the explicit name is still cross-checked.
-func TestCwdOutsideSrvStillCrossChecksRuntime(t *testing.T) {
-	g := testGuard(t, "php", state.Project{Name: "site", RuntimeName: "node"})
-	if _, err := g.Check(Request{Argv: []string{"start", "site"}, Cwd: "/home/skodak"}); err == nil {
-		t.Fatal("the runtime cross-check must apply regardless of cwd")
+// Own projects are reachable by cwd inference.
+func TestOwnProjectAllowedByCwd(t *testing.T) {
+	g := testGuard(t, "runtime", state.Project{Name: "moodle45", RuntimeName: "runtime"})
+	if _, err := g.Check(Request{Argv: []string{"start"}, Cwd: "/srv/projects/moodle45/public"}); err != nil {
+		t.Errorf("own project via cwd should be allowed, got: %v", err)
 	}
 }
 
-func TestCreateTypeMustBelongToCallingRuntime(t *testing.T) {
-	g := testGuard(t, "php")
-	_, err := g.Check(Request{Argv: []string{"create", "thing", "--type=astro"}, Cwd: "/srv/projects/thing"})
+// A declared --type must exist in the assets tree, in both flag forms.
+func TestCreateValidatesDeclaredType(t *testing.T) {
+	g := testGuard(t, "runtime")
+	_, err := g.Check(Request{Argv: []string{"create", "thing", "--type=rails"}, Cwd: "/srv/projects/thing"})
 	if err == nil {
-		t.Fatal("a type from another runtime should be refused")
+		t.Fatal("an unknown type should be refused")
 	}
-	for _, want := range []string{"astro", "node", "php"} {
+	for _, want := range []string{"rails", "moodle", "astro"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error should mention %q, got: %v", want, err)
 		}
 	}
 
-	// The same type from its own runtime is fine, in both flag forms.
-	node := testGuard(t, "node")
 	for _, argv := range [][]string{
 		{"create", "thing", "--type=astro"},
 		{"create", "thing", "--type", "astro"},
+		{"create", "thing", "--type=moodle"},
 	} {
-		if _, err := node.Check(Request{Argv: argv, Cwd: "/srv/projects/thing"}); err != nil {
-			t.Errorf("%v should be allowed from node, got: %v", argv, err)
+		if _, err := g.Check(Request{Argv: argv, Cwd: "/srv/projects/thing"}); err != nil {
+			t.Errorf("%v should be allowed, got: %v", argv, err)
 		}
 	}
 }
 
-// Name-based inference searches every runtime's types, so it can reach past
-// the caller. It must be caught rather than silently retyped.
-func TestCreateRefusesTypeInferredIntoAnotherRuntime(t *testing.T) {
-	g := testGuard(t, "php")
-	// "astro" matches the astro type exactly, which node owns.
-	_, err := g.Check(Request{Argv: []string{"create", "astro"}, Cwd: "/srv/projects/astro"})
-	if err == nil {
-		t.Fatal("a name inferring another runtime's type should be refused")
-	}
-	if !strings.Contains(err.Error(), "node") {
-		t.Errorf("error should name the owning runtime, got: %v", err)
-	}
-}
-
-// One type means no ambiguity: fill it in rather than demanding the only
-// possible answer.
-func TestCreateFillsInTypeForSingleTypeRuntime(t *testing.T) {
-	g := testGuard(t, "node")
+// Without --type the child's own inference and default apply — the guard
+// passes the argv through untouched.
+func TestCreateWithoutTypePassesThrough(t *testing.T) {
+	g := testGuard(t, "runtime")
 	decision, err := g.Check(Request{Argv: []string{"create", "newthing"}, Cwd: "/srv/projects/newthing"})
 	if err != nil {
-		t.Fatalf("create in a single-type runtime should work without --type: %v", err)
+		t.Fatalf("create without --type should pass through: %v", err)
 	}
-	if got := strings.Join(decision.Argv, " "); !strings.Contains(got, "--type=astro") {
-		t.Errorf("guard should supply the runtime's only type, got %q", got)
-	}
-}
-
-// Several types means the caller must choose — mpd's own fallback default
-// could belong to another runtime entirely.
-func TestCreateDemandsTypeForMultiTypeRuntime(t *testing.T) {
-	g := testGuard(t, "util")
-	_, err := g.Check(Request{Argv: []string{"create", "newthing"}, Cwd: "/srv/projects/newthing"})
-	if err == nil {
-		t.Fatal("a multi-type runtime should require --type")
-	}
-	for _, want := range []string{"bare", "cftunnel"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error should list %q as a choice, got: %v", want, err)
-		}
+	if got := strings.Join(decision.Argv, " "); got != "create newthing" {
+		t.Errorf("argv should be untouched, got %q", got)
 	}
 }
 
 // Check must never mutate the caller's slice — the argv is reused.
 func TestCheckDoesNotMutateRequestArgv(t *testing.T) {
-	g := testGuard(t, "node")
+	g := testGuard(t, "runtime")
 	argv := []string{"create", "newthing"}
 	original := strings.Join(argv, " ")
 	if _, err := g.Check(Request{Argv: argv, Cwd: "/srv/projects/newthing"}); err != nil {
@@ -374,7 +265,7 @@ func TestCheckDoesNotMutateRequestArgv(t *testing.T) {
 }
 
 func TestConfigureSettingIsNotMistakenForProjectName(t *testing.T) {
-	g := testGuard(t, "php", state.Project{Name: "moodle45", RuntimeName: "php"})
+	g := testGuard(t, "runtime", state.Project{Name: "moodle45", RuntimeName: "runtime"})
 	// The project must come from cwd, not from the KEY=VALUE token.
 	if _, err := g.Check(Request{
 		Argv: []string{"configure", "MPD_DB=postgres:18"},
@@ -392,7 +283,7 @@ func TestMissingCallingRuntimeIsRefused(t *testing.T) {
 }
 
 func TestBareHelpAllowed(t *testing.T) {
-	g := testGuard(t, "php")
+	g := testGuard(t, "runtime")
 	if _, err := g.Check(Request{Argv: []string{"help"}, Cwd: "/srv"}); err != nil {
 		t.Errorf("bare help should be allowed, got: %v", err)
 	}

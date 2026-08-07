@@ -87,6 +87,14 @@ type Runtime struct {
 	Requested string `json:"requested"`
 }
 
+// Service is one extra service container's persisted intent, as stored
+// in services.json. Presence means installed; Enabled decides whether
+// it runs (and auto-starts). Absent from the file = uninstalled.
+type Service struct {
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
+}
+
 // Projects returns every registered project, sorted by name.
 func (s Store) Projects() []Project {
 	var wrapper struct {
@@ -153,17 +161,6 @@ func (s Store) Config() Config {
 // SaveConfig writes config.json.
 func (s Store) SaveConfig(c Config) error { return s.writeJSON("config.json", c) }
 
-// ProjectsByRuntime counts projects per runtime name.
-func ProjectsByRuntime(projects []Project) map[string]int {
-	counts := map[string]int{}
-	for _, p := range projects {
-		if p.RuntimeName != "" {
-			counts[p.RuntimeName]++
-		}
-	}
-	return counts
-}
-
 // ProjectNamesByDatabase maps a databaseId to the sorted names of the
 // projects using it.
 func ProjectNamesByDatabase(projects []Project) map[string][]string {
@@ -195,6 +192,52 @@ func readJSON(path string, v any) bool {
 // is worse than a missing one — readers would act on it — so writes go
 // to a temp file and are renamed into place, and every failure is
 // reported rather than swallowed.
+
+// Services returns every installed extra service's intent.
+func (s Store) Services() []Service {
+	var wrapper struct {
+		Services []Service `json:"services"`
+	}
+	readJSON(filepath.Join(s.dir, "services.json"), &wrapper)
+	sort.Slice(wrapper.Services, func(i, j int) bool {
+		return wrapper.Services[i].Name < wrapper.Services[j].Name
+	})
+	return wrapper.Services
+}
+
+// SaveServices replaces services.json.
+func (s Store) SaveServices(entries []Service) error {
+	if entries == nil {
+		entries = []Service{}
+	}
+	return s.writeJSON("services.json", struct {
+		Services []Service `json:"services"`
+	}{entries})
+}
+
+// UpsertService records one service's intent, keeping the rest.
+func (s Store) UpsertService(entry Service) error {
+	services := s.Services()
+	for i, existing := range services {
+		if existing.Name == entry.Name {
+			services[i] = entry
+			return s.SaveServices(services)
+		}
+	}
+	return s.SaveServices(append(services, entry))
+}
+
+// DeleteService removes one service's intent (uninstalled).
+func (s Store) DeleteService(name string) error {
+	services := s.Services()
+	var kept []Service
+	for _, existing := range services {
+		if existing.Name != name {
+			kept = append(kept, existing)
+		}
+	}
+	return s.SaveServices(kept)
+}
 
 // SaveDatabases replaces databases.json.
 func (s Store) SaveDatabases(entries []Database) error {

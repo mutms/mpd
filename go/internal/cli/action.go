@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -17,7 +16,7 @@ import (
 
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
-	"github.com/mutms/mpd/go/internal/service"
+	"github.com/mutms/mpd/go/internal/runtime"
 	"github.com/mutms/mpd/go/internal/state"
 	"github.com/mutms/mpd/go/internal/vm"
 )
@@ -48,43 +47,39 @@ func Start(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) e
 		return err
 	}
 
-	if svc, ok := service.Find("adminer"); ok {
-		if err := service.Start(ctx, out, svc, d.Net, d.Podman); err != nil {
-			return err
-		}
+	// Enabled extra services: --restart always + podman-restart.service
+	// normally brings them back at boot; this reconcile is the belt to
+	// that braces, and it also repairs a revision drift.
+	if err := ReconcileServices(ctx, out, d.Podman, d.State, d.Net); err != nil {
+		return err
+	}
+	if err := WriteServicesMeta(d.State); err != nil {
+		return err
 	}
 
 	fmt.Fprintln(out, "\n\033[1m==> DNS resolution\033[0m")
-	// After adminer, so the podman bridge exists: at boot the resolver
-	// starts before podman has created it, and an interface appearing in
-	// the wrong instant is missed permanently. This is where a rebooted VM
-	// lands, so it is where the repair belongs.
+	// After the containers, so the podman bridge exists: at boot the
+	// resolver starts before podman has created it, and an interface
+	// appearing in the wrong instant is missed permanently. This is where
+	// a rebooted VM lands, so it is where the repair belongs.
 	if err := vm.EnsureDnsmasqResolving(ctx, out, d.Net.Gateway(), d.Net.Zone()); err != nil {
 		return err
 	}
 	verifyDNS(ctx, out, d.Net)
 
-	// Restore runtimes that had running projects. Failure warns rather
-	// than aborts: one broken runtime should not stop the others coming
-	// back.
-	var names []string
-	seen := map[string]bool{}
-	for _, p := range d.State.Projects() {
-		if p.Requested == "running" && p.RuntimeName != "" && !seen[p.RuntimeName] {
-			seen[p.RuntimeName] = true
-			names = append(names, p.RuntimeName)
-		}
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		container := d.Observer.RuntimeContainer(name)
-		if !d.Podman.Exists(ctx, container) || d.Podman.Running(ctx, container) {
-			continue
-		}
-		fmt.Fprintf(out, "\n\033[1m==> Restoring runtime '%s'\033[0m\n", name)
-		if err := RuntimeStart(ctx, out, name, d.Podman, d.State, d.Dnsmasq,
+	// The runtime is core infrastructure now — start it whenever it
+	// exists, whether or not any project requested running. Failure warns
+	// rather than aborts: a VM without its runtime is still worth having
+	// started, and --vm-setup is the repair.
+	container := d.Observer.RuntimeContainer(runtime.Name)
+	switch {
+	case !d.Podman.Exists(ctx, container):
+		fmt.Fprintln(out, "\n  No runtime container yet — run: mpd --vm-setup")
+	case !d.Podman.Running(ctx, container):
+		fmt.Fprintln(out, "\n\033[1m==> Restoring the runtime\033[0m")
+		if err := RuntimeStart(ctx, out, d.Podman, d.State, d.Dnsmasq,
 			d.Observer, d.Net, d.DevUser, d.UID); err != nil {
-			fmt.Fprintf(out, "  Warning: could not restore runtime '%s': %v\n", name, err)
+			fmt.Fprintf(out, "  Warning: could not restore the runtime: %v\n", err)
 		}
 	}
 
@@ -108,13 +103,9 @@ func verifyDNS(ctx context.Context, out io.Writer, n net.Net) {
 		fmt.Fprintf(out, "  Inspect with: journalctl -u %s\n", vm.DnsmasqUnit)
 		return
 	}
-	// The apex answers wherever the portal is — the registry knows, and
-	// hardcoding an octet here is what made this check wrong the moment
-	// the portal stopped being a container.
+	// The apex answers at the gateway — the portal is VM infra behind
+	// caddy on .1, not a container with an address of its own.
 	want := n.Gateway()
-	if d, ok := service.Find("portal"); ok {
-		want = d.IP(n)
-	}
 
 	got := resolveHost(ctx, n.Zone())
 	if got == want {

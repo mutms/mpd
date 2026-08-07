@@ -1,0 +1,38 @@
+#!/bin/bash
+# Tool: stop service, clear node_modules, npm install + build, restart.
+# Cwd-walks to the current project. Runs as the dev user; targeted
+# sudo for systemctl only (per ARCHITECTURE.md §6a).
+set -euo pipefail
+
+# shellcheck source=/dev/null
+source /opt/mpd/assets/runtime-base/lib/nvm-env.sh
+# shellcheck source=/dev/null
+source /opt/mpd/assets/runtime/project_types/astro/scripts/mpd-env.sh
+
+cd "${PROJECT_DIR}"
+
+# Stop service if running.
+if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
+    echo "Stopping ${SERVICE_NAME}..."
+    sudo systemctl stop "${SERVICE_NAME}"
+fi
+
+# Clear node_modules.
+if [ -d node_modules ]; then
+    echo "Clearing node_modules..."
+    rm -rf node_modules
+fi
+
+# Install correct Node version if .nvmrc present (dev-owned /opt/mpd/nvm).
+if [ -f .nvmrc ]; then
+    nvm install
+fi
+
+echo "Running npm install..."
+npm install
+
+echo "Running npm run build..."
+npm run build
+
+sudo systemctl start "${SERVICE_NAME}"
+echo "Dev server for '${PROJECT}' rebuilt and restarted."

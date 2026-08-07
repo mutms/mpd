@@ -7,9 +7,10 @@
 // from its hostname, mpd-<NNN>): VM 150
 // serves 10.163.150.0/24 and the zone 150.mpd.test. Ids run 001–254 as
 // zero-padded identifiers. The host part of an address never varies — the
-// VM itself is always .1, adminer always .6, runtimes always .100+ — only
-// the third octet moves, and it always equals the VM id. That is what lets
-// a workstation reach several VMs at once. See docs/NETWORKING.md.
+// VM itself is always .1, the runtime .2, databases .10–.99, extra
+// service containers .100–.199 — only the third octet moves, and it
+// always equals the VM id. That is what lets a workstation reach several
+// VMs at once. See docs/NETWORKING.md.
 //
 // # Why Net is a value, not a global
 //
@@ -42,24 +43,29 @@ const (
 	// serves from the VM rather than from a container answers here — the
 	// resolver, caddy, and `mpd --web` behind it.
 	HostGateway = 1
-	// 3, 4 and 5 are unassigned. Each was a container that no longer
-	// exists: 3 was dnsmasq, now a systemd unit on the VM listening on
-	// the gateway; 4 was the portal, now `mpd --web` behind caddy on the
+	// HostRuntime is the unified runtime container.
+	// 3–6 are unassigned. Each was a container that no longer exists:
+	// 3 was dnsmasq, now a systemd unit on the VM listening on the
+	// gateway; 4 was the portal, now `mpd --web` behind caddy on the
 	// gateway; 5 was fileaccess, deleted outright once /srv was mounted
-	// on the VM.
-	HostAdminer = 6
+	// on the VM; 6 was the always-on adminer, now an optional extra
+	// service container in the service range.
+	HostRuntime = 2
 )
 
 // DB containers take the lowest free octet in this range, pinned at
 // create time; vacated slots are reusable.
 const (
-	DBHostFirst = 30
+	DBHostFirst = 10
 	DBHostLast  = 99
 )
 
-// FirstRuntimeHost is where runtimes start (php=.100, node=.101,
-// util=.102); each runtime's configuration.json names its own octet.
-const FirstRuntimeHost = 100
+// Extra service containers (mailpit, adminer, seleniumv1, …) live in this
+// range; each service descriptor pins its own octet.
+const (
+	ServiceHostFirst = 100
+	ServiceHostLast  = 199
+)
 
 // Net answers every addressing question for one VM.
 type Net struct {
@@ -148,7 +154,7 @@ func (n Net) Subnet() string {
 }
 
 // IP composes a container address from its host octet.
-// e.g. IP(HostAdminer) on VM 150 → "10.163.150.6".
+// e.g. IP(HostRuntime) on VM 150 → "10.163.150.2".
 func (n Net) IP(host int) string {
 	return fmt.Sprintf("%s.%d.%d", SubnetPrefix, n.octet, host)
 }
@@ -189,33 +195,37 @@ func (n Net) Contains(addr string) bool {
 // e.g. Host("moodle45") on VM 150 → "moodle45.150.mpd.test".
 func (n Net) Host(name string) string { return name + "." + n.Zone() }
 
-// Service names an mpd service: Service("portal") → "portal.service.<zone>".
-func (n Net) Service(name string) string { return n.Host(name + ".service") }
+// Service names an extra service container:
+// Service("adminer") → "adminer.svc.<zone>".
+func (n Net) Service(name string) string { return n.Host(name + ".svc") }
 
-// Runtime names a runtime: Runtime("php") → "php.runtime.<zone>".
-func (n Net) Runtime(name string) string { return n.Host(name + ".runtime") }
+// RuntimeFQDN is the runtime container's DNS name:
+// "runtime.<zone>". ("runtime" is a reserved project name for this
+// reason.)
+func (n Net) RuntimeFQDN() string { return n.Host("runtime") }
 
-// RuntimeAlias is the short SSH alias for a runtime:
-// RuntimeAlias("php") on VM 130 → "mpd-130-php".
+// RuntimeAlias is the short SSH alias for the runtime:
+// "mpd-130-runtime" on VM 130.
 //
 // Not a DNS name — nothing resolves it. It is the alias
 // vm.EnsureSSHConfig writes into ~/.ssh/config, and it lives here
 // because it is composed from the VM id and so belongs with every other
 // name keyed on it.
 //
-// It is also, not by coincidence, the runtime container's own hostname
-// (the container is that name plus "-main"), so the prompt after `ssh
-// mpd-130-php` echoes what was typed. The two are composed
-// independently; this is a convention worth keeping, not a dependency.
-func (n Net) RuntimeAlias(name string) string { return "mpd-" + n.label + "-" + name }
+// It is also, not by coincidence, the runtime container's own name and
+// hostname, so the prompt after `ssh mpd-130-runtime` echoes what was
+// typed. The two are composed independently; this is a convention worth
+// keeping, not a dependency.
+func (n Net) RuntimeAlias() string { return "mpd-" + n.label + "-runtime" }
 
 // DB names a database container: DB("pg17") → "pg17.db.<zone>".
 func (n Net) DB(name string) string { return n.Host(name + ".db") }
 
 // VMServiceRecord is the diagnostic record dnsmasq serves with the VM's
 // own LAN IP rather than a container address, letting the host-side
-// orchestrator confirm which VM answered.
-func (n Net) VMServiceRecord() string { return n.Host("vm.service") }
+// orchestrator confirm which VM answered. ("vm" is a reserved project
+// name for this reason.)
+func (n Net) VMServiceRecord() string { return n.Host("vm") }
 
 // IsInZone reports whether name is this VM's zone apex or a name beneath
 // it — i.e. something mpd may issue a certificate and a DNS record for.

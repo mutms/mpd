@@ -155,7 +155,7 @@ func (g Guard) Check(r Request) (Decision, error) {
 	// would already fail as an unknown flag — but a security boundary
 	// should not rest on another package's flag-inheritance rules.
 	for _, arg := range r.Argv[1:] {
-		for _, prefix := range []string{"--vm-", "--runtime-", "--db-"} {
+		for _, prefix := range []string{"--vm-", "--runtime-", "--db-", "--service-"} {
 			if strings.HasPrefix(arg, prefix) {
 				return Decision{}, fmt.Errorf(
 					"%s flags are not available from inside a runtime (%s)", prefix, arg)
@@ -190,26 +190,9 @@ func (g Guard) Check(r Request) (Decision, error) {
 			verb, r.Cwd, srv.Projects, verb)
 	}
 
-	if project, found := g.project(name); found {
-		// A project keeps runtimeName empty until it is configured, so an
-		// unconfigured one has to be judged by its type instead. Without
-		// this, `mpd configure` on a scaffolded moodle project would be
-		// allowed from the node runtime and would then provision php — the
-		// exact cross-runtime provisioning the scoping rule exists to stop.
-		owner := project.RuntimeName
-		how := "belongs to"
-		if owner == "" {
-			if byType, ok := g.Assets.DefaultRuntimeForType(project.Type); ok {
-				owner = byType
-				how = "is a '" + project.Type + "' project, which runs on"
-			}
-		}
-		if owner != "" && owner != g.Runtime {
-			return Decision{}, fmt.Errorf(
-				"cannot act on project '%s' from the '%s' runtime — it %s '%s'.\n"+
-					"Run it from a VM terminal, or from that runtime.",
-				name, g.Runtime, how, owner)
-		}
+	// There is one runtime, so every registered project belongs to the
+	// caller — no cross-runtime ownership to check any more.
+	if _, found := g.project(name); found {
 		return decide(r.Argv), nil
 	}
 
@@ -274,78 +257,24 @@ func explicitProject(verb string, argv []string) string {
 	return ""
 }
 
-// checkCreateType constrains `create` to project types belonging to the
-// calling runtime, and fills the type in when there is only one.
-//
-// On the VM the type determines the runtime: create resolves it through
-// DefaultRuntimeForType and provisions whatever that names. From inside a
-// runtime that would be backwards — the runtime is a given, so an
-// unconstrained type would quietly build a *second* runtime on the caller's
-// behalf. Here the type must fit the caller instead of choosing for it.
+// checkCreateType validates a declared `--type` against the types the
+// asset tree actually defines. With a single runtime there is no
+// ownership to enforce any more — an undeclared type is left for the
+// child to infer (name match, else the moodle default), same as on the
+// VM.
 func (g Guard) checkCreateType(name string, argv []string) ([]string, error) {
-	mine := g.myTypes()
+	all := g.Assets.AllProjectTypes()
 
 	if declared, ok := typeFlag(argv); ok {
 		if declared == "" {
-			return nil, fmt.Errorf("--type needs a value (one of: %s)", strings.Join(mine, ", "))
+			return nil, fmt.Errorf("--type needs a value (one of: %s)", strings.Join(all, ", "))
 		}
-		owner, known := g.Assets.DefaultRuntimeForType(declared)
-		if !known {
-			return nil, fmt.Errorf("unknown project type %q", declared)
-		}
-		if owner != g.Runtime {
-			return nil, fmt.Errorf(
-				"project type '%s' runs on the '%s' runtime, but you are in '%s'.\n"+
-					"Create it from a VM terminal, or pick a type this runtime serves: %s.",
-				declared, owner, g.Runtime, strings.Join(mine, ", "))
-		}
-		return argv, nil
-	}
-
-	// No --type. The child would infer one from the name, and inference
-	// searches every runtime's types — so it can reach past the caller.
-	// Resolve it here instead of letting that happen.
-	if inferred := g.Assets.DetectTypeFromName(name); inferred != "" {
-		owner, known := g.Assets.DefaultRuntimeForType(inferred)
-		if known && owner != g.Runtime {
-			return nil, fmt.Errorf(
-				"the name '%s' implies project type '%s', which runs on the '%s' runtime, "+
-					"but you are in '%s'.\n"+
-					"Pass --type explicitly (one of: %s), or create it from a VM terminal.",
-				name, inferred, owner, g.Runtime, strings.Join(mine, ", "))
-		}
-		if known {
-			return argv, nil
+		if !g.Assets.HasProjectType(declared) {
+			return nil, fmt.Errorf("unknown project type %q (one of: %s)",
+				declared, strings.Join(all, ", "))
 		}
 	}
-
-	// Nothing inferred. One type means no ambiguity, so supply it rather
-	// than making the caller name the only possible answer; several means
-	// the caller has to choose, because mpd's own fallback default may
-	// belong to another runtime entirely.
-	switch len(mine) {
-	case 0:
-		return nil, fmt.Errorf("the '%s' runtime has no project types", g.Runtime)
-	case 1:
-		return append(append([]string{}, argv...), "--type="+mine[0]), nil
-	default:
-		return nil, fmt.Errorf(
-			"mpd create: which type? The '%s' runtime serves: %s.\n"+
-				"Pass one, e.g. mpd create %s --type=%s",
-			g.Runtime, strings.Join(mine, ", "), name, mine[0])
-	}
-}
-
-// myTypes lists the project types the calling runtime serves, sorted.
-func (g Guard) myTypes() []string {
-	var mine []string
-	for _, t := range g.Assets.AllProjectTypes() {
-		if owner, ok := g.Assets.DefaultRuntimeForType(t); ok && owner == g.Runtime {
-			mine = append(mine, t)
-		}
-	}
-	sort.Strings(mine)
-	return mine
+	return argv, nil
 }
 
 func (g Guard) project(name string) (state.Project, bool) {

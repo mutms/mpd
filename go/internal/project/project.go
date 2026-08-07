@@ -30,6 +30,12 @@ import (
 func Hosts(urls []state.ProjectURL, n net.Net) []string {
 	seen := map[string]bool{}
 	for _, u := range urls {
+		// A "mail" URL points at the mailpit SERVICE (its own address,
+		// its own DNS record), not at this project's vhost — issuing a
+		// project cert or DNS record for it would fight the service's.
+		if u.Kind == "mail" {
+			continue
+		}
 		parsed, err := url.Parse(u.URL)
 		if err != nil || parsed.Hostname() == "" {
 			continue

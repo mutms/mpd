@@ -17,98 +17,89 @@ import (
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/project"
 	"github.com/mutms/mpd/go/internal/runtime"
-	"github.com/mutms/mpd/go/internal/sidecar"
-	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
 )
 
-// RuntimeStop stops a runtime pod.
+// RuntimeStop stops the runtime container.
 //
-// Projects on it keep requested=running: the user stopped the runtime,
-// not the projects, and that distinction is what lets `--runtime-start`
-// bring them back. Their dnsmasq records are dropped though — a URL that
+// Projects keep requested=running: the user stopped the runtime, not
+// the projects, and that distinction is what lets RuntimeStart bring
+// them back. Their dnsmasq records are dropped though — a URL that
 // resolves to a stopped runtime gives a confusing connection error
 // instead of a clean NXDOMAIN. See docs/HOOKS.md §"Resource lifecycle
 // model".
-func RuntimeStop(ctx context.Context, out io.Writer, name string, p *podman.Client,
+func RuntimeStop(ctx context.Context, out io.Writer, p *podman.Client,
 	s state.Store, dns dnsmasq.Manager, o current.Observer) error {
 
-	container := o.RuntimeContainer(name)
+	container := o.RuntimeContainer(runtime.Name)
 	if !p.Exists(ctx, container) {
-		return fmt.Errorf("Runtime '%s' does not exist.", name)
+		return fmt.Errorf("The runtime does not exist. Run: mpd --vm-setup")
 	}
-	if code, err := p.PodStop(ctx, podName(o, name)); err != nil || code != 0 {
-		return fmt.Errorf("Failed to stop runtime '%s'.", name)
+	if code, err := p.Stop(ctx, container); err != nil || code != 0 {
+		return fmt.Errorf("Failed to stop the runtime.")
 	}
-	if err := saveRuntimeIntent(ctx, name, "stopped", p, s, container); err != nil {
+	if err := saveRuntimeIntent(ctx, "stopped", p, s, container); err != nil {
 		return err
 	}
 
 	for _, proj := range s.Projects() {
-		if proj.RuntimeName == name && proj.Requested == "running" {
+		if proj.Requested == "running" {
 			if _, err := dns.RemoveRecord(proj.Name); err != nil {
 				return err
 			}
 		}
 	}
-	Ok(out, "Stopped runtime '%s'.", name)
+	Ok(out, "Stopped the runtime.")
 	return nil
 }
 
-// RuntimeDelete removes a runtime pod and everything scoped to it.
+// RuntimeDelete removes the runtime container and everything scoped to
+// it.
 //
 // Projects are NOT deleted — only their DNS records, which would
 // otherwise resolve to a runtime that no longer exists. The project
-// records survive so `mpd <project> delete` (or a later `--gc`) remains
-// the explicit way to remove them.
-func RuntimeDelete(ctx context.Context, out io.Writer, in io.Reader, name string,
+// records survive so `mpd <project> delete` remains the explicit way to
+// remove them.
+func RuntimeDelete(ctx context.Context, out io.Writer, in io.Reader,
 	p *podman.Client, s state.Store, dns dnsmasq.Manager, o current.Observer,
 	devUser string, assumeYes bool) error {
 
-	container := o.RuntimeContainer(name)
+	container := o.RuntimeContainer(runtime.Name)
 	if !p.Exists(ctx, container) {
-		return fmt.Errorf("Runtime '%s' does not exist.", name)
+		return fmt.Errorf("The runtime does not exist.")
 	}
 
 	var names []string
 	for _, proj := range s.Projects() {
-		if proj.RuntimeName == name {
-			names = append(names, proj.Name)
-		}
+		names = append(names, proj.Name)
 	}
 	if len(names) > 0 {
-		fmt.Fprintf(out, "Runtime '%s' has projects: %s\n", name, strings.Join(names, ", "))
+		fmt.Fprintf(out, "The runtime has projects: %s\n", strings.Join(names, ", "))
 	}
-	// Runtimes are pets: the home directory accumulates real work. Say
-	// exactly what is lost and what survives, because "delete the
-	// runtime" sounds cheaper than it is.
+	// The runtime's home directory accumulates real work. Say exactly
+	// what is lost and what survives, because "rebuild the runtime"
+	// sounds cheaper than it is.
 	fmt.Fprintf(out, "Warning: /home/%s/ contents inside the runtime will be lost.\n", devUser)
 	fmt.Fprintln(out, "(IDE settings, shell history, manually installed CLIs in ~/.local/bin)")
-	fmt.Fprintln(out, "Preserved across recreate: mpd-vm.env (/var/lib/mpd/env/), VM-host skel (/var/lib/mpd/skel/)")
+	fmt.Fprintln(out, "`mpd --runtime-backup` first saves config + history; `mpd --runtime-restore` brings")
+	fmt.Fprintln(out, "them back and reinstalls tools fresh — binaries are never copied across a rebuild.")
+	fmt.Fprintln(out, "Preserved across rebuild: mpd-vm.env (/var/lib/mpd/env/), VM-host skel (/var/lib/mpd/skel/)")
 
 	if !assumeYes && !promptYesNo(out, in,
-		fmt.Sprintf("Remove runtime '%s' and all its containers?", name)) {
+		"Remove the runtime container?") {
 		fmt.Fprintln(out, "Aborted.")
 		return nil
 	}
 
-	pod := podName(o, name)
-	_, _ = p.PodStop(ctx, pod)
-	if code, err := p.PodRemove(ctx, pod); err != nil || code != 0 {
-		return fmt.Errorf("Failed to remove runtime '%s'.", name)
+	_, _ = p.Stop(ctx, container)
+	if code, err := p.Remove(ctx, container); err != nil || code != 0 {
+		return fmt.Errorf("Failed to remove the runtime.")
 	}
-	// `pod rm` leaves named volumes behind; the disk-backed /tmp volume
-	// would otherwise accumulate on every recreate.
-	_, _ = p.VolumeRemove(ctx, pod+"-tmp")
+	// `rm` leaves named volumes behind; the disk-backed /tmp volume
+	// would otherwise accumulate on every rebuild.
+	_, _ = p.VolumeRemove(ctx, runtime.TmpVolume(container))
 
-	// Runtime-level records, plus the pseudo-project holding sidecar URLs.
-	if _, err := dns.RemoveRecord(name); err != nil {
-		return err
-	}
-	if _, err := dns.RemoveRecord("_runtime-" + name); err != nil {
-		return err
-	}
-	if err := srv.Remove(ctx, srv.MetaDir("_runtime-"+name)); err != nil {
+	if _, err := dns.RemoveRecord(runtime.Name); err != nil {
 		return err
 	}
 	// Orphaned projects' records: their URLs would resolve to a runtime
@@ -118,73 +109,64 @@ func RuntimeDelete(ctx context.Context, out io.Writer, in io.Reader, name string
 			return err
 		}
 	}
-	if err := s.DeleteRuntime(name); err != nil {
+	if err := s.DeleteRuntime(runtime.Name); err != nil {
 		return err
 	}
-	Ok(out, "Removed runtime '%s'.", name)
+	Ok(out, "Removed the runtime.")
 	return nil
-}
-
-// podName is the pod for a runtime: mpd-<vmid>-<runtime>. The main
-// container is that plus "-main", which is what Observer already knows.
-func podName(o current.Observer, runtime string) string {
-	return strings.TrimSuffix(o.RuntimeContainer(runtime), "-main")
 }
 
 // saveRuntimeIntent records requested state, reconstructing the entry
 // from container labels when no state file exists yet — a runtime
 // adopted from an earlier mpd, or one whose state was wiped.
-func saveRuntimeIntent(ctx context.Context, name, requested string,
+func saveRuntimeIntent(ctx context.Context, requested string,
 	p *podman.Client, s state.Store, container string) error {
 
-	if entry, ok := s.Runtime(name); ok {
+	if entry, ok := s.Runtime(runtime.Name); ok {
 		entry.Requested = requested
 		return s.SaveRuntime(entry)
 	}
-	runtimeID := p.Label(ctx, container, "mpd.runtime")
-	if runtimeID == "" {
-		runtimeID = name
-	}
 	return s.SaveRuntime(state.Runtime{
-		Name:      name,
-		RuntimeID: runtimeID,
+		Name:      runtime.Name,
+		RuntimeID: runtime.Name,
 		IP:        p.Label(ctx, container, "mpd.ip"),
 		Requested: requested,
 	})
 }
 
-// RuntimeStart starts a runtime pod and brings its projects back.
+// RuntimeStart starts the runtime container and brings its projects
+// back.
 //
-// Three things happen after the pod is up, in this order and for
+// Three things happen after the container is up, in this order and for
 // reasons:
 //
-//  1. Wait for sshd. The pod reports "running" as soon as systemd is up,
-//     but services boot asynchronously — without the wait, an immediate
-//     `ssh` after this command hits "connection refused" and looks like
-//     a failure.
-//  2. Pre-warm every database any project here might want, running or
+//  1. Wait for sshd. The container reports "running" as soon as systemd
+//     is up, but services boot asynchronously — without the wait, an
+//     immediate `ssh` after this command hits "connection refused" and
+//     looks like a failure.
+//  2. Pre-warm every database any project might want, running or
 //     stopped, so a later `mpd start <project>` never waits on a cold
 //     engine.
-//  3. Restore projects whose requested state is running. `--runtime-stop`
+//  3. Restore projects whose requested state is running. RuntimeStop
 //     deliberately left their intent alone, so this is where that
 //     intent is honoured again.
-func RuntimeStart(ctx context.Context, out io.Writer, name string, p *podman.Client,
+func RuntimeStart(ctx context.Context, out io.Writer, p *podman.Client,
 	s state.Store, dns dnsmasq.Manager, o current.Observer, n net.Net,
 	devUser, uid string) error {
 
-	container := o.RuntimeContainer(name)
+	container := o.RuntimeContainer(runtime.Name)
 	if !p.Exists(ctx, container) {
-		return fmt.Errorf("Runtime '%s' does not exist.", name)
+		return fmt.Errorf("The runtime does not exist. Run: mpd --vm-setup")
 	}
-	if code, err := p.PodStart(ctx, podName(o, name)); err != nil || code != 0 {
-		return fmt.Errorf("Failed to start runtime '%s'.", name)
+	if code, err := p.Start(ctx, container); err != nil || code != 0 {
+		return fmt.Errorf("Failed to start the runtime.")
 	}
-	if err := saveRuntimeIntent(ctx, name, "running", p, s, container); err != nil {
+	if err := saveRuntimeIntent(ctx, "running", p, s, container); err != nil {
 		return err
 	}
 
 	runtimeIP := p.Label(ctx, container, "mpd.ip")
-	if entry, ok := s.Runtime(name); ok && entry.IP != "" {
+	if entry, ok := s.Runtime(runtime.Name); ok && entry.IP != "" {
 		runtimeIP = entry.IP
 	}
 	if runtimeIP != "" {
@@ -192,15 +174,15 @@ func RuntimeStart(ctx context.Context, out io.Writer, name string, p *podman.Cli
 			return err
 		}
 	}
-	Ok(out, "Started runtime '%s'.", name)
+	Ok(out, "Started the runtime.")
 
-	ensureProjectDatabases(ctx, out, name, p, s, n, uid)
+	ensureProjectDatabases(ctx, out, p, s, n, uid)
 	// Same reason as in ProjectStart: a DB container created a moment ago
 	// has an address nothing has published yet.
 	if _, err := dns.EnsureDatabaseRecords(ctx); err != nil {
 		return err
 	}
-	return restoreRunningProjects(ctx, out, name, container, runtimeIP, p, s, dns, n, devUser, uid)
+	return restoreRunningProjects(ctx, out, container, runtimeIP, p, s, dns, n, devUser, uid)
 }
 
 // waitForSSHD blocks until sshd answers on the runtime's address.
@@ -231,15 +213,15 @@ func waitForSSHD(ctx context.Context, out io.Writer, ip string) error {
 }
 
 // ensureProjectDatabases starts each distinct engine:version any project
-// on this runtime uses. Failures warn rather than abort: a runtime that
-// starts without one of its databases is still useful, and the project
-// that needs it will say so.
-func ensureProjectDatabases(ctx context.Context, out io.Writer, runtime string,
+// uses. Failures warn rather than abort: a runtime that starts without
+// one of its databases is still useful, and the project that needs it
+// will say so.
+func ensureProjectDatabases(ctx context.Context, out io.Writer,
 	p *podman.Client, s state.Store, n net.Net, uid string) {
 
 	seen := map[string]bool{}
 	for _, proj := range s.Projects() {
-		if proj.RuntimeName != runtime || proj.DatabaseEngine == "" {
+		if proj.DatabaseEngine == "" {
 			continue
 		}
 		key := proj.DatabaseEngine + ":" + proj.DatabaseVersion
@@ -252,20 +234,19 @@ func ensureProjectDatabases(ctx context.Context, out io.Writer, runtime string,
 			err = db.Ensure(ctx, ref, p, n, uid, out)
 		}
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to ensure DB '%s' for runtime '%s': %v\n",
-				key, runtime, err)
+			fmt.Fprintf(os.Stderr, "Warning: failed to ensure DB '%s': %v\n", key, err)
 		}
 	}
 }
 
 // restoreRunningProjects re-establishes each running project inside a
 // freshly started runtime: cert, type setup script, DNS record.
-func restoreRunningProjects(ctx context.Context, out io.Writer, runtime, container, runtimeIP string,
+func restoreRunningProjects(ctx context.Context, out io.Writer, container, runtimeIP string,
 	p *podman.Client, s state.Store, dns dnsmasq.Manager, n net.Net, devUser, uid string) error {
 
 	var projects []state.Project
 	for _, proj := range s.Projects() {
-		if proj.RuntimeName == runtime && proj.Requested == "running" {
+		if proj.Requested == "running" {
 			projects = append(projects, proj)
 		}
 	}
@@ -273,18 +254,18 @@ func restoreRunningProjects(ctx context.Context, out io.Writer, runtime, contain
 		return nil
 	}
 
-	fmt.Fprintf(out, "\n\033[1m==> Restoring %d project(s) in '%s'\033[0m\n", len(projects), runtime)
+	fmt.Fprintf(out, "\n\033[1m==> Restoring %d project(s)\033[0m\n", len(projects))
 	for _, proj := range projects {
 		fmt.Fprintf(out, "  Restoring '%s'...\n", proj.Name)
 
 		// Same refresh-and-check as ProjectStart, in the same order: the
 		// cert and DNS record below are composed from proj.URLs, and a
-		// recreated runtime is exactly when the cached copy is most likely
+		// rebuilt runtime is exactly when the cached copy is most likely
 		// to have gone stale.
 		//
 		// A project configured for another VM is skipped, not fatal: the
-		// other projects on this runtime are fine, and taking the whole
-		// runtime down over one of them helps nobody.
+		// other projects are fine, and taking the whole runtime down over
+		// one of them helps nobody.
 		urls := proj.URLs
 		if fresh, ok := project.ReadURLs(proj.Name); ok {
 			urls = fresh
@@ -305,8 +286,7 @@ func restoreRunningProjects(ctx context.Context, out io.Writer, runtime, contain
 		}
 
 		if cfg, ok := assets.New().ProjectTypeConfig(proj.Type); ok {
-			script := fmt.Sprintf("/opt/mpd/assets/runtimes/%s/project_types/%s/project-setup.sh",
-				cfg.AssetsRuntime, cfg.AssetsType)
+			script := assets.TypeScript(cfg.AssetsType, "project-setup.sh")
 			if _, err := project.Exec(ctx, p, container, devUser, "bash", script, proj.Name); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: project-setup for '%s': %v\n", proj.Name, err)
 			}
@@ -321,55 +301,42 @@ func restoreRunningProjects(ctx context.Context, out io.Writer, runtime, contain
 	return nil
 }
 
-// RuntimeCreate provisions a new runtime and everything that hangs off
-// it: DNS record, state, sidecars, and any projects already assigned to
-// it.
+// RuntimeCreate provisions the runtime and everything that hangs off
+// it: DNS record, state, and any projects already assigned to it.
 //
 // The provisioning itself lives in internal/runtime; this is the
 // orchestration around it, which is why the two are separate — the
 // container work is testable without the DNS and state plumbing.
-func RuntimeCreate(ctx context.Context, out io.Writer, name string, p *podman.Client,
+func RuntimeCreate(ctx context.Context, out io.Writer, p *podman.Client,
 	s state.Store, dns dnsmasq.Manager, o current.Observer, n net.Net,
-	a assets.Tree, devUser, uid, home string) error {
+	devUser, uid, home string) error {
 
-	container := o.RuntimeContainer(name)
-	pod := podName(o, name)
+	container := o.RuntimeContainer(runtime.Name)
 
 	runtimeIP, err := runtime.Create(ctx, out, runtime.CreateOptions{
-		Name:      name,
-		Pod:       pod,
 		Container: container,
 		DevUser:   devUser,
 		UID:       uid,
 		Home:      home,
 		Net:       n,
-		Assets:    a,
 	}, p)
 	if err != nil {
 		return err
 	}
 
 	fmt.Fprintln(out, "\n\033[1m==> Publishing DNS record\033[0m")
-	if _, err := dns.WriteRecord(name, dnsmasq.Line(n.Runtime(name), runtimeIP)+"\n"); err != nil {
+	if _, err := dns.WriteRecord(runtime.Name, dnsmasq.Line(n.RuntimeFQDN(), runtimeIP)+"\n"); err != nil {
 		return err
 	}
 
 	if err := s.SaveRuntime(state.Runtime{
-		Name: name, RuntimeID: name, IP: runtimeIP, Requested: "running",
+		Name: runtime.Name, RuntimeID: runtime.Name, IP: runtimeIP, Requested: "running",
 	}); err != nil {
 		return err
 	}
 
-	// Sidecars: runtime defaults now, URL-derived ones later. At create
-	// time no project has published URLs yet, so selenium and friends
-	// cannot be known — the project verbs re-reconcile when they land.
-	fmt.Fprintln(out, "\n\033[1m==> Attaching runtime sidecars\033[0m")
-	if err := sidecar.Reconcile(ctx, out, pod, sidecar.Desired(name, s, a), p); err != nil {
-		return err
-	}
-
-	// A recreated runtime may already have projects assigned to it.
-	if err := restoreRunningProjects(ctx, out, name, container, runtimeIP, p, s, dns, n, devUser, uid); err != nil {
+	// A rebuilt runtime may already have projects assigned to it.
+	if err := restoreRunningProjects(ctx, out, container, runtimeIP, p, s, dns, n, devUser, uid); err != nil {
 		return err
 	}
 	if err := waitForSSHD(ctx, out, runtimeIP); err != nil {
@@ -377,7 +344,28 @@ func RuntimeCreate(ctx context.Context, out io.Writer, name string, p *podman.Cl
 	}
 
 	fmt.Fprintln(out, "")
-	Ok(out, "Runtime '%s' is ready.", name)
-	fmt.Fprintf(out, "  IP:   %s\n  SSH:  ssh %s\n", runtimeIP, n.RuntimeAlias(name))
+	Ok(out, "The runtime is ready.")
+	fmt.Fprintf(out, "  IP:   %s\n  SSH:  ssh %s\n", runtimeIP, n.RuntimeAlias())
 	return nil
+}
+
+// RuntimeRebuild deletes the runtime container and provisions a fresh
+// one, restoring running projects afterwards. The home directory inside
+// the container is lost — `mpd --runtime-backup` first preserves the
+// pieces worth keeping.
+func RuntimeRebuild(ctx context.Context, out io.Writer, in io.Reader,
+	p *podman.Client, s state.Store, dns dnsmasq.Manager, o current.Observer,
+	n net.Net, devUser, uid, home string, assumeYes bool) error {
+
+	container := o.RuntimeContainer(runtime.Name)
+	if p.Exists(ctx, container) {
+		if err := RuntimeDelete(ctx, out, in, p, s, dns, o, devUser, assumeYes); err != nil {
+			return err
+		}
+		if p.Exists(ctx, container) {
+			// The delete prompt was declined.
+			return nil
+		}
+	}
+	return RuntimeCreate(ctx, out, p, s, dns, o, n, devUser, uid, home)
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/mutms/mpd/go/internal/exec"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
+	"github.com/mutms/mpd/go/internal/state"
 )
 
 // Column padding never truncates, including the over-width case: an
@@ -54,16 +55,11 @@ func stubPodman(psJSON string) *podman.Client {
 }
 
 func TestListServices(t *testing.T) {
-	// Only adminer is a container now; the resolver and the status page
-	// are systemd units on the VM. Reported as not-created, which is what
-	// an empty podman ps means for the one service that is still a
-	// container.
+	// Extra services only: nothing installed means every row reads
+	// "not installed" with the enable command as the access hint.
 	ps := `[]`
 	var buf bytes.Buffer
-	// dnsmasq and the portal are systemd-backed; report them running
-	// without a systemd in the loop.
-	unitActive := func(context.Context, string, bool) bool { return true }
-	ListServices(context.Background(), &buf, testNet(t, 150), stubPodman(ps), unitActive)
+	ListServices(context.Background(), &buf, testNet(t, 150), stubPodman(ps), state.NewAt(t.TempDir()))
 	out := buf.String()
 
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -73,29 +69,35 @@ func TestListServices(t *testing.T) {
 	if !strings.HasPrefix(lines[0], "SERVICE") {
 		t.Errorf("header = %q", lines[0])
 	}
-	// Ordered by IP, then registry order for ties: dnsmasq and the portal
-	// both answer on the gateway .1 because both run on the VM itself,
-	// and adminer is the lone container at .6.
-	for i, want := range []string{"dnsmasq", "portal", "adminer"} {
+	// Registry order: mailpit, adminer, seleniumv1 — infra (dnsmasq,
+	// portal) deliberately absent, that is `mpd list infra`.
+	for i, want := range []string{"mailpit", "adminer", "seleniumv1"} {
 		if !strings.HasPrefix(lines[i+2], want) {
 			t.Errorf("row %d = %q, want it to start with %q", i, lines[i+2], want)
 		}
 	}
-	// A container podman didn't report is not-created; a non-running one
-	// is stopped. The distinction is what tells "never set up" from
-	// "set up and down".
-	// dnsmasq is systemd-backed, so its status comes from the injected
-	// unit check rather than from podman ps — which reported nothing.
-	if !strings.Contains(lines[2], "running") {
-		t.Errorf("dnsmasq row = %q, want running (unit active)", lines[2])
+	for _, forbidden := range []string{"dnsmasq", "portal"} {
+		if strings.Contains(out, forbidden) {
+			t.Errorf("infra %q must not appear under services:\n%s", forbidden, out)
+		}
 	}
-	if !strings.Contains(lines[3], "running") {
-		t.Errorf("portal row = %q, want running (unit active)", lines[3])
+	if !strings.Contains(lines[2], "not installed") {
+		t.Errorf("mailpit row = %q, want not installed", lines[2])
 	}
-	if !strings.Contains(lines[4], "not-created") {
-		t.Errorf("adminer row = %q, want not-created", lines[4])
+	if !strings.Contains(lines[2], "--service-enable=mailpit") {
+		t.Errorf("mailpit row = %q, want the enable hint", lines[2])
 	}
-	if !strings.Contains(out, "https://150.mpd.test/") {
-		t.Error("portal access hint should name the zone apex")
+}
+
+func TestListInfra(t *testing.T) {
+	var buf bytes.Buffer
+	unitActive := func(context.Context, string, bool) bool { return true }
+	ListInfra(context.Background(), &buf, testNet(t, 150), unitActive)
+	out := buf.String()
+
+	for _, want := range []string{"dnsmasq", "portal", "https://150.mpd.test/", "running"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("infra listing should contain %q:\n%s", want, out)
+		}
 	}
 }

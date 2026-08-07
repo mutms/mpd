@@ -55,11 +55,11 @@ func withAssets(t *testing.T, files map[string]string) string {
 // would otherwise be handed to bash and executed.
 func TestOnlyShFilesAreDiscovered(t *testing.T) {
 	withAssets(t, map[string]string{
-		"runtimes/php/hooks/project-post-start.d/10-real.sh":    "#!/bin/bash\n",
-		"runtimes/php/hooks/project-post-start.d/20-noext":      "#!/bin/bash\n",
-		"runtimes/php/hooks/project-post-start.d/30-old.sh.bak": "#!/bin/bash\n",
-		"runtimes/php/hooks/project-post-start.d/40-vim.sh~":    "#!/bin/bash\n",
-		"runtimes/php/hooks/project-post-start.d/README.md":     "# docs\n",
+		"runtime/hooks/project-post-start.d/10-real.sh":    "#!/bin/bash\n",
+		"runtime/hooks/project-post-start.d/20-noext":      "#!/bin/bash\n",
+		"runtime/hooks/project-post-start.d/30-old.sh.bak": "#!/bin/bash\n",
+		"runtime/hooks/project-post-start.d/40-vim.sh~":    "#!/bin/bash\n",
+		"runtime/hooks/project-post-start.d/README.md":     "# docs\n",
 	})
 	got := find(Event{Name: EventProjectPostStart}, AudienceRuntime, map[string]string{"mpd.name": "php"})
 	if len(got) != 1 {
@@ -78,9 +78,9 @@ func TestOnlyShFilesAreDiscovered(t *testing.T) {
 // within a layer is what makes them mean anything.
 func TestScriptsAreOrderedWithinALayer(t *testing.T) {
 	withAssets(t, map[string]string{
-		"runtimes/php/hooks/project-post-start.d/90-last.sh":  "",
-		"runtimes/php/hooks/project-post-start.d/10-first.sh": "",
-		"runtimes/php/hooks/project-post-start.d/50-mid.sh":   "",
+		"runtime/hooks/project-post-start.d/90-last.sh":  "",
+		"runtime/hooks/project-post-start.d/10-first.sh": "",
+		"runtime/hooks/project-post-start.d/50-mid.sh":   "",
 	})
 	got := find(Event{Name: EventProjectPostStart}, AudienceRuntime, map[string]string{"mpd.name": "php"})
 	want := []string{"10-first.sh", "50-mid.sh", "90-last.sh"}
@@ -103,9 +103,9 @@ func TestScriptsAreOrderedWithinALayer(t *testing.T) {
 // below exists precisely to prove it is ignored.
 func TestLayerOrderExcludesProjectType(t *testing.T) {
 	withAssets(t, map[string]string{
-		"runtime-base/hooks/project-post-start.d/10-base.sh":                      "",
-		"runtimes/php/hooks/project-post-start.d/10-runtime.sh":                   "",
-		"runtimes/php/project_types/moodle/hooks/project-post-start.d/10-type.sh": "",
+		"runtime-base/hooks/project-post-start.d/10-base.sh":                 "",
+		"runtime/hooks/project-post-start.d/10-runtime.sh":                   "",
+		"runtime/project_types/moodle/hooks/project-post-start.d/10-type.sh": "",
 	})
 	got := find(Event{Name: EventProjectPostStart}, AudienceRuntime, map[string]string{"mpd.name": "php"})
 	want := []string{"10-base.sh", "10-runtime.sh"}
@@ -124,7 +124,7 @@ func TestLayerOrderExcludesProjectType(t *testing.T) {
 // would run in the wrong container.
 func TestAudienceSelectsDifferentAssetTrees(t *testing.T) {
 	withAssets(t, map[string]string{
-		"runtimes/php/hooks/project-pre-start.d/10-runtime.sh":  "",
+		"runtime/hooks/project-pre-start.d/10-runtime.sh":       "",
 		"databases/postgres/hooks/project-pre-start.d/10-db.sh": "",
 	})
 	ev := Event{Name: EventProjectPreStart}
@@ -164,13 +164,13 @@ func TestMissingDirectoryIsNotAnError(t *testing.T) {
 // that is what lets a host-side scan produce an executable path.
 func TestContainerPathMatchesHostPath(t *testing.T) {
 	dir := withAssets(t, map[string]string{
-		"runtimes/php/hooks/project-post-start.d/10-x.sh": "",
+		"runtime/hooks/project-post-start.d/10-x.sh": "",
 	})
 	got := find(Event{Name: EventProjectPostStart}, AudienceRuntime, map[string]string{"mpd.name": "php"})
 	if len(got) != 1 {
 		t.Fatalf("got %d scripts", len(got))
 	}
-	want := filepath.Join(dir, "runtimes/php/hooks/project-post-start.d/10-x.sh")
+	want := filepath.Join(dir, "runtime/hooks/project-post-start.d/10-x.sh")
 	if got[0].ContainerPath != want {
 		t.Errorf("ContainerPath = %q, want %q", got[0].ContainerPath, want)
 	}

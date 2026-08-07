@@ -1,15 +1,16 @@
-// Package runtime creates the containers a developer works inside.
+// Package runtime creates the container a developer works inside.
 //
-// A runtime is a pod plus a systemd main container: the pod owns the
-// address and the shared namespaces, the container runs /sbin/init so
-// sshd, php-fpm and friends are real services rather than PID 1
-// impersonators. Sidecars join the same pod.
+// There is exactly one runtime per VM: a plain systemd container (no
+// pod) at net.HostRuntime, running /sbin/init so sshd, php-fpm, caddy
+// and friends are real services rather than PID 1 impersonators. TLS
+// for project URLs terminates inside it (mpd-caddy.service, installed
+// by build.sh).
 //
 // Provisioning is two-phase, and the split is a privilege boundary, not
 // a convenience (AGENTS.md §"Mandatory privilege rule"):
 //
 //	phase 1  bootstrap.sh  as root      — creates the dev user, lays out /srv
-//	phase 2  build.sh      as dev user  — installs the runtime's own stack
+//	phase 2  build.sh      as dev user  — installs the language stacks + caddy
 //
 // bootstrap.sh is the single sanctioned root-context script in mpd,
 // because the user it creates cannot exist before it runs.
@@ -21,7 +22,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -31,73 +31,38 @@ import (
 	"github.com/mutms/mpd/go/internal/podman"
 )
 
-// BaseImage is the shared systemd-enabled Debian image every runtime is
-// built from.
+// Name is the single runtime's canonical name: its state entry, its
+// mpd.name/mpd.runtime labels, and the label in runtime.<zone>.
+const Name = "runtime"
+
+// BaseImage is the systemd-enabled Debian image the runtime is built
+// from.
 const BaseImage = "mpd-debian-trixie-systemd"
 
-// TmpVolume is the disk-backed /tmp for a runtime pod.
-func TmpVolume(pod string) string { return pod + "-tmp" }
-
-var validName = regexp.MustCompile(`^[a-z][a-z0-9]+$`)
-
-// ValidateName checks the runtime name shape and that assets define it.
-//
-// Two separate checks with different messages: a malformed name is a
-// typo, whereas a well-formed name with no assets is a request for a
-// runtime that does not exist — and the fix for that is to write its
-// build.sh.
-func ValidateName(name string, a assets.Tree) error {
-	if !validName.MatchString(name) {
-		return fmt.Errorf("'%s' is not a valid runtime name. "+
-			"Use lowercase letters and digits only, starting with a letter, minimum 2 characters.", name)
-	}
-	known := a.RuntimeNames()
-	for _, n := range known {
-		if n == name {
-			return nil
-		}
-	}
-	sort.Strings(known)
-	return fmt.Errorf("No runtime definition found for '%s' in assets/runtimes/.\n"+
-		"Available runtimes: %s\n"+
-		"To add a new runtime, create assets/runtimes/%s/build.sh",
-		name, strings.Join(known, ", "), name)
-}
+// TmpVolume is the disk-backed /tmp volume for the runtime container.
+func TmpVolume(container string) string { return container + "-tmp" }
 
 // CreateOptions carries what Create needs from the caller.
 type CreateOptions struct {
-	Name      string
-	Pod       string
 	Container string
 	DevUser   string
 	UID       string
 	Home      string
 	Net       net.Net
-	Assets    assets.Tree
 }
 
-// Create builds and provisions a runtime, leaving it running.
+// Create builds and provisions the runtime, leaving it running.
 //
-// On failure after the pod exists, the pod and its /tmp volume are
-// removed: a half-created runtime is worse than none, because the next
-// create would refuse on "already exists" while the thing does not work.
+// On failure after the container exists, the container and its /tmp
+// volume are removed: a half-created runtime is worse than none, because
+// the next create would refuse on "already exists" while the thing does
+// not work.
 func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Client) (string, error) {
-	if err := ValidateName(o.Name, o.Assets); err != nil {
-		return "", err
-	}
 	if p.Exists(ctx, o.Container) {
-		return "", fmt.Errorf("Runtime '%s' already exists.", o.Name)
+		return "", fmt.Errorf("Runtime already exists.")
 	}
 
-	cfg, ok := o.Assets.RuntimeConfig(o.Name)
-	if !ok {
-		return "", fmt.Errorf("Runtime '%s' has no configuration.json in assets/runtimes/.", o.Name)
-	}
-	if cfg.IPOctet < net.FirstRuntimeHost || cfg.IPOctet > 254 {
-		return "", fmt.Errorf("Runtime '%s' configuration.json has ipOctet=%d; runtimes live at %d–254.",
-			o.Name, cfg.IPOctet, net.FirstRuntimeHost)
-	}
-	runtimeIP := o.Net.IP(cfg.IPOctet)
+	runtimeIP := o.Net.IP(net.HostRuntime)
 
 	if !p.ImageExists(ctx, BaseImage) {
 		fmt.Fprintf(out, "\n\033[1m==> Building base image '%s'\033[0m\n", BaseImage)
@@ -106,31 +71,7 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 		}
 	}
 
-	fmt.Fprintf(out, "\n\033[1m==> Creating runtime '%s'\033[0m\n", o.Name)
-
-	// Pod hostname matches the pod name, so bash's default \h prompt
-	// names the VM when SSH'd in. Set on the pod because members share
-	// the UTS namespace.
-	//
-	// --shm-size: pod members share the infra container's /dev/shm.
-	// Chromium (Behat's selenium sidecar) maps renderer shared memory
-	// there and crashes on the default 64 MB. tmpfs is a cap, not a
-	// reservation, so idle pods cost nothing — safe for every runtime.
-	//
-	// --dns on the POD, not the containers: pod members share one network
-	// namespace and one /etc/resolv.conf, which the infra container owns.
-	// Sidecars therefore inherit it without repeating it.
-	podArgs := []string{
-		"--name", o.Pod,
-		"--hostname", o.Pod,
-		"--network", "mpd-internal:ip=" + runtimeIP,
-		"--shm-size=2g",
-		"--label", "com.docker.compose.project=mpd-dev",
-	}
-	podArgs = append(podArgs, podman.DNSOpts(o.Net.Gateway())...)
-	if code, err := p.PodCreate(ctx, podArgs); err != nil || code != 0 {
-		return "", fmt.Errorf("Failed to create runtime '%s'.", o.Name)
-	}
+	fmt.Fprintf(out, "\n\033[1m==> Creating runtime\033[0m\n")
 
 	// The control socket's directory must exist, and be dev-user-owned,
 	// before podman is asked to bind-mount it: podman would otherwise
@@ -138,16 +79,24 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 	// Created here rather than by the daemon because the mount is
 	// established now, at container create, and the daemon may not have
 	// started yet on a freshly set-up VM.
-	controlDir := podman.ControlDir(o.Name)
+	controlDir := podman.ControlDir(Name)
 	if err := os.MkdirAll(controlDir, 0o755); err != nil {
 		return "", fmt.Errorf("Failed to create %s: %w", controlDir, err)
 	}
 
-	args := []string{"-d", "--name", o.Container, "--pod", o.Pod, "--systemd", "always"}
+	// Container hostname matches its name, so bash's default \h prompt
+	// after `ssh mpd-<NNN>-runtime` echoes what was typed.
+	args := []string{"-d",
+		"--name", o.Container,
+		"--hostname", o.Container,
+		"--network", "mpd-internal:ip=" + runtimeIP,
+		"--systemd", "always",
+	}
+	args = append(args, podman.DNSOpts(o.Net.Gateway())...)
 	args = append(args, podman.OptMountRO...)
 	args = append(args, podman.EnvMountRO...)
 	args = append(args, podman.SkelMountRO...)
-	args = append(args, podman.ControlMountRO(o.Name)...)
+	args = append(args, podman.ControlMountRO(Name)...)
 	if podman.MudevPresent() {
 		args = append(args, podman.MudevMountRO...)
 	}
@@ -155,10 +104,10 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 		"-v", "mpd-data-volume:/srv",
 		// Explicit disk-backed /tmp. Without it, --systemd mode makes
 		// podman mount a RAM-backed tmpfs there.
-		"-v", TmpVolume(o.Pod)+":/tmp",
+		"-v", TmpVolume(o.Container)+":/tmp",
 		"--label", "mpd.managed=true",
-		"--label", "mpd.name="+o.Name,
-		"--label", "mpd.runtime="+o.Name,
+		"--label", "mpd.name="+Name,
+		"--label", "mpd.runtime="+Name,
 		"--label", "mpd.ip="+runtimeIP,
 		"--label", "com.docker.compose.project=mpd-dev",
 		BaseImage, "/sbin/init",
@@ -166,9 +115,9 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 	if code, err := p.Run(ctx, args); err != nil || code != 0 {
 		// Roll back, or the next create refuses on a runtime that does
 		// not work.
-		_, _ = p.PodRemove(ctx, o.Pod)
-		_, _ = p.VolumeRemove(ctx, TmpVolume(o.Pod))
-		return "", fmt.Errorf("Failed to create main container.")
+		_, _ = p.Remove(ctx, o.Container)
+		_, _ = p.VolumeRemove(ctx, TmpVolume(o.Container))
+		return "", fmt.Errorf("Failed to create runtime container.")
 	}
 
 	fmt.Fprintln(out, "Waiting for systemd to initialise...")
@@ -185,15 +134,15 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 	fmt.Fprintln(out, "\n\033[1m==> Bootstrapping runtime base\033[0m")
 	if code, err := p.ExecWithOptions(ctx, o.Container, nil,
 		"bash", "/opt/mpd/assets/runtime-base/bootstrap.sh",
-		o.Name, o.DevUser, o.UID, o.Net.Zone()); err != nil || code != 0 {
-		return "", fmt.Errorf("Runtime '%s' base bootstrap failed.", o.Name)
+		Name, o.DevUser, o.UID, o.Net.Zone()); err != nil || code != 0 {
+		return "", fmt.Errorf("Runtime base bootstrap failed.")
 	}
 
 	// Phase 2 — dev user. Everything from here runs unprivileged.
-	fmt.Fprintf(out, "\n\033[1m==> Building '%s' runtime\033[0m\n", o.Name)
+	fmt.Fprintf(out, "\n\033[1m==> Building the runtime\033[0m\n")
 	if code, err := p.ExecAsUser(ctx, o.Container, o.DevUser,
-		"bash", "/opt/mpd/assets/runtimes/"+o.Name+"/build.sh", o.Name); err != nil || code != 0 {
-		return "", fmt.Errorf("Runtime '%s' build failed.", o.Name)
+		"bash", "/opt/mpd/assets/"+assets.RuntimeDir+"/build.sh", Name); err != nil || code != 0 {
+		return "", fmt.Errorf("Runtime build failed.")
 	}
 
 	installCA(ctx, out, o.Container, p)

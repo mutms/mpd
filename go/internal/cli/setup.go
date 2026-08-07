@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mutms/mpd/go/internal/assets"
 	"github.com/mutms/mpd/go/internal/cert"
 	"github.com/mutms/mpd/go/internal/current"
 	"github.com/mutms/mpd/go/internal/db"
@@ -110,7 +109,7 @@ func Setup(ctx context.Context, out io.Writer) error {
 
 	// After Configuration, which is where the dev user's name is resolved.
 	ui.Step(out, "Runtime SSH aliases")
-	if err := vm.EnsureSSHConfig(out, user.User, runtimeSSHHosts(n, assets.New())); err != nil {
+	if err := vm.EnsureSSHConfig(out, user.User, runtimeSSHHosts(n)); err != nil {
 		return err
 	}
 
@@ -139,10 +138,9 @@ func Setup(ctx context.Context, out io.Writer) error {
 	if err := vm.EnsureWireGuard(ctx, out, n.Octet()); err != nil {
 		return err
 	}
-	// Seal the container subnet from outside: the Mac and LAN reach services
-	// only via caddy/dnsmasq on the gateway .1 and SSH ProxyJump, never a
-	// container IP directly, so nothing external needs to route into
-	// 10.163.<NNN>.0/24. Container outbound NAT is untouched.
+	// Seal the container subnet from the LAN: only the bridge itself and
+	// wg0 (the MacBook overlay, which carries the whole /24) may route
+	// into 10.163.<NNN>.0/24. Container outbound NAT is untouched.
 	if err := vm.EnsureFirewall(ctx, out, n.Subnet()); err != nil {
 		return err
 	}
@@ -186,7 +184,7 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 	m := dnsmasq.New(state.Dir, n, p)
-	if err := service.ReconcileDNSRecords(ctx, out, m, n, vmIP, true); err != nil {
+	if err := dnsmasq.Reconcile(ctx, out, m, ServiceDNSRecords(n, s), vmIP, true); err != nil {
 		return err
 	}
 
@@ -207,10 +205,26 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 
-	// Adminer is best-effort: it is a convenience UI, and a VM without
-	// it still runs every project.
-	if err := service.SetupAdminer(ctx, out, p, n); err != nil {
+	// The unified runtime: created here rather than lazily, so setup
+	// leaves the VM fully usable. Everything it needs exists by now —
+	// the CA (certificates step), /srv (volume mount), DNS (resolver
+	// step) — and reconcileCaches has just adopted any existing entry.
+	if err := setupRuntime(ctx, out, p, s, m, n, user); err != nil {
+		return err
+	}
+
+	// Extra services: nothing is installed by default — this converges
+	// whatever the developer has enabled (repairing revision drift), and
+	// republishes the enabled-set meta for configure.sh.
+	ui.Step(out, "Extra services")
+	if err := ReconcileServices(ctx, out, p, s, n); err != nil {
 		ui.Warn(out, "%v", err)
+	}
+	if err := WriteServicesMeta(s); err != nil {
+		return err
+	}
+	if enabled := s.Services(); len(enabled) == 0 {
+		ui.OK(out, "none enabled — mpd --service-enable=%s", strings.Join(service.Names(), "|"))
 	}
 
 	_, _ = p.PullQuiet(ctx, BaseImagePull)
@@ -235,18 +249,12 @@ func Setup(ctx context.Context, out io.Writer) error {
 	ui.OK(out, "%s restarted (sockets under %s).", vm.ControlUnitName, podman.ControlRunDir)
 
 	ui.Step(out, "TLS frontdoor (caddy)")
-	// Every name mpd serves from the VM itself. adminer speaks plain
-	// HTTP with no certificate of its own, so Caddy is what makes it
-	// https — the job the portal container's apache vhosts used to do.
+	// The VM's caddy serves exactly one name now: the zone apex, for the
+	// portal. Extra services are HTTP-only at their own addresses —
+	// reached over the WireGuard overlay or SOCKS, inside the trust
+	// boundary — so nothing else needs TLS termination here.
 	sites := []vm.CaddySite{
 		{Host: n.Zone(), Upstream: web.Addr},
-		{Host: n.Service("portal"), Upstream: web.Addr},
-	}
-	if d, ok := service.Find("adminer"); ok && d.Proxy != nil {
-		sites = append(sites, vm.CaddySite{
-			Host:     d.DNS(n),
-			Upstream: fmt.Sprintf("%s:%d", d.IP(n), d.Proxy.Port),
-		})
 	}
 	if err := vm.ConfigureCaddy(ctx, out, user.User, n.Gateway(),
 		vm.ServiceDir+"/cert.pem", vm.ServiceDir+"/key.pem", sites,
@@ -405,11 +413,10 @@ func setupCertificates(ctx context.Context, out io.Writer, n net.Net) (certState
 	// zone still verifies against the CA, so nothing else here would
 	// notice — and every HTTPS hit on the portal would fail hostname
 	// verification. Same signature-file pattern the project certs use.
-	// The apex (portal container) plus every name the VM's own Caddy
-	// frontdoor terminates. One certificate covers them all — a
-	// per-service cert would be a second thing to keep in step with the
-	// CA fingerprint for no gain.
-	sans := []string{n.Zone(), n.Service("portal"), n.Service("adminer")}
+	// Just the apex: the portal is the only thing the VM's own caddy
+	// terminates TLS for. Extra services are HTTP-only at their own
+	// addresses and never touch this certificate.
+	sans := []string{n.Zone()}
 	signature := strings.Join(sans, "\n")
 	sansChanged := readTrimmed(sansPath) != signature
 
@@ -435,28 +442,18 @@ func setupCertificates(ctx context.Context, out io.Writer, n net.Net) (certState
 	return state, nil
 }
 
-// runtimeSSHHosts builds the ~/.ssh/config entries for every runtime the
-// assets tree defines.
-//
-// Every runtime is listed, not just the provisioned ones: the aliases are
-// written once at setup, and an alias for a runtime that does not exist
-// yet fails to connect exactly as the FQDN would. Regenerating this on
-// each runtime create/delete would buy nothing and add a mutation to two
-// more code paths.
+// runtimeSSHHosts builds the ~/.ssh/config entry for the runtime.
 //
 // The VM-qualified alias comes first because it is the same string the
 // workstation's ~/.ssh/config uses for the hop from outside — `ssh
-// mpd-130-php` means one thing whether typed on the laptop or in the VM.
-func runtimeSSHHosts(n net.Net, a assets.Tree) []vm.RuntimeHost {
-	var hosts []vm.RuntimeHost
-	for _, rt := range a.RuntimeNames() {
-		fqdn := n.Runtime(rt)
-		hosts = append(hosts, vm.RuntimeHost{
-			Patterns: []string{n.RuntimeAlias(rt), rt, fqdn},
-			HostName: fqdn,
-		})
-	}
-	return hosts
+// mpd-130-runtime` means one thing whether typed on the laptop or in
+// the VM. The bare `runtime` and the FQDN also answer.
+func runtimeSSHHosts(n net.Net) []vm.RuntimeHost {
+	fqdn := n.RuntimeFQDN()
+	return []vm.RuntimeHost{{
+		Patterns: []string{n.RuntimeAlias(), runtime.Name, fqdn},
+		HostName: fqdn,
+	}}
 }
 
 // setupHostTrustAndDNS covers the four places on the VM that have to
@@ -625,7 +622,7 @@ func reconcileCaches(ctx context.Context, out io.Writer, p *podman.Client, s sta
 	} else {
 		ui.OK(out, "Database cache rebuilt (%d database(s) found).", count)
 	}
-	if err := service.ReconcileDNSRecords(ctx, out, m, n, vmIP, false); err != nil {
+	if err := dnsmasq.Reconcile(ctx, out, m, ServiceDNSRecords(n, s), vmIP, false); err != nil {
 		return err
 	}
 
@@ -645,6 +642,42 @@ func reconcileCaches(ctx context.Context, out io.Writer, p *podman.Client, s sta
 	runtime.ReconcileCertificates(ctx, out, p, targets, func(name string) error {
 		return project.EnsureCert(ctx, out, name, byName[name], n, p, uid)
 	})
+	return nil
+}
+
+// setupRuntime converges the unified runtime: create it when missing,
+// start it when stopped, leave it alone when running. Clean break from
+// the pod era — legacy per-language runtime pods are reported loudly
+// rather than migrated.
+func setupRuntime(ctx context.Context, out io.Writer, p *podman.Client, s state.Store,
+	m dnsmasq.Manager, n net.Net, user vm.Identity) error {
+
+	ui.Step(out, "Runtime container")
+
+	var legacy []string
+	for _, item := range p.Ps(ctx, "label=mpd.runtime") {
+		if item.Label("mpd.name") != runtime.Name {
+			legacy = append(legacy, item.Name())
+		}
+	}
+	if len(legacy) > 0 {
+		ui.Warn(out, "legacy runtime container(s) found: %s", strings.Join(legacy, ", "))
+		ui.Warn(out, "this mpd uses a single unified runtime — remove them with: podman pod rm -f <name>")
+	}
+
+	o := current.NewObserver(n.VMID(), p)
+	container := o.RuntimeContainer(runtime.Name)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	switch {
+	case !p.Exists(ctx, container):
+		return RuntimeCreate(ctx, out, p, s, m, o, n, user.User, user.UID, home)
+	case !p.Running(ctx, container):
+		return RuntimeStart(ctx, out, p, s, m, o, n, user.User, user.UID)
+	}
+	ui.OK(out, "runtime is running (%s).", container)
 	return nil
 }
 

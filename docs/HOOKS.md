@@ -47,21 +47,23 @@ recognised. `mpd --vm-stop` will fire it.
 The hook engine assumes a specific persistence model — important for
 understanding *when* events fire:
 
-| Resource | Persisted intent (`requested`)                                 | Live state (`current`)                |
-|----------|----------------------------------------------------------------|---------------------------------------|
-| Runtime  | Yes — written only by `mpd --runtime-create/start/stop/delete` | Computed from podman every query      |
-| Project  | Yes — written only by `mpd <p> create/start/stop/delete`       | Derived from runtime + project record |
-| Database | **No** — emergent from runtime + project records               | Computed from podman                  |
-| Service  | Always-on                                                      | Computed from podman                  |
+| Resource | Persisted intent (`requested`)                                                              | Live state (`current`)                |
+|----------|---------------------------------------------------------------------------------------------|---------------------------------------|
+| Runtime  | Yes — written by the internals of `--vm-setup`/`--vm-start`/`--vm-stop` and `--runtime-rebuild` (no lifecycle flags of its own) | Computed from podman every query      |
+| Project  | Yes — written only by `mpd <p> create/start/stop/delete`                                    | Derived from runtime + project record |
+| Database | **No** — emergent from project records                                                      | Computed from podman                  |
+| Service  | Yes — `services.json` (installed + enabled), written by the `--service-*` flags             | Computed from podman                  |
 
 Reconciliation: `mpd --vm-start` walks `requested` and brings `current`
-into agreement. Stopping mpd or rebooting the VM preserves `requested`;
-`mpd --vm-start` (or the systemd `mpd.service` unit at boot) restores
-running state. See `docs/ARCHITECTURE.md` §5 for the full state model.
+into agreement — including re-creating enabled service containers. Stopping
+mpd or rebooting the VM preserves `requested`; `mpd --vm-start` (or the
+systemd `mpd.service` unit at boot) restores running state. See
+`docs/ARCHITECTURE.md` §5 for the full state model.
 
-DBs and services have no `requested` because they're emergent. DB
-lifecycle is driven by runtime start (which pre-warms every DB any
-project on it might need) and `mpd --gc` (planned reclamation).
+DBs have no `requested` because they're emergent. DB lifecycle is driven
+by runtime start (which pre-warms every DB any project might need),
+project start (which re-creates a missing container on demand) and
+`mpd --gc` (planned reclamation).
 
 ## Event catalogue
 
@@ -151,12 +153,17 @@ Hook scripts live under `hooks/<event-name>.d/` in the layer that
 matches their audience kind:
 
 ```
-assets/runtime-base/hooks/<event>.d/                         # → runtime audience, every runtime
-assets/runtimes/<rt>/hooks/<event>.d/                        # → runtime audience, specific runtime
-assets/runtimes/<rt>/project_types/<type>/hooks/<event>.d/   # → runtime audience, type-scoped
-assets/databases/<dbtype>/hooks/<event>.d/                   # → database audience, per engine
-assets/services/<svc>/hooks/<event>.d/                       # → service audience (named service)
+assets/runtime-base/hooks/<event>.d/         # → runtime audience, base layer
+assets/runtime/hooks/<event>.d/              # → runtime audience, runtime layer
+assets/databases/<dbtype>/hooks/<event>.d/   # → database audience, per engine
+assets/services/<svc>/hooks/<event>.d/       # → service audience (named service)
 ```
+
+There is deliberately **no project-type layer** for runtime-audience
+events: `assets/runtime/project_types/<type>/hooks/` is not scanned by
+the dispatcher (a pinning test in `go/internal/hooks/` proves it), so
+type-scoped behavior belongs in the type's scripts and tools, not in
+hooks.
 
 **Scripts must be named `*.sh`.** Anything else in the directory is
 ignored — an editor backup (`10-foo.sh~`), a `.bak`, a stray `.swp`, or
@@ -166,7 +173,7 @@ helper execs it from a one-line wrapper.
 
 Numeric prefixes (`10-`, `90-`) order scripts within a directory
 (run-parts style). Cross-layer order: strictly by layer
-(base → runtime → type), then alphabetical within each.
+(base → runtime), then alphabetical within each.
 
 **Pick the number by what the hook does to its container.** A hook that
 terminates the service it runs in must sort last, because everything
@@ -342,10 +349,10 @@ Plus `loginctl enable-linger <devuser>` so the user systemd manager
 runs at boot and survives logout.
 
 **At boot**: user systemd starts → `default.target` → `mpd.service`
-ExecStart fires `mpd --vm-start`, which reconciles every runtime + project
-in `requested=running` state back to live containers (and pre-warms
-their DBs). The dev user can SSH in seconds later and find the env
-already up.
+ExecStart fires `mpd --vm-start`, which reconciles the runtime, every
+project in `requested=running` state, and every enabled extra service
+back to live containers (and pre-warms the projects' DBs). The dev user
+can SSH in seconds later and find the env already up.
 
 **At shutdown**: `shutdown -h now`, `poweroff`, `reboot`,
 `mpd --vm-restart`, GNOME shutdown menu, and `virsh shutdown <vm>` all

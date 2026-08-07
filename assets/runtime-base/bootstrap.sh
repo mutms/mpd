@@ -14,8 +14,8 @@
 #   - /home/<user>/ seeded from skel (defaults + optional VM-host overrides)
 #   - /srv/{projects,data,dbs,extra} laid out with correct ownership
 #
-# Runtime-specific layers (PHP, Node, …) are added on top by
-# assets/runtimes/<rt>/build.sh running as the dev user.
+# The language stacks (PHP, Node, caddy) are added on top by
+# assets/runtime/build.sh running as the dev user.
 set -euo pipefail
 
 CONTAINER_NAME="$1"

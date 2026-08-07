@@ -1,7 +1,0 @@
-#!/bin/bash
-# Tool: run Moodle cache purge for the current project.
-# Cwd-walks via mpd-env.sh to find the project context.
-set -euo pipefail
-source /opt/mpd/assets/runtimes/php/project_types/moodle/scripts/mpd-env.sh
-
-moodle_run admin/cli/purge_caches.php "$@"

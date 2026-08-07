@@ -61,14 +61,14 @@ func TestNewRejectsOutOfRange(t *testing.T) {
 func TestNaming(t *testing.T) {
 	n := mustNew(t, 150)
 	tests := map[string]string{
-		n.Host("moodle45"):  "moodle45.150.mpd.test",
-		n.Service("portal"): "portal.service.150.mpd.test",
-		n.Runtime("php"):    "php.runtime.150.mpd.test",
-		n.DB("pg17"):        "pg17.db.150.mpd.test",
-		n.VMServiceRecord(): "vm.service.150.mpd.test",
+		n.Host("moodle45"):   "moodle45.150.mpd.test",
+		n.Service("adminer"): "adminer.svc.150.mpd.test",
+		n.RuntimeFQDN():      "runtime.150.mpd.test",
+		n.DB("pg17"):         "pg17.db.150.mpd.test",
+		n.VMServiceRecord():  "vm.150.mpd.test",
 		// Zero-padded like every other id-keyed name, and deliberately
 		// NOT in the zone — it is an ssh alias, not a DNS name.
-		n.RuntimeAlias("php"): "mpd-150-php",
+		n.RuntimeAlias(): "mpd-150-runtime",
 	}
 	for got, want := range tests {
 		if got != want {
@@ -85,7 +85,7 @@ func TestIsInZone(t *testing.T) {
 		"150.mpd.test",
 		"moodle45.150.mpd.test",
 		"behat.moodle45.150.mpd.test",
-		"php.runtime.150.mpd.test",
+		"runtime.150.mpd.test",
 	}
 	for _, name := range in {
 		if !n.IsInZone(name) {

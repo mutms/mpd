@@ -15,7 +15,7 @@ Concrete shape, a use case driving it.
   project types keep state in `git`.
 
 - **`mpd ps <project>`** — single-screen project status. Runtime +
-  PHP version + DB engine/version + active sidecars + URLs + xdebug
+  PHP version + DB engine/version + enabled services + URLs + xdebug
   mode, all in one view. Pattern borrowed from Laravel's
   `php artisan about` (familiar to Moodle devs increasingly working
   in both ecosystems). All data already exists in
@@ -34,57 +34,47 @@ Concrete shape, a use case driving it.
 
 Real possibilities, not committed work.
 
-- **In-place runtime upgrades** — runtime containers are treated as
-  pets, not cattle: a developer's `php` runtime accumulates installed
-  tools, shell history, SSH known_hosts, and half-finished work, so
-  "delete and recreate" is the wrong answer to a changed asset. The
-  three infra services use a `mpd.service.revision` label plus
-  `podman.Client.RemoveIfOutdated` to force recreation; runtimes
-  deliberately have no such mechanism and should not grow one.
-  Instead they want upgrade scripts that run *inside* the existing
-  container and converge it — the same shape as
-  `bootstrap/99-update.sh` for the VM. Driven by ordinary asset and
-  tooling drift over a runtime's life, not by re-addressing: changing
-  an existing VM's ID is not a supported operation.
+- **In-place runtime upgrades** — the runtime is cattle with a
+  carry-on bag now: `mpd --runtime-rebuild` recreates it from current
+  assets, and `mpd --runtime-backup` / `--runtime-restore` carry the
+  personal pieces (Claude config, shell history — never binaries;
+  tools are reinstalled fresh) across the rebuild via
+  `assets/runtime/backup.d/` + `restore.d/` scripts.
+  What remains parked is a *converging* upgrade that runs inside the
+  existing container without a rebuild — the same shape as
+  `bootstrap/99-update.sh` for the VM — for asset drift too small to
+  justify a rebuild.
 
-- **Runtime SSH banner** — install a branded `/etc/motd` inside each
-  runtime container (php, node, util) so users see a welcome message
-  and tool hints when they SSH into `<rt>.runtime.<NNN>.mpd.test`. Common
-  content in `assets/runtime-base/motd` (installed by `bootstrap.sh`),
-  runtime-specific additions in `assets/runtimes/<rt>/motd` (appended
-  by `build.sh`). Written directly to `/etc/motd` — no PAM/update-motd.d
-  needed in containers.
+- **Runtime SSH banner** — install a branded `/etc/motd` inside the
+  runtime container so users see a welcome message and tool hints when
+  they SSH into `runtime.<NNN>.mpd.test`. Content in
+  `assets/runtime-base/motd` (installed by `bootstrap.sh`) plus
+  additions in `assets/runtime/motd` (appended by `build.sh`). Written
+  directly to `/etc/motd` — no PAM/update-motd.d needed in containers.
 
 - **`mpd purge` vs `mpd delete` split** — `delete` removes containers,
   DB, and mpd state (today's behavior); `purge` additionally wipes the
   source checkout at `/srv/projects/<project>/`. Useful when a demo or
   experiment is fully thrown away and disk space matters.
 
-- **Pre-built runtime images** — publish versioned OCI images for the
-  php, node, and util runtimes to a registry (GitHub Container
-  Registry or similar) so `mpd --runtime-create` pulls instead of
-  builds. Cuts the first-run wait from several minutes to seconds.
-  `demo` becomes near-instant after the image pull. `make images`
-  builds and pushes all runtime images; CI runs it on release tags.
-  Local `--runtime-build` flag kept for dev iteration.
+- **Pre-built runtime image** — publish a versioned OCI image for the
+  unified runtime to a registry (GitHub Container Registry or similar)
+  so `mpd --vm-setup` / `--runtime-rebuild` pulls instead of builds.
+  Cuts the first-run wait from several minutes to seconds. `demo`
+  becomes near-instant after the image pull. `make images` builds and
+  pushes it; CI runs it on release tags.
 
 - **`mpd --gc`** — sweep unreferenced DB containers, orphaned data
   dirs, dnsmasq records for deleted projects. Open question: destructive
   default or interactive plan + `--yes`?
 
-- **Cloudflare Zero Trust integration for cftunnel** — the v1
-  cftunnel flow exposes projects publicly (or behind whatever the
-  user manually configures in the CF dashboard). A future iteration
-  could codify the Zero-Trust-protected workflow: a sibling project-
-  type (or a flag on `cftunnel`) that targets the per-app CF wizard,
-  pre-fills the internal hostname / port, and produces a 1:1
-  Access-protected app per target. Naming convention to consider:
-  `<target>-cftunnel` (per-target, ZT-gated) vs bare `cftunnel`
-  (shared connector, public-or-manually-protected). Also: a per-
-  moodle `MPD_PHP_MOODLE_CFTUNNEL_HOST=<custom>` override so the
-  wwwroot detection works when the public hostname diverges from
-  `<projectname><domain>`. Parked until a real use case drives the
-  shape.
+- **Cloudflare Tunnel as a service** — the cftunnel project type was
+  removed with the unified runtime; it returns as an extra service
+  container (`mpd --service-enable=cftunnel`) able to expose any
+  project to the internet, ideally with the Zero-Trust-protected
+  workflow codified (per-app CF wizard, pre-filled internal
+  hostname/port, 1:1 Access-protected app per target). Parked until a
+  real use case drives the shape.
 
 - **Newbie-onboarding docs** — for Moodle-curious folks who don't
   already know what a plugin is.

@@ -41,18 +41,18 @@ func fakePodman(containers map[string]bool) *podman.Client {
 
 func TestRuntimeContainerName(t *testing.T) {
 	o := NewObserver("150", fakePodman(nil))
-	if got := o.RuntimeContainer("php"); got != "mpd-150-php-main" {
+	if got := o.RuntimeContainer("runtime"); got != "mpd-150-runtime" {
 		t.Errorf("RuntimeContainer() = %q", got)
 	}
 }
 
 func TestRuntime(t *testing.T) {
 	o := NewObserver("150", fakePodman(map[string]bool{
-		"mpd-150-php-main":  true,
-		"mpd-150-node-main": false,
+		"mpd-150-runtime": true,
+		"mpd-150-other":   false,
 	}))
 	ctx := context.Background()
-	for name, want := range map[string]State{"php": Running, "node": Stopped, "util": Missing} {
+	for name, want := range map[string]State{"runtime": Running, "other": Stopped, "util": Missing} {
 		if got := o.Runtime(ctx, name); got != want {
 			t.Errorf("Runtime(%q) = %q, want %q", name, got, want)
 		}
@@ -65,8 +65,8 @@ func TestRuntime(t *testing.T) {
 // running — only the ones actually asked to run.
 func TestProjectDerivation(t *testing.T) {
 	o := NewObserver("150", fakePodman(map[string]bool{
-		"mpd-150-php-main":  true,  // running
-		"mpd-150-node-main": false, // stopped
+		"mpd-150-runtime": true,  // running
+		"mpd-150-other":   false, // stopped
 	}))
 	ctx := context.Background()
 
@@ -76,11 +76,11 @@ func TestProjectDerivation(t *testing.T) {
 		want    State
 	}{
 		{"no runtime assigned", state.Project{Requested: "running"}, Missing},
-		{"runtime container gone", state.Project{RuntimeName: "util", Requested: "running"}, Missing},
-		{"runtime stopped", state.Project{RuntimeName: "node", Requested: "running"}, Stopped},
-		{"runtime running and requested", state.Project{RuntimeName: "php", Requested: "running"}, Running},
-		{"runtime running but not requested", state.Project{RuntimeName: "php", Requested: "stopped"}, Stopped},
-		{"runtime running, never configured", state.Project{RuntimeName: "php", Requested: "not-configured"}, Stopped},
+		{"runtime container gone", state.Project{RuntimeName: "gone", Requested: "running"}, Missing},
+		{"runtime stopped", state.Project{RuntimeName: "other", Requested: "running"}, Stopped},
+		{"runtime running and requested", state.Project{RuntimeName: "runtime", Requested: "running"}, Running},
+		{"runtime running but not requested", state.Project{RuntimeName: "runtime", Requested: "stopped"}, Stopped},
+		{"runtime running, never configured", state.Project{RuntimeName: "runtime", Requested: "not-configured"}, Stopped},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -94,7 +94,7 @@ func TestProjectDerivation(t *testing.T) {
 // current must never be a copy of requested — that hides exactly the
 // divergence the display exists to surface (e.g. after a reboot).
 func TestCurrentIsNotRequested(t *testing.T) {
-	o := NewObserver("150", fakePodman(map[string]bool{"mpd-150-php-main": false}))
+	o := NewObserver("150", fakePodman(map[string]bool{"mpd-150-runtime": false}))
 	p := state.Project{RuntimeName: "php", Requested: "running"}
 	if got := o.Project(context.Background(), p); got == State(p.Requested) {
 		t.Fatalf("Project() = %q, which equals requested — current must be observed, not copied", got)

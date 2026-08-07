@@ -13,12 +13,14 @@ CLI behavior assumes fixed paths:
 - `/opt/mpd/` for the code checkout, assets, and built binary
 - `/var/lib/mpd/` for state/cache and configuration:
   - `conf/` — CA + service cert (PRIVATE)
-  - `env/mpd-vm.env` — user-editable VM-wide env overrides (mounted into runtimes)
-  - `state/` — operational state: projects.json, runtimes/, dns/, etc.
+  - `env/mpd-vm.env` — user-editable VM-wide env overrides (mounted into the runtime)
+  - `state/` — operational state: projects.json, services.json,
+    runtimes/ (the single runtime's entry), dns/, etc.
 
-Project backups live inside the data volume at `/srv/backups/`, accessed
-from the laptop with scp off the VM; see
-[ARCHITECTURE.md §10](ARCHITECTURE.md#10-backup-persistence).
+Backups live inside the data volume at `/srv/backups/`, accessed from
+the laptop with scp off the VM — project bundles directly under it,
+`--runtime-backup` output under `/srv/backups/runtime/<timestamp>/`;
+see [ARCHITECTURE.md §10](ARCHITECTURE.md#10-backup-persistence).
 
 ## Contract level
 
@@ -66,7 +68,27 @@ Operational flags include:
   directories against the Go `Event` catalogue and print warnings
   for orphans, removed audiences, and revision bumps. Also runs at the
   end of `mpd --vm-setup`.
-- runtime mutators: `--runtime-create`, `--runtime-start`, `--runtime-stop`, `--runtime-delete`, `--runtime`
+- runtime mutators — the runtime is created by `--vm-setup` and
+  started/stopped by `--vm-start`/`--vm-stop`, so its daily lifecycle has
+  no flags of its own; what remains is:
+  - `--runtime-rebuild` — delete + fresh provision from current assets
+    (prompts unless `--yes`, spelling out that the container's home
+    directory is lost); running projects are restored afterwards.
+  - `--runtime-backup` — run every `assets/runtime/backup.d/*.sh` inside
+    the runtime as the dev user, writing a timestamped directory plus
+    `manifest.json` under `/srv/backups/runtime/`.
+  - `--runtime-restore` — replay the newest backup via
+    `assets/runtime/restore.d/*.sh`.
+- service mutators (`<name>` is one of the extras: mailpit, adminer,
+  seleniumv1; intent persists in `/var/lib/mpd/state/services.json` and
+  the enabled-set is published to `/srv/meta/services.json`):
+  - `--service-enable=<name>` — install + start + auto-start (restart
+    policy plus a reconcile in `--vm-start`/`--vm-setup`).
+  - `--service-disable=<name>` — stop; stays off across reboots until
+    re-enabled.
+  - `--service-uninstall=<name>` — remove the container, **keep** its
+    data volume.
+  - `--service-purge=<name>` — remove the container and the volume.
 - db mutators: `--db-create`, `--db-start`, `--db-stop`, `--db-delete`
   - `--db-delete` removes the container **and its data** under
     `/srv/dbs/<databaseId>/`, matching `mpd delete <project>` (which
@@ -77,10 +99,11 @@ Operational flags include:
     container-only delete would leave data no mpd command can see.
 
 Listing is **a verb**, not a flag — `mpd list
-[projects|runtimes|services|dbs|network]` (default `projects`).
-Read-only entity queries; services are always-on infra started by
-`--vm-start`; `network` prints this VM's addressing (id, zone, subnet,
-gateway).
+[projects|runtimes|services|infra|dbs|network]` (default `projects`).
+Read-only entity queries. `services` lists the optional extra
+containers only (with intent-aware status); `infra` lists the
+VM-integral systemd units (dnsmasq, the portal); `network` prints this
+VM's addressing (id, zone, subnet, gateway).
 
 Operational preflight is not globally enforced before command dispatch.
 Setup/start/stop paths perform their own environment-specific checks where needed.
@@ -97,11 +120,16 @@ derived from the hostname `mpd-<NNN>` (ids 100..254 — the same on
 managed and sandbox VMs; see [`ARCHITECTURE.md` §9](ARCHITECTURE.md#9-identity-the-hostname)).
 
 Among the per-user files it maintains, `--vm-setup` writes a marked block
-into the dev user's `~/.ssh/config` giving every runtime in the assets
-tree a short alias — `ssh mpd-<NNN>-php`, or `ssh php` — since DNS
-carries only the fully-qualified name. The block is regenerated on every
-run; content outside the markers is preserved. See
+into the dev user's `~/.ssh/config` giving the runtime a short alias —
+`ssh mpd-<NNN>-runtime`, or bare `ssh runtime` — since DNS carries only
+the fully-qualified `runtime.<NNN>.mpd.test`. The block is regenerated
+on every run; content outside the markers is preserved. See
 [`USAGE.md`](USAGE.md#ssh-into-the-runtime).
+
+`--vm-setup` also converges the runtime container itself: created when
+missing, started when stopped, left alone when running. There is no
+separate provisioning flag — setup is the provisioner, and
+`--runtime-rebuild` the do-over.
 
 It also installs `mpd-control.service` (`mpd --control`), the daemon that
 serves project commands sent from inside runtime containers. Restarted on
@@ -120,11 +148,15 @@ caller's, because the process on the VM writes to the caller's terminal
 directly rather than through a relay.
 
 Only project verbs are accepted — `create`, `configure`, `start`, `stop`,
-`reset`, `delete`, `show`, `help` — and only against projects belonging to
-the calling runtime. `run` and every global flag are refused with a message
-naming what to use instead. `version` is answered locally, since it
-describes the binary being asked and `/opt/mpd` is the same checkout on
-both sides.
+`reset`, `delete`, `show`, `help`. `run` and every global flag are refused
+with a message naming what to use instead; as defence in depth the guard
+rejects any `--vm-`, `--runtime-`, `--db-` or `--service-` argument
+explicitly. With a single runtime there is no cross-runtime ownership
+check any more — every registered project belongs to the caller — and a
+declared `--type` merely has to be one the assets tree defines
+(`moodle`, `astro`). `version` is answered locally, since it describes
+the binary being asked and `/opt/mpd` is the same checkout on both
+sides.
 
 Disable with `MPD_RUNTIME_CONTROL=off` in `/var/lib/mpd/env/mpd-vm.env`;
 it is read per request, so no restart is needed. Full model in
@@ -135,35 +167,37 @@ it is read per request, so no restart is needed. Full model in
 
 If no known global flag path matches, status output is shown.
 
-## Runtime-level workflow and CLI (before projects)
+## Runtime-level workflow and CLI
 
-Runtimes are first-class and may be managed before any project exists.
+There is exactly one runtime container, `mpd-<NNN>-runtime`. It is not
+managed verb-by-verb: `mpd --vm-setup` creates it (and re-creates it if
+it is missing), `--vm-start`/`--vm-stop` carry its daily lifecycle along
+with everything else, and `mpd --runtime-rebuild` is the only mutator —
+delete plus fresh provision from current assets, restoring running
+projects afterwards. `mpd --runtime-backup` / `--runtime-restore`
+bracket a rebuild to carry the container's home-directory pieces across
+(see the flag list above).
 
-Normal runtime-first IDE workflow (PHPStorm/VS Code remote):
-1. create runtime (`--runtime-create=<name>`)
-2. prepare code directory inside runtime
-3. register/attach project from existing directory (project command path)
-
-Note:
-- IDEs may perform git clone for you over SSH into the selected runtime directory.
-- mpd should then attach/register that existing directory as a project without requiring mpd-managed clone.
+The runtime exists before any project does, so the IDE-first workflow
+needs no extra step:
+1. `mpd --vm-setup` has already provisioned the runtime
+2. prepare a code directory inside it (IDEs may git clone for you over
+   SSH — `ssh mpd-<NNN>-runtime`)
+3. register/attach the existing directory as a project (project command
+   path)
 
 Project-first bootstrap workflow:
 1. stage the source tree under `/srv/projects/<name>/` yourself
    (ordinary shell: `git clone`, `mudev clone`), then `mpd create`
-2. default runtime is `php` when not specified
-3. project type defaults to `moodle` when `--type` is not provided
+2. project type defaults to `moodle` when `--type` is not provided
 
 Runtime-level global CLI (no project required):
-- `mpd list runtimes`
-- `--runtime-create=<name>`
-- `--runtime-start=<name>`
-- `--runtime-stop=<name>`
-- `--runtime-delete=<name>`
-- `--runtime=<name>` -> show full runtime status details
+- `mpd list runtimes` — the runtime's status
+- `--runtime-rebuild` / `--runtime-backup` / `--runtime-restore`
 
 Contract intent:
-- runtime lifecycle must be usable independently from project lifecycle
+- the runtime is infrastructure, provisioned by setup — a project verb
+  never creates or deletes it
 - project create must attach an existing directory without requiring an
   mpd-managed clone — `create` never fetches source
 
@@ -241,9 +275,9 @@ Project-focused universal verbs (recommended daily surface):
 project name**, not `y/N`: `y` is the same keystroke regardless of which
 project the prompt names, so it cannot distinguish the intended project
 from a mistyped one. `--yes` skips the question for scripted use. The
-other destructive flags (`--runtime-delete`, `--db-delete`) keep `y/N` —
+other destructive flags (`--runtime-rebuild`, `--db-delete`) keep `y/N` —
 they are VM-terminal-only and name infrastructure, not a developer's site.
-- `run <command> [args...]` — runs a command inside the runtime that owns the current project, with the caller's working directory forwarded verbatim (`/srv` is the same path on the VM and in the container). The child's stdin, stdout, stderr and exit code are the caller's; a TTY is allocated only when stdin is one. The command runs through a login shell, so it sees exactly the PATH an interactive runtime session has — every project-type tool (`mdl-install`, `phpunit`, `composer`) resolves. Note the grammar: everything after `run` is the command, so this is the one verb whose second argument is not a project name.
+- `run <command> [args...]` — runs a command inside the runtime, with the caller's working directory forwarded verbatim (`/srv` is the same path on the VM and in the container). The child's stdin, stdout, stderr and exit code are the caller's; a TTY is allocated only when stdin is one. The command runs through a login shell, so it sees exactly the PATH an interactive runtime session has — every project-type tool (`mdl-install`, `phpunit`, `composer`) resolves. Note the grammar: everything after `run` is the command, so this is the one verb whose second argument is not a project name.
 
 ## Project-type-specific operations are tools, not verbs
 
@@ -256,13 +290,13 @@ tables in `docs/USAGE.md` for the full set, and
 [`ARCHITECTURE.md` §7](ARCHITECTURE.md#7-verbs-and-tools) for the
 verb-vs-tool contract.
 
-## PHP Runtime
+## PHP configuration knobs
 
-PHP runtime configuration knobs (PHP version, Xdebug mode, Behat
-toggles, Moodle-specific defaults) live with the project type that
-needs them under `assets/runtimes/php/project_types/<type>/`. This
-section is a placeholder for runtime-wide PHP knobs and will be filled
-out as those stabilize.
+PHP configuration knobs (PHP version, Xdebug mode, Behat toggles,
+Moodle-specific defaults) live with the project type that needs them
+under `assets/runtime/project_types/<type>/`. This section is a
+placeholder for runtime-wide PHP knobs and will be filled out as those
+stabilize.
 
 ## Behavioral invariants
 

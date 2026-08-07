@@ -14,9 +14,10 @@ import (
 // backend. Debian ships it in main, so this is an apt package rather than
 // another container.
 //
-// Not to be confused with the per-runtime Caddy frontdoor sidecar, which
-// terminates TLS for project URLs inside a runtime pod. Same tool, two
-// levels; this one never sees project traffic.
+// Not to be confused with the in-runtime caddy frontdoor
+// (mpd-caddy.service inside the runtime container), which terminates TLS
+// for project URLs. Same tool, two levels; this one never sees project
+// traffic.
 const (
 	CaddyUnit     = "caddy.service"
 	CaddyfilePath = "/etc/caddy/Caddyfile"

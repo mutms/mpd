@@ -20,7 +20,7 @@ func hasWarning(warnings []string, substr string) bool {
 func TestCleanTreeProducesNoWarnings(t *testing.T) {
 	withAssets(t, map[string]string{
 		"databases/postgres/hooks/mpd-pre-stop.d/10-graceful-stop.sh": "",
-		"runtimes/php/hooks/project-post-start.d/10-warm.sh":          "",
+		"runtime/hooks/project-post-start.d/10-warm.sh":               "",
 	})
 	if w := Diagnose(nil, t.TempDir()); len(w) != 0 {
 		t.Errorf("warnings on a clean tree: %v", w)
@@ -31,7 +31,7 @@ func TestCleanTreeProducesNoWarnings(t *testing.T) {
 // silently never run — the diagnostic is the only thing that surfaces it.
 func TestUnknownEventIsReported(t *testing.T) {
 	withAssets(t, map[string]string{
-		"runtimes/php/hooks/project-pre-launch.d/10-x.sh": "",
+		"runtime/hooks/project-pre-launch.d/10-x.sh": "",
 	})
 	w := Diagnose(nil, t.TempDir())
 	if !hasWarning(w, "unknown event 'project-pre-launch'") {
@@ -40,11 +40,11 @@ func TestUnknownEventIsReported(t *testing.T) {
 }
 
 // The mistake this actually caught during the port: project-pre-start
-// fires on the DATABASE, so a copy under runtimes/<rt>/hooks does
+// fires on the DATABASE, so a copy under runtime/hooks does
 // nothing at all.
 func TestWrongAudienceIsReported(t *testing.T) {
 	withAssets(t, map[string]string{
-		"runtimes/php/hooks/project-pre-start.d/10-x.sh": "",
+		"runtime/hooks/project-pre-start.d/10-x.sh": "",
 	})
 	w := Diagnose(nil, t.TempDir())
 	if !hasWarning(w, "no longer fires on this audience") {

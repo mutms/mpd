@@ -20,7 +20,7 @@ import (
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/project"
-	"github.com/mutms/mpd/go/internal/sidecar"
+	"github.com/mutms/mpd/go/internal/runtime"
 	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
 	"github.com/mutms/mpd/go/internal/vm"
@@ -64,10 +64,10 @@ func ProjectStart(ctx context.Context, out io.Writer, name string, d ProjectDeps
 
 	container := d.Observer.RuntimeContainer(entry.RuntimeName)
 	if !d.Podman.Exists(ctx, container) {
-		return fmt.Errorf("Runtime '%s' does not exist.", entry.RuntimeName)
+		return fmt.Errorf("The runtime does not exist. Run: mpd --vm-setup")
 	}
 	if !d.Podman.Running(ctx, container) {
-		if err := RuntimeStart(ctx, out, entry.RuntimeName, d.Podman, d.State,
+		if err := RuntimeStart(ctx, out, d.Podman, d.State,
 			d.Dnsmasq, d.Observer, d.Net, d.DevUser, d.UID); err != nil {
 			return err
 		}
@@ -134,9 +134,8 @@ func ProjectStart(ctx context.Context, out io.Writer, name string, d ProjectDeps
 	}
 
 	if cfg, ok := d.Assets.ProjectTypeConfig(entry.Type); ok {
-		fmt.Fprintf(out, "\n\033[1m==> Setting up '%s' in '%s'\033[0m\n", name, entry.RuntimeName)
-		script := fmt.Sprintf("/opt/mpd/assets/runtimes/%s/project_types/%s/project-setup.sh",
-			cfg.AssetsRuntime, cfg.AssetsType)
+		fmt.Fprintf(out, "\n\033[1m==> Setting up '%s' in the runtime\033[0m\n", name)
+		script := assets.TypeScript(cfg.AssetsType, "project-setup.sh")
 		code, err := project.Exec(ctx, d.Podman, container, d.DevUser, "bash", script, name)
 		if err != nil || code != 0 {
 			return fmt.Errorf("project-setup.sh failed.")
@@ -168,8 +167,8 @@ func ProjectStart(ctx context.Context, out io.Writer, name string, d ProjectDeps
 // This is the only readiness gate on what the developer actually opens.
 // ProjectStart already waits for sshd and for the database, but the
 // frontdoor is updated out of band: mpd writes /srv/meta/<project>/, and
-// the caddy sidecar notices by inotify, coalesces, regenerates, validates
-// and reloads on its own schedule (assets/sidecars/caddy/entry.sh), while
+// the in-runtime caddy notices by inotify, coalesces, regenerates, validates
+// and reloads on its own schedule (assets/runtime/caddy/mpd-caddy.sh), while
 // PHP-FPM binds its new pool independently. Without this, mpd prints
 // "is running" while the URL still returns a connection error or a 502.
 //
@@ -228,7 +227,7 @@ func waitForURL(ctx context.Context, out io.Writer, url string) {
 // rejects is exactly the failure this probe should surface rather than
 // paper over: after a CA rotation Caddy can keep serving a certificate
 // signed by an anchor nothing trusts any more, with both the config and
-// the files on disk looking correct (see assets/sidecars/caddy/entry.sh).
+// the files on disk looking correct (see assets/runtime/caddy/mpd-caddy.sh).
 // An InsecureSkipVerify probe would report that broken project as ready.
 func trustingClient() (*http.Client, error) {
 	pem, err := os.ReadFile(vm.CACertPath)
@@ -368,8 +367,7 @@ func ProjectDelete(ctx context.Context, out io.Writer, in io.Reader, name string
 	// possible while the runtime is running.
 	if entry.RuntimeName != "" && d.Podman.Running(ctx, container) {
 		if cfg, ok := d.Assets.ProjectTypeConfig(entry.Type); ok {
-			script := fmt.Sprintf("/opt/mpd/assets/runtimes/%s/project_types/%s/project-delete.sh",
-				cfg.AssetsRuntime, cfg.AssetsType)
+			script := assets.TypeScript(cfg.AssetsType, "project-delete.sh")
 			_, _ = project.Exec(ctx, d.Podman, container, d.DevUser, "bash", script, name)
 		}
 	}
@@ -401,17 +399,6 @@ func ProjectDelete(ctx context.Context, out io.Writer, in io.Reader, name string
 
 	if err := d.State.DeleteProject(name); err != nil {
 		return err
-	}
-
-	// Sidecars are derived from the projects present, so removing one can
-	// make a sidecar unnecessary — e.g. selenium when this was the last
-	// project publishing a behat URL.
-	if entry.RuntimeName != "" {
-		pod := podName(d.Observer, entry.RuntimeName)
-		desired := sidecar.Desired(entry.RuntimeName, d.State, d.Assets)
-		if err := sidecar.Reconcile(ctx, out, pod, desired, d.Podman); err != nil {
-			fmt.Fprintf(out, "Warning: sidecar reconcile: %v\n", err)
-		}
 	}
 
 	Ok(out, "Project '%s' deleted.", name)
@@ -498,8 +485,7 @@ func ProjectReset(ctx context.Context, out io.Writer, in io.Reader, name string,
 	// all back.
 	if entry.RuntimeName != "" && d.Podman.Running(ctx, container) {
 		if cfg, ok := d.Assets.ProjectTypeConfig(entry.Type); ok {
-			script := fmt.Sprintf("/opt/mpd/assets/runtimes/%s/project_types/%s/project-delete.sh",
-				cfg.AssetsRuntime, cfg.AssetsType)
+			script := assets.TypeScript(cfg.AssetsType, "project-delete.sh")
 			_, _ = project.Exec(ctx, d.Podman, container, d.DevUser, "bash", script, name)
 		}
 	}
@@ -544,16 +530,6 @@ func ProjectReset(ctx context.Context, out io.Writer, in io.Reader, name string,
 		return err
 	}
 
-	// The project no longer publishes a behat URL or requests a runtime, so
-	// a sidecar that existed only for it is now unnecessary.
-	if entry.RuntimeName != "" {
-		pod := podName(d.Observer, entry.RuntimeName)
-		desired := sidecar.Desired(entry.RuntimeName, d.State, d.Assets)
-		if err := sidecar.Reconcile(ctx, out, pod, desired, d.Podman); err != nil {
-			fmt.Fprintf(out, "Warning: sidecar reconcile: %v\n", err)
-		}
-	}
-
 	fmt.Fprintln(out, "")
 	Ok(out, "Project '%s' reset — code kept, data gone, not configured.", name)
 	fmt.Fprintf(out, "  Edit /srv/projects/%s/mpd.env (e.g. MPD_DB) if needed, then:\n", name)
@@ -567,7 +543,7 @@ func ProjectReset(ctx context.Context, out io.Writer, in io.Reader, name string,
 // The order is a data dependency chain, not a preference: mutations land
 // in mpd.env → configure.sh resolves the four-layer env and emits
 // effective.json + urls.json → mpd reads dbTag from effective.json to
-// provision the database → URLs drive cert, DNS and sidecars.
+// provision the database → URLs drive cert and DNS.
 func ProjectConfigure(ctx context.Context, out io.Writer, name string, args []string,
 	d ProjectDeps) error {
 
@@ -590,24 +566,17 @@ func ProjectConfigure(ctx context.Context, out io.Writer, name string, args []st
 		return fmt.Errorf("Project type is not set for '%s'.\n"+
 			"Create a new project to choose a type (default: moodle).", name)
 	}
-	if entry.RuntimeName == "" {
-		rt, ok := d.Assets.DefaultRuntimeForType(entry.Type)
-		if !ok || rt == "" {
-			return fmt.Errorf("Cannot determine runtime for '%s' because project type is missing.\n"+
-				"Create a new project to choose a type (default: moodle).", name)
-		}
-		entry.RuntimeName = rt
-	}
+	// RuntimeName is a JSON contract with shell/jq consumers; there is one
+	// runtime, so it is pinned rather than resolved.
+	entry.RuntimeName = runtime.Name
 
 	container := d.Observer.RuntimeContainer(entry.RuntimeName)
 	if !d.Podman.Exists(ctx, container) {
-		return fmt.Errorf("Runtime '%s' does not exist — `mpd --runtime-create %s` first "+
-			"(runtime create is not ported to the Go binary yet).",
-			entry.RuntimeName, entry.RuntimeName)
+		return fmt.Errorf("The runtime does not exist. Run: mpd --vm-setup")
 	}
 	runtimeWasRunning := d.Podman.Running(ctx, container)
 	if !runtimeWasRunning {
-		if err := RuntimeStart(ctx, out, entry.RuntimeName, d.Podman, d.State,
+		if err := RuntimeStart(ctx, out, d.Podman, d.State,
 			d.Dnsmasq, d.Observer, d.Net, d.DevUser, d.UID); err != nil {
 			return err
 		}
@@ -633,8 +602,7 @@ func ProjectConfigure(ctx context.Context, out io.Writer, name string, args []st
 
 	cfg, hasType := d.Assets.ProjectTypeConfig(entry.Type)
 	if hasType {
-		script := fmt.Sprintf("/opt/mpd/assets/runtimes/%s/project_types/%s/scripts/configure.sh",
-			cfg.AssetsRuntime, cfg.AssetsType)
+		script := assets.TypeScript(cfg.AssetsType, "scripts/configure.sh")
 		code, err := project.Exec(ctx, d.Podman, container, d.DevUser, "bash", script, name)
 		if err != nil || code != 0 {
 			return fmt.Errorf("configure.sh failed for project '%s'.", name)
@@ -645,6 +613,18 @@ func ProjectConfigure(ctx context.Context, out io.Writer, name string, args []st
 	// it — mpd reads the answer rather than duplicating the cascade.
 	effective := project.ReadEffective(name)
 	dbTag, _ := effective["dbTag"].(string)
+
+	// Behat needs the seleniumv1 service. Turning behat on IS the
+	// explicit request, so the service is enabled on its behalf rather
+	// than failing the first `behat` run with a connection error. The
+	// image is ~2 GB on first enable; the pull streams its progress.
+	if behatEnabled(effective) && !serviceEnabled(d.State, "seleniumv1") {
+		fmt.Fprintln(out, "\n\033[1m==> Auto-enabling seleniumv1 (behat requested)\033[0m")
+		if err := ServiceEnable(ctx, out, "seleniumv1", d.Podman, d.State,
+			d.Dnsmasq, d.Net, vm.PrimaryIP()); err != nil {
+			return err
+		}
+	}
 
 	if dbTag != "" {
 		ref, err := db.Resolve(ctx, dbTag, d.Podman)
@@ -684,32 +664,51 @@ func ProjectConfigure(ctx context.Context, out io.Writer, name string, args []st
 		return err
 	}
 
-	pod := podName(d.Observer, entry.RuntimeName)
-	if err := sidecar.Reconcile(ctx, out, pod,
-		sidecar.Desired(entry.RuntimeName, d.State, d.Assets), d.Podman); err != nil {
-		fmt.Fprintf(out, "Warning: sidecar reconcile: %v\n", err)
-	}
 	if err := project.EnsureCert(ctx, out, name, entry.URLs, d.Net, d.Podman, d.UID); err != nil {
 		return err
 	}
 
-	// Configure is meant to be low-impact: if it had to start a runtime
+	// Configure is meant to be low-impact: if it had to start the runtime
 	// to do repair work, put it back unless something is actually using it.
 	if !runtimeWasRunning {
 		inUse := false
 		for _, p := range d.State.Projects() {
-			if p.RuntimeName == entry.RuntimeName && p.Requested == "running" {
+			if p.Requested == "running" {
 				inUse = true
 				break
 			}
 		}
 		if !inUse {
-			_ = RuntimeStop(ctx, out, entry.RuntimeName, d.Podman, d.State, d.Dnsmasq, d.Observer)
+			_ = RuntimeStop(ctx, out, d.Podman, d.State, d.Dnsmasq, d.Observer)
 		}
 	}
 
 	Ok(out, "Project '%s' configured. Type: %s, Status: %s", name, entry.Type, entry.Requested)
 	return nil
+}
+
+// behatEnabled reads the behat flag from effective.json, which emits it
+// as a bare number (configure.sh interpolates 0 or 1).
+func behatEnabled(effective map[string]any) bool {
+	switch v := effective["behat"].(type) {
+	case float64:
+		return v == 1
+	case string:
+		return v == "1"
+	case bool:
+		return v
+	}
+	return false
+}
+
+// serviceEnabled reports whether an extra service is recorded as enabled.
+func serviceEnabled(s state.Store, name string) bool {
+	for _, entry := range s.Services() {
+		if entry.Name == name {
+			return entry.Enabled
+		}
+	}
+	return false
 }
 
 // sameURLs reports whether two URL lists are identical, so a refresh that
@@ -736,6 +735,14 @@ var projectVerbs = map[string]bool{
 	"start": true, "stop": true, "delete": true, "project": true,
 }
 
+// reservedNames are names a project may not take because they live
+// directly under the project DNS namespace: runtime.<zone> is the
+// runtime container, *.svc.<zone> are the extra service containers, and
+// vm.<zone> is the VM's own diagnostic record.
+var reservedNames = map[string]bool{
+	"runtime": true, "svc": true, "vm": true,
+}
+
 var validProjectName = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
 
 // CreateOptions carries `project create`'s flags.
@@ -756,10 +763,13 @@ func ProjectCreate(ctx context.Context, out io.Writer, name string, opts CreateO
 		return fmt.Errorf("'%s' is not a valid project name. "+
 			"Use lowercase letters and digits, starting with a letter, "+
 			"minimum 2 characters. Internal dashes allowed "+
-			"(e.g. 'moodle520-cftunnel').", name)
+			"(e.g. 'moodle-mebis').", name)
 	}
 	if projectVerbs[name] {
 		return fmt.Errorf("Project name '%s' is reserved by CLI syntax. Choose another name.", name)
+	}
+	if reservedNames[name] {
+		return fmt.Errorf("Project name '%s' is reserved by mpd's DNS naming. Choose another name.", name)
 	}
 	if _, exists := findProject(d.State, name); exists {
 		return fmt.Errorf("Project '%s' already exists.", name)
@@ -775,31 +785,25 @@ func ProjectCreate(ctx context.Context, out io.Writer, name string, opts CreateO
 		typeName = "moodle"
 	}
 
-	runtimeName, ok := d.Assets.DefaultRuntimeForType(typeName)
-	if !ok || runtimeName == "" {
-		runtimeName = "php"
-	}
-
-	// Resolve and start the runtime BEFORE touching any project state, so
-	// a failure here leaves nothing half-created.
-	if err := ensureRuntime(ctx, out, runtimeName, d, home); err != nil {
+	// Start the runtime BEFORE touching any project state, so a failure
+	// here leaves nothing half-created.
+	if err := ensureRuntime(ctx, out, d, home); err != nil {
 		return err
 	}
-	container := d.Observer.RuntimeContainer(runtimeName)
+	container := d.Observer.RuntimeContainer(runtime.Name)
 
 	fmt.Fprintf(out, "\n\033[1m==> Ensuring /srv/projects/%s/\033[0m\n", name)
 	if code, err := project.Exec(ctx, d.Podman, container, d.DevUser,
 		"mkdir", "-p", "/srv/projects/"+name); err != nil || code != 0 {
-		return fmt.Errorf("Failed to create /srv/projects/%s in runtime '%s'.", name, runtimeName)
+		return fmt.Errorf("Failed to create /srv/projects/%s in the runtime.", name)
 	}
 
 	// The type's own scaffolding: seeds mpd.env from its template and
 	// excludes it from git. Optional — types without the script skip.
 	if cfg, ok := d.Assets.ProjectTypeConfig(typeName); ok {
-		script := fmt.Sprintf("/opt/mpd/assets/runtimes/%s/project_types/%s/project-create.sh",
-			cfg.AssetsRuntime, cfg.AssetsType)
-		if d.Assets.HasFile(fmt.Sprintf("runtimes/%s/project_types/%s/project-create.sh",
-			cfg.AssetsRuntime, cfg.AssetsType)) {
+		if d.Assets.HasFile(fmt.Sprintf("%s/project_types/%s/project-create.sh",
+			assets.RuntimeDir, cfg.AssetsType)) {
+			script := assets.TypeScript(cfg.AssetsType, "project-create.sh")
 			fmt.Fprintf(out, "\n\033[1m==> Scaffolding project from %s template\033[0m\n", typeName)
 			if code, err := project.Exec(ctx, d.Podman, container, d.DevUser,
 				"bash", script, name); err != nil || code != 0 {
@@ -825,15 +829,15 @@ func ProjectCreate(ctx context.Context, out io.Writer, name string, opts CreateO
 }
 
 // ensureRuntime creates the runtime if absent, starts it if stopped.
-func ensureRuntime(ctx context.Context, out io.Writer, name string, d ProjectDeps, home string) error {
-	container := d.Observer.RuntimeContainer(name)
+func ensureRuntime(ctx context.Context, out io.Writer, d ProjectDeps, home string) error {
+	container := d.Observer.RuntimeContainer(runtime.Name)
 	switch {
 	case !d.Podman.Exists(ctx, container):
-		fmt.Fprintf(out, "No runtime '%s' — creating...\n", name)
-		return RuntimeCreate(ctx, out, name, d.Podman, d.State, d.Dnsmasq, d.Observer,
-			d.Net, d.Assets, d.DevUser, d.UID, home)
+		fmt.Fprintln(out, "No runtime yet — creating...")
+		return RuntimeCreate(ctx, out, d.Podman, d.State, d.Dnsmasq, d.Observer,
+			d.Net, d.DevUser, d.UID, home)
 	case !d.Podman.Running(ctx, container):
-		return RuntimeStart(ctx, out, name, d.Podman, d.State, d.Dnsmasq, d.Observer,
+		return RuntimeStart(ctx, out, d.Podman, d.State, d.Dnsmasq, d.Observer,
 			d.Net, d.DevUser, d.UID)
 	}
 	return nil
@@ -862,7 +866,7 @@ func ShowHelp(out io.Writer, project string, n net.Net) {
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "Project-type-specific operations (mdl-cron, phpunit, composer, …) are tools,")
 	fmt.Fprintln(out, "not host-side verbs. SSH into the runtime and run them on PATH:")
-	fmt.Fprintf(out, "  ssh user@<runtime>.runtime.%s\n", n.Zone())
+	fmt.Fprintf(out, "  ssh user@%s\n", n.RuntimeFQDN())
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "Or forward one from the VM, from inside the project directory:")
 	fmt.Fprintf(out, "  cd /srv/projects/%s && mpd run <command> [args...]\n", project)

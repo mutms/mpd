@@ -46,15 +46,15 @@ type Observer struct {
 	p    *podman.Client
 }
 
-// NewObserver returns an Observer. vmID prefixes runtime container names
-// (`mpd-<id>-<runtime>-main`).
+// NewObserver returns an Observer. vmID prefixes the runtime container
+// name (`mpd-<id>-<runtime>`).
 func NewObserver(vmID string, p *podman.Client) Observer {
 	return Observer{vmID: vmID, p: p}
 }
 
-// RuntimeContainer is the main container name for a runtime.
+// RuntimeContainer is the container name for a runtime.
 func (o Observer) RuntimeContainer(runtime string) string {
-	return fmt.Sprintf("mpd-%s-%s-main", o.vmID, runtime)
+	return fmt.Sprintf("mpd-%s-%s", o.vmID, runtime)
 }
 
 // Runtime observes a runtime's container.

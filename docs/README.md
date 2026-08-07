@@ -18,8 +18,8 @@ In rough order of when you'll want them:
   - [`../setup/linux/README.md`](../setup/linux/README.md) — mpd VM on Ubuntu via libvirt/KVM
   - [`../setup/windows/README.txt`](../setup/windows/README.txt) — mpd VM on Windows via Hyper-V
 - [`USAGE.md`](USAGE.md) — universal day-to-day handbook. Project
-  lifecycle, SSH into the runtime, tools list, git auth via agent
-  forwarding, project backups. Applies to both modes once setup
+  lifecycle, extra services, SSH into the runtime, tools list, git auth
+  via agent forwarding, backups. Applies to both modes once setup
   has completed.
 - [`NETWORKING.md`](NETWORKING.md) — host ↔ VM ↔ container reachability
   model: the WireGuard overlay (mpd-proxy) or the SOCKS-over-SSH fallback,
@@ -62,13 +62,15 @@ Quick reference; full contract in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 - `/var/lib/mpd/env/mpd-vm.env` — user-editable VM-wide env
   overrides. Bind-mounted RO into every runtime container.
 - `/var/lib/mpd/skel/` — optional user-managed dotfile defaults for
-  new runtimes (`/etc/skel/`-style). Empty by default.
+  the runtime container (`/etc/skel/`-style). Empty by default.
 - `/var/lib/mpd/state/` — mpd-managed operational state
-  (projects.json, runtimes/, dns/, etc.). Wipe to reset.
+  (projects.json, services.json, runtimes/ — the single runtime's
+  entry — dns/, etc.). Wipe to reset.
 - `/srv/` — Podman data volume, mounted on the VM and in every
   container at the same path (projects/, data/, meta/, dbs/, extra/,
   backups/).
 
-Project backups live in `/srv/backups/` on the data volume and are
+Backups live in `/srv/backups/` on the data volume (`mpd
+--runtime-backup` writes `backups/runtime/<timestamp>/`) and are
 copied off the VM with scp before wiping. Full contract:
 [`ARCHITECTURE.md` §10](ARCHITECTURE.md#10-backup-persistence).

@@ -136,11 +136,10 @@ phase:
 
 ### 4. Pre-warm
 
-After VM creation, runs `mpd --runtime-create=php` and `mpd
---db-create=postgres:latest` over SSH so the user's first
-`demo moodle v5.2.0` finishes in 2-3 minutes instead of 10+.
-Best-effort — failures here just mean lazy provisioning at first
-demo invocation.
+After VM creation, runs `mpd --db-create=postgres:latest` over SSH so
+the user's first `demo moodle v5.2.0` is faster (the runtime container
+itself is already built by `mpd --vm-setup`). Best-effort — a failure
+here just means lazy provisioning at first demo invocation.
 
 ### 5. State refresh
 

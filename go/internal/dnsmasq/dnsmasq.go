@@ -107,7 +107,7 @@ func (m Manager) EnsureServiceRecords(records []ServiceRecord, vmIP string) (boo
 		lines = append(lines, hostsLine(r.Host, r.IP))
 	}
 
-	// vm.service.<zone> answers with the VM's OWN address rather than a
+	// vm.<zone> answers with the VM's OWN address rather than a
 	// container's, so the host-side orchestrator can confirm it is
 	// talking to this VM's resolver and not another's. Skipped on sandbox
 	// VMs, which are on DHCP and have no address to publish.

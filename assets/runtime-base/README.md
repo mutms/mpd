@@ -1,7 +1,7 @@
 # `assets/runtime-base/` — runtime base layer
 
 Code that turns a fresh Debian Trixie container into a "runtime base":
-the foundation any specific runtime (`assets/runtimes/<rt>/`) builds on
+the foundation the unified runtime (`assets/runtime/`) builds on
 top of.
 
 - **`bootstrap.sh`** — phase-1 root-context script. The single allowed
@@ -20,14 +20,14 @@ top of.
 - **`tools/`** — executable tools available **in any runtime**. On PATH
   as `/opt/mpd/assets/runtime-base/tools/<name>` via the skel bashrc.
   Currently: `claude-install`, `node-install`, `set-mpd-env`. Adding a
-  new one = drop a file here and recreate runtimes.
+  new one = drop a file here and rebuild the runtime.
 - **`lib/`** — sourced libraries used by tools and project-type scripts:
   `source-mpd-env.sh` (loads the layered MPD_* env), `nvm-env.sh`
   (sources nvm in non-login script contexts where ~/.bashrc isn't
   auto-sourced). Not on PATH.
 
-After this layer, `assets/runtimes/<rt>/build.sh` runs as the dev user
-and adds runtime-specific tooling on top.
+After this layer, `assets/runtime/build.sh` runs as the dev user
+and adds the language stacks and the caddy frontdoor on top.
 
 See [AGENTS.md](../../AGENTS.md) for the privilege rule and tool
 authoring contract; [docs/ARCHITECTURE.md §7](../../docs/ARCHITECTURE.md)
