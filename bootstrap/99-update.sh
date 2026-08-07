@@ -54,6 +54,14 @@ REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 step "Updating mpd source"
 bash "${SCRIPT_DIR}/20-git-clone.sh"
 
+# --- Converge the base package set --------------------------------------
+# Same step takeover runs, so a package added to the base set (or a
+# guest-integration service like avahi) reaches already-adopted boxes on
+# their next update. Fast no-op when everything is installed.
+
+step "Converging base packages"
+bash "${SCRIPT_DIR}/40-install-software.sh"
+
 # --- Rebuild + ensure PATH ----------------------------------------------
 # 50-build.sh runs `make install` (fast no-op when unchanged) and
 # re-asserts ~/.bashrc PATH + /usr/local symlink hygiene.
