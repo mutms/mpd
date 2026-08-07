@@ -99,9 +99,12 @@ func RuntimeDelete(ctx context.Context, out io.Writer, in io.Reader,
 	// would otherwise accumulate on every rebuild.
 	_, _ = p.VolumeRemove(ctx, runtime.TmpVolume(container))
 
-	if _, err := dns.RemoveRecord(runtime.Name); err != nil {
-		return err
-	}
+	// The runtime.<zone> record is NOT removed — it lives in the
+	// reconciled service set (fixed address, published ahead of the
+	// container). A legacy per-runtime record file from older versions
+	// is left alone too: its content is identical, and dnsmasq's
+	// hostsdir drops a name served from a deleted file even when
+	// another file still carries it, until the next restart.
 	// Orphaned projects' records: their URLs would resolve to a runtime
 	// that is gone.
 	for _, projName := range names {
@@ -302,7 +305,9 @@ func restoreRunningProjects(ctx context.Context, out io.Writer, container, runti
 }
 
 // RuntimeCreate provisions the runtime and everything that hangs off
-// it: DNS record, state, and any projects already assigned to it.
+// it: state, and any projects already assigned to it. (DNS needs no
+// step here — runtime.<zone> is a fixed record in the reconciled
+// service set.)
 //
 // The provisioning itself lives in internal/runtime; this is the
 // orchestration around it, which is why the two are separate — the
@@ -324,11 +329,8 @@ func RuntimeCreate(ctx context.Context, out io.Writer, p *podman.Client,
 		return err
 	}
 
-	fmt.Fprintln(out, "\n\033[1m==> Publishing DNS record\033[0m")
-	if _, err := dns.WriteRecord(runtime.Name, dnsmasq.Line(n.RuntimeFQDN(), runtimeIP)+"\n"); err != nil {
-		return err
-	}
-
+	// No DNS step: runtime.<zone> has a fixed address, so the record is
+	// part of the reconciled service set and published ahead of time.
 	if err := s.SaveRuntime(state.Runtime{
 		Name: runtime.Name, RuntimeID: runtime.Name, IP: runtimeIP, Requested: "running",
 	}); err != nil {

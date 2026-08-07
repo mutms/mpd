@@ -737,10 +737,11 @@ var projectVerbs = map[string]bool{
 
 // reservedNames are names a project may not take because they live
 // directly under the project DNS namespace: runtime.<zone> is the
-// runtime container, *.svc.<zone> are the extra service containers, and
-// vm.<zone> is the VM's own diagnostic record.
+// runtime container, *.svc.<zone> are the extra service containers,
+// *.db.<zone> are the database containers, and vm.<zone> is the VM's
+// own diagnostic record.
 var reservedNames = map[string]bool{
-	"runtime": true, "svc": true, "vm": true,
+	"runtime": true, "svc": true, "db": true, "vm": true,
 }
 
 var validProjectName = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)

@@ -111,12 +111,15 @@ func ReconcileServices(ctx context.Context, out io.Writer,
 }
 
 // ServiceDNSRecords composes every service-file DNS record: the zone
-// apex for the portal (VM infra, at the gateway), plus one record per
-// INSTALLED extra service pointing at its own address. dnsmasq itself
-// has no name — it is the thing doing the resolving.
+// apex for the portal (VM infra, at the gateway), the runtime (fixed
+// name at a fixed address, so it is published ahead of the container
+// existing), plus one record per INSTALLED extra service pointing at
+// its own address. dnsmasq itself has no name — it is the thing doing
+// the resolving.
 func ServiceDNSRecords(n net.Net, s state.Store) []dnsmasq.ServiceRecord {
 	records := []dnsmasq.ServiceRecord{
 		{Host: n.Zone(), IP: n.Gateway()},
+		{Host: n.RuntimeFQDN(), IP: n.IP(net.HostRuntime)},
 	}
 	for _, entry := range s.Services() {
 		if svc, ok := service.Find(entry.Name); ok {
