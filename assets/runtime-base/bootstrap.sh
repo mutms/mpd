@@ -33,6 +33,29 @@ export DEBIAN_FRONTEND=noninteractive
 # shell mpd ships, ripgrep for searching large project trees. Not `gh` —
 # it is useless until `gh auth login` stores a token in the container,
 # and git auth here is the developer's forwarded SSH agent.
+# apt-get update exits 0 when every index fetch fails — a failed fetch is
+# a warning, not an error — so a container that cannot resolve gets all
+# the way to `Package bash-completion is not available`, an error that
+# describes a symptom several screens below its cause. Name the cause
+# here, and give the container's network a few seconds first: it may have
+# been created moments ago.
+resolved=false
+for _ in 1 2 3 4 5; do
+    if getent hosts deb.debian.org >/dev/null 2>&1; then
+        resolved=true
+        break
+    fi
+    sleep 2
+done
+if [ "$resolved" != true ]; then
+    echo "bootstrap: cannot resolve deb.debian.org from inside the runtime." >&2
+    echo "  The runtime resolves through this VM's dnsmasq:" >&2
+    sed -n 's/^nameserver/    nameserver/p' /etc/resolv.conf >&2
+    echo "  Check on the VM, then re-run \`mpd --runtime-rebuild\`:" >&2
+    echo "    systemctl status mpd-dnsmasq; getent hosts deb.debian.org" >&2
+    exit 1
+fi
+
 apt-get update -qq
 apt-get install -y --no-install-recommends \
     bash-completion bc bzip2 curl dnsutils file findutils git gzip htop \

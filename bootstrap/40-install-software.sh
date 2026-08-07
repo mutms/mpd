@@ -103,10 +103,19 @@ else
 fi
 # qemu-guest-agent has no [Install] section on Debian — udev starts it
 # when the hypervisor's virtio-serial device exists, and does so on
-# every boot. This start only matters for the current boot; it fails
-# harmlessly where there is no device (Parallels, containers).
-if sudo systemctl start qemu-guest-agent >/dev/null 2>&1; then
-    ok "qemu-guest-agent running"
+# every boot. This start only matters for the current boot.
+#
+# Gated on the device rather than attempted-and-caught: the unit is
+# BindsTo= + After= its .device unit, and a device unit that no udev
+# event will ever activate has no job timeout. `systemctl start` on a
+# box without the device therefore does not fail — it blocks forever,
+# which is how takeover hung on an Apple-virtualisation guest.
+if [ -e /dev/virtio-ports/org.qemu.guest_agent.0 ]; then
+    if sudo systemctl start qemu-guest-agent >/dev/null 2>&1; then
+        ok "qemu-guest-agent running"
+    else
+        warn "qemu-guest-agent did not start — inspect: systemctl status qemu-guest-agent"
+    fi
 else
     ok "qemu-guest-agent installed (idle — no hypervisor device on this box)"
 fi

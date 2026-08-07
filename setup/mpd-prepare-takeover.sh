@@ -252,9 +252,17 @@ if sudo systemctl enable --now avahi-daemon >/dev/null 2>&1; then
 else
     warn "avahi-daemon could not be enabled — pass the IP to takeover explicitly"
 fi
-sudo systemctl start qemu-guest-agent >/dev/null 2>&1 \
-    && ok "qemu-guest-agent running" \
-    || ok "qemu-guest-agent installed (idle — no hypervisor device on this box)"
+# Gated on the device, never attempted-and-caught: the unit is BindsTo= +
+# After= its .device unit, and a device unit no udev event will activate
+# has no job timeout — so on a box without the device (Apple
+# virtualisation) `systemctl start` does not fail, it blocks forever.
+if [ -e /dev/virtio-ports/org.qemu.guest_agent.0 ]; then
+    sudo systemctl start qemu-guest-agent >/dev/null 2>&1 \
+        && ok "qemu-guest-agent running" \
+        || warn "qemu-guest-agent did not start"
+else
+    ok "qemu-guest-agent installed (idle — no hypervisor device on this box)"
+fi
 
 vm_ip="$(ip -4 -o addr show "${iface}" | awk '{print $4}' | cut -d/ -f1 | head -1)"
 echo
