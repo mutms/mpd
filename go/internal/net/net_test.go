@@ -119,7 +119,7 @@ func TestHostOctet(t *testing.T) {
 	if _, ok := n.HostOctet("10.163.180.100"); ok {
 		t.Error("HostOctet(other VM's subnet) = ok, want not ok")
 	}
-	for _, addr := range []string{"192.168.1.1", "10.163.150", "", "10.163.150.x", "not an ip"} {
+	for _, addr := range []string{"10.1.1.1", "10.163.150", "", "10.163.150.x", "not an ip"} {
 		if _, ok := n.HostOctet(addr); ok {
 			t.Errorf("HostOctet(%q) = ok, want not ok", addr)
 		}
