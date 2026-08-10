@@ -13,7 +13,7 @@ import (
 )
 
 // EnsureSSHKey gives the VM its own keypair and makes sure
-// ~/.ssh/authorized_keys exists with that key in it.
+// ~/.ssh/authorized_keys exists.
 //
 // Two separate reasons, both required:
 //
@@ -25,7 +25,16 @@ import (
 //     and installs the result into every runtime. A key missing here is a
 //     key that reaches no runtime. Managed VMs get the file as a side
 //     effect of cloud-init injecting the workstation key, but a sandbox
-//     VM has no workstation side and may genuinely not have one.
+//     VM has no workstation side and may genuinely not have one — hence
+//     creating it, empty if need be.
+//
+// The VM's own public key is deliberately NOT appended to it. It would
+// reach the runtimes regardless (AuthorizedPublicKeys globs id_*.pub
+// separately and dedupes the union), so the only thing it bought was the
+// VM trusting its own key to log into itself, which nothing does. Leaving
+// it out also keeps the two files visibly different: the VM's lists the
+// workstation, the runtime's lists the workstation plus this VM, so the
+// file says which box you are on.
 //
 // No passphrase: the VM is the trust boundary, and the key only
 // authenticates VM→runtime hops.
@@ -39,7 +48,6 @@ func EnsureSSHKey(ctx context.Context, out io.Writer) error {
 	}
 
 	keyPath := filepath.Join(sshDir, "id_ed25519")
-	pubPath := keyPath + ".pub"
 
 	if hasPublicKey(sshDir) {
 		ui.OK(out, "VM-local key already present in ~/.ssh/.")
@@ -56,7 +64,7 @@ func EnsureSSHKey(ctx context.Context, out io.Writer) error {
 			"(no passphrase, used for VM→runtime SSH).")
 	}
 
-	return ensureAuthorizedKeys(out, sshDir, pubPath)
+	return ensureAuthorizedKeys(out, sshDir)
 }
 
 func hasPublicKey(sshDir string) bool {
@@ -72,46 +80,22 @@ func hasPublicKey(sshDir string) bool {
 	return false
 }
 
-func ensureAuthorizedKeys(out io.Writer, sshDir, pubPath string) error {
+// ensureAuthorizedKeys guarantees the file exists and is mode 600. It
+// never writes a key into it: what a developer authorised for this VM is
+// theirs, and mpd only reads it (as the source for what the runtimes
+// trust). An entry left there by an earlier mpd is not removed either —
+// pruning someone's authorized_keys is not a thing a setup command should
+// do behind their back.
+func ensureAuthorizedKeys(out io.Writer, sshDir string) error {
 	authPath := filepath.Join(sshDir, "authorized_keys")
-	existing, err := os.ReadFile(authPath)
-	if err != nil {
+	if _, err := os.Stat(authPath); err != nil {
 		if err := os.WriteFile(authPath, nil, 0o600); err != nil {
 			return fmt.Errorf("Failed to create %s.", authPath)
 		}
-		existing = nil
+		ui.OK(out, "Created an empty ~/.ssh/authorized_keys.")
 	}
 	if err := os.Chmod(authPath, 0o600); err != nil {
 		return err
 	}
-
-	pub, err := os.ReadFile(pubPath)
-	if err != nil {
-		// No VM pubkey — should not happen after ssh-keygen. Nothing to
-		// append, so leave authorized_keys as it stands.
-		return nil
-	}
-	line := strings.TrimSpace(string(pub))
-
-	// Match on the base64 blob, the middle field, so a re-keyed VM with
-	// a different comment does not append a duplicate line.
-	fields := strings.Fields(line)
-	if len(fields) < 2 {
-		return nil
-	}
-	if strings.Contains(string(existing), fields[1]) {
-		ui.OK(out, "VM pubkey already in ~/.ssh/authorized_keys.")
-		return nil
-	}
-
-	body := string(existing)
-	if body != "" && !strings.HasSuffix(body, "\n") {
-		body += "\n"
-	}
-	body += line + "\n"
-	if err := os.WriteFile(authPath, []byte(body), 0o600); err != nil {
-		return err
-	}
-	ui.OK(out, "Appended VM pubkey to ~/.ssh/authorized_keys.")
 	return nil
 }

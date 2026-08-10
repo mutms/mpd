@@ -286,6 +286,11 @@ absent). On the sandbox platform the "laptop key" is just whatever
 keys you have authorized for SSHing into the VM (or none, if you only
 ever access the sandbox via the hypervisor's console).
 
+The VM's own `authorized_keys` is only ever read, never written to —
+setup creates it empty if missing and fixes its mode, nothing more. So
+the two files differ by exactly one line, the VM's own key, and `cat
+~/.ssh/authorized_keys` tells you which box you are on.
+
 ## `mpd` from inside the runtime
 
 You don't need a second terminal to drive mpd. `mpd` is on `PATH` inside
