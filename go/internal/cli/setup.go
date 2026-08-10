@@ -596,7 +596,7 @@ func setupStateDirectories(ctx context.Context, out io.Writer) error {
 		ui.OK(out, "%s already exists — edit to set your defaults.", target)
 		return nil
 	}
-	source := filepath.Join(vm.AssetsDir, "templates", "mpd-vm.env")
+	source := filepath.Join(vm.AssetsDir, "vm", "mpd-vm.env")
 	data, err := os.ReadFile(source)
 	if err != nil {
 		ui.Note(out, "Warning: template not found at %s", source)

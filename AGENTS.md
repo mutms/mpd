@@ -192,17 +192,20 @@ The binary is Go, built from `go/` into `bin/mpd` by `make install`:
 - `go/internal/ui/` — the step/ok/warn output shapes
 
 Runtime/project-type behavior + service container assets live under `assets/`:
-- `assets/vm/` — VM-level assets deployed to the mpd VM itself
-  (e.g. `motd` — installed to `/etc/motd` by provisioning scripts)
-- `assets/runtime/...` — the runtime definition: `build.sh`,
-  `mpd-defaults.env`, `tools/`, `caddy/` (the in-runtime TLS frontdoor),
-  `backup.d/`/`restore.d/` (`--runtime-backup`/`--runtime-restore` hooks),
+- `assets/vm/` — VM-level assets deployed to the mpd VM itself: `motd`
+  (→ `/etc/motd`), `prompt.bashrc` (→ a managed block in the dev user's
+  `~/.bashrc`), and `mpd-vm.env`, the per-developer template seeded to
+  `/var/lib/mpd/env/mpd-vm.env`
+- `assets/runtime/...` — the runtime definition, both build phases in
+  one place: `Containerfile`, `bootstrap.sh` (phase 1, root), `build.sh`
+  (phase 2, dev user), `mpd-defaults.env`, `skel/`, `tools/`, `lib/`,
+  `caddy/` (the in-runtime TLS frontdoor), `backup.d/`/`restore.d/`
+  (`--runtime-backup`/`--runtime-restore` hooks),
   `project_types/{moodle,astro}/`
 - `assets/services/<n>/...` — built service images (adminer's
   Containerfile; the other extras pull upstream images)
 - `assets/completions/` — shell completion shims
-- `assets/templates/` — per-developer template (`mpd-vm.env`); runtime
-  and type *defaults* live next to their owners under
+- *defaults*, as opposed to that template, live next to their owners:
   `assets/runtime/mpd-defaults.env` and
   `assets/runtime/project_types/<type>/mpd-defaults.env`
 

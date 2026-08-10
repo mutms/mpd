@@ -281,7 +281,7 @@ addressing at `/srv/meta/vm.json` on the data volume.
   (current types: `moodle`, `astro`)
 - Runtime / project-type tools: single executable per file under
   corresponding `tools/` (see §7). Verbs are Go, not assets.
-- Service config/templates: `assets/services/...`, `assets/templates/...`
+- Service config/templates: `assets/services/...`
 
 Contributor rule:
 
