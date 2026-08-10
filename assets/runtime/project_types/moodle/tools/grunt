@@ -8,7 +8,7 @@ set -euo pipefail
 source /opt/mpd/assets/runtime/project_types/moodle/scripts/mpd-env.sh
 
 # Load nvm so node/npm/npx are available
-source /opt/mpd/assets/runtime-base/lib/nvm-env.sh
+source /opt/mpd/assets/runtime/lib/nvm-env.sh
 
 # Ensure we're somewhere within the project
 if [[ ! "$PWD" =~ ^/srv/projects/${PROJECT} ]]; then

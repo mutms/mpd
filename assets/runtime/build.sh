@@ -5,7 +5,7 @@
 # available, used for individual privileged ops only). See AGENTS.md
 # §"Mandatory privilege rule".
 #
-# Phase 1 (assets/runtime-base/bootstrap.sh) has already created the
+# Phase 1 (assets/runtime/bootstrap.sh) has already created the
 # dev user, set up sshd, /etc/mpd identity, /srv/{projects,data,dbs,tools}
 # layout, and ~/.bashrc defaults.
 #
@@ -137,7 +137,7 @@ sudo update-alternatives --set php /opt/mpd/assets/runtime/tools/php
 bash /opt/mpd/assets/runtime/tools/composer-install
 
 # ── Node.js (nvm, for Moodle JS tooling and node project types) ─────────────
-bash /opt/mpd/assets/runtime-base/tools/node-install lts
+bash /opt/mpd/assets/runtime/tools/node-install lts
 
 # ── Caddy: the in-runtime TLS frontdoor ──────────────────────────────────────
 # Project certs and keys are generated on the VM and land under

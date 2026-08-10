@@ -4,7 +4,7 @@
 # invoking user. Idempotent: no-op if already installed.
 #
 # Available in any runtime: the skel-shipped ~/.bashrc puts this
-# directory (/opt/mpd/assets/runtime-base/tools) on the dev user's PATH
+# directory (/opt/mpd/assets/runtime/tools) on the dev user's PATH
 # for every login shell.
 #
 # Usage:

@@ -93,7 +93,7 @@ USER_HOME="/home/${EXTUSER}"
 
 # --- Skel: seed /home/<user>/ from shipped defaults + VM-host overrides ---
 # Two layers, last wins:
-#   1. /opt/mpd/assets/runtime-base/skel/   (shipped defaults — known_hosts,
+#   1. /opt/mpd/assets/runtime/skel/   (shipped defaults — known_hosts,
 #                                            .bashrc with PATH + cd + nvm)
 #   2. /var/lib/mpd/skel/                   (VM-host overrides — optional;
 #                                            user-managed, copied if present)
@@ -106,7 +106,7 @@ USER_HOME="/home/${EXTUSER}"
 # cp -aT copies CONTENTS of src into dst (the trailing T is important —
 # without it cp would create /home/<user>/skel/ instead of merging into
 # /home/<user>/). -a preserves modes; dotfiles included.
-cp -aT /opt/mpd/assets/runtime-base/skel "${USER_HOME}"
+cp -aT /opt/mpd/assets/runtime/skel "${USER_HOME}"
 if [ -d /var/lib/mpd/skel ]; then
     cp -aT /var/lib/mpd/skel "${USER_HOME}"
 fi

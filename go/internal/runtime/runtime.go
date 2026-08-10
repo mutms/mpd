@@ -66,7 +66,7 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 
 	if !p.ImageExists(ctx, BaseImage) {
 		fmt.Fprintf(out, "\n\033[1m==> Building base image '%s'\033[0m\n", BaseImage)
-		if code, err := p.BuildImage(ctx, BaseImage, assets.Dir+"/runtime-base", nil); err != nil || code != 0 {
+		if code, err := p.BuildImage(ctx, BaseImage, assets.Dir+"/runtime", nil); err != nil || code != 0 {
 			return "", fmt.Errorf("Failed to build base image '%s'.", BaseImage)
 		}
 	}
@@ -132,11 +132,11 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 
 	// Phase 1 — root. The one sanctioned root-context script: the dev
 	// user does not exist yet, so nothing else could create it.
-	fmt.Fprintln(out, "\n\033[1m==> Bootstrapping runtime base\033[0m")
+	fmt.Fprintln(out, "\n\033[1m==> Bootstrapping the runtime (phase 1, root)\033[0m")
 	if code, err := p.ExecWithOptions(ctx, o.Container, nil,
-		"bash", "/opt/mpd/assets/runtime-base/bootstrap.sh",
+		"bash", "/opt/mpd/assets/runtime/bootstrap.sh",
 		Name, o.DevUser, o.UID, o.Net.Zone()); err != nil || code != 0 {
-		return "", fmt.Errorf("Runtime base bootstrap failed.")
+		return "", fmt.Errorf("Runtime bootstrap (phase 1) failed.")
 	}
 
 	// Phase 2 — dev user. Everything from here runs unprivileged.

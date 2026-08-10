@@ -211,11 +211,11 @@ func discover(ctx context.Context, p *podman.Client, ev Event, audience Audience
 
 	switch audience {
 	case AudienceRuntime:
-		// base + runtime only. There is deliberately NO project-type
+		// The runtime layer only. There is deliberately NO project-type
 		// layer for runtime-audience events: adding one would fire hooks
-		// outside the v1 hook contract (docs/HOOKS.md).
+		// outside the v1 hook contract (docs/HOOKS.md). The former base
+		// layer merged into this one with assets/runtime-base.
 		dirs = append(dirs,
-			filepath.Join(assetsDir, "runtime-base", "hooks", ev.Name+".d"),
 			filepath.Join(assetsDir, "runtime", "hooks", ev.Name+".d"))
 	case AudienceDatabase:
 		// Per-engine only; DB images are stock, so there is no base layer.

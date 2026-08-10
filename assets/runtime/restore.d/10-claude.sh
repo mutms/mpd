@@ -24,4 +24,4 @@ if [ -f "$SRC/.claude.json" ]; then
 fi
 echo "claude: configuration restored."
 
-bash /opt/mpd/assets/runtime-base/tools/claude-install
+bash /opt/mpd/assets/runtime/tools/claude-install

@@ -153,8 +153,7 @@ Hook scripts live under `hooks/<event-name>.d/` in the layer that
 matches their audience kind:
 
 ```
-assets/runtime-base/hooks/<event>.d/         # → runtime audience, base layer
-assets/runtime/hooks/<event>.d/              # → runtime audience, runtime layer
+assets/runtime/hooks/<event>.d/              # → runtime audience
 assets/databases/<dbtype>/hooks/<event>.d/   # → database audience, per engine
 assets/services/<svc>/hooks/<event>.d/       # → service audience (named service)
 ```

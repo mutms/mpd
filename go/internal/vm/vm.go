@@ -129,7 +129,7 @@ func Home() string {
 // checkout looks incomplete rather than letting a missing path surface
 // later as a confusing container error.
 func AssetsPath() (string, error) {
-	if _, err := os.Stat(AssetsDir + "/runtime-base"); err != nil {
+	if _, err := os.Stat(AssetsDir + "/runtime"); err != nil {
 		return "", fmt.Errorf("Assets not found at %s — clone mpd to /opt/mpd.", AssetsDir)
 	}
 	return AssetsDir, nil

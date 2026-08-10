@@ -586,7 +586,7 @@ func ProjectConfigure(ctx context.Context, out io.Writer, name string, args []st
 		fmt.Fprintf(out, "\n\033[1m==> Updating /srv/projects/%s/mpd.env\033[0m\n", name)
 		for _, m := range mutations {
 			code, err := project.Exec(ctx, d.Podman, container, d.DevUser,
-				"bash", "/opt/mpd/assets/runtime-base/tools/set-mpd-env",
+				"bash", "/opt/mpd/assets/runtime/tools/set-mpd-env",
 				"/srv/projects/"+name+"/mpd.env", m.Key, m.Value)
 			if err != nil || code != 0 {
 				return fmt.Errorf("Failed to update mpd.env (key '%s').", m.Key)

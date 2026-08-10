@@ -14,7 +14,7 @@
 set -euo pipefail
 
 # shellcheck source=/dev/null
-source /opt/mpd/assets/runtime-base/lib/nvm-env.sh
+source /opt/mpd/assets/runtime/lib/nvm-env.sh
 
 RUNTIME_NAME=$(cat /etc/mpd/runtime)
 PROJECT_NAME="$1"

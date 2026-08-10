@@ -6,7 +6,7 @@
 set -euo pipefail
 
 # shellcheck source=/dev/null
-source /opt/mpd/assets/runtime-base/lib/nvm-env.sh
+source /opt/mpd/assets/runtime/lib/nvm-env.sh
 
 PROJECT_NAME="$1"
 PROJECT_DIR="/srv/projects/${PROJECT_NAME}"
@@ -30,7 +30,7 @@ mkdir -p "/srv/meta/${PROJECT_NAME}"
 # do not re-stage here. Layered resolution: /var/lib/mpd/env/mpd-vm.env first,
 # then per-project mpd.env.
 # shellcheck source=/dev/null
-source /opt/mpd/assets/runtime-base/lib/source-mpd-env.sh
+source /opt/mpd/assets/runtime/lib/source-mpd-env.sh
 
 cd "${PROJECT_DIR}"
 

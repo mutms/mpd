@@ -275,8 +275,8 @@ addressing at `/srv/meta/vm.json` on the data volume.
 `assets/` is the extension surface for runtime/type behavior.
 
 - The unified runtime's definition and provisioning: `assets/runtime/...`
-  (`build.sh`, `mpd-defaults.env`, `tools/`, `caddy/`, `backup.d/`,
-  `restore.d/`), on top of the shared base `assets/runtime-base/...`
+  (`Containerfile`, `bootstrap.sh`, `build.sh`, `mpd-defaults.env`,
+  `skel/`, `tools/`, `lib/`, `caddy/`, `backup.d/`, `restore.d/`)
 - Project-type behavior: `assets/runtime/project_types/<type>/...`
   (current types: `moodle`, `astro`)
 - Runtime / project-type tools: single executable per file under
@@ -374,19 +374,24 @@ shape.
 
 ### Asset layout
 
-Tools ship as scripts under `assets/`, in three tiers chosen by scope:
+Tools ship as scripts under `assets/`, in two tiers chosen by scope:
 
 ```
-assets/runtime-base/tools/             # base: works in any container built on the runtime base
-assets/runtime/tools/                  # runtime-wide
+assets/runtime/tools/                  # runtime-wide: any project
 assets/runtime/project_types/<type>/tools/
                                        # type-only: for projects of that type
 ```
 
-All three tiers are read straight out of the assets tree, which is
+Both tiers are read straight out of the assets tree, which is
 bind-mounted at `/opt/mpd` in every container at the same path it has on
 the VM. Nothing is copied and nothing is symlinked. PATH precedence
-across the three tiers is documented below.
+across the two tiers is documented below.
+
+(A third, lowest `assets/runtime-base/tools/` tier existed while the
+runtime was built from a separate base layer. There is exactly one
+runtime, so the layer earned nothing and was merged into
+`assets/runtime/`; the two-phase *privilege* split it also held —
+`bootstrap.sh` as root, `build.sh` as the dev user — is unchanged.)
 
 ### Lineage
 
@@ -402,22 +407,20 @@ system commands take an `mdl-` prefix.
 
 ### PATH precedence
 
-Inside the runtime, PATH is set so type tools win over runtime tools
-win over base tools win over system binaries:
+Inside the runtime, PATH is set so type tools win over runtime tools win
+over system binaries:
 
 ```
 /opt/mpd/assets/runtime/project_types/*/tools/   ← type tools first
 /opt/mpd/assets/runtime/tools/                   ← runtime tools second
-/opt/mpd/assets/runtime-base/tools/              ← base tools third
 [normal system PATH]                             ← system fallback
 ```
 
 PATH is set by the dev user's `~/.bashrc` (shipped via skel —
-`assets/runtime-base/skel/.bashrc`), which prepends the three tiers in
-order: base, then `runtime/tools/`, then each project type's. Each
-prepends, so the last added ranks highest. The type tier is
-self-extending — a new project type with a `tools/` directory is
-picked up with no `.bashrc` edit.
+`assets/runtime/skel/.bashrc`), which prepends `runtime/tools/` and then
+each project type's. Each prepends, so the last added ranks highest. The
+type tier is self-extending — a new project type with a `tools/`
+directory is picked up with no `.bashrc` edit.
 
 The tree is read in place — nothing is copied and nothing is symlinked
 into `/srv` — and `/opt/mpd` is the same tree on the VM and in the
@@ -492,8 +495,8 @@ are banned anywhere in mpd shell code, with no exceptions:
 
 A single bootstrap exception applies: the dev user must exist before
 rule (1) can hold, so exactly one root-context script
-(`assets/runtime-base/bootstrap.sh`) runs as root to create the user
-plus the rest of the runtime base. The orchestrator is the only
+(`assets/runtime/bootstrap.sh`) runs as root to create the user, the
+sshd/sudoers setup and the `/srv` layout. The orchestrator is the only
 caller. After it returns, phase 2 (`assets/runtime/build.sh`)
 runs as the dev user via `podman exec -u`. Shapes (1) and (2) are
 enforced in review.
@@ -574,7 +577,7 @@ starting point for the user's own per-project overrides, with commented
 hints for discoverability.
 
 **Sourcing order at runtime** (in
-`assets/runtime-base/lib/source-mpd-env.sh`):
+`assets/runtime/lib/source-mpd-env.sh`):
 
 1. runtime defaults (`mpd-defaults.env`)
 2. type defaults (`mpd-defaults.env`)
@@ -625,7 +628,7 @@ parses positional pairs matching `^MPD_[A-Z0-9_]+=.*$`, sanitises in Go
 (reserved-key map for strict validators, otherwise a generic safe-charset
 check that blocks shell metacharacters), and rewrites the corresponding line
 in `/srv/projects/<n>/mpd.env` via
-`assets/runtime-base/tools/set-mpd-env`. Empty value deletes the line.
+`assets/runtime/tools/set-mpd-env`. Empty value deletes the line.
 After mutations are applied, the project type's `configure.sh` sources the
 layered env, generates config files, and emits resolved values into
 `/srv/meta/<n>/effective.json` (where mpd reads `dbTag` to provision the
@@ -837,7 +840,7 @@ See detailed docs:
 - `go/internal/net/`, `go/internal/dnsmasq/`, `go/internal/cert/` —
   addressing; DNS record files and their reconciliation
   (`dnsmasq.Reconcile`, records passed in by the cli layer); TLS
-- `assets/` — runtime/type/service scripts/config/templates + `runtime-base/skel/`
+- `assets/` — runtime/type/service scripts/config/templates + `runtime/skel/`
 - `bootstrap/` — VM bring-up steps 10–50 (passwordless sudo, repo clone, apt, build)
 - `setup/` — host-side bootstrap: the sandbox + takeover-prep scripts, `linux/`, `windows/` (macOS lives in the `mpd-virt` repo)
 - `docs/` — behavioral and architecture contracts

@@ -132,7 +132,7 @@ chowns), all enforced at runtime — do not propose alternates.
 - `/var/lib/mpd/skel/` — user-managed dotfile overrides for the runtime
   container. Same idea as `/etc/skel/`: contents are copied into
   `/home/<user>/` at runtime create, layered on top of the shipped
-  `assets/runtime-base/skel/`. Empty by default; user populates as
+  `assets/runtime/skel/`. Empty by default; user populates as
   needed (`.gitconfig`, `.ssh/known_hosts` additions, `.ssh/config`,
   etc.). Last-write-wins: VM-host skel overrides shipped skel.
 - `/var/lib/mpd/state/` — mpd-managed operational state. `projects.json`,
@@ -277,7 +277,7 @@ shell code for a host with a dev user plus passwordless sudo.
 
 **Single bootstrap exception.** The dev user must exist before
 rule (1) can hold. Exactly one root-context script,
-`assets/runtime-base/bootstrap.sh`, runs before the dev user exists
+`assets/runtime/bootstrap.sh`, runs before the dev user exists
 and creates it (along with sudoers, sshd, /etc/mpd identity, /srv
 layout). The orchestrator (the `go/internal/runtime` provisioning
 step) is the only caller. After it returns, phase 2 — `assets/runtime/build.sh`
@@ -372,22 +372,22 @@ same name. Add it to `globalFlags` in `go/internal/cli/complete.go` too.
 
 ### Adding a tool
 
-A tool is a single executable script under one of three locations,
+A tool is a single executable script under one of two locations,
 chosen by scope:
 
-- `assets/runtime-base/tools/` — stack-independent base tools.
-  Examples: `claude-install`, `node-install`.
 - `assets/runtime/tools/` — runtime-wide, independent of project type.
-  Examples: `composer-install`, the `php` wrapper.
+  Examples: `claude-install`, `node-install`, `composer-install`, the
+  `php` wrapper.
 - `assets/runtime/project_types/<type>/tools/` — the project types,
-  highest on PATH, so a type tool wins over a runtime or base tool of
-  the same name.
+  highest on PATH, so a type tool wins over a runtime tool of the same
+  name.
 
-All three are put on PATH by the skel `~/.bashrc` reading the assets
-tree directly at `/opt/mpd/assets/...`. Nothing is copied or symlinked
-into `/srv`.
+Both are put on PATH by the skel `~/.bashrc` reading the assets tree
+directly at `/opt/mpd/assets/...`. Nothing is copied or symlinked into
+`/srv`. (There used to be a third, lower `runtime-base` tier; with one
+runtime it earned nothing and merged into `assets/runtime/`.)
 
-Skeleton (any of the three locations):
+Skeleton (either location):
 
 ```bash
 #!/bin/bash
@@ -410,7 +410,7 @@ fi
 # /var/lib/mpd/env/mpd-vm.env → project mpd.env). source-mpd-env.sh uses a
 # whitelist parser, so a malicious project mpd.env cannot inject code.
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
-. /opt/mpd/assets/runtime-base/lib/source-mpd-env.sh
+. /opt/mpd/assets/runtime/lib/source-mpd-env.sh
 
 # Do the work. Idempotent if -install or -init.
 ...

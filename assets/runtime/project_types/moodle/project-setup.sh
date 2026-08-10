@@ -44,7 +44,7 @@ fi
 
 # --- Resolve effective settings (configure.sh wrote effective.json) ---
 # shellcheck source=/dev/null
-source /opt/mpd/assets/runtime-base/lib/source-mpd-env.sh
+source /opt/mpd/assets/runtime/lib/source-mpd-env.sh
 PHP_VER="${MPD_PHP_VERSION}"
 FPM_PORT=$(jq -r '.phpFpmPort // empty' "$EFFECTIVE_FILE")
 if [ -z "$FPM_PORT" ]; then

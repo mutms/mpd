@@ -103,12 +103,11 @@ func TestScriptsAreOrderedWithinALayer(t *testing.T) {
 // below exists precisely to prove it is ignored.
 func TestLayerOrderExcludesProjectType(t *testing.T) {
 	withAssets(t, map[string]string{
-		"runtime-base/hooks/project-post-start.d/10-base.sh":                 "",
 		"runtime/hooks/project-post-start.d/10-runtime.sh":                   "",
 		"runtime/project_types/moodle/hooks/project-post-start.d/10-type.sh": "",
 	})
 	got := find(Event{Name: EventProjectPostStart}, AudienceRuntime, map[string]string{"mpd.name": "php"})
-	want := []string{"10-base.sh", "10-runtime.sh"}
+	want := []string{"10-runtime.sh"}
 	if len(got) != len(want) {
 		t.Fatalf("got %d scripts, want %d", len(got), len(want))
 	}

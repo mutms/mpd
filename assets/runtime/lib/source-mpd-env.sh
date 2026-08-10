@@ -36,7 +36,7 @@
 #
 # Usage:
 #   PROJECT_NAME=foo
-#   source /opt/mpd/assets/runtime-base/lib/source-mpd-env.sh
+#   source /opt/mpd/assets/runtime/lib/source-mpd-env.sh
 #   PHP_VER="${MPD_PHP_VERSION}"
 
 _mpd_load_env_file() {

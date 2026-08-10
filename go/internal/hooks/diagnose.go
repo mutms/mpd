@@ -119,10 +119,6 @@ func walkHookDirs() []foundDir {
 	var found []foundDir
 
 	found = append(found, scanLayer(
-		filepath.Join(assetsDir, "runtime-base", "hooks"),
-		"assets/runtime-base/hooks", AudienceRuntime)...)
-
-	found = append(found, scanLayer(
 		filepath.Join(assetsDir, "runtime", "hooks"),
 		"assets/runtime/hooks", AudienceRuntime)...)
 

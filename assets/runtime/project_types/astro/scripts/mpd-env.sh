@@ -20,4 +20,4 @@ SERVICE_NAME="mpd-${PROJECT}"
 # /var/lib/mpd/env/mpd-vm.env → project mpd.env, last-assignment-wins.
 PROJECT_NAME="${PROJECT}"
 # shellcheck source=/dev/null
-source /opt/mpd/assets/runtime-base/lib/source-mpd-env.sh
+source /opt/mpd/assets/runtime/lib/source-mpd-env.sh

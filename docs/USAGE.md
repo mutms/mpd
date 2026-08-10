@@ -371,14 +371,15 @@ project-aware (cwd-walk to find the current project) and ready for
 either a human or an AI agent to invoke directly. Full taxonomy in
 [`ARCHITECTURE.md` §7](ARCHITECTURE.md).
 
-**Base tools (`assets/runtime-base/tools/`):**
+**Runtime tools (`assets/runtime/tools/`)** — available in any project.
+Stack-independent ones first:
 
 | Tool             | What it does                                                                                                                                                                                                                 |
 |------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `claude-install` | Idempotent install of Claude Code (Anthropic's CLI) to `~/.local/bin/claude` via the upstream `curl \| bash` installer. Re-runs no-op.                                                                                       |
 | `node-install`   | Idempotent install of nvm + Node.js (LTS by default) into `$HOME/.nvm/` (upstream-standard). After install, `nvm`/`node`/`npm` are on PATH for new login shells; `nvm install <ver>` then works without sudo. Re-runs no-op. |
 
-**Runtime-level (`assets/runtime/tools/`):**
+**Runtime-level, same directory:**
 
 | Tool               | What it does                                                                                                                                      |
 |--------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|

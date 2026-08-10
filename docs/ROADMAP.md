@@ -48,8 +48,8 @@ Real possibilities, not committed work.
 - **Runtime SSH banner** — install a branded `/etc/motd` inside the
   runtime container so users see a welcome message and tool hints when
   they SSH into `runtime.<NNN>.mpd.test`. Content in
-  `assets/runtime-base/motd` (installed by `bootstrap.sh`) plus
-  additions in `assets/runtime/motd` (appended by `build.sh`). Written
+  `assets/runtime/motd` (installed by `bootstrap.sh`, appended to by
+  `build.sh`). Written
   directly to `/etc/motd` — no PAM/update-motd.d needed in containers.
 
 - **`mpd purge` vs `mpd delete` split** — `delete` removes containers,

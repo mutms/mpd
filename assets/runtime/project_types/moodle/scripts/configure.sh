@@ -40,7 +40,7 @@ mkdir -p "/srv/meta/${PROJECT_NAME}"
 # /srv/projects/<n>/mpd.env. Project wins; explicit empty in project blocks
 # user-level fall-through; absent key in project falls through.
 # shellcheck source=/dev/null
-source /opt/mpd/assets/runtime-base/lib/source-mpd-env.sh
+source /opt/mpd/assets/runtime/lib/source-mpd-env.sh
 
 # --- Resolve effective settings ---
 PHP_VER="${MPD_PHP_VERSION}"

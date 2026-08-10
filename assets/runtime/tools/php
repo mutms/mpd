@@ -38,7 +38,7 @@ MPD_PHP_FALLBACK_VERSION=8.2
 if [[ -z "${MPD_PHP_VERSION:-}" ]] && [[ "$PWD" =~ ^/srv/projects/([^/]+) ]]; then
     PROJECT_NAME="${BASH_REMATCH[1]}"
     # shellcheck source=/dev/null
-    source /opt/mpd/assets/runtime-base/lib/source-mpd-env.sh
+    source /opt/mpd/assets/runtime/lib/source-mpd-env.sh
 fi
 
 if [[ -n "${MPD_PHP_VERSION:-}" ]] && [[ -x "/usr/bin/php${MPD_PHP_VERSION}" ]]; then
