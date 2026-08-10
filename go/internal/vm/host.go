@@ -317,17 +317,30 @@ func unitIsActive(ctx context.Context, unit string) bool {
 }
 
 // ConfigureDNSResolver points systemd-resolved at mpd's resolver for the
-// whole root domain.
+// whole root domain, and makes this VM's own zone a search domain.
 //
-// The root domain, not this VM's zone: a VM has exactly one resolver and
-// no business resolving another VM's zone, so NXDOMAIN for a foreign
-// zone is the correct in-VM answer.
+// Routing for the root domain, not this VM's zone: a VM has exactly one
+// resolver and no business resolving another VM's zone, so NXDOMAIN for a
+// foreign zone is the correct in-VM answer.
+//
+// The zone is additionally listed WITHOUT the `~`, which makes it a real
+// search domain, so single-label names resolve here: `runtime` becomes
+// runtime.<NNN>.mpd.test. That is what lets an SSH client reach the
+// runtime by a name a human remembers — with ProxyJump the *jump host*
+// resolves the target through libc, never through ~/.ssh/config, so the
+// short ssh alias cannot serve that case and a resolvable name must.
+// Publishing a bare `runtime` record in dnsmasq instead was rejected (see
+// EnsureSSHConfig): a search domain is scoped to this VM's own resolution
+// and never becomes an answer dnsmasq hands to containers.
+//
+// Cost is one extra query for unqualified names that are not ours;
+// dnsmasq is authoritative for `.test` and answers NXDOMAIN immediately.
 //
 // `reload`, not `restart`, and only when the file actually changed —
 // restarting drops the per-link DNS state resolved is already serving.
-func ConfigureDNSResolver(ctx context.Context, out io.Writer, rootDomain, resolverIP string) error {
+func ConfigureDNSResolver(ctx context.Context, out io.Writer, rootDomain, zone, resolverIP string) error {
 	const path = "/etc/systemd/resolved.conf.d/mpd.conf"
-	content := fmt.Sprintf("[Resolve]\nDNS=%s\nDomains=~%s\n", resolverIP, rootDomain)
+	content := fmt.Sprintf("[Resolve]\nDNS=%s\nDomains=~%s %s\n", resolverIP, rootDomain, zone)
 
 	changed, err := WriteRootOwnedFile(ctx, path, content)
 	if err != nil {
@@ -340,7 +353,8 @@ func ConfigureDNSResolver(ctx context.Context, out io.Writer, rootDomain, resolv
 			return fmt.Errorf("systemctl reload systemd-resolved failed.")
 		}
 	}
-	ui.OK(out, "DNS resolver configured (systemd-resolved → %s for %s).", resolverIP, rootDomain)
+	ui.OK(out, "DNS resolver configured (systemd-resolved → %s for %s; search domain %s).",
+		resolverIP, rootDomain, zone)
 	return nil
 }
 

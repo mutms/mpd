@@ -321,12 +321,23 @@ What is consistent instead is the *prompt* — the runtime's reads
 without either hostname being changed. Details in
 [`USAGE.md`](USAGE.md#ssh-into-the-runtime).
 
-Note what is *not* here: short names in DNS. dnsmasq publishes only
-fully-qualified names, because this resolver is authoritative for the
-whole `.test` tree (`local=/test/`) — a bare `runtime` record would be a
-name with no zone, answered finally for every container on the VM.
-Keeping the short form at the ssh layer scopes it to the one program
-that wants it.
+Note what is *not* here: short names as dnsmasq **records**. dnsmasq
+publishes only fully-qualified names, because this resolver is
+authoritative for the whole `.test` tree (`local=/test/`) — a bare
+`runtime` record would be a name with no zone, answered finally for every
+container on the VM.
+
+The VM itself still resolves the short form, by a narrower route:
+`--vm-setup` gives systemd-resolved this VM's zone as a search domain
+(`Domains=~mpd.test <NNN>.mpd.test`), so `runtime` is qualified to
+`runtime.<NNN>.mpd.test` before it ever reaches dnsmasq. That is scoped
+to the VM's own resolution — containers, which ask dnsmasq directly,
+never see it.
+
+It exists for SSH clients that offer a jump host but no `~/.ssh/config`:
+ProxyJump has the *jump host* resolve the target through libc, so an ssh
+alias cannot help there and a resolvable name must. jump = the VM,
+host = `runtime`.
 
 mpd assumes your laptop user, VM user, and runtime user share the same
 name — that's what makes the bare jump-host form work without explicit

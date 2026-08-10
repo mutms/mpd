@@ -256,9 +256,17 @@ All three use `~/.ssh/id_ed25519`, so no `-A` is needed. The alias is
 a managed block `mpd --vm-setup` writes into the dev user's
 `~/.ssh/config` — it fills in the user, points the alias at the real
 name, and skips host-key verification, which a container that gets
-rebuilt on demand would otherwise trip over on every rebuild. Only the
-FQDN is in DNS; the short names are an ssh-level convenience, so they
-work for `ssh`, `scp` and `rsync` but not in a browser.
+rebuilt on demand would otherwise trip over on every rebuild.
+
+dnsmasq still publishes only fully-qualified names, but `--vm-setup` also
+gives systemd-resolved this VM's zone as a **search domain**, so a bare
+`runtime` resolves on the VM — `getent hosts runtime` answers
+`10.163.<NNN>.2`. That matters for SSH clients that offer a jump host but
+no `~/.ssh/config`: with ProxyJump the *jump host* resolves the target
+through libc, never through an ssh alias, so an app like Terminus can use
+jump = the VM, host = `runtime`. The ssh aliases remain a convenience for
+`ssh`/`scp`/`rsync`; neither they nor the search domain do anything in a
+browser, which needs the FQDN.
 
 Anything you write *outside* the `# >>> mpd runtimes ... >>>` markers is
 preserved across re-runs; anything inside them is regenerated.

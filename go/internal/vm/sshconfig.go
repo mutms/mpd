@@ -37,13 +37,19 @@ type RuntimeHost struct {
 // ~/.ssh/config, so `ssh mpd-130-runtime` reaches runtime.130.mpd.test
 // from a terminal on the VM.
 //
-// The aliases exist because only the FQDN is in DNS. Publishing short
-// names in dnsmasq instead was rejected: this VM's resolver is
+// The aliases exist because only the FQDN is a dnsmasq record. Publishing
+// short names in dnsmasq instead was rejected: this VM's resolver is
 // authoritative for the whole `.test` tree (`local=/test/`), so a name
 // it answers for is answered *finally* — and a bare `runtime` record would
 // be a name with no zone, resolving inside every container on the VM and
 // colliding with anything else that wanted it. An ssh alias is scoped to
 // the one program that needs it, and to this user.
+//
+// Not the only route to the short name: ConfigureDNSResolver gives
+// systemd-resolved this VM's zone as a search domain, which qualifies
+// `runtime` for programs that never read ~/.ssh/config — an SSH client
+// with a jump-host field and no config file, say. That is scoped to the
+// VM's own resolution and still never becomes a dnsmasq answer.
 //
 // One self-contained block rather than a wildcard plus a
 // shared options block: `ssh` has no captures in Host patterns, so the

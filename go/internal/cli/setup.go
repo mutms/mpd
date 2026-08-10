@@ -485,7 +485,7 @@ func setupHostTrustAndDNS(ctx context.Context, out io.Writer, n net.Net) error {
 	vm.InstallFirefoxPolicy(ctx, out, vm.CACertPath, n.Zone())
 
 	ui.Step(out, "DNS resolver for %s", net.RootDomain)
-	return vm.ConfigureDNSResolver(ctx, out, net.RootDomain, n.Gateway())
+	return vm.ConfigureDNSResolver(ctx, out, net.RootDomain, n.Zone(), n.Gateway())
 }
 
 // setupNetworkAndVolume creates the podman network and the data volume.

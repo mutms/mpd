@@ -121,9 +121,12 @@ managed and sandbox VMs; see [`ARCHITECTURE.md` §9](ARCHITECTURE.md#9-identity-
 
 Among the per-user files it maintains, `--vm-setup` writes a marked block
 into the dev user's `~/.ssh/config` giving the runtime a short alias —
-`ssh mpd-<NNN>-runtime`, or bare `ssh runtime` — since DNS carries only
-the fully-qualified `runtime.<NNN>.mpd.test`. The block is regenerated
-on every run; content outside the markers is preserved. See
+`ssh mpd-<NNN>-runtime`, or bare `ssh runtime` — since dnsmasq carries
+only the fully-qualified `runtime.<NNN>.mpd.test`. It also gives
+systemd-resolved this VM's zone as a search domain, so the bare name
+resolves for programs that do not read `~/.ssh/config` (a jump-host-only
+SSH client, for one). The block is regenerated on every run; content
+outside the markers is preserved. See
 [`USAGE.md`](USAGE.md#ssh-into-the-runtime).
 
 `--vm-setup` also converges the runtime container itself: created when
