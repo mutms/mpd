@@ -84,8 +84,9 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 		return "", fmt.Errorf("Failed to create %s: %w", controlDir, err)
 	}
 
-	// Container hostname matches its name, so bash's default \h prompt
-	// after `ssh mpd-<NNN>-runtime` echoes what was typed.
+	// Container hostname matches its name. The prompt the developer sees
+	// is not this string: the skel .bashrc rewrites `\h` to `mpd-<NNN>`,
+	// the host-side alias that reaches this container.
 	args := []string{"-d",
 		"--name", o.Container,
 		"--hostname", o.Container,

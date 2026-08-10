@@ -213,9 +213,13 @@ func (n Net) RuntimeFQDN() string { return n.Host("runtime") }
 // name keyed on it.
 //
 // It is also, not by coincidence, the runtime container's own name and
-// hostname, so the prompt after `ssh mpd-130-runtime` echoes what was
-// typed. The two are composed independently; this is a convention worth
-// keeping, not a dependency.
+// hostname. The two are composed independently; this is a convention
+// worth keeping, not a dependency.
+//
+// The prompt inside the runtime does NOT echo this string: the host-side
+// alias mpd-virt writes is the bare `mpd-130`, and the shipped skel
+// .bashrc rewrites `\h` to match it. The hostname stays as composed here
+// — only the prompt is cosmetic.
 func (n Net) RuntimeAlias() string { return "mpd-" + n.label + "-runtime" }
 
 // DB names a database container: DB("pg17") → "pg17.db.<zone>".

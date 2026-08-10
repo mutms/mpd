@@ -80,3 +80,19 @@ export NVM_DIR="$HOME/.nvm"
 # that sets its own directory: PhpStorm's remote sessions, and `podman exec
 # -w`, which the shell then silently overrode. A login shell that moves you
 # is a shell that lies to its caller.
+
+# --- Prompt: match the alias you typed -------------------------------------
+# The host-side alias for this container is `mpd-<NNN>` (mpd-virt writes it),
+# but the container's hostname is `mpd-<NNN>-runtime`, so `\h` in Debian's
+# default PS1 would echo something you did not type. Rewrite just the `\h`
+# token in the PS1 Debian already built, so its colours and the chroot
+# prefix survive untouched. Hostnames themselves are never changed - mpd's
+# identity, DNS and `podman ps` all still see the real name.
+if [ -n "${PS1-}" ]; then
+    _mpd_h=${HOSTNAME%%.*}
+    _mpd_h=${_mpd_h%-runtime}
+    case "$PS1" in
+        *'\h'*) PS1="${PS1//\\h/$_mpd_h}" ;;
+    esac
+    unset _mpd_h
+fi

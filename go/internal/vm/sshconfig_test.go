@@ -58,7 +58,7 @@ func TestStripBlockPreservesUserContentAndIsIdempotent(t *testing.T) {
 	user := "Host forge\n    HostName forge.example.com\n    User petr\n"
 
 	first := user + "\n" + renderSSHBlock("skodak", testHosts())
-	stripped := strings.TrimRight(stripBlock(first), "\n")
+	stripped := strings.TrimRight(stripBlock(first, sshBlockStart, sshBlockEnd), "\n")
 	if stripped != strings.TrimRight(user, "\n") {
 		t.Errorf("user content not preserved exactly:\n%q\nwant:\n%q",
 			stripped, strings.TrimRight(user, "\n"))
@@ -75,7 +75,7 @@ func TestStripBlockPreservesUserContentAndIsIdempotent(t *testing.T) {
 
 func TestStripBlockOnFileWithoutBlock(t *testing.T) {
 	user := "Host forge\n    HostName forge.example.com"
-	if got := stripBlock(user); got != user {
+	if got := stripBlock(user, sshBlockStart, sshBlockEnd); got != user {
 		t.Errorf("stripBlock mangled a file with no managed block: %q", got)
 	}
 }
@@ -84,7 +84,7 @@ func TestStripBlockOnFileWithoutBlock(t *testing.T) {
 // than leaving a stray marker that would compound on every run.
 func TestStripBlockHandlesUnterminatedBlock(t *testing.T) {
 	body := "Host forge\n    HostName forge.example.com\n" + sshBlockStart + "\nHost mpd-130-php\n"
-	got := stripBlock(body)
+	got := stripBlock(body, sshBlockStart, sshBlockEnd)
 	if strings.Contains(got, sshBlockStart) {
 		t.Errorf("left a stray start marker: %q", got)
 	}

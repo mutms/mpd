@@ -113,6 +113,11 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 
+	ui.Step(out, "VM shell prompt")
+	if err := vm.EnsurePrompt(out); err != nil {
+		return err
+	}
+
 	certs, err := setupCertificates(ctx, out, n)
 	if err != nil {
 		return err
@@ -452,10 +457,11 @@ func setupCertificates(ctx context.Context, out io.Writer, n net.Net) (certState
 
 // runtimeSSHHosts builds the ~/.ssh/config entry for the runtime.
 //
-// The VM-qualified alias comes first because it is the same string the
-// workstation's ~/.ssh/config uses for the hop from outside — `ssh
-// mpd-130-runtime` means one thing whether typed on the laptop or in
-// the VM. The bare `runtime` and the FQDN also answer.
+// The VM-qualified alias comes first because it is the unambiguous name
+// here: in the VM the bare `mpd-130` is this machine's own hostname, so
+// it cannot also mean the runtime. On the laptop it can, and does — the
+// host-side block mpd-virt writes maps `mpd-130` to the runtime and
+// `mpd-130-vm` to this VM. The bare `runtime` and the FQDN also answer.
 func runtimeSSHHosts(n net.Net) []vm.RuntimeHost {
 	fqdn := n.RuntimeFQDN()
 	return []vm.RuntimeHost{{

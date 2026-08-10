@@ -224,7 +224,7 @@ has a real SSH endpoint. From your laptop, use the ProxyJump alias
 overlay or proxy running:
 
 ```bash
-ssh -A mpd-<NNN>-runtime
+ssh -A mpd-<NNN>
 ```
 
 Inside the VM the same alias works without the jump. Add `-A` only when
@@ -263,10 +263,13 @@ work for `ssh`, `scp` and `rsync` but not in a browser.
 Anything you write *outside* the `# >>> mpd runtimes ... >>>` markers is
 preserved across re-runs; anything inside them is regenerated.
 
-`mpd-<NNN>-runtime` is also the runtime container's own hostname, so your
-shell prompt after connecting echoes what you typed. It's the same
-string the workstation's `~/.ssh/config` uses for the hop in from
-outside, so the command reads the same in both places.
+`mpd-<NNN>-runtime` is also the runtime container's own hostname, but it
+is not what the prompt shows: the shipped skel `.bashrc` rewrites bash's
+`\h` to `mpd-<NNN>`, the alias the workstation uses to reach it, and the
+VM's own prompt reads `mpd-<NNN>-vm` for the same reason. So a prompt
+always tells you which of the two boxes you are on, in the same words
+`ssh` takes on the laptop. Cosmetic only — `hostname`, `podman ps` and
+DNS all still report the real names.
 
 `mpd --vm-setup` populates the runtime's `authorized_keys` with two key
 sources: the laptop key (from the VM's `~/.ssh/authorized_keys`) and
@@ -281,7 +284,7 @@ You don't need a second terminal to drive mpd. `mpd` is on `PATH` inside
 the runtime and the project verbs work there:
 
 ```bash
-ssh mpd-<NNN>-runtime
+ssh mpd-<NNN>
 cd /srv/projects/newproject          # a directory that isn't a project yet
 mpd create --type=moodle             # scaffolds it
 mpd configure newproject
@@ -453,7 +456,7 @@ Two things it is for:
 mpd reset moodle45
 mpd configure moodle45            # fresh, empty database
 mpd start moodle45
-# then install Moodle again from the runtime: ssh mpd-<NNN>-runtime, mdl-install
+# then install Moodle again from the runtime: ssh mpd-<NNN>, mdl-install
 
 # Switch database engine on an existing site.
 mpd reset moodle45

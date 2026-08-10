@@ -47,7 +47,7 @@ demo moodle/release/4.5.12 demo45    # fully installed Moodle in one command
 ```
 
 `demo` prints the URL and admin credentials — open it in the VM's Firefox,
-and `ssh mpd-<NNN>-runtime` for a shell inside the runtime serving it. Recipes
+and `ssh mpd-<NNN>` for a shell inside the runtime serving it. Recipes
 come from [mudev](https://github.com/mutms/mudev); `demo` with no arguments
 lists what's available. `mpd --vm-upgrade` updates mpd in place later.
 

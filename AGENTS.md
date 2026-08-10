@@ -192,7 +192,7 @@ The binary is Go, built from `go/` into `bin/mpd` by `make install`:
 - `go/internal/ui/` — the step/ok/warn output shapes
 
 Runtime/project-type behavior + service container assets live under `assets/`:
-- `assets/machine/` — VM-level assets deployed to the mpd VM itself
+- `assets/vm/` — VM-level assets deployed to the mpd VM itself
   (e.g. `motd` — installed to `/etc/motd` by provisioning scripts)
 - `assets/runtime/...` — the runtime definition: `build.sh`,
   `mpd-defaults.env`, `tools/`, `caddy/` (the in-runtime TLS frontdoor),
@@ -331,9 +331,12 @@ Almost everything is a tool. The verb set is fixed and small — `create`,
 `configure`, `start`, `stop`, `reset`, `run`, `delete`, `show`, `help`
 — all Go, all in the control plane. Project-type-specific functionality (cron, phpunit,
 composer, …) is exposed inside the runtime container where SSH sessions
-and AI agents run; you reach it via PATH after `ssh mpd-<NNN>-runtime`
-(the alias `mpd --vm-setup` writes into the VM's `~/.ssh/config`; the
-long form `ssh user@runtime.<NNN>.mpd.test` is equivalent).
+and AI agents run; you reach it via PATH after `ssh mpd-<NNN>` from the
+workstation, or `ssh mpd-<NNN>-runtime` / `ssh runtime` from inside the
+VM (the aliases `mpd --vm-setup` writes into the VM's `~/.ssh/config`;
+the long form `ssh user@runtime.<NNN>.mpd.test` is equivalent). In the VM
+the bare `mpd-<NNN>` is that machine's own hostname, which is why the
+short form is host-side only.
 
 If you find yourself writing a verb whose body is essentially
 `podman exec <container> <tool>`, you're writing a redundant verb.
@@ -493,7 +496,7 @@ found." Internal sudo on specific operations is the right shape.
 
 1. Rebuild the runtime: `mpd --runtime-rebuild` (prompts; `--yes`
    skips it, running projects are restored afterwards).
-2. SSH in: `ssh mpd-<NNN>-runtime` (or `ssh runtime` from inside the VM).
+2. SSH in: `ssh mpd-<NNN>` (or `ssh runtime` from inside the VM).
 3. `which <new-tool>` resolves to the expected path under
    `/opt/mpd/assets/`.
 4. Run with no project context (negative test) — should fail

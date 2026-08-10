@@ -371,14 +371,14 @@ func WriteRootOwnedFile(ctx context.Context, path, content string) (bool, error)
 	return true, nil
 }
 
-// InstallLoginBanner renders assets/machine/motd for this VM and makes
+// InstallLoginBanner renders assets/vm/motd for this VM and makes
 // it the static /etc/motd.
 //
 // Debian's update-motd.d scripts regenerate /etc/motd on login and would
 // overwrite it, so they are disabled first. The banner names the portal
 // URL, which is per-VM, hence a template rather than a shipped file.
 func InstallLoginBanner(ctx context.Context, out io.Writer, zone string) error {
-	source := AssetsDir + "/machine/motd"
+	source := AssetsDir + "/vm/motd"
 	template, err := os.ReadFile(source)
 	if err != nil {
 		return fmt.Errorf("motd asset missing: %s", source)
@@ -403,6 +403,6 @@ func InstallLoginBanner(ctx context.Context, out io.Writer, zone string) error {
 	}); err != nil || code != 0 {
 		return fmt.Errorf("Failed to install /etc/motd from %s.", source)
 	}
-	ui.OK(out, "/etc/motd installed from assets/machine/motd")
+	ui.OK(out, "/etc/motd installed from assets/vm/motd")
 	return nil
 }

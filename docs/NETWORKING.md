@@ -297,21 +297,28 @@ is down.
 
 ```
 # ~/.ssh/config (written automatically by mpd-virt):
-Host mpd-<NNN>-runtime
+Host mpd-<NNN>
     HostName runtime.<NNN>.mpd.test
     User user
-    ProxyJump mpd-<NNN>
+    ProxyJump mpd-<NNN>-vm
+
+Host mpd-<NNN>-vm
+    HostName <the VM's address>
+    User user
 ```
 
-IDEs (PHPStorm Gateway, VS Code Remote-SSH) configure ProxyJump the same
-way.
+The bare name is the runtime because that is where the work happens; the
+VM that manages the containers takes the `-vm` suffix. IDEs (PHPStorm
+Gateway, VS Code Remote-SSH) configure ProxyJump the same way.
 
-**From a terminal inside the VM** — `mpd --vm-setup` writes the same
-`mpd-<NNN>-runtime` alias into the VM's own `~/.ssh/config`, minus the
+**From a terminal inside the VM** — `mpd --vm-setup` writes
+`mpd-<NNN>-runtime` into the VM's own `~/.ssh/config`, minus the
 ProxyJump (the runtime subnet is directly attached there); the bare
-`runtime` and the FQDN also answer. Deliberately the same alias as the
-host-side entry above, so `ssh mpd-<NNN>-runtime` is one command
-whether typed on the laptop or in the VM. Details in
+`runtime` and the FQDN also answer. The short host-side spelling cannot
+be reused here: in the VM `mpd-<NNN>` is that machine's own hostname.
+What is consistent instead is the *prompt* — the runtime's reads
+`mpd-<NNN>` and the VM's `mpd-<NNN>-vm`, matching the host-side aliases,
+without either hostname being changed. Details in
 [`USAGE.md`](USAGE.md#ssh-into-the-runtime).
 
 Note what is *not* here: short names in DNS. dnsmasq publishes only

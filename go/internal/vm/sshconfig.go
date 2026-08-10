@@ -72,7 +72,7 @@ func EnsureSSHConfig(out io.Writer, user string, hosts []RuntimeHost) error {
 		return fmt.Errorf("Failed to read %s: %w", path, err)
 	}
 
-	content := strings.TrimRight(stripBlock(string(existing)), "\n")
+	content := strings.TrimRight(stripBlock(string(existing), sshBlockStart, sshBlockEnd), "\n")
 	block := renderSSHBlock(user, hosts)
 	if content != "" {
 		content += "\n\n"
@@ -105,21 +105,22 @@ func EnsureSSHConfig(out io.Writer, user string, hosts []RuntimeHost) error {
 }
 
 // stripBlock removes a previously written managed block, leaving the rest
-// of the file untouched.
+// of the file untouched. Shared by every dotfile mpd co-owns with the
+// developer, hence the markers as parameters.
 //
 // An unterminated block — a start marker with no end, from a truncated
 // write or a hand-edit — takes the remainder of the file with it. That is
 // the safe reading: the alternative is treating the developer's own
 // trailing content as part of the block and duplicating a start marker
 // above it, which compounds on every run.
-func stripBlock(body string) string {
+func stripBlock(body, start, end string) string {
 	var kept []string
 	inBlock := false
 	for _, line := range strings.Split(body, "\n") {
 		switch {
-		case strings.TrimSpace(line) == sshBlockStart:
+		case strings.TrimSpace(line) == start:
 			inBlock = true
-		case inBlock && strings.TrimSpace(line) == sshBlockEnd:
+		case inBlock && strings.TrimSpace(line) == end:
 			inBlock = false
 		case !inBlock:
 			kept = append(kept, line)

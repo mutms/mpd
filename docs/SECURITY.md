@@ -419,7 +419,7 @@ the VM at `/srv`, so `/srv/backups/` is reached over the VM's own sshd —
 the connection the developer already has.
 
 Reached via SSH ProxyJump through the VM's sshd — the single alias
-mpd-virt writes (`mpd-<NNN>-runtime`). The jump lands on the VM's sshd,
+mpd-virt writes (`mpd-<NNN>`). The jump lands on the VM's sshd,
 which reaches the runtime over the internal bridge, so it needs no
 overlay. No published ports on the VM's LAN address.
 

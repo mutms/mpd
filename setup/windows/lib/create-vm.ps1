@@ -260,7 +260,7 @@ Write-Step "Setting login banner"
 Send-SshScript -User $VmUser -RemoteHost $VmIp -Script @"
 set -e
 sudo chmod -x /etc/update-motd.d/* 2>/dev/null || true
-sudo cp /opt/mpd/assets/machine/motd /etc/motd
+sudo cp /opt/mpd/assets/vm/motd /etc/motd
 "@
 Write-Ok "Login banner set"
 

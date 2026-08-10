@@ -182,7 +182,7 @@ The runtime exists before any project does, so the IDE-first workflow
 needs no extra step:
 1. `mpd --vm-setup` has already provisioned the runtime
 2. prepare a code directory inside it (IDEs may git clone for you over
-   SSH — `ssh mpd-<NNN>-runtime`)
+   SSH — `ssh mpd-<NNN>`)
 3. register/attach the existing directory as a project (project command
    path)
 
