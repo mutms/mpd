@@ -29,6 +29,9 @@ In rough order of when you'll want them:
   what mpd is and isn't designed to protect. Read when you're
   deciding whether to let an AI agent loose, or when something
   feels too privileged.
+- [`DEBUGGING.md`](DEBUGGING.md) — catalogue of real symptoms with
+  the diagnostic that confirms each and the fix. Read when the runtime
+  or IDE session misbehaves (lockups, thread/fork exhaustion, …).
 
 ## If you're working on mpd itself
 

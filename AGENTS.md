@@ -228,6 +228,7 @@ across docs.
 - *(Host-side design notes for the `mpd-virt` orchestrator live in
   that repo's own `docs/`.)*
 - `docs/USAGE.md` — day-to-day workflow (bootstrap → first project → SSH-into-runtime)
+- `docs/DEBUGGING.md` — symptom catalogue: real runtime/IDE failures, the diagnostic that confirms each, and the fix
 - `docs/NETWORKING.md` — networking model (WireGuard overlay / SOCKS via mpd-virt + mpd-proxy)
 - `docs/SECURITY.md` — security model
 - macOS automation (Parallels / UTM) lives in the sibling `mpd-virt` repo: <https://github.com/mutms/mpd-virt>
