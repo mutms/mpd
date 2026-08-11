@@ -6,3 +6,18 @@ RUN apt-get update -qq && \
     curl wget ca-certificates gnupg2 lsb-release \
     openssh-server git unzip && \
     rm -rf /var/lib/apt/lists/*
+
+# Lift systemd's per-service task cap. DefaultTasksMax defaults to 15% of
+# the pids controller limit (307 when the container ships podman's default
+# pids-limit of 2048), and EVERY service inherits it — including
+# ssh.service, whose cgroup holds every SSH session and therefore the
+# whole IDE remote backend + AI agent + git that run under it. A modern
+# JetBrains backend alone approaches 300 threads, so git's parallel lstat
+# or a bare `bash` fork tips the service over 307 and dies with EAGAIN
+# ("unable to create threaded lstat", "fork: retry: Resource temporarily
+# unavailable"). The real ceiling is the container-wide pids-limit
+# (runtime.PidsLimit); this stops systemd from imposing a second, tiny,
+# surprise cap beneath it.
+RUN mkdir -p /etc/systemd/system.conf.d && \
+    printf '[Manager]\nDefaultTasksMax=infinity\n' \
+    > /etc/systemd/system.conf.d/mpd-tasksmax.conf
