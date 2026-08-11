@@ -8,9 +8,15 @@
 //
 // # What the VM will and will not do
 //
-// The daemon never runs a program named in a request. It validates the
-// argv against a closed, compiled-in vocabulary and then spawns the mpd
-// binary itself; the request chooses a verb, never an executable.
+// The daemon never runs a program named in a request. It refuses a
+// small, compiled-in denylist and forwards everything else to the mpd
+// binary it spawns itself; the request chooses a verb or flag, never an
+// executable. With a single runtime there is no other tenant to isolate,
+// so the boundary is a denylist of the genuinely dangerous — commands
+// that act on the VM, tear down the runtime the caller is standing in,
+// or drive a control-plane daemon — rather than an allowlist of project
+// verbs. db and service management, project verbs, `--runtime-backup`,
+// `list` and `version` all pass.
 //
 // # Identity comes from the channel
 //
@@ -83,14 +89,56 @@ var blockedVerbs = map[string]string{
 	"run": "you are already inside the runtime — run the command directly",
 }
 
-// AllowedVerbs returns the verbs a runtime may ask for, sorted.
+const (
+	reasonVM      = "it acts on the VM itself"
+	reasonRuntime = "it would tear down the runtime you are calling from"
+	reasonDaemon  = "it is a control-plane daemon started by systemd, not an interactive command"
+)
+
+// blockedFlags are the global-flag commands a runtime may NOT ask for,
+// each with the reason shown to the caller. Everything not listed —
+// project verbs, --db-*, --service-* (deletes and purges included),
+// --runtime-backup, the read-only --vm-status and --check-hooks, list,
+// version, and the --yes/--debug/--help modifiers — is forwarded: with a
+// single runtime there is no other tenant to protect, so the fence is
+// only around what would terminate the runtime the caller is standing in
+// (directly, or by stopping/rebuilding the VM under it) or start a
+// control-plane daemon that would hang or conflict.
+//
+// A pinning test (TestEveryGlobalFlagClassified) cross-checks this map
+// against cli.GlobalFlags, so a newly added flag cannot reach a runtime
+// silently: it fails the build until classified here or in that test's
+// allowed set.
+var blockedFlags = map[string]string{
+	"--vm-setup":   reasonVM,
+	"--vm-upgrade": reasonVM,
+	"--vm-start":   reasonVM,
+	"--vm-stop":    reasonVM,
+	"--vm-restart": reasonVM,
+
+	"--runtime-rebuild": reasonRuntime,
+	"--runtime-restore": reasonRuntime,
+
+	"--web":     reasonDaemon,
+	"--control": reasonDaemon,
+}
+
+// flagName strips any =value so a flag matches its denylist key whether
+// written --vm-stop or (hypothetically) --vm-stop=1. A non-flag argument
+// — a project name, a KEY=VALUE configure setting — never matches,
+// because every denied entry begins with "--".
+func flagName(arg string) string {
+	name, _, _ := strings.Cut(arg, "=")
+	return name
+}
+
+// AllowedVerbs returns the project verbs a runtime may ask for, sorted.
 //
 // Derived from cli.ProjectVerbs rather than copied, so the two cannot
-// drift. Project verbs are exactly the right set: everything else in the
-// CLI is a global flag acting on the VM or its infrastructure, which is
-// not a runtime's business. A pinning test guards the derivation, so
-// adding a verb forces a deliberate decision about runtime exposure
-// instead of granting it silently.
+// drift, minus blockedVerbs. Global-flag commands are gated separately
+// (blockedFlags), so this is the project-verb slice specifically — used
+// by the pinning test that keeps adding a verb a deliberate decision
+// about runtime exposure rather than a silent grant.
 func AllowedVerbs() []string {
 	var out []string
 	for _, v := range cli.ProjectVerbs {
@@ -142,24 +190,18 @@ func (g Guard) Check(r Request) (Decision, error) {
 	if reason, blocked := blockedVerbs[verb]; blocked {
 		return Decision{}, fmt.Errorf("mpd %s is not available from inside a runtime: %s", verb, reason)
 	}
-	if !cli.IsProjectVerb(verb) {
-		return Decision{}, fmt.Errorf(
-			"only project commands work from inside a runtime; %q is not one.\n"+
-				"Available here: %s.\n"+
-				"Anything acting on the VM, a runtime or a database belongs in a VM terminal.",
-			verb, strings.Join(AllowedVerbs(), ", "))
-	}
 
-	// Defence in depth. Cobra does not inherit the root command's
-	// non-persistent flags into subcommands, so `mpd create x --vm-setup`
-	// would already fail as an unknown flag — but a security boundary
+	// Denylist. A handful of global-flag commands act on the VM, the
+	// runtime container itself, or a control-plane daemon; refuse those
+	// wherever they appear in the argv, so one cannot ride along on a
+	// project verb (`mpd start x --vm-stop`) either. Cobra would already
+	// reject that combination as an unknown flag, but a security boundary
 	// should not rest on another package's flag-inheritance rules.
-	for _, arg := range r.Argv[1:] {
-		for _, prefix := range []string{"--vm-", "--runtime-", "--db-", "--service-"} {
-			if strings.HasPrefix(arg, prefix) {
-				return Decision{}, fmt.Errorf(
-					"%s flags are not available from inside a runtime (%s)", prefix, arg)
-			}
+	for _, arg := range r.Argv {
+		if reason, blocked := blockedFlags[flagName(arg)]; blocked {
+			return Decision{}, fmt.Errorf(
+				"mpd %s is not available from inside a runtime: %s.\n"+
+					"Run it from a VM terminal instead.", flagName(arg), reason)
 		}
 	}
 
@@ -168,6 +210,15 @@ func (g Guard) Check(r Request) (Decision, error) {
 		return Decision{}, err
 	}
 	decide := func(argv []string) Decision { return Decision{Argv: argv, Dir: dir} }
+
+	// A global-flag command (--db-*, --service-*, --runtime-backup) or a
+	// non-project verb (list, version) is not project-scoped: there is no
+	// target project to resolve, so hand it straight to the child, which
+	// owns both the argument parsing and the "unknown command" error for
+	// anything bogus. Only project verbs get the target cross-check below.
+	if !cli.IsProjectVerb(verb) {
+		return decide(r.Argv), nil
+	}
 
 	// `help` prints text and touches nothing. With no project argument it
 	// prints the general help, so there is no target to cross-check.

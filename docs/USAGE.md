@@ -318,12 +318,16 @@ it. Because your terminal's own file descriptors are handed to the process
 on the VM, output streams live and in colour, exit codes propagate into
 `$?`, and a confirmation prompt like `mpd delete`'s reads your keystrokes.
 
-**Only project verbs**: `create`, `configure`, `start`, `stop`, `reset`,
-`delete`, `show`, `help`. Everything that acts on the VM or its
-infrastructure stays in a VM terminal — no `--vm-*`, no `--runtime-*`,
-no `--db-*`, no `--service-*`. A runtime has no business rebuilding
-itself or toggling infrastructure. `mpd run` is refused too: you are
-already in the runtime, so run the command directly.
+**Most of mpd works here.** Project verbs (`create`, `configure`,
+`start`, `stop`, `reset`, `delete`, `show`, `help` — deletes included),
+database management (`--db-*`), extra services (`--service-*`),
+`--runtime-backup`, the read-only `--vm-status` and `--check-hooks`,
+`list` and `version` all forward to the VM. A short denylist stays in a VM
+terminal — the things that would terminate the runtime you're sitting in:
+the VM lifecycle (`--vm-setup`/`--vm-upgrade`/`--vm-start`/`--vm-stop`/`--vm-restart`),
+the runtime lifecycle (`--runtime-rebuild`, `--runtime-restore`), and the
+control-plane daemons (`--web`, `--control`). `mpd run` is refused too:
+you are already in the runtime, so run the command directly.
 
 Two details worth knowing:
 

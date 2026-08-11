@@ -150,16 +150,20 @@ there. Output, colour, TTY behaviour and interactive prompts are the
 caller's, because the process on the VM writes to the caller's terminal
 directly rather than through a relay.
 
-Only project verbs are accepted — `create`, `configure`, `start`, `stop`,
-`reset`, `delete`, `show`, `help`. `run` and every global flag are refused
-with a message naming what to use instead; as defence in depth the guard
-rejects any `--vm-`, `--runtime-`, `--db-` or `--service-` argument
-explicitly. With a single runtime there is no cross-runtime ownership
-check any more — every registered project belongs to the caller — and a
-declared `--type` merely has to be one the assets tree defines
-(`moodle`, `astro`). `version` is answered locally, since it describes
-the binary being asked and `/opt/mpd` is the same checkout on both
-sides.
+A compiled-in denylist is refused with a message naming what to use
+instead — the mutating `--vm-*` lifecycle flags,
+`--runtime-rebuild`/`--runtime-restore`, the `--web`/`--control` daemons,
+and the `run` verb (which would loop back into the runtime). The denylist
+is scanned across the whole argv, so a blocked flag cannot ride along on a
+project verb. Everything else forwards: project verbs (including `delete`),
+database management (`--db-*`, `--db-delete` included), extra services
+(`--service-*`, purge included), `--runtime-backup`, the read-only
+`--vm-status` and `--check-hooks`, and `list`. With a
+single runtime there is no cross-runtime ownership check any more — every
+registered project belongs to the caller — and a declared `--type` merely
+has to be one the assets tree defines (`moodle`, `astro`). `version` is
+answered locally, since it describes the binary being asked and
+`/opt/mpd` is the same checkout on both sides.
 
 Disable with `MPD_RUNTIME_CONTROL=off` in `/var/lib/mpd/env/mpd-vm.env`;
 it is read per request, so no restart is needed. Full model in

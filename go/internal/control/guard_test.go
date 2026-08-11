@@ -102,20 +102,79 @@ func TestEveryAllowedVerbPasses(t *testing.T) {
 	}
 }
 
-func TestGlobalFlagsAndUnknownVerbsRefused(t *testing.T) {
+// Every flag on the denylist is refused, in either flag form.
+func TestBlockedFlagsRefused(t *testing.T) {
 	g := testGuard(t, "runtime")
 	for _, argv := range [][]string{
 		{"--vm-setup"},
-		{"--runtime-rebuild"},
-		{"--db-delete=mariadb-11-8"},
-		{"--service-enable=mailpit"},
+		{"--vm-upgrade"},
+		{"--vm-start"},
 		{"--vm-stop"},
-		{"list"},
-		{"status"},
-		{"nonsense"},
+		{"--vm-restart"},
+		{"--runtime-rebuild"},
+		{"--runtime-restore"},
+		{"--web"},
+		{"--control"},
+		{"--vm-stop=1"}, // =value form must match the same key
 	} {
 		if _, err := g.Check(Request{Argv: argv, Cwd: "/srv"}); err == nil {
 			t.Errorf("%v should be refused from a runtime", argv)
+		}
+	}
+}
+
+// The denylist inversion opened db/service management, --runtime-backup
+// and list/version to the runtime; the guard must let them through (the
+// child owns the actual argument handling). An unknown token also passes
+// the guard — the child produces the canonical "unknown command" error,
+// not a second differently-worded one here.
+func TestNewlyAllowedCommandsPass(t *testing.T) {
+	g := testGuard(t, "runtime")
+	for _, argv := range [][]string{
+		{"--db-create", "postgres:18"},
+		{"--db-delete=mariadb-11-8"},
+		{"--service-enable", "mailpit"},
+		{"--service-purge=mailpit"},
+		{"--runtime-backup"},
+		{"--vm-status"},   // read-only, allowed
+		{"--check-hooks"}, // read-only diagnostic, allowed
+		{"list"},
+		{"nonsense"},
+	} {
+		if _, err := g.Check(Request{Argv: argv, Cwd: "/srv"}); err != nil {
+			t.Errorf("%v should pass the guard, got: %v", argv, err)
+		}
+	}
+}
+
+// Every global flag must be either denied or explicitly allowed from a
+// runtime — never unclassified. This is the safe-by-default pin: adding a
+// flag to cli.GlobalFlags without a decision here fails the build.
+func TestEveryGlobalFlagClassified(t *testing.T) {
+	allowedFromRuntime := map[string]bool{
+		"--runtime-backup":    true,
+		"--service-enable":    true,
+		"--service-disable":   true,
+		"--service-uninstall": true,
+		"--service-purge":     true,
+		"--db-create":         true,
+		"--db-start":          true,
+		"--db-stop":           true,
+		"--db-delete":         true,
+		"--vm-status":         true, // read-only
+		"--check-hooks":       true, // read-only diagnostic
+		"--yes":               true, // modifier, not an action
+		"--debug":             true, // modifier, not an action
+		"--help":              true, // modifier, not an action
+	}
+	for _, flag := range cli.GlobalFlags {
+		_, blocked := blockedFlags[flag]
+		// Exactly one of the two must hold. Both-false is unclassified
+		// (a new flag); both-true is a contradiction.
+		if blocked == allowedFromRuntime[flag] {
+			t.Errorf("global flag %q is not classified exactly once: "+
+				"put it in blockedFlags or this test's allowed set.\n"+
+				"A flag was added — decide whether a runtime may reach it.", flag)
 		}
 	}
 }
@@ -132,14 +191,15 @@ func TestRunIsRefusedWithGuidance(t *testing.T) {
 	}
 }
 
-// A global flag smuggled in after a legitimate verb must not slip through.
-func TestGlobalFlagAfterVerbRefused(t *testing.T) {
+// A blocked flag smuggled in after a legitimate verb must not slip
+// through — the scan covers the whole argv, not just the first token.
+func TestBlockedFlagAfterVerbRefused(t *testing.T) {
 	g := testGuard(t, "runtime", state.Project{Name: "moodle45", RuntimeName: "runtime"})
 	for _, argv := range [][]string{
 		{"start", "moodle45", "--vm-stop"},
 		{"create", "x", "--runtime-rebuild"},
-		{"show", "moodle45", "--db-delete=x"},
-		{"configure", "moodle45", "--service-purge=mailpit"},
+		{"show", "moodle45", "--control"},
+		{"configure", "moodle45", "--vm-setup"},
 	} {
 		if _, err := g.Check(Request{Argv: argv, Cwd: "/srv"}); err == nil {
 			t.Errorf("%v should be refused", argv)

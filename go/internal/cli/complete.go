@@ -39,9 +39,12 @@ func IsProjectVerb(token string) bool {
 	return false
 }
 
-// globalFlags is every long flag mpd accepts. Mirrors the flag set in
-// cmd/mpd/main.go — add new entries in both places.
-var globalFlags = []string{
+// GlobalFlags is every long flag mpd accepts. Mirrors the flag set in
+// cmd/mpd/main.go — add new entries in both places. Exported so the
+// runtime control guard can pin its denylist against the full set
+// (control.TestEveryGlobalFlagClassified), forcing a deliberate
+// runtime-exposure decision whenever a flag is added.
+var GlobalFlags = []string{
 	"--vm-setup",
 	"--vm-upgrade",
 	"--vm-start",
@@ -119,11 +122,11 @@ func candidates(cword int, words []string, s state.Store, a assets.Tree) []strin
 
 func firstTokenCandidates(prefix string) []string {
 	if strings.HasPrefix(prefix, "-") {
-		return globalFlags
+		return GlobalFlags
 	}
 	out := append([]string{}, ProjectVerbs...)
 	sort.Strings(out)
-	return append(append(out, "list", "version"), globalFlags...)
+	return append(append(out, "list", "version"), GlobalFlags...)
 }
 
 func optionValues(flag string, s state.Store, a assets.Tree) []string {

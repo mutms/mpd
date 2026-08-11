@@ -300,9 +300,14 @@ writing project metadata, DNS records and certs, podman lifecycle. Surface:
 `mpd <verb> <project>`. Lifetime: one invocation per CLI call.
 
 *Where a verb is typed and where it runs are separate questions.* Project
-verbs can also be **typed inside a runtime**: the same binary detects it
+verbs — along with db/service management, `--runtime-backup` and `list` —
+can also be **typed inside a runtime**: the same binary detects it
 is in a container and forwards the command to the VM over that runtime's
-control socket, which executes it there. That does not make them tools —
+control socket, which executes it there. A compiled-in denylist fences
+off only what would terminate the runtime the caller is standing in (the
+VM lifecycle, the runtime lifecycle, the control-plane daemons);
+everything else — deletes and purges included — is forwarded. That
+does not make them tools —
 the work is still VM-side, which is exactly why it has to be forwarded.
 It only removes the second terminal. `internal/control` owns this; the
 rule below is unaffected, and the split between the two categories is

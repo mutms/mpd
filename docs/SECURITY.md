@@ -333,35 +333,47 @@ This allows:
 
 ## The runtime control socket
 
-`mpd` works from inside a runtime container: it forwards project commands
-to the VM over a Unix socket and the VM runs them. This deliberately
-widens what a runtime can reach, so the trade is recorded here rather
-than left implicit.
+`mpd` works from inside a runtime container: it forwards commands to the
+VM over a Unix socket and the VM runs them. This deliberately widens what
+a runtime can reach, so the trade is recorded here rather than left
+implicit.
 
 **What changes.** Before, a compromised or confused process inside the
 runtime — including an AI agent, which runs there with passwordless sudo
 — could write anything under `/srv` but could not touch the control
 plane: no podman socket, no `/var/lib/mpd/conf`, no
-`/var/lib/mpd/state`. It can now create, configure, start, stop and
-delete **projects**. Deleting a project
-destroys its database, dataroot and source tree, so this is a real
-increase in blast radius, not a formality.
+`/var/lib/mpd/state`. It can now drive most of mpd through the socket:
+create, configure, start, stop, reset and delete **projects**, manage
+**databases** (`--db-*`) and **extra services** (`--service-*`), and take
+a **runtime backup**. Deleting a project destroys its database, dataroot
+and source tree, and `--db-delete` / `--service-purge` are likewise
+destructive, so this is a real increase in blast radius, not a formality.
+The trade is deliberate: a single runtime has one owner, so these are the
+developer's own resources, and reaching them without a second VM terminal
+is the point.
 
-**What does not change.** It cannot act on the VM, the runtime itself,
-database containers or extra services — the `--vm-*`, `--runtime-*`,
-`--db-*` and `--service-*` flag families are all refused, along with
-every non-project verb — and it cannot ask the VM to execute an
-arbitrary command.
+**What does not change.** It cannot change the VM's lifecycle
+(`--vm-setup`/`--vm-upgrade`/`--vm-start`/`--vm-stop`/`--vm-restart`), tear
+down or restore the runtime it is calling from (`--runtime-rebuild`,
+`--runtime-restore`), or start a control-plane daemon (`--web`,
+`--control`) — those are refused — and it cannot ask the VM to execute an
+arbitrary command (`run` loops back to where the caller already is). The
+line is "don't terminate the runtime you are standing in": read-only
+introspection (`--vm-status`, `--check-hooks`) forwards.
 
 Four properties carry that:
 
-1. **Closed vocabulary.** The daemon never runs a program named in a
-   request. It validates the argv against `cli.ProjectVerbs` minus `run`
-   — the project verbs, nothing else — then spawns the mpd binary, whose
-   path comes from `internal/exec`'s absolute-path allow-list. A request
-   selects a verb; it cannot select an executable. A pinning test makes
-   adding a verb a deliberate decision about runtime exposure rather than
-   a silent grant.
+1. **Bounded denylist.** The daemon never runs a program named in a
+   request. It refuses a small, compiled-in set — the mutating `--vm-*`
+   lifecycle flags (all but the read-only `--vm-status`),
+   `--runtime-rebuild`/`--runtime-restore`, the `--web`/`--control`
+   daemons, plus the `run` verb — and forwards everything else to the mpd
+   binary it spawns, whose path comes from
+   `internal/exec`'s absolute-path allow-list. A request selects a verb
+   or flag; it cannot select an executable. A pinning test cross-checks
+   the denylist against the full flag set (`cli.GlobalFlags`), so adding
+   a flag is a deliberate decision about runtime exposure rather than a
+   silent grant.
 2. **Identity from the channel.** The runtime's socket is bind-mounted
    read-only into that runtime alone, so the caller's identity is the
    socket that accepted the connection — unforgeable, because the
@@ -377,13 +389,15 @@ Four properties carry that:
    command still runs but from `/srv`, because `/home/<user>` exists on
    the VM too and is a *different* directory there. Relative or
    non-clean paths are refused outright.
-4. **Scoped authority.** A runtime may act only on projects — the flag
-   families that act on anything else (`--vm-*`, `--runtime-*`,
-   `--db-*`, `--service-*`) are refused outright. With a single runtime
-   there is no cross-runtime ownership left to check; what remains on
-   `create` is that a declared `--type` must name a type the asset tree
-   actually defines (`moodle`, `astro`) — an undeclared type is left
-   for the child to infer, same as on the VM.
+4. **Bounded authority.** With a single runtime there is no
+   cross-runtime ownership left to check, so a runtime may drive
+   projects, databases and services — its own developer's world — but
+   not the machine that world runs on (the mutating `--vm-*` lifecycle),
+   nor the runtime lifecycle it depends on
+   (`--runtime-rebuild`/`--runtime-restore`).
+   What remains on `create` is that a declared `--type` must name a type
+   the asset tree actually defines (`moodle`, `astro`) — an undeclared
+   type is left for the child to infer, same as on the VM.
 
 `run` is refused rather than scoped. It is arbitrary execution by
 design, and from inside the runtime it would merely loop back to where
