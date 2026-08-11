@@ -39,6 +39,18 @@ const Name = "runtime"
 // from.
 const BaseImage = "mpd-debian-trixie-systemd"
 
+// PidsLimit caps the runtime container's pids cgroup. Podman's default
+// is 2048, which a modern IDE remote backend (JetBrains java + jetbrainsd
+// + ijent), an AI agent, language servers and php-fpm pools exhaust over
+// a session — and once the cgroup is full, anything needing a new thread
+// or process fails with EAGAIN: git's parallel lstat dies "unable to
+// create threaded lstat: Resource temporarily unavailable", new sshd
+// sessions can't fork, the runtime wedges. This is a single-developer
+// container already inside the VM boundary, so a generous ceiling is
+// safe; it stays finite (not unlimited) so a runaway fork bomb still
+// hits a wall instead of taking the VM down.
+const PidsLimit = "32768"
+
 // TmpVolume is the disk-backed /tmp volume for the runtime container.
 func TmpVolume(container string) string { return container + "-tmp" }
 
@@ -92,6 +104,7 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 		"--hostname", o.Container,
 		"--network", "mpd-internal:ip=" + runtimeIP,
 		"--systemd", "always",
+		"--pids-limit", PidsLimit,
 	}
 	args = append(args, podman.DNSOpts(o.Net.Gateway())...)
 	args = append(args, podman.OptMountRO...)
