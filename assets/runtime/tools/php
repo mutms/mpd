@@ -17,6 +17,11 @@
 # on the VM take effect inside every runtime immediately).
 #
 # Version resolution:
+#   0. $MPD_PHP_FORCE_VERSION if exported — an explicit override set by a tool
+#      that already resolved the version it wants, and now runs php from
+#      somewhere the cwd-gate below cannot see the project (mudev's production
+#      export installs composer deps in a /tmp staging tree). Checked first and
+#      independent of $PWD.
 #   1. $MPD_PHP_VERSION if already exported — a tool chain that already
 #      sourced mpd.env (e.g. phpunit-init → phpunit) short-circuits here with
 #      no extra fork.
@@ -34,6 +39,15 @@
 # Pinned fallback (8.1 is also installed, for legacy branches). Keep in
 # sync with build.sh's PHP_FALLBACK_VERSION.
 MPD_PHP_FALLBACK_VERSION=8.2
+
+# An explicit force override, checked first and independent of $PWD. Set by a
+# tool that already resolved the version it wants but runs php from outside a
+# project tree (mudev's production export installs composer deps in a /tmp
+# staging dir). An uninstalled version falls through to normal resolution
+# rather than failing here.
+if [[ -n "${MPD_PHP_FORCE_VERSION:-}" ]] && [[ -x "/usr/bin/php${MPD_PHP_FORCE_VERSION}" ]]; then
+    exec "/usr/bin/php${MPD_PHP_FORCE_VERSION}" "$@"
+fi
 
 if [[ -z "${MPD_PHP_VERSION:-}" ]] && [[ "$PWD" =~ ^/srv/projects/([^/]+) ]]; then
     PROJECT_NAME="${BASH_REMATCH[1]}"
