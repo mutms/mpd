@@ -8,7 +8,7 @@
 #   - Source layered mpd.env (/var/lib/mpd/env/mpd-vm.env then project mpd.env)
 #   - Resolve MPD_DB to dbTag/dbEngine/databaseId for downstream use
 #   - Fix ownership of /srv/projects/<project>
-#   - Ensure dataroot dirs exist with expected perms
+#   - Ensure dataroot dirs (plus the behat faildump dir) exist with expected perms
 #   - Regenerate config-mpd.php (when MPD_DB is set + Moodle source detected)
 #   - Create config.php if missing
 #   - Allocate FPM port
@@ -22,6 +22,7 @@ PROJECT_NAME="$1"
 PROJECT_DIR="/srv/projects/${PROJECT_NAME}"
 DATAROOT="/srv/data/${PROJECT_NAME}/dataroot"
 BEHATDATAROOT="/srv/data/${PROJECT_NAME}/dataroot_behat"
+BEHATFAILDUMP="/srv/data/${PROJECT_NAME}/behat_faildump"
 PHPUNITDATAROOT="/srv/data/${PROJECT_NAME}/dataroot_phpunit"
 
 if [ ! -d "$PROJECT_DIR" ]; then
@@ -75,7 +76,7 @@ fi
 # --- Ensure Moodle data directories ---
 # Script runs as the dev user (projectExec --user <dev>); /srv/data is
 # dev-owned (set by volume provisioning), so plain mkdir/chmod work.
-for DIR in "$DATAROOT" "$BEHATDATAROOT" "$PHPUNITDATAROOT"; do
+for DIR in "$DATAROOT" "$BEHATDATAROOT" "$BEHATFAILDUMP" "$PHPUNITDATAROOT"; do
     mkdir -p "$DIR"
     chmod 02777 "$DIR"
 done

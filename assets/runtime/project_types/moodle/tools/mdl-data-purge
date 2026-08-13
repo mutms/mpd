@@ -1,7 +1,8 @@
 #!/bin/bash
 # Tool: revert a Moodle project to pre-configured state.
 #   - Drops the project's database (per effective.json)
-#   - Wipes dataroots (dataroot, dataroot_phpunit, dataroot_behat)
+#   - Wipes dataroots (dataroot, dataroot_phpunit, dataroot_behat) and the
+#     behat faildump dir
 #   - Removes generated config files (config-mpd.php, config.php)
 #   - Clears /srv/meta/<project>/{effective,urls}.json
 #
@@ -35,7 +36,7 @@ if [ "$SKIP_CONFIRM" -ne 1 ]; then
     cat <<EOF
 About to purge ALL data for project '${PROJECT}':
   - Database: drop ${MPD_DB:-(no DB configured)}
-  - Dataroots: /srv/data/${PROJECT}/{dataroot,dataroot_phpunit,dataroot_behat}
+  - Dataroots: /srv/data/${PROJECT}/{dataroot,dataroot_phpunit,dataroot_behat,behat_faildump}
   - Config files: ${PROJECT_DIR}/{config-mpd.php,config.php}
   - Meta state: /srv/meta/${PROJECT}/{effective,urls}.json
 
@@ -95,7 +96,8 @@ fi
 # --- 2. Wipe dataroots ---
 for DIR in "/srv/data/${PROJECT}/dataroot" \
            "/srv/data/${PROJECT}/dataroot_phpunit" \
-           "/srv/data/${PROJECT}/dataroot_behat"; do
+           "/srv/data/${PROJECT}/dataroot_behat" \
+           "/srv/data/${PROJECT}/behat_faildump"; do
     if [ -d "$DIR" ]; then
         if rm -rf "$DIR" 2>/dev/null; then
             echo "Wiped $DIR"

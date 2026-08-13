@@ -60,6 +60,11 @@ $CFG->behat_wwwroot   = 'https://behat.%%PROJECT%%.%%ZONE%%';
 $CFG->behat_dataroot  = '/srv/data/%%PROJECT%%/dataroot_behat';
 $CFG->behat_prefix    = 'bht_';
 
+// Screenshots + HTML dumps of failed steps. Kept outside behat_dataroot on
+// purpose: `behat --init` wipes that tree, which would take the evidence
+// from the previous run with it.
+$CFG->behat_faildump_path = '/srv/data/%%PROJECT%%/behat_faildump';
+
 // Behat runs against the seleniumv1 service (standalone-chromium at its
 // own address — enable with `mpd --service-enable=seleniumv1`; behat via
 // `mpd configure` auto-enables it). Without an explicit profile

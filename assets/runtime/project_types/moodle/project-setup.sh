@@ -4,7 +4,7 @@
 # runtime-side state into a startable shape:
 #   - Reads phpVersion / phpFpmPort from /srv/meta/<n>/effective.json (written
 #     by scripts/configure.sh during `mpd configure <project>`)
-#   - Creates /srv/data/<project-name>/{dataroot,dataroot_behat,dataroot_phpunit}
+#   - Creates /srv/data/<project-name>/{dataroot,dataroot_behat,behat_faildump,dataroot_phpunit}
 #   - Writes per-project FPM pool listening on TCP 127.0.0.1:<phpFpmPort>
 #     (the in-runtime caddy frontdoor reaches it on localhost)
 # No Apache, no /etc/hosts edits — TLS termination + project routing live in
@@ -18,6 +18,7 @@ PROJECT_NAME="$1"
 PROJECT_DIR="/srv/projects/${PROJECT_NAME}"
 DATAROOT="/srv/data/${PROJECT_NAME}/dataroot"
 BEHATDATAROOT="/srv/data/${PROJECT_NAME}/dataroot_behat"
+BEHATFAILDUMP="/srv/data/${PROJECT_NAME}/behat_faildump"
 PHPUNITDATAROOT="/srv/data/${PROJECT_NAME}/dataroot_phpunit"
 EFFECTIVE_FILE="/srv/meta/${PROJECT_NAME}/effective.json"
 
@@ -55,7 +56,7 @@ fi
 # --- Per-project data directories ---
 # Script runs as the dev user (projectExec --user <dev>); /srv/data is
 # dev-owned (set by volume provisioning), so plain mkdir/chmod work.
-for DIR in "$DATAROOT" "$BEHATDATAROOT" "$PHPUNITDATAROOT"; do
+for DIR in "$DATAROOT" "$BEHATDATAROOT" "$BEHATFAILDUMP" "$PHPUNITDATAROOT"; do
     mkdir -p "$DIR"
     chmod 02777 "$DIR"
 done
