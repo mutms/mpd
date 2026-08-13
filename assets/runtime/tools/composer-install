@@ -7,6 +7,23 @@
 set -euo pipefail
 
 TARGET="/usr/local/bin/composer"
+
+# Composer distrusts a COMPOSER_HOME that is group- or world-writable and
+# warns about it (SelfUpdateCommand::warnIfUntrustedDir, `fileperms & 0022`).
+# Debian's pam_umask with USERGROUPS_ENAB gives login sessions umask 002, so a
+# COMPOSER_HOME that Composer creates for itself from an SSH shell lands 0775.
+# Pre-create it 0755 — and re-tighten it on every run, before the idempotency
+# check, so an already-installed runtime gets fixed too.
+if [ -n "${COMPOSER_HOME:-}" ]; then
+    HOME_DIR="$COMPOSER_HOME"
+elif [ -d "$HOME/.composer" ]; then
+    HOME_DIR="$HOME/.composer"          # legacy location wins if it exists
+else
+    HOME_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/composer"
+fi
+mkdir -p "$HOME_DIR"
+chmod go-w "$HOME_DIR"
+
 if [ -x "$TARGET" ]; then
     echo "Composer already installed at $TARGET — skipping."
     exit 0
