@@ -90,14 +90,21 @@ func TestMainURL(t *testing.T) {
 	}
 }
 
-// A stopped project's URL would link to nothing, so it is suppressed.
-func TestMainURLSuppressedWhenNotRunning(t *testing.T) {
+// A stopped project keeps its URL: configure published the vhost, cert
+// and DNS record, and stop does not withdraw them, so the address is
+// still this project's — it just answers with a dead page until
+// something serves again.
+func TestMainURLSurvivesStop(t *testing.T) {
 	p := Project{RuntimeName: "php", Requested: "stopped",
 		URLs: []ProjectURL{{Kind: "web", URL: "https://web/"}}}
-	if got := p.MainURL(); got != "" {
-		t.Errorf("MainURL() = %q for a stopped project, want empty", got)
+	if got := p.MainURL(); got != "https://web/" {
+		t.Errorf("MainURL() = %q for a stopped project, want the web URL", got)
 	}
-	p = Project{RuntimeName: "", Requested: "running",
+}
+
+// No runtime means no address to publish under.
+func TestMainURLSuppressedWithoutRuntime(t *testing.T) {
+	p := Project{RuntimeName: "", Requested: "running",
 		URLs: []ProjectURL{{Kind: "web", URL: "https://web/"}}}
 	if got := p.MainURL(); got != "" {
 		t.Errorf("MainURL() = %q with no runtime, want empty", got)

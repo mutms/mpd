@@ -51,12 +51,20 @@ type Project struct {
 	URLs            []ProjectURL `json:"urls"`
 }
 
-// MainURL is the URL to show for a running project: the first entry whose
-// kind is "web" or whose label is "main", else the first. Empty when the
-// project is not running or has no URLs — a stopped project's URL would
-// be a link to nothing.
+// MainURL is the URL to show for a project: the first entry whose kind is
+// "web" or whose label is "main", else the first. Empty only when the
+// project has no runtime or no URLs.
+//
+// Deliberately not gated on the project running. A configured project is
+// an addressable one — `mpd configure` publishes the vhost, certificate
+// and DNS record, and they survive a stop — so the URL is correct whether
+// or not something is serving behind it right now. Hiding it would also
+// be unworkable for project types whose server the developer starts by
+// hand (astro), where mpd never learns the server came up. A link to a
+// dead page is the honest answer; a missing link reads as "this project
+// has no address", which is false.
 func (p Project) MainURL() string {
-	if p.RuntimeName == "" || p.Requested != "running" {
+	if p.RuntimeName == "" {
 		return ""
 	}
 	for _, u := range p.URLs {

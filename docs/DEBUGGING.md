@@ -6,6 +6,51 @@ not here, the general shape is: reproduce it reliably, find the resource
 or limit being exhausted, then check whether it's the container, systemd
 inside the container, or the host.
 
+## A shell keeps the old environment after a runtime asset changes
+
+**Symptoms.** An environment change that should be live — mpd ships or
+edits a `project_types/<type>/shellrc.sh`, or you edit the runtime's
+`~/.bashrc` — has no effect in the shell you are sitting in. The
+signature case is Astro answering
+
+```
+Blocked request. This host ("<project>.<NNN>.mpd.test") is not allowed.
+```
+
+because `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` is missing from the
+shell that started the dev server (see USAGE.md, "Tools available inside
+the runtime").
+
+**Cause.** Bash reads `~/.bashrc` once, at session start. Nothing
+re-reads it, so a session that predates the change keeps the old
+environment for as long as it lives — and IDE sessions live a long time.
+JetBrains (PhpStorm Gateway / Remote Dev) is the one that surprises
+people: it holds its own SSH session open, and a terminal opened *inside*
+the IDE inherits that session's environment. Closing the terminal tab is
+not enough; the session outlives it.
+
+**Diagnose.** In the shell that is misbehaving:
+
+```bash
+echo "$__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS"   # empty → stale session
+grep -c shellrc.sh ~/.bashrc                     # non-zero → the hook IS installed
+```
+
+Those two disagreeing (hook installed, variable empty) is the
+confirmation. Check you are in the runtime and not the VM while you are
+there — `hostname` should end in `-runtime`; the VM does not source
+runtime assets and never will.
+
+**Fix.** Start a new session. `exec bash` is enough for a plain shell.
+For JetBrains, **fully exit the IDE** and wait for its SSH session to
+drop before reconnecting — the IDE terminal's environment comes from the
+IDE's session, not from the tab.
+
+No `mpd --runtime-rebuild` is needed. A rebuild replaces `~/.bashrc` with
+the shipped skel, which carries the same hook, but it also recreates the
+container — `~/.nvm` and `/opt/mpd/mpci/` live in that overlay and would
+need re-provisioning. Reconnecting is the cheap fix.
+
 ## IDE / SSH sessions lock up: "Resource temporarily unavailable"
 
 **Symptoms.** After a while — often "every hour", or reliably a few

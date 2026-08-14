@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // Dir is the bind-mounted asset tree, identical on the VM and inside
@@ -39,6 +40,9 @@ func NewAt(dir string) Tree { return Tree{dir: dir} }
 type ProjectTypeConfig struct {
 	// AssetsType is the directory holding the type's scripts.
 	AssetsType string `json:"assetsType"`
+	// DetectFiles are paths, relative to the project directory, whose
+	// presence identifies a source tree as this type. Any one is enough.
+	DetectFiles []string
 	// WaitForURL is set when `mpd start` should block until the project's
 	// main URL answers. True for every type mpd starts a server for.
 	// False for types whose server the developer runs by hand (astro):
@@ -61,7 +65,10 @@ func (t Tree) ProjectTypeConfig(name string) (ProjectTypeConfig, bool) {
 	}
 	var raw struct {
 		AssetsType string `json:"assetsType"`
-		Start      struct {
+		Detect     struct {
+			Files []string `json:"files"`
+		} `json:"detect"`
+		Start struct {
 			// Pointer so an absent key keeps the default rather than
 			// reading as false — waiting is what most types want.
 			WaitForURL *bool `json:"waitForURL"`
@@ -70,6 +77,7 @@ func (t Tree) ProjectTypeConfig(name string) (ProjectTypeConfig, bool) {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return cfg, true
 	}
+	cfg.DetectFiles = raw.Detect.Files
 	if raw.Start.WaitForURL != nil {
 		cfg.WaitForURL = *raw.Start.WaitForURL
 	}
@@ -143,4 +151,39 @@ func (t Tree) DetectTypeFromName(name string) string {
 		}
 	}
 	return ""
+}
+
+// DetectTypeFromTree infers a project type by looking at what is already
+// in the project directory, matching each type's `detect.files` from its
+// configuration.json. Returns "" when nothing matches (an empty or
+// unrecognised tree).
+//
+// Every matching type is returned, not just the first: two types
+// claiming the same tree is a real answer that the caller must not
+// silently pick a winner for. The order is AllProjectTypes' — sorted —
+// so a given tree always produces the same list.
+//
+// The type knowledge lives in the assets tree rather than here on
+// purpose: adding a project type should not mean editing Go.
+func (t Tree) DetectTypeFromTree(dir string) []string {
+	var matched []string
+	for _, ty := range t.AllProjectTypes() {
+		cfg, ok := t.ProjectTypeConfig(ty)
+		if !ok {
+			continue
+		}
+		for _, rel := range cfg.DetectFiles {
+			// Reject anything that could climb out of the project
+			// directory: these strings come from an asset file, but a
+			// path check is cheap and keeps the contract narrow.
+			if rel == "" || filepath.IsAbs(rel) || strings.Contains(rel, "..") {
+				continue
+			}
+			if _, err := os.Stat(filepath.Join(dir, rel)); err == nil {
+				matched = append(matched, ty)
+				break
+			}
+		}
+	}
+	return matched
 }

@@ -40,9 +40,14 @@ func Status(ctx context.Context, out io.Writer, s state.Store, p *podman.Client,
 		fmt.Fprintln(out, "  No projects yet — mpd create <name>")
 	}
 	for _, pr := range projects {
+		// The project's own URL, not one composed from its name: a type
+		// is free to publish something else in urls.json, and this line
+		// should show what was actually published. Shown for a stopped
+		// project too — configure published the vhost, cert and DNS, and
+		// stop does not withdraw them.
 		url := ""
-		if pr.Requested == "running" {
-			url = "   https://" + n.Host(pr.Name) + "/"
+		if u := pr.MainURL(); u != "" {
+			url = "   " + u
 		}
 		fmt.Fprintf(out, "  %s   %s%s\n", pr.Name, pr.Requested, url)
 	}

@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mutms/mpd/go/internal/assets"
@@ -623,6 +625,8 @@ func ProjectConfigure(ctx context.Context, out io.Writer, name string, args []st
 	effective := project.ReadEffective(name)
 	dbTag, _ := effective["dbTag"].(string)
 
+	warnPortClash(out, name, effective, d.State)
+
 	// Behat needs the seleniumv1 service. Turning behat on IS the
 	// explicit request, so the service is enabled on its behalf rather
 	// than failing the first `behat` run with a connection error. The
@@ -708,6 +712,60 @@ func ProjectConfigure(ctx context.Context, out io.Writer, name string, args []st
 
 	Ok(out, "Project '%s' configured. Type: %s, Status: %s", name, entry.Type, entry.Requested)
 	return nil
+}
+
+// warnPortClash reports when another project already claims the loopback
+// port this one publishes as its frontdoor upstream.
+//
+// Worth a warning rather than silence because the failure is invisible:
+// caddy points two vhosts at the same 127.0.0.1:<port>, so whichever
+// server is up answers for both names. You get someone else's site at
+// your project's URL, with a 200 and no error anywhere — much harder to
+// read than the bind failure the second server would hit.
+//
+// Only types that publish a "port" (astro's dev server) are compared.
+// Moodle's effective.json carries phpFpmPort, which mpd allocates and
+// keeps distinct, so it is deliberately not in scope here.
+//
+// A warning, never a refusal: the developer may be mid-edit, or may
+// intend to run only one of the two at a time.
+func warnPortClash(out io.Writer, name string, effective map[string]any, s state.Store) {
+	port, ok := effectivePort(effective)
+	if !ok {
+		return
+	}
+	for _, other := range s.Projects() {
+		if other.Name == name {
+			continue
+		}
+		otherPort, ok := effectivePort(project.ReadEffective(other.Name))
+		if !ok || otherPort != port {
+			continue
+		}
+		fmt.Fprintf(out, "\nWarning: '%s' also uses port %d.\n", other.Name, port)
+		fmt.Fprintf(out, "  Only one of them can serve at a time, and while that one is up it\n")
+		fmt.Fprintf(out, "  answers for both URLs — you would get its site at the other's address.\n")
+		fmt.Fprintf(out, "  Give one a different server.port in astro.config.mjs, then re-run\n")
+		fmt.Fprintf(out, "  mpd configure %s\n", name)
+		return
+	}
+}
+
+// effectivePort reads the frontdoor upstream port a project type wrote
+// into effective.json. JSON numbers decode as float64; a string is
+// accepted too, since the file is written by shell interpolation.
+func effectivePort(effective map[string]any) (int, bool) {
+	switch v := effective["port"].(type) {
+	case float64:
+		if v > 0 {
+			return int(v), true
+		}
+	case string:
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n, true
+		}
+	}
+	return 0, false
 }
 
 // behatEnabled reads the behat flag from effective.json, which emits it
@@ -799,9 +857,28 @@ func ProjectCreate(ctx context.Context, out io.Writer, name string, opts CreateO
 		return fmt.Errorf("Project '%s' already exists.", name)
 	}
 
-	// Explicit --type wins; otherwise infer from the name, falling back
-	// to moodle as mpd's overall default.
+	// Type resolution, strongest evidence first: an explicit --type, then
+	// what is actually in the source tree, then the project's name, then
+	// moodle as mpd's overall default.
+	//
+	// The tree outranks the name because it is evidence rather than a
+	// guess: `mpd create docs` on a checkout holding astro.config.mjs is
+	// an astro project whatever the directory is called. Creating into an
+	// existing tree is the normal path — `create` does not fetch source,
+	// so the clone usually happened first.
 	typeName := opts.Type
+	if typeName == "" {
+		matched := d.Assets.DetectTypeFromTree(srv.ProjectDir(name))
+		if len(matched) > 1 {
+			return fmt.Errorf("/srv/projects/%s looks like more than one project type (%s).\n"+
+				"Say which one: mpd create %s --type=<type>",
+				name, strings.Join(matched, ", "), name)
+		}
+		if len(matched) == 1 {
+			typeName = matched[0]
+			fmt.Fprintf(out, "Detected project type '%s' from /srv/projects/%s.\n", typeName, name)
+		}
+	}
 	if typeName == "" {
 		typeName = d.Assets.DetectTypeFromName(name)
 	}

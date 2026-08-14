@@ -630,7 +630,9 @@ immediately. No sync, no restart needed.
 **Naming convention:**
 
 - `MPD_<RUNTIME>_<TYPE>_<KEY>` — project-type-specific knobs
-  (`MPD_PHP_MOODLE_BEHAT`, `MPD_NODE_ASTRO_PORT`).
+  (`MPD_PHP_MOODLE_BEHAT`). A knob earns its place only when mpd is the
+  side that acts on it: astro's dev-server port is not one, because the
+  server is Astro's own and reads `server.port` from `astro.config.mjs`.
 - `MPD_<RUNTIME>_<KEY>` — runtime-wide, applies to every type on that
   runtime (`MPD_PHP_VERSION`, `MPD_PHP_XDEBUG_MODE`).
 - `MPD_<KEY>` — global mpd infra (none currently in active use; the

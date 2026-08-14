@@ -46,16 +46,24 @@ else
     echo "node_modules already present — skipping npm install."
 fi
 
-# Resolve dev-server port: per-project mpd.env override → astro.config.mjs → 4321.
-if [ -n "${MPD_NODE_ASTRO_PORT:-}" ]; then
-    PORT="${MPD_NODE_ASTRO_PORT}"
-else
-    PORT="4321"
-    if [ -f "${PROJECT_DIR}/astro.config.mjs" ]; then
-        DETECTED=$(grep -oE 'port\s*:\s*[0-9]+' "${PROJECT_DIR}/astro.config.mjs" 2>/dev/null \
-            | grep -oE '[0-9]+' || true)
-        [ -n "$DETECTED" ] && PORT="$DETECTED"
-    fi
+# Resolve the dev-server port from astro.config.mjs, defaulting to Astro's
+# own 4321.
+#
+# astro.config.mjs is the ONLY source, deliberately. mpd no longer starts
+# the dev server, so an mpd-side port setting could only move caddy's
+# upstream — the server would keep binding whatever its own config says,
+# and the mismatch would surface as a 502 with nothing obviously wrong.
+# One knob that both sides already read beats two that can disagree.
+#
+# Two astro projects in one runtime therefore need different server.port
+# values in their own configs; the second to start otherwise fails to
+# bind. (There used to be an MPD_NODE_ASTRO_PORT override here, from when
+# mpd ran the server and could pass --port itself.)
+PORT="4321"
+if [ -f "${PROJECT_DIR}/astro.config.mjs" ]; then
+    DETECTED=$(grep -oE 'port\s*:\s*[0-9]+' "${PROJECT_DIR}/astro.config.mjs" 2>/dev/null \
+        | grep -oE '[0-9]+' || true)
+    [ -n "$DETECTED" ] && PORT="$DETECTED"
 fi
 
 # Publish URLs for portal/cert/dnsmasq + the in-runtime caddy frontdoor.
