@@ -4,38 +4,25 @@
 # git clone and BEFORE the project is registered as ready.
 #
 # Responsibilities:
-#   - Seed /srv/projects/<project>/mpd.env from this type's mpd-template.env
-#     (only if mpd.env is absent — pre-existing user-supplied mpd.env is sacred).
-#   - Add /mpd.env to .git/info/exclude so it isn't committed.
+#   - Seed /srv/projects/<project>/ from this type's template/ directory
+#     (mpd.env). Existing files are never overwritten — a user-supplied
+#     mpd.env is sacred.
+#   - Add every template/ path to .git/info/exclude.
+# Both are apply_project_template's job; `mpd configure` calls it again so a
+# file added to template/ later reaches projects that already exist.
 set -euo pipefail
 
 PROJECT_NAME="$1"
 PROJECT_DIR="/srv/projects/${PROJECT_NAME}"
-PROJECT_ENV="${PROJECT_DIR}/mpd.env"
-TEMPLATE_ENV="/opt/mpd/assets/runtime/project_types/astro/mpd-template.env"
+TYPE_DIR="/opt/mpd/assets/runtime/project_types/astro"
 
 if [ ! -d "$PROJECT_DIR" ]; then
     echo "Error: ${PROJECT_DIR} does not exist." >&2
     exit 1
 fi
 
-if [ ! -f "$PROJECT_ENV" ]; then
-    if [ ! -f "$TEMPLATE_ENV" ]; then
-        echo "Error: template ${TEMPLATE_ENV} not found." >&2
-        exit 1
-    fi
-    install -m 0644 "$TEMPLATE_ENV" "$PROJECT_ENV"
-    echo "Seeded ${PROJECT_ENV} from template."
-else
-    echo "Existing ${PROJECT_ENV} preserved."
-fi
-
-if [ -d "${PROJECT_DIR}/.git" ]; then
-    EXCLUDE="${PROJECT_DIR}/.git/info/exclude"
-    mkdir -p "$(dirname "$EXCLUDE")"
-    if ! grep -qxF "/mpd.env" "$EXCLUDE" 2>/dev/null; then
-        echo "/mpd.env" >> "$EXCLUDE"
-    fi
-fi
+# shellcheck source=/dev/null
+. /opt/mpd/assets/runtime/lib/project-template.sh
+apply_project_template "$PROJECT_NAME" "$TYPE_DIR"
 
 echo "Project '${PROJECT_NAME}' scaffolded — next: mpd configure ${PROJECT_NAME}"

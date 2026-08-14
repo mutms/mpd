@@ -5,12 +5,14 @@
 # to /srv/projects/<project>/mpd.env.
 #
 # Responsibilities:
+#   - Re-apply this type's template/ (seeds any file added to it since the
+#     project was created; existing files untouched) and refresh the git
+#     excludes for template/ + generated/
 #   - Source layered mpd.env (/var/lib/mpd/env/mpd-vm.env then project mpd.env)
 #   - Resolve MPD_DB to dbTag/dbEngine/databaseId for downstream use
 #   - Fix ownership of /srv/projects/<project>
 #   - Ensure dataroot dirs (plus the behat faildump dir) exist with expected perms
 #   - Regenerate config-mpd.php (when MPD_DB is set + Moodle source detected)
-#   - Create config.php if missing
 #   - Allocate FPM port
 #   - Emit /srv/meta/<project>/urls.json + effective.json
 #
@@ -24,11 +26,19 @@ DATAROOT="/srv/data/${PROJECT_NAME}/dataroot"
 BEHATDATAROOT="/srv/data/${PROJECT_NAME}/dataroot_behat"
 BEHATFAILDUMP="/srv/data/${PROJECT_NAME}/behat_faildump"
 PHPUNITDATAROOT="/srv/data/${PROJECT_NAME}/dataroot_phpunit"
+TYPE_DIR="/opt/mpd/assets/runtime/project_types/moodle"
 
 if [ ! -d "$PROJECT_DIR" ]; then
     echo "Error: ${PROJECT_DIR} does not exist — run mpd ${PROJECT_NAME} create first" >&2
     exit 1
 fi
+
+# Re-apply template/ before anything reads mpd.env: a project created before a
+# template file existed picks it up here, and mpd.env is guaranteed present for
+# source-mpd-env.sh below.
+# shellcheck source=/dev/null
+. /opt/mpd/assets/runtime/lib/project-template.sh
+apply_project_template "$PROJECT_NAME" "$TYPE_DIR"
 
 # /srv/meta/<project>/ holds urls.json + effective.json (read by mpd, the
 # in-runtime caddy frontdoor, and the FPM provisioner) plus
@@ -100,7 +110,9 @@ else
     MAIL_CONFIG="\$CFG->noemailever = true; // no mailpit service enabled"
 fi
 
-# --- Generate config files (only when Moodle source + DB are both present) ---
+# --- Render config-mpd.php (only when Moodle source + DB are both present) ---
+# Its companion config.php is a static file — template/ seeds it, so it is
+# already in place (and left alone if the developer has edited it).
 if [ -n "$DATABASE_ID" ] && \
    { [ -f "${PROJECT_DIR}/version.php" ] || [ -f "${PROJECT_DIR}/public/version.php" ]; }; then
     sed \
@@ -110,20 +122,13 @@ if [ -n "$DATABASE_ID" ] && \
         -e "s|%%ZONE%%|${MPD_ZONE}|g" \
         -e "s|%%MAIL_CONFIG%%|${MAIL_CONFIG}|" \
         -e "s|%%SELENIUM_WD_HOST%%|http://seleniumv1.svc.${MPD_ZONE}:4444/wd/hub|" \
-        /opt/mpd/assets/runtime/project_types/moodle/templates/config-mpd-generated.php \
+        "${TYPE_DIR}/generated/config-mpd.php" \
         > "${PROJECT_DIR}/config-mpd.php"
     echo "config-mpd.php generated."
-
-    if [ ! -f "${PROJECT_DIR}/config.php" ]; then
-        cp /opt/mpd/assets/runtime/project_types/moodle/templates/config.php "${PROJECT_DIR}/config.php"
-        echo "config.php created."
-    else
-        echo "config.php already exists — not overwritten."
-    fi
 elif [ -z "$DATABASE_ID" ]; then
-    echo "MPD_DB unset — skipping config.php / config-mpd.php generation."
+    echo "MPD_DB unset — skipping config-mpd.php generation."
 else
-    echo "Moodle source not detected yet — skipping config.php / config-mpd.php generation."
+    echo "Moodle source not detected yet — skipping config-mpd.php generation."
 fi
 
 # --- Allocate (or reuse) FPM port (9100–9199 pool) ---

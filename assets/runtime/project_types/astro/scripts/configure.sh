@@ -1,6 +1,7 @@
 #!/bin/bash
 # configure.sh <project-name>
 # Idempotent project repair/configuration for Astro:
+#   - re-applies this type's template/ (and refreshes the git excludes)
 #   - fixes ownership of /srv/projects/<project>
 #   - ensures dependencies exist
 set -euo pipefail
@@ -10,11 +11,19 @@ source /opt/mpd/assets/runtime/lib/nvm-env.sh
 
 PROJECT_NAME="$1"
 PROJECT_DIR="/srv/projects/${PROJECT_NAME}"
+TYPE_DIR="/opt/mpd/assets/runtime/project_types/astro"
 
 if [ ! -d "$PROJECT_DIR" ]; then
     echo "Error: ${PROJECT_DIR} does not exist — run mpd ${PROJECT_NAME} create first" >&2
     exit 1
 fi
+
+# Re-apply template/ before anything reads mpd.env: a project created before a
+# template file existed picks it up here, and mpd.env is guaranteed present for
+# source-mpd-env.sh below.
+# shellcheck source=/dev/null
+. /opt/mpd/assets/runtime/lib/project-template.sh
+apply_project_template "$PROJECT_NAME" "$TYPE_DIR"
 
 if [ ! -f "${PROJECT_DIR}/package.json" ]; then
     echo "Error: ${PROJECT_DIR}/package.json not found — is this an Astro/Node project?" >&2
@@ -26,9 +35,8 @@ fi
 # runs as the dev uid). /srv/meta is dev-owned, so plain mkdir works.
 mkdir -p "/srv/meta/${PROJECT_NAME}"
 
-# Per-project mpd.env was seeded by project-create.sh at create time;
-# do not re-stage here. Layered resolution: /var/lib/mpd/env/mpd-vm.env first,
-# then per-project mpd.env.
+# Layered resolution: /var/lib/mpd/env/mpd-vm.env first, then per-project
+# mpd.env (seeded from template/ above, and never overwritten once present).
 # shellcheck source=/dev/null
 source /opt/mpd/assets/runtime/lib/source-mpd-env.sh
 

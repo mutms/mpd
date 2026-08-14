@@ -37,7 +37,8 @@ boundary, not a layering one.
 - **`lib/`** — sourced libraries used by tools and project-type scripts:
   `source-mpd-env.sh` (loads the layered MPD_* env), `nvm-env.sh`
   (sources nvm in non-login script contexts where `~/.bashrc` isn't
-  auto-sourced). Not on PATH.
+  auto-sourced), `project-template.sh` (seeds a project from its type's
+  `template/` and maintains `.git/info/exclude`). Not on PATH.
 - **`caddy/`** — the frontdoor: `mpd-caddy.sh` (service entry: render,
   watch `/srv/meta`, validate + reload), `gen-caddyfile.sh` (renders
   vhosts from `/srv/meta/*/urls.json`), `templates/header.caddyfile`.
@@ -47,6 +48,15 @@ boundary, not a layering one.
   for the full per-tool table.
 - **`project_types/astro/`** — Astro dev-server support:
   `astro-rebuild`, `astro-upgrade`.
+- **`project_types/<type>/template/`** — files seeded into the project
+  directory itself (create-if-missing) and git-excluded there: `mpd.env`
+  for every type, plus Moodle's `config.php` and
+  `.phpstorm.meta.php/dml.php`. Adding a default project file = drop it
+  here at the right relative path; no script change.
+- **`project_types/<type>/generated/`** — the files the type's
+  `scripts/configure.sh` renders itself (Moodle's `config-mpd.php`, whose
+  `%%…%%` placeholders it substitutes). Not copied, but git-excluded in the
+  project alongside the `template/` files. See `docs/ARCHITECTURE.md` §6.
 
 PHP version is resolved per project from the layered MPD_PHP_VERSION
 (runtime default → type default → user → project) — see the `php`

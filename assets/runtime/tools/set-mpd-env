@@ -10,7 +10,7 @@
 #     /var/lib/mpd/env/mpd-vm.env (or whatever lower layer is in effect).
 #
 # Safe to call even if the file does not yet exist; this script does not create
-# the file (project-create.sh seeds it from the type's mpd-template.env).
+# the file (project-create.sh seeds it from the type's template/mpd.env).
 #
 # Caller is expected to have validated KEY against ^MPD_[A-Z0-9_]+$ and VALUE
 # against a safe charset in mpd. This script does no validation.

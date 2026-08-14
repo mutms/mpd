@@ -11,7 +11,7 @@
 #      Bind-mounted RO from the host into runtime containers at the same
 #      absolute path (see Mpd.envMountRO).
 #   4. /srv/projects/<project>/mpd.env — per-project, seeded from the project
-#      type's mpd-template.env at create time. Wins over everything above.
+#      type's template/mpd.env at create time. Wins over everything above.
 #
 # Per-project values win over VM-wide, which win over type defaults,
 # which win over runtime defaults. Explicit `KEY=""` in any layer blocks

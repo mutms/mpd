@@ -279,6 +279,8 @@ addressing at `/srv/meta/vm.json` on the data volume.
   `skel/`, `tools/`, `lib/`, `caddy/`, `backup.d/`, `restore.d/`)
 - Project-type behavior: `assets/runtime/project_types/<type>/...`
   (current types: `moodle`, `astro`)
+- Project-type files placed in the project directory: `template/` and
+  `generated/` (see below)
 - Runtime / project-type tools: single executable per file under
   corresponding `tools/` (see §7). Verbs are Go, not assets.
 - Project-type lifecycle scripts: `project-create.sh`,
@@ -295,6 +297,37 @@ addressing at `/srv/meta/vm.json` on the data volume.
   caddy proxies. Not a place for logic: it runs on every
   `ssh runtime <cmd>` too.
 - Service config/templates: `assets/services/...`
+
+### Project-type `template/` and `generated/`
+
+The files a project type puts *into the project directory* are declared by
+dropping them in one of two directories under
+`assets/runtime/project_types/<type>/`, each mirroring the project directory
+structure. Adding a default project file is a drop-a-file operation — no shell
+edit, no Go edit.
+
+| Directory    | Copied into the project? | For                                                     |
+|--------------|--------------------------|---------------------------------------------------------|
+| `template/`  | yes, create-if-missing   | static files (`mpd.env`, Moodle's `config.php`, `.phpstorm.meta.php/dml.php`) |
+| `generated/` | no                       | files the type's `scripts/configure.sh` renders itself, because they need substitution or conditional logic (Moodle's `config-mpd.php`) |
+
+`assets/runtime/lib/project-template.sh` defines the single implementation,
+`apply_project_template <project> <type-dir>`. Both `project-create.sh` and
+`scripts/configure.sh` call it, so a file added to `template/` later also
+reaches projects that already exist. It:
+
+- copies each `template/` file to `/srv/projects/<n>/<rel>`, creating parent
+  directories, and **never overwrites** — an upstream-tracked or
+  developer-edited file is left alone (this is what keeps a seeded `mpd.env`
+  sacred). Mode is normalised to 0644, or 0755 when the source is executable.
+- appends `/<rel>` for every `template/` *and* `generated/` file to the
+  project's `.git/info/exclude`, if not already listed. Entries are per file,
+  never directory patterns: a template file may sit in a directory whose other
+  contents are tracked upstream — Moodle's `.phpstorm.meta.php/` is exactly
+  that case.
+
+A source path under `generated/` is the same relative path as its output, which
+is what lets the exclude list be derived rather than declared twice.
 
 Contributor rule:
 
@@ -584,14 +617,14 @@ Five named files with distinct lifecycles. Four are *sourced* at every
 | Runtime defaults | `assets/runtime/mpd-defaults.env`                                                         | runtime, in repo (read-only)                                                                  | "the default value" for runtime-wide keys; sourced 1st               |
 | Type defaults    | `assets/runtime/project_types/<type>/mpd-defaults.env`                                    | project type, in repo (read-only)                                                             | type-specific overrides of the runtime default; sourced 2nd          |
 | VM-wide          | `/var/lib/mpd/env/mpd-vm.env` (host; bind-mounted RO into the runtime container at the same path) | developer (manual edit)                                                                       | cross-project preferences and secrets; sourced 3rd                   |
-| Per-project      | `/srv/projects/<n>/mpd.env`                                                               | seeded by `project-create.sh`, mutated by `mpd configure <project> KEY=VALUE` and manual edit | project-scoped truth; sourced 4th, wins                              |
-| Per-type seed    | `assets/runtime/project_types/<type>/mpd-template.env`                                    | project type, in repo (read-only)                                                             | NOT sourced — copied to `/srv/projects/<n>/mpd.env` at `create` time |
+| Per-project      | `/srv/projects/<n>/mpd.env`                                                               | seeded from the type's `template/`, mutated by `mpd configure <project> KEY=VALUE` and manual edit | project-scoped truth; sourced 4th, wins                              |
+| Per-type seed    | `assets/runtime/project_types/<type>/template/mpd.env`                                    | project type, in repo (read-only)                                                             | NOT sourced — copied to `/srv/projects/<n>/mpd.env` by the template mechanism |
 
-**Seeding** (one-shot, at create time): at `mpd create <project>`, the
-project type's `project-create.sh` copies `mpd-template.env` to the project
-as `mpd.env` *only if absent* — pre-existing mpd.env (e.g. from a clone or
-hand-staged) is sacred. The seed file is not the source of defaults; it's a
-starting point for the user's own per-project overrides, with commented
+**Seeding**: `mpd.env` is one of the files a project type ships in its
+`template/` directory (see §6 "Project-type `template/` and `generated/`"), so
+it is copied to the project *only if absent* — a pre-existing mpd.env (from a
+clone or hand-staged) is sacred. The seed file is not the source of defaults;
+it's a starting point for the user's own per-project overrides, with commented
 hints for discoverability.
 
 **Sourcing order at runtime** (in
@@ -616,7 +649,7 @@ the right semantics — each layer overrides earlier ones, and explicit
 | `MPD_PHP_VERSION=8.3` | (absent)              | (absent)              | `MPD_PHP_VERSION=8.5` | `8.5` (project override) |
 
 `MPD_DB` is the same: a project type that doesn't use a DB ships `MPD_DB=""`
-in its `mpd-template.env` (astro) so the seeded project file blocks
+in its `template/mpd.env` (astro) so the seeded project file blocks
 any `MPD_DB=...` the developer set in mpd-vm.env; types that do ship a
 sensible default (`MPD_DB=postgres:latest` for moodle).
 
