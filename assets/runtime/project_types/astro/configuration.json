@@ -3,6 +3,6 @@
     "systemdStop": true
   },
   "nextSteps": [
-    "mpd %%PROJECT%% rebuild          # reinstall node_modules + restart"
+    "ssh runtime.%%ZONE%%          # SSH in, then `cd /srv/projects/%%PROJECT%% && astro-rebuild` after a dependency change"
   ]
 }
