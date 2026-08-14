@@ -194,7 +194,8 @@ The binary is Go, built from `go/` into `bin/mpd` by `make install`:
 Runtime/project-type behavior + service container assets live under `assets/`:
 - `assets/vm/` — VM-level assets deployed to the mpd VM itself: `motd`
   (→ `/etc/motd`), `prompt.bashrc` (→ a managed block in the dev user's
-  `~/.bashrc`), and `mpd-vm.env`, the per-developer template seeded to
+  `~/.bashrc`), `vimrc` (→ `~/.vimrc`, seeded once, never rewritten), and
+  `mpd-vm.env`, the per-developer template seeded to
   `/var/lib/mpd/env/mpd-vm.env`
 - `assets/runtime/...` — the runtime definition, both build phases in
   one place: `Containerfile`, `bootstrap.sh` (phase 1, root), `build.sh`

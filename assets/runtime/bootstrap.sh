@@ -94,7 +94,8 @@ USER_HOME="/home/${EXTUSER}"
 # --- Skel: seed /home/<user>/ from shipped defaults + VM-host overrides ---
 # Two layers, last wins:
 #   1. /opt/mpd/assets/runtime/skel/   (shipped defaults — known_hosts,
-#                                            .bashrc with PATH + cd + nvm)
+#                                            .bashrc with PATH + cd + nvm,
+#                                            .vimrc with the mouse off)
 #   2. /var/lib/mpd/skel/                   (VM-host overrides — optional;
 #                                            user-managed, copied if present)
 #

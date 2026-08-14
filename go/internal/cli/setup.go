@@ -118,6 +118,11 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 
+	ui.Step(out, "VM vim defaults")
+	if err := vm.EnsureVimrc(out); err != nil {
+		return err
+	}
+
 	certs, err := setupCertificates(ctx, out, n)
 	if err != nil {
 		return err
