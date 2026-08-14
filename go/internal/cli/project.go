@@ -136,7 +136,7 @@ func ProjectStart(ctx context.Context, out io.Writer, name string, d ProjectDeps
 	}
 
 	cfg, hasType := d.Assets.ProjectTypeConfig(entry.Type)
-	if hasType {
+	if hasType && d.Assets.HasTypeFile(cfg.AssetsType, "project-setup.sh") {
 		fmt.Fprintf(out, "\n\033[1m==> Setting up '%s' in the runtime\033[0m\n", name)
 		script := assets.TypeScript(cfg.AssetsType, "project-setup.sh")
 		code, err := project.Exec(ctx, d.Podman, container, d.DevUser, "bash", script, name)
