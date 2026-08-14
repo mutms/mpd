@@ -427,16 +427,53 @@ would otherwise collide with system commands or be too generic
 (`mdl-cron` vs system `cron`). Bare names match upstream tools
 (`phpunit`, `behat`, `grunt`).
 
-**Project-type-level (Astro — `assets/runtime/project_types/astro/tools/`):**
+**Project-type-level (Astro):** none, deliberately.
 
-| Tool            | What it does                                                                  |
-|-----------------|-------------------------------------------------------------------------------|
-| `astro-rebuild` | Stop service, clear `node_modules`, `npm install` + `npm run build`, restart. |
-| `astro-upgrade` | Run `npx @astrojs/upgrade`, rebuild, restart the project's systemd unit.      |
+Astro ships its own commands and its own docs for them, so mpd adds
+nothing: run `npm run dev`, `npm run build`, `npx @astrojs/upgrade`
+exactly as astro.build describes. mpd does not run the dev server
+either — `mpd configure <project>` publishes the vhost, certificate and
+DNS, and the URL starts answering the moment you start the server
+yourself:
 
-The `astro-` prefix follows the same rule as `mdl-` — disambiguation
-for project-type-specific operations whose bare name (`rebuild`,
-`upgrade`) would be too generic.
+```bash
+ssh runtime                       # or: ssh mpd-<NNN>-runtime from the host
+cd /srv/projects/<project>
+npm run dev                       # https://<project>.<NNN>.mpd.test/ is live
+```
+
+Astro 7.2+ can also run detached, which is usually what you want when
+the terminal is doing something else:
+
+```bash
+npx astro dev --background        # same URL, no terminal held
+npx astro dev status              # is one running, and where
+npx astro dev logs --follow       # tail it
+npx astro dev stop                # stop it
+```
+
+`astro preview` takes the same four. Astro selects background mode on
+its own when it detects an AI agent driving the CLI — which inside an
+mpd runtime is the common case.
+
+`mpd start <project>` and `mpd stop <project>` print this rather than
+doing it: they report whether a server is up (via `astro dev status`)
+and which command you want. Neither starts or stops one, so an mpd verb
+can never fight the server you started yourself.
+
+caddy terminates TLS and reverse-proxies to `localhost:<port>`, where
+`<port>` is `server.port` from `astro.config.mjs` (default 4321).
+Change it there and re-run `mpd configure <project>` so caddy follows.
+
+Two details make the plain command work, both handled for you:
+
+- The upstream is the name `localhost`, not `127.0.0.1`: a default
+  `astro dev` listens on `[::1]` only, while `astro dev --host` listens
+  on IPv4 only. A name lets either answer.
+- `assets/runtime/project_types/astro/shellrc.sh` exports
+  `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=.mpd.test`, without which
+  Vite rejects the proxied `Host` header with "Blocked request. This
+  host is not allowed."
 
 ## Backups
 

@@ -127,11 +127,12 @@ Fires per project stop, while the project's runtime is still running.
 
 Use cases: drain in-flight work, flush per-project caches, graceful
 shutdown of project-specific services running inside the runtime.
-Today's `sudo systemctl stop mpd-<project>` for project types with
-`"stop": {"systemdStop": true}` in their `configuration.json` is still
-a Go control-plane code path
-(`go/internal/cli/project.go`); that one-liner is a
-candidate to migrate into a project-type hook here.
+
+Not to be confused with a project type's own `project-stop.sh`, which
+`mpd stop` runs right after this event: hooks are the *developer's*
+extension point and fire for every project, while `project-stop.sh` is
+the *type's* and ships in the assets tree. Astro's does nothing but
+print how to stop the dev server.
 
 ### `EventProjectPostStart`
 

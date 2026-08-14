@@ -133,7 +133,8 @@ func ProjectStart(ctx context.Context, out io.Writer, name string, d ProjectDeps
 		}
 	}
 
-	if cfg, ok := d.Assets.ProjectTypeConfig(entry.Type); ok {
+	cfg, hasType := d.Assets.ProjectTypeConfig(entry.Type)
+	if hasType {
 		fmt.Fprintf(out, "\n\033[1m==> Setting up '%s' in the runtime\033[0m\n", name)
 		script := assets.TypeScript(cfg.AssetsType, "project-setup.sh")
 		code, err := project.Exec(ctx, d.Podman, container, d.DevUser, "bash", script, name)
@@ -153,7 +154,9 @@ func ProjectStart(ctx context.Context, out io.Writer, name string, d ProjectDeps
 	}
 
 	url := entry.MainURL()
-	waitForURL(ctx, out, url)
+	if !hasType || cfg.WaitForURL {
+		waitForURL(ctx, out, url)
+	}
 
 	Ok(out, "'%s' is running.", name)
 	if url != "" {
@@ -275,12 +278,18 @@ func ProjectStop(ctx context.Context, out io.Writer, name string, d ProjectDeps)
 		fmt.Fprintf(out, "Warning: %v\n", err)
 	}
 
-	// Types running their own dev server need it stopped explicitly;
-	// types served through the frontdoor have nothing to stop.
-	if cfg, ok := d.Assets.ProjectTypeConfig(entry.Type); ok && cfg.StopSystemd {
+	// A type may ship project-stop.sh to do — or just to say — whatever
+	// stopping means for it. Astro's only prints how to stop the dev
+	// server, because that server is the developer's, not mpd's.
+	//
+	// Optional, and best-effort by design: you cannot fail to stop, so a
+	// missing script, a stopped runtime, or a script that errors all
+	// leave the project stopped regardless.
+	if cfg, ok := d.Assets.ProjectTypeConfig(entry.Type); ok &&
+		d.Assets.HasTypeFile(cfg.AssetsType, "project-stop.sh") {
 		if d.Podman.Running(ctx, container) {
-			_, _ = project.Exec(ctx, d.Podman, container, d.DevUser,
-				"sudo", "systemctl", "stop", "mpd-"+name)
+			script := assets.TypeScript(cfg.AssetsType, "project-stop.sh")
+			_, _ = project.Exec(ctx, d.Podman, container, d.DevUser, "bash", script, name)
 		}
 	}
 
@@ -289,10 +298,10 @@ func ProjectStop(ctx context.Context, out io.Writer, name string, d ProjectDeps)
 		return err
 	}
 
-	if _, err := d.Dnsmasq.RemoveRecord(name); err != nil {
-		return err
-	}
-
+	// The DNS record stays. It belongs to the project being configured,
+	// not to it being up: the name keeps resolving and the URL keeps
+	// working the moment something serves again. Only delete (and a
+	// runtime that is removed outright) withdraws it.
 	Ok(out, "'%s' stopped.", name)
 	return nil
 }
@@ -666,6 +675,20 @@ func ProjectConfigure(ctx context.Context, out io.Writer, name string, args []st
 
 	if err := project.EnsureCert(ctx, out, name, entry.URLs, d.Net, d.Podman, d.UID); err != nil {
 		return err
+	}
+
+	// DNS is published here, not at start: a configured project is an
+	// addressable one. The name resolving while nothing serves it yields
+	// a dead page, which is the honest answer — and the only one that
+	// works for types whose server the developer starts by hand (astro),
+	// where mpd never learns that the dev server came up. The record is
+	// read off the container label rather than a live inspect, so it is
+	// available even when configure left the runtime stopped.
+	runtimeIP := d.Podman.Label(ctx, container, "mpd.ip")
+	if body, ok := project.DNSRecords(name, entry.URLs, runtimeIP, d.Net); ok {
+		if _, err := d.Dnsmasq.WriteRecord(name, body); err != nil {
+			return err
+		}
 	}
 
 	// Configure is meant to be low-impact: if it had to start the runtime

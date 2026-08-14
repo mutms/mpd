@@ -1,7 +1,4 @@
 {
-  "stop": {
-    "systemdStop": false
-  },
   "nextSteps": [
     "Open https://%%PROJECT%%.%%ZONE%%/ to complete the install wizard",
     "ssh runtime.%%ZONE%%          # SSH in, then `cd /srv/projects/%%PROJECT%% && mdl-upgrade` after a git pull"

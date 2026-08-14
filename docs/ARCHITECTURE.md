@@ -281,6 +281,19 @@ addressing at `/srv/meta/vm.json` on the data volume.
   (current types: `moodle`, `astro`)
 - Runtime / project-type tools: single executable per file under
   corresponding `tools/` (see §7). Verbs are Go, not assets.
+- Project-type lifecycle scripts: `project-create.sh`,
+  `scripts/configure.sh`, `project-setup.sh` (run by `start`),
+  `project-stop.sh` (run by `stop`, optional and best-effort),
+  `project-delete.sh`. A type is free to make any of them purely
+  informational — Astro's setup/stop scripts only print how to drive
+  `astro dev`, because that server is the developer's.
+- Project-type shell hook: an optional
+  `assets/runtime/project_types/<type>/shellrc.sh`, sourced by the
+  runtime's `~/.bashrc` alongside the tool dirs. For putting something in
+  the environment that a type's *upstream* tooling reads on its own —
+  Astro's is one `export` that lets a plain `npm run dev` accept the Host
+  caddy proxies. Not a place for logic: it runs on every
+  `ssh runtime <cmd>` too.
 - Service config/templates: `assets/services/...`
 
 Contributor rule:

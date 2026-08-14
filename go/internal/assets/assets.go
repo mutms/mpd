@@ -39,10 +39,12 @@ func NewAt(dir string) Tree { return Tree{dir: dir} }
 type ProjectTypeConfig struct {
 	// AssetsType is the directory holding the type's scripts.
 	AssetsType string `json:"assetsType"`
-	// StopSystemd is set when stopping the project needs an explicit
-	// `systemctl stop mpd-<project>` inside the runtime — types that run
-	// a dev server (astro) rather than serving through the frontdoor.
-	StopSystemd bool
+	// WaitForURL is set when `mpd start` should block until the project's
+	// main URL answers. True for every type mpd starts a server for.
+	// False for types whose server the developer runs by hand (astro):
+	// there is nothing to wait for at start time, and waiting would spend
+	// 30s to print a warning about the expected state.
+	WaitForURL bool
 }
 
 // ProjectTypeConfig reads a project type's configuration.json, resolving
@@ -51,7 +53,7 @@ func (t Tree) ProjectTypeConfig(name string) (ProjectTypeConfig, bool) {
 	if !t.HasProjectType(name) {
 		return ProjectTypeConfig{}, false
 	}
-	cfg := ProjectTypeConfig{AssetsType: name}
+	cfg := ProjectTypeConfig{AssetsType: name, WaitForURL: true}
 
 	data, err := os.ReadFile(t.typeFile(name, "configuration.json"))
 	if err != nil {
@@ -59,14 +61,18 @@ func (t Tree) ProjectTypeConfig(name string) (ProjectTypeConfig, bool) {
 	}
 	var raw struct {
 		AssetsType string `json:"assetsType"`
-		Stop       struct {
-			SystemdStop bool `json:"systemdStop"`
-		} `json:"stop"`
+		Start      struct {
+			// Pointer so an absent key keeps the default rather than
+			// reading as false — waiting is what most types want.
+			WaitForURL *bool `json:"waitForURL"`
+		} `json:"start"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return cfg, true
 	}
-	cfg.StopSystemd = raw.Stop.SystemdStop
+	if raw.Start.WaitForURL != nil {
+		cfg.WaitForURL = *raw.Start.WaitForURL
+	}
 	if raw.AssetsType != "" && raw.AssetsType != name {
 		// The type delegates to another type's scripts.
 		cfg.AssetsType = raw.AssetsType
@@ -77,6 +83,15 @@ func (t Tree) ProjectTypeConfig(name string) (ProjectTypeConfig, bool) {
 // HasProjectType reports whether a project type exists in the tree.
 func (t Tree) HasProjectType(name string) bool {
 	_, err := os.Stat(t.typeFile(name, "configuration.json"))
+	return err == nil
+}
+
+// HasTypeFile reports whether a project type ships a given file, so a
+// caller can skip an optional script rather than exec a path that is not
+// there. Takes the resolved ProjectTypeConfig.AssetsType, like
+// TypeScript, so `assetsType` delegation is honoured.
+func (t Tree) HasTypeFile(assetsType, rel string) bool {
+	_, err := os.Stat(t.typeFile(assetsType, rel))
 	return err == nil
 }
 

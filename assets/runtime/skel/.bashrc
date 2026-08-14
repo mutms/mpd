@@ -42,6 +42,20 @@ _mpd_assets=/opt/mpd/assets
 for _d in "${_mpd_assets}/runtime"/project_types/*/tools; do
     [ -d "$_d" ] && PATH="${_d}:$PATH"
 done
+
+# --- project-type shell hooks ----------------------------------------------
+# A type may ship a shellrc.sh to put something in the environment that its
+# upstream tooling reads on its own — the case that earns this is a tool mpd
+# does not wrap, where the alternative would be asking the developer to pass
+# a flag the tool's own docs never mention.
+#
+# Sourced live from the assets tree like the tool dirs above, so editing a
+# shellrc.sh on the VM takes effect in the next shell with no rebuild. Keep
+# them to exports: this runs on every non-interactive `ssh runtime <cmd>`
+# too, so anything slow here is paid on every remote command.
+for _d in "${_mpd_assets}/runtime"/project_types/*/shellrc.sh; do
+    [ -f "$_d" ] && . "$_d"
+done
 unset _d _mpd_assets
 
 # mudev is built once on the VM (it needs Go and make) and bind-mounted

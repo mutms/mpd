@@ -42,13 +42,11 @@ func RuntimeStop(ctx context.Context, out io.Writer, p *podman.Client,
 		return err
 	}
 
-	for _, proj := range s.Projects() {
-		if proj.Requested == "running" {
-			if _, err := dns.RemoveRecord(proj.Name); err != nil {
-				return err
-			}
-		}
-	}
+	// Project records are left in place. A stopped runtime is a temporary
+	// state — the addresses it holds are still this runtime's, and they
+	// answer again on the next start without a reconcile. Withdrawing
+	// them belongs to RuntimeDelete, where the container (and its
+	// address) really is gone.
 	Ok(out, "Stopped the runtime.")
 	return nil
 }

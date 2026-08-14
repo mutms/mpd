@@ -61,6 +61,13 @@ fi
 # Publish URLs for portal/cert/dnsmasq + the in-runtime caddy frontdoor.
 # Astro projects expose an HTTP dev server on a fixed local port — caddy
 # reverse-proxies HTTPS at <project>.<zone> to it.
+#
+# The upstream is "localhost", not "127.0.0.1", and that is load-bearing:
+# a default `astro dev` binds [::1] only, while `astro dev --host` binds
+# 0.0.0.0 (IPv4 only). Either one alone leaves a literal address dialing
+# a port nothing listens on, and caddy answers 502. A name lets Go's
+# dialer try both families and take whichever answers, so both ways of
+# starting the dev server work.
 cat > "/srv/meta/${PROJECT_NAME}/urls.json" <<EOF
 [
   {
@@ -69,7 +76,7 @@ cat > "/srv/meta/${PROJECT_NAME}/urls.json" <<EOF
     "url": "https://${PROJECT_NAME}.${MPD_ZONE}/",
     "backend": {
       "type": "reverse-proxy",
-      "upstream": "http://127.0.0.1:${PORT}"
+      "upstream": "http://localhost:${PORT}"
     }
   }
 ]

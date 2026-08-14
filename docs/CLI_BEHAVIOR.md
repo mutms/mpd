@@ -245,6 +245,13 @@ guards it.
 Project-focused universal verbs (recommended daily surface):
 - `create` is inert beyond scaffolding: accepts `--type`. It does not fetch any source — `/srv` is mounted on the VM, so cloning is ordinary shell (`git clone`, or `mudev clone <recipe>`) done before or after, with the developer's own credentials. Project-type `project-create.sh` seeds `/srv/projects/<project>/mpd.env` from the type's `mpd-template.env` (existing mpd.env preserved, so scaffolding a directory that already holds a source tree is safe). No DB is provisioned here; the project is registered with status `notConfigured`. Next step is `mpd configure`.
 - `configure` takes any number of positional `KEY=VALUE` pairs matching `^MPD_[A-Z0-9_]+=.*$`. The control plane sanitises (reserved keys like `MPD_DB` get strict validation; others get a generic safe-charset check), then writes the line into `/srv/projects/<project>/mpd.env` (empty value deletes the line). Then runs the project-type `configure.sh` which sources the four-layer mpd.env (runtime defaults → type defaults → user-level → project) and emits `dbTag` / `urls` into `/srv/meta/<project>/{effective.json,urls.json}`. The control plane reads `dbTag`, re-sanitises, and provisions the DB container if non-empty (visible image-pull progress via `podman pull`, then `podman run -d`, then per-project DB creation). The full mpd.env model — file paths, sourcing order, sanitisation, reserved keys — is documented in [`ARCHITECTURE.md` §8 "Configuration model: mpd.env"](ARCHITECTURE.md#8-configuration-model-mpdenv).
+  `configure` is also what makes the project **addressable**: it writes the
+  vhost (`urls.json`, which the in-runtime caddy picks up), the TLS
+  certificate, and the DNS record. A configured project therefore resolves
+  and appears on the portal with a working link whether or not anything is
+  serving it yet — a dead page is the honest answer, and it is the only one
+  available for project types whose server the developer starts by hand
+  (Astro), where mpd never learns that the server came up.
 - `start` re-reads `/srv/meta/<project>/urls.json` before it uses the URL
   list, because that file is the source of truth and the copy in
   `projects.json` is a cache only `configure` refreshes. The cert SANs and
@@ -262,7 +269,22 @@ Project-focused universal verbs (recommended daily surface):
   New invariants belong in `project.CheckConfigured`, and each should earn
   its place by the same test: if mpd can repair it, repair it instead of
   reporting it.
-- `stop`
+- `start` / `stop` carry the **server-side** lifecycle only, and how much
+  that is depends on the type — each runs its type's `project-setup.sh`
+  and `project-stop.sh` respectively (both optional; `project-stop.sh` is
+  best-effort, since a stop cannot be allowed to fail). For Moodle that is
+  the real work: the database container is started if it is not running,
+  and the per-project PHP-FPM pool is written and reloaded. For Astro the
+  scripts only **print** — the dev server is Astro's own
+  (`npm run dev`, `astro dev --background`, `astro dev stop`), so mpd
+  reports whether one is up and how to start or stop it rather than
+  running a competing one. What neither verb touches any more is
+  addressability: the
+  vhost, certificate and DNS record are `configure`'s, and they survive a
+  `stop` so the URL keeps resolving and starts answering again as soon as
+  something serves. A type opts out of the post-start URL wait with
+  `"start": {"waitForURL": false}` in its `configuration.json`, which is
+  what stops Astro spending 30s to warn about the expected state.
 - `reset` — destroys everything the project generated and returns it to the
   state `create` left it in, keeping `/srv/projects/<project>/`. Drops the
   project's database (never the shared engine container, which keeps
@@ -290,10 +312,11 @@ they are VM-terminal-only and name infrastructure, not a developer's site.
 
 The verb set above is fixed and Go-only. There is no host-side
 asset-shipped-verb mechanism: project-type-specific operations
-(`cache-purge`, `cron`, `upgrade`, `install` on Moodle; `rebuild`,
-`upgrade` on Astro) live as project-type **tools** inside the runtime
-container, on PATH after you SSH in. See the `mdl-*` / `astro-*`
-tables in `docs/USAGE.md` for the full set, and
+(`cache-purge`, `cron`, `upgrade`, `install` on Moodle) live as
+project-type **tools** inside the runtime container, on PATH after you
+SSH in. Astro ships none: its own `npm run dev` / `astro` commands are
+the interface, and wrapping them would only add a second way to say the
+same thing. See the `mdl-*` table in `docs/USAGE.md` for the full set, and
 [`ARCHITECTURE.md` §7](ARCHITECTURE.md#7-verbs-and-tools) for the
 verb-vs-tool contract.
 
