@@ -78,10 +78,11 @@ Moodle development, standing on my OrbStack-era
 [moodle-docker](https://github.com/moodlehq/moodle-docker) — and I release
 them because I like open source. Try them, break them, send issues or PRs.
 
-mpd and its related tools are my first fully AI-driven project — the Go, the
-asset scripts, and the docs are largely written by
-[Claude Code](https://claude.com/claude-code) (Anthropic) under my direction
-(design and review stay human).
+## AI disclosure
+
+Majority of this plugin was written with the help of Claude (Anthropic). Everything it produced was
+reviewed, corrected where needed and accepted by a human maintainer before being committed; the
+design decisions and the final state of the code are the maintainers'.
 
 ## License
 
