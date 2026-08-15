@@ -593,15 +593,14 @@ func ProjectConfigure(ctx context.Context, out io.Writer, name string, args []st
 		}
 	}
 
+	// Written from the VM, which reaches /srv through the srv.mount bind.
+	// No container is involved: the runtime has nothing to contribute to
+	// editing a text file, and a podman exec per key was the cost of
+	// asking it to.
 	if len(mutations) > 0 {
 		fmt.Fprintf(out, "\n\033[1m==> Updating /srv/projects/%s/mpd.env\033[0m\n", name)
-		for _, m := range mutations {
-			code, err := project.Exec(ctx, d.Podman, container, d.DevUser,
-				"bash", "/opt/mpd/assets/runtime/tools/set-mpd-env",
-				"/srv/projects/"+name+"/mpd.env", m.Key, m.Value)
-			if err != nil || code != 0 {
-				return fmt.Errorf("Failed to update mpd.env (key '%s').", m.Key)
-			}
+		if err := project.ApplyMutations("/srv/projects/"+name+"/mpd.env", mutations); err != nil {
+			return err
 		}
 	}
 

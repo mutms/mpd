@@ -19,7 +19,7 @@ func TestParseMutations(t *testing.T) {
 	}
 }
 
-// Empty means "delete the line", which is how a project drops back to
+// Empty means "unset this key", which is how a project drops back to
 // the inherited default — so it must not be rejected.
 func TestEmptyValueIsAllowed(t *testing.T) {
 	got, err := ParseMutations([]string{"MPD_DB="}, okTag)

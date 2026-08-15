@@ -63,8 +63,10 @@ func validateKey(key string) error {
 // validateValue applies a strict validator to keys with known shapes and
 // a conservative charset to everything else.
 //
-// An empty value is always allowed: it means "delete the line", which is
-// how a project drops back to the inherited default.
+// An empty value is always allowed: it means "unset this key", which is
+// how a project drops back to the inherited default. SetEnvKey comments
+// the line out rather than removing it, so the key keeps its place under
+// the comment block that explains it.
 func validateValue(key, value string, validateDBTag func(string) error) error {
 	if value == "" {
 		return nil

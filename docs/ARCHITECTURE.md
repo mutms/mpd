@@ -699,7 +699,18 @@ parses positional pairs matching `^MPD_[A-Z0-9_]+=.*$`, sanitises in Go
 (reserved-key map for strict validators, otherwise a generic safe-charset
 check that blocks shell metacharacters), and rewrites the corresponding line
 in `/srv/projects/<n>/mpd.env` via
-`assets/runtime/tools/set-mpd-env`. Empty value deletes the line.
+`project.SetEnvKey` (`go/internal/project/setenv.go`), which edits in
+place: an existing setting is rewritten where it stands, a commented
+example for that key becomes the setting, and only a key found nowhere is
+appended. Position is load-bearing in these files — every key sits under
+the comment block that explains it. An empty value comments the line out
+rather than removing it, which unsets the key (a commented line is not a
+setting) while keeping it in place for the next time it is set.
+
+The write happens **on the VM**, not in the runtime: `/srv` is bind-mounted
+there by `srv.mount`, so mpd edits `mpd.env` as an ordinary file through
+`srv.Write`. This was a shell tool invoked over `podman exec` until the
+in-place rules grew past what was worth writing — or testing — in shell.
 After mutations are applied, the project type's `configure.sh` sources the
 layered env, generates config files, and emits resolved values into
 `/srv/meta/<n>/effective.json` (where mpd reads `dbTag` to provision the

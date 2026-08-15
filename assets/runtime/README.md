@@ -32,7 +32,7 @@ boundary, not a layering one.
 - **`tools/`** — executables on the dev user's PATH as
   `/opt/mpd/assets/runtime/tools/<name>`, read straight out of the assets
   tree; nothing is copied or symlinked. `claude-install`, `node-install`,
-  `set-mpd-env`, `composer-install`, `composer-upgrade`, and the `php`
+  `composer-install`, `composer-upgrade`, and the `php`
   wrapper. Adding one = drop a file here and rebuild the runtime.
 - **`lib/`** — sourced libraries used by tools and project-type scripts:
   `source-mpd-env.sh` (loads the layered MPD_* env), `nvm-env.sh`
