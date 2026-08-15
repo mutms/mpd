@@ -70,7 +70,7 @@ with snapshot/revert as the safety net for letting an agent rip.
 - Optional per-VM services (`mpd --service-enable=<name>`; nothing installed
   by default): Mailpit (`http://mailpit.svc.<NNN>.mpd.test:8025/` — one shared
   inbox, each project publishing a pre-filtered link), Adminer, Selenium.
-  Behat is auto-wired when a project asks: `MPD_PHP_MOODLE_BEHAT=1` makes
+  Behat is auto-wired when a project asks: `MPD_MOODLE_BEHAT=1` makes
   `mpd configure` enable the seleniumv1 service and publish
   `https://behat.<project>.<NNN>.mpd.test/`.
 - No host pollution: no Homebrew PHP, no system Apache, no `brew upgrade`
@@ -126,8 +126,10 @@ chowns), all enforced at runtime — do not propose alternates.
 - `/var/lib/mpd/conf/` — persistent identity. Trust anchor + this VM's
   own signing CA + service cert. PRIVATE — never bind-mounted into
   containers.
-- `/var/lib/mpd/env/` — user-editable env overrides. Holds `mpd-vm.env`
-  only. Bind-mounted RO into every runtime container at the same path
+- `/var/lib/mpd/env/` — the developer's own env overrides, shared across
+  every VM they run. Holds `mpd-virt.env` only, pushed in from the Mac's
+  `~/.mpd-virt/mpd-virt.env` by mpd-virt (hand-edited in-VM on a sandbox).
+  Bind-mounted RO into every runtime container at the same path
   (directory mount, so vim/nano atomic-rename writes propagate).
 - `/var/lib/mpd/skel/` — user-managed dotfile overrides for the runtime
   container. Same idea as `/etc/skel/`: contents are copied into
@@ -195,8 +197,9 @@ Runtime/project-type behavior + service container assets live under `assets/`:
 - `assets/vm/` — VM-level assets deployed to the mpd VM itself: `motd`
   (→ `/etc/motd`), `prompt.bashrc` (→ a managed block in the dev user's
   `~/.bashrc`), `vimrc` (→ `~/.vimrc`, seeded once, never rewritten), and
-  `mpd-vm.env`, the per-developer template seeded to
-  `/var/lib/mpd/env/mpd-vm.env`
+  `mpd-virt.env`, the per-developer template seeded to
+  `/var/lib/mpd/env/mpd-virt.env` (only when nothing is there — a
+  managed VM normally receives the Mac's copy instead)
 - `assets/runtime/...` — the runtime definition, both build phases in
   one place: `Containerfile`, `bootstrap.sh` (phase 1, root), `build.sh`
   (phase 2, dev user), `mpd-defaults.env`, `skel/`, `tools/`, `lib/`,
@@ -412,7 +415,7 @@ if [ ! -f "$PROJECT_DIR/mpd.env" ]; then
 fi
 
 # Load the four-layer MPD_* env (runtime defaults → type defaults →
-# /var/lib/mpd/env/mpd-vm.env → project mpd.env). source-mpd-env.sh uses a
+# /var/lib/mpd/env/mpd-virt.env → project mpd.env). source-mpd-env.sh uses a
 # whitelist parser, so a malicious project mpd.env cannot inject code.
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
 . /opt/mpd/assets/runtime/lib/source-mpd-env.sh

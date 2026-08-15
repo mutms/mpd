@@ -590,18 +590,20 @@ func setupStateDirectories(ctx context.Context, out io.Writer) error {
 	}
 	ui.OK(out, "%s/ ready.", state.Dir)
 
-	// Copied from the template once and never overwritten: it is the
-	// developer's file after that.
-	ui.Step(out, "mpd-vm.env defaults")
+	// Copied from the template once and never overwritten. On a sandbox VM
+	// it is the developer's file after that; on a managed VM mpd-virt
+	// pushes the Mac's copy over it, and this seeding only decides what a
+	// VM starts with before the first push.
+	ui.Step(out, "mpd-virt.env defaults")
 	if err := os.MkdirAll(vm.EnvDir, 0o755); err != nil {
 		return err
 	}
-	target := filepath.Join(vm.EnvDir, "mpd-vm.env")
+	target := filepath.Join(vm.EnvDir, "mpd-virt.env")
 	if exists(target) {
 		ui.OK(out, "%s already exists — edit to set your defaults.", target)
 		return nil
 	}
-	source := filepath.Join(vm.AssetsDir, "vm", "mpd-vm.env")
+	source := filepath.Join(vm.AssetsDir, "vm", "mpd-virt.env")
 	data, err := os.ReadFile(source)
 	if err != nil {
 		ui.Note(out, "Warning: template not found at %s", source)

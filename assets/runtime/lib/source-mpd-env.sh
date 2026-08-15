@@ -7,13 +7,14 @@
 #      Single source of truth for "the default value of MPD_<RT>_*".
 #   2. /opt/mpd/assets/runtime/project_types/<type>/mpd-defaults.env —
 #      project-type defaults (override the runtime layer).
-#   3. /var/lib/mpd/env/mpd-vm.env — VM-wide cross-project overrides.
-#      Bind-mounted RO from the host into runtime containers at the same
-#      absolute path (see Mpd.envMountRO).
+#   3. /var/lib/mpd/env/mpd-virt.env — the developer's own defaults, shared
+#      by every VM they run: authored on the Mac at ~/.mpd-virt/mpd-virt.env
+#      and pushed in by mpd-virt. Bind-mounted RO from the VM into runtime
+#      containers at the same absolute path (see podman.EnvMountRO).
 #   4. /srv/projects/<project>/mpd.env — per-project, seeded from the project
 #      type's template/mpd.env at create time. Wins over everything above.
 #
-# Per-project values win over VM-wide, which win over type defaults,
+# Per-project values win over the developer's, which win over type defaults,
 # which win over runtime defaults. Explicit `KEY=""` in any layer blocks
 # fall-through from earlier layers (last-assignment-wins, even when empty).
 #
@@ -79,8 +80,8 @@ if [ -f "$_mpd_meta" ] && command -v jq >/dev/null 2>&1; then
 fi
 unset _mpd_meta
 
-# Layer 3+4: VM-wide + per-project (always sourced).
-_mpd_load_env_file "/var/lib/mpd/env/mpd-vm.env"
+# Layer 3+4: developer-wide + per-project (always sourced).
+_mpd_load_env_file "/var/lib/mpd/env/mpd-virt.env"
 _mpd_load_env_file "/srv/projects/${PROJECT_NAME}/mpd.env"
 
 unset -f _mpd_load_env_file

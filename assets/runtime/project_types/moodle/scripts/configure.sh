@@ -8,7 +8,7 @@
 #   - Re-apply this type's template/ (seeds any file added to it since the
 #     project was created; existing files untouched) and refresh the git
 #     excludes for template/ + generated/
-#   - Source layered mpd.env (/var/lib/mpd/env/mpd-vm.env then project mpd.env)
+#   - Source layered mpd.env (/var/lib/mpd/env/mpd-virt.env then project mpd.env)
 #   - Resolve MPD_DB to dbTag/dbEngine/databaseId for downstream use
 #   - Fix ownership of /srv/projects/<project>
 #   - Ensure dataroot dirs (plus the behat faildump dir) exist with expected perms
@@ -47,7 +47,7 @@ apply_project_template "$PROJECT_NAME" "$TYPE_DIR"
 # plain mkdir works.
 mkdir -p "/srv/meta/${PROJECT_NAME}"
 
-# Layered config: /var/lib/mpd/env/mpd-vm.env (bind-mounted RO), then per-project
+# Layered config: /var/lib/mpd/env/mpd-virt.env (bind-mounted RO), then per-project
 # /srv/projects/<n>/mpd.env. Project wins; explicit empty in project blocks
 # user-level fall-through; absent key in project falls through.
 # shellcheck source=/dev/null
@@ -55,7 +55,7 @@ source /opt/mpd/assets/runtime/lib/source-mpd-env.sh
 
 # --- Resolve effective settings ---
 PHP_VER="${MPD_PHP_VERSION}"
-BEHAT="${MPD_PHP_MOODLE_BEHAT}"
+BEHAT="${MPD_MOODLE_BEHAT}"
 
 # MPD_DB (docker tag form): "postgres", "postgres:17", "postgres:latest", or
 # "" (empty = no DB). Bare engine expands to engine:latest. mpd re-validates

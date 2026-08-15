@@ -13,7 +13,7 @@ CLI behavior assumes fixed paths:
 - `/opt/mpd/` for the code checkout, assets, and built binary
 - `/var/lib/mpd/` for state/cache and configuration:
   - `conf/` — CA + service cert (PRIVATE)
-  - `env/mpd-vm.env` — user-editable VM-wide env overrides (mounted into the runtime)
+  - `env/mpd-virt.env` — the developer's own env overrides, shared across their VMs (mounted into the runtime)
   - `state/` — operational state: projects.json, services.json,
     runtimes/ (the single runtime's entry), dns/, etc.
 
@@ -165,7 +165,7 @@ has to be one the assets tree defines (`moodle`, `astro`). `version` is
 answered locally, since it describes the binary being asked and
 `/opt/mpd` is the same checkout on both sides.
 
-Disable with `MPD_RUNTIME_CONTROL=off` in `/var/lib/mpd/env/mpd-vm.env`;
+Disable with `MPD_RUNTIME_CONTROL=off` in `/var/lib/mpd/env/mpd-virt.env`;
 it is read per request, so no restart is needed. Full model in
 [`SECURITY.md`](SECURITY.md#the-runtime-control-socket), workflow in
 [`USAGE.md`](USAGE.md#mpd-from-inside-the-runtime).

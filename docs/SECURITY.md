@@ -98,7 +98,7 @@ nothing resets it between projects, and mpd offers no scrubbing step
 - **Keep credentials out of the VM.** This is why the root CA private key
   stays on the workstation and the VM gets only a zone-constrained
   intermediate, and why it is worth resisting the temptation to park API
-  tokens in `mpd-vm.env` for convenience.
+  tokens in `mpd-virt.env` for convenience.
 - **`ssh -A` is the one live credential path in.** Agent forwarding
   gives anything running as the dev user in that container use of your
   key for the session — including a `git clone` you didn't start. It is
@@ -404,9 +404,19 @@ design, and from inside the runtime it would merely loop back to where
 the caller already is: runtime → VM → the same runtime.
 
 **Turning it off.** Set `MPD_RUNTIME_CONTROL=off` in
-`/var/lib/mpd/env/mpd-vm.env`. Read per request, so it takes effect on
+`/var/lib/mpd/env/mpd-virt.env`. Read per request, so it takes effect on
 the next command with no restart; only an explicit `off`/`false`/`0`/`no`
 disables it, so a typo cannot silently break mpd inside the runtime.
+
+That file is normally authored on the Mac and pushed into every VM, so
+setting the switch there sets it for all of them at once — and it means
+the workstation, not the VM, decides this VM's posture. That is the same
+direction the CA travels (host → VM, §"Host-only trust rule"), and it is
+the direction that holds: nothing inside a VM can reach back and change
+what the Mac pushes. The runtime cannot edit the file either — the env
+directory is mounted read-only into the container. Set it per VM by
+editing the in-VM copy instead, accepting that the next
+`mpd-virt start`/`update` overwrites it.
 
 The daemon (`mpd --control`, `mpd-control.service`) runs as a **systemd
 user unit with no privileges of its own**. A forwarded verb acquires

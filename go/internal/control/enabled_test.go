@@ -9,7 +9,7 @@ import (
 
 func envFile(t *testing.T, body string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "mpd-vm.env")
+	path := filepath.Join(t.TempDir(), "mpd-virt.env")
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}

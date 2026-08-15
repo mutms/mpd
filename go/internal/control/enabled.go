@@ -6,11 +6,12 @@ import (
 	"strings"
 )
 
-// EnvFile is the user-editable VM-wide override file. Read per request
-// rather than at start-up: /var/lib/mpd/env is a directory mount, so an
-// edit on the VM takes effect on the next command without restarting the
-// daemon or touching any container.
-const EnvFile = "/var/lib/mpd/env/mpd-vm.env"
+// EnvFile is the developer's own override file, shared across their VMs.
+// Read per request rather than at start-up: /var/lib/mpd/env is a
+// directory mount, so an edit on the VM — or a fresh copy pushed in from
+// the Mac by mpd-virt — takes effect on the next command without
+// restarting the daemon or touching any container.
+const EnvFile = "/var/lib/mpd/env/mpd-virt.env"
 
 // EnabledKey turns runtime-originated commands off.
 //

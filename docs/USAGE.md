@@ -155,14 +155,19 @@ The project then publishes an informational "mail" link —
 `http://mailpit.svc.<NNN>.mpd.test:8025/?q=moodle51.<NNN>.mpd.test`, the
 shared Mailpit inbox pre-filtered to this project.
 
-**Behat**: set `MPD_PHP_MOODLE_BEHAT=1` and re-run `mpd configure` —
+**Behat**: set `MPD_MOODLE_BEHAT=1` and re-run `mpd configure` —
 that auto-enables the `seleniumv1` service, points `wd_host` at it, and
 wires `https://behat.moodle51.<NNN>.mpd.test/` automatically.
 
-VM-wide defaults (Moodle admin password, Behat preferences, etc.)
-live in `/var/lib/mpd/env/mpd-vm.env` *inside the VM*
-and are bind-mounted RO into the runtime container — edit on the host
-and the new values are visible to the next command run inside it.
+Your own defaults (Moodle admin password, Behat preferences, etc.) live
+in `/var/lib/mpd/env/mpd-virt.env` *inside the VM* and are bind-mounted
+RO into the runtime container — write them once and the next command run
+inside the runtime sees them. On a laptop-driven VM the file you actually
+edit is `~/.mpd-virt/mpd-virt.env` on the Mac, which mpd-virt pushes into
+every VM you run, so a preference set once follows you across all of
+them; the in-VM copy is a mirror and is replaced on the next
+`mpd-virt start`/`update`. A sandbox VM has no Mac behind it, so there
+you edit the in-VM file directly.
 The full layered
 configuration model — file paths, sourcing order, reserved keys — is
 documented in
@@ -341,7 +346,7 @@ Two details worth knowing:
   `/srv` is the only tree that means the same thing on both sides.
 
 To turn the whole thing off, set `MPD_RUNTIME_CONTROL=off` in
-`/var/lib/mpd/env/mpd-vm.env`; it applies to the next command, no restart.
+`/var/lib/mpd/env/mpd-virt.env`; it applies to the next command, no restart.
 The trade-off it exists for is in
 [`SECURITY.md`](SECURITY.md#the-runtime-control-socket).
 

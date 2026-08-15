@@ -545,7 +545,7 @@ func (c *Client) ExecCapture(ctx context.Context, container string, command ...s
 // Mounts every mpd-created container gets, at identical absolute paths
 // inside and out so asset and env lookups resolve the same either side.
 var (
-	// EnvMountRO carries user-editable VM-wide overrides. Mounted as a
+	// EnvMountRO carries the developer's own env overrides. Mounted as a
 	// DIRECTORY, not a file, so vim/nano atomic-rename writes on the VM
 	// propagate into running containers — a file mount would pin the old
 	// inode.

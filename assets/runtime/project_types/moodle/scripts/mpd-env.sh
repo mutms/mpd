@@ -42,7 +42,7 @@ moodle_run() {
 # Layered MPD_* env via the secure whitelist parser (NOT raw `source` — a
 # malicious project's mpd.env with `MPD_FOO=$(rm -rf ~)` would otherwise
 # execute when cloned from git). Loads runtime defaults → type defaults →
-# /var/lib/mpd/env/mpd-vm.env → project mpd.env, last-assignment-wins.
+# /var/lib/mpd/env/mpd-virt.env → project mpd.env, last-assignment-wins.
 PROJECT_NAME="${PROJECT}"
 # shellcheck source=/dev/null
 source /opt/mpd/assets/runtime/lib/source-mpd-env.sh

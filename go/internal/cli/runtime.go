@@ -81,7 +81,7 @@ func RuntimeDelete(ctx context.Context, out io.Writer, in io.Reader,
 	fmt.Fprintln(out, "(IDE settings, shell history, manually installed CLIs in ~/.local/bin)")
 	fmt.Fprintln(out, "`mpd --runtime-backup` first saves config + history; `mpd --runtime-restore` brings")
 	fmt.Fprintln(out, "them back and reinstalls tools fresh — binaries are never copied across a rebuild.")
-	fmt.Fprintln(out, "Preserved across rebuild: mpd-vm.env (/var/lib/mpd/env/), VM-host skel (/var/lib/mpd/skel/)")
+	fmt.Fprintln(out, "Preserved across rebuild: mpd-virt.env (/var/lib/mpd/env/), VM-host skel (/var/lib/mpd/skel/)")
 
 	if !assumeYes && !promptYesNo(out, in,
 		"Remove the runtime container?") {

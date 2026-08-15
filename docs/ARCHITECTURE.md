@@ -619,7 +619,7 @@ Five named files with distinct lifecycles. Four are *sourced* at every
 |------------------|-------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|----------------------------------------------------------------------|
 | Runtime defaults | `assets/runtime/mpd-defaults.env`                                                         | runtime, in repo (read-only)                                                                  | "the default value" for runtime-wide keys; sourced 1st               |
 | Type defaults    | `assets/runtime/project_types/<type>/mpd-defaults.env`                                    | project type, in repo (read-only)                                                             | type-specific overrides of the runtime default; sourced 2nd          |
-| VM-wide          | `/var/lib/mpd/env/mpd-vm.env` (host; bind-mounted RO into the runtime container at the same path) | developer (manual edit)                                                                       | cross-project preferences and secrets; sourced 3rd                   |
+| Developer-wide   | `/var/lib/mpd/env/mpd-virt.env` (VM; bind-mounted RO into the runtime container at the same path) | developer, on the Mac at `~/.mpd-virt/mpd-virt.env` — pushed into every VM by mpd-virt; hand-edited in-VM on a sandbox | cross-project, cross-VM preferences and secrets; sourced 3rd |
 | Per-project      | `/srv/projects/<n>/mpd.env`                                                               | seeded from the type's `template/`, mutated by `mpd configure <project> KEY=VALUE` and manual edit | project-scoped truth; sourced 4th, wins                              |
 | Per-type seed    | `assets/runtime/project_types/<type>/template/mpd.env`                                    | project type, in repo (read-only)                                                             | NOT sourced — copied to `/srv/projects/<n>/mpd.env` by the template mechanism |
 
@@ -635,7 +635,7 @@ hints for discoverability.
 
 1. runtime defaults (`mpd-defaults.env`)
 2. type defaults (`mpd-defaults.env`)
-3. `/var/lib/mpd/env/mpd-vm.env`
+3. `/var/lib/mpd/env/mpd-virt.env`
 4. project `mpd.env`
 
 The project's type is read from `/srv/meta/<n>/project.json` (written
@@ -653,27 +653,42 @@ the right semantics — each layer overrides earlier ones, and explicit
 
 `MPD_DB` is the same: a project type that doesn't use a DB ships `MPD_DB=""`
 in its `template/mpd.env` (astro) so the seeded project file blocks
-any `MPD_DB=...` the developer set in mpd-vm.env; types that do ship a
+any `MPD_DB=...` the developer set in mpd-virt.env; types that do ship a
 sensible default (`MPD_DB=postgres:latest` for moodle).
 
-**How `mpd-vm.env` reaches the runtime:** the host file
-`/var/lib/mpd/env/mpd-vm.env` is bind-mounted RO into the runtime
+**How `mpd-virt.env` reaches the VM:** it is the developer's own file,
+and the layer is scoped to the *developer*, not the VM — one runtime per
+VM makes "VM-wide" a distinction without a difference, while a developer
+routinely runs several VMs that should share one set of defaults. The
+authoritative copy therefore lives on the Mac at
+`~/.mpd-virt/mpd-virt.env`, and mpd-virt pushes it to
+`/var/lib/mpd/env/mpd-virt.env` on takeover, start and update. The Mac
+is the source of truth: an edit made inside the VM survives only until
+the next push. A VM with no mpd-virt behind it (a sandbox) gets the file
+seeded once from `assets/vm/mpd-virt.env` by `mpd --vm-setup` and owns it
+outright. `--vm-setup` never overwrites an existing copy, so a pushed
+file is safe from the `--vm-setup` that `mpd-virt update` runs.
+
+**And how it reaches the runtime:** bind-mounted RO into the runtime
 container at the same absolute path (`podman.EnvMountRO` in
 `go/internal/podman/podman.go`). Directory mount, so vim/nano
-atomic-rename writes on the host propagate inside the container
-immediately. No sync, no restart needed.
+atomic-rename writes on the VM — and a fresh copy scp'd in from the Mac —
+propagate inside the container immediately. No sync, no restart needed.
 
 **Naming convention:**
 
-- `MPD_<RUNTIME>_<TYPE>_<KEY>` — project-type-specific knobs
-  (`MPD_PHP_MOODLE_BEHAT`). A knob earns its place only when mpd is the
+- `MPD_<TYPE>_<KEY>` — project-type-specific knobs
+  (`MPD_MOODLE_BEHAT`). A knob earns its place only when mpd is the
   side that acts on it: astro's dev-server port is not one, because the
   server is Astro's own and reads `server.port` from `astro.config.mjs`.
-- `MPD_<RUNTIME>_<KEY>` — runtime-wide, applies to every type on that
-  runtime (`MPD_PHP_VERSION`, `MPD_PHP_XDEBUG_MODE`).
-- `MPD_<KEY>` — global mpd infra (none currently in active use; the
-  former `MPD_DNS_UPSTREAM` is gone — dnsmasq reads the host's
-  systemd-resolved upstream and follows whatever the host has configured).
+- `MPD_<KEY>` — everything else: runtime-wide knobs (`MPD_XDEBUG_MODE`)
+  and mpd infra (`MPD_RUNTIME_CONTROL`). Names carry no runtime segment;
+  there is one runtime, so it never distinguished anything. The one
+  apparent exception is the `MPD_PHP_*` family (`MPD_PHP_VERSION`,
+  `MPD_PHP_FORCE_VERSION`, `MPD_PHP_FALLBACK_VERSION`) — there `PHP`
+  names the interpreter those keys select, not the runtime they belong
+  to. (The former `MPD_DNS_UPSTREAM` is gone — dnsmasq reads the VM's
+  systemd-resolved upstream and follows whatever it has configured.)
 - **Reserved keys:** `MPD_DB` is owned by `db.ParseTag`
   (engine whitelist + version regex); other reserved keys get strict
   validators in `project.ParseMutations` (`go/internal/project/env.go`)
@@ -831,7 +846,7 @@ SOCKS, never proxied by any caddy):
 - `seleniumv1` — `.103`, `http://seleniumv1.svc.<NNN>.mpd.test:4444/`
   ("v1" so a future Moodle release can require another selenium
   alongside). Auto-enabled by `mpd configure` when a project sets
-  `MPD_PHP_MOODLE_BEHAT=1`.
+  `MPD_MOODLE_BEHAT=1`.
 
 Lifecycle: `--service-enable` installs, starts and makes it auto-start
 (`--restart always` + a reconcile in `--vm-start`/`--vm-setup`);

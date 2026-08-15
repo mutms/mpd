@@ -15,9 +15,9 @@ fi
 
 # Build extra options from env variables.
 EXTRA_OPTS=()
-[ -n "${MPD_INSTALL_AGREE_LICENSE:-}" ] && EXTRA_OPTS+=("--agree-license")
-[ -n "${MPD_INSTALL_ADMINPASS:-}"     ] && EXTRA_OPTS+=("--adminpass=${MPD_INSTALL_ADMINPASS}")
-[ -n "${MPD_INSTALL_ADMINEMAIL:-}"    ] && EXTRA_OPTS+=("--adminemail=${MPD_INSTALL_ADMINEMAIL}")
+[ -n "${MPD_MOODLE_AGREE_LICENSE:-}" ] && EXTRA_OPTS+=("--agree-license")
+[ -n "${MPD_MOODLE_ADMINPASS:-}"     ] && EXTRA_OPTS+=("--adminpass=${MPD_MOODLE_ADMINPASS}")
+[ -n "${MPD_MOODLE_ADMINEMAIL:-}"    ] && EXTRA_OPTS+=("--adminemail=${MPD_MOODLE_ADMINEMAIL}")
 
 # moodle_run resolves admin/cli/install_database.php to the right cwd
 # (root for pre-5.0 and 5.x; admin/cli/* never moved under public/).
@@ -25,6 +25,6 @@ moodle_run admin/cli/install_database.php \
     --fullname="mpd ${PROJECT}" \
     --shortname="${PROJECT}" \
     --summary="mpd dev site" \
-    --adminemail="${MPD_INSTALL_ADMINEMAIL:-admin@example.com}" \
+    --adminemail="${MPD_MOODLE_ADMINEMAIL:-admin@example.com}" \
     "${EXTRA_OPTS[@]}" \
     "$@"
