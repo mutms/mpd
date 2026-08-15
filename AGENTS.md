@@ -321,6 +321,43 @@ may invoke a script as root.
   [`setup/README.md`](setup/README.md)
   for the full rule.
 
+## Writing style in `assets/`
+
+English text under `assets/` follows **ISO 24495-1:2023 (Plain
+language)**. That covers the `.env` templates, the comment blocks in
+tools and scripts, and anything else a developer reads there. The
+standard's four principles, in the order to apply them:
+
+1. **Relevant** — write what this reader needs *here*, and nothing else.
+   How mpd implements a thing belongs in `docs/`; a pointer to the
+   owning doc replaces the explanation.
+2. **Findable** — one heading per setting, a blank line above it, lists
+   as lists. Assume the reader is scanning for one key, not reading the
+   file.
+3. **Understandable** — short sentences, one idea each. Common words
+   over precise-but-rare ones. Address the reader as "you". No symbols
+   standing in for words (`∈`), no coined adjectives ("hot-switchable")
+   where the plain fact is a sentence.
+4. **Usable** — give the reader the command, and say what to run
+   afterwards for the change to take effect.
+
+The standard is written for readers working in a second language, which
+most Moodle developers are. It applies to prose only: key names, values
+and paths are what they are.
+
+Two known tensions, both resolved toward the repo's own rules:
+
+- Usability wants defaults restated where the reader is; **don't
+  duplicate** wins — point at the file that owns the value, as
+  "Avoid cross-file doc duplication" already requires.
+- Plain language wants short files; a genuine safety explanation
+  (`MPD_RUNTIME_CONTROL`, `MPD_DB=""` on astro) stays. Cutting the
+  reason is not simplifying.
+
+`docs/` and the Go sources are not covered — they address a different
+reader, and code comments carry reasoning that plain-language rules are
+not shaped for.
+
 ## Authoring verbs and tools
 
 Verbs (host-side, surfaced as `mpd <verb> <project>`) and tools
