@@ -65,8 +65,9 @@ with snapshot/revert as the safety net for letting an agent rip.
   next, simultaneously) and per-project database (`MPD_DB=postgres:18` —
   `<engine>:<version>`, not a port; provisioned on demand, no shared DB
   server with table prefixes).
-- One-verb reset: `mdl-data-purge` drops the DB, wipes dataroots, removes the
-  generated config — keeps `mpd.env` and the source tree.
+- One-verb reset: `mpd reset <project>` drops the DB, wipes the dataroots and
+  clears the generated state — keeps the source tree, `mpd.env` and
+  `config.php`. Works from a VM terminal or from inside the runtime.
 - Optional per-VM services (`mpd --service-enable=<name>`; nothing installed
   by default): Mailpit (`http://mailpit.svc.<NNN>.mpd.test:8025/` — one shared
   inbox, each project publishing a pre-filtered link), Adminer, Selenium.

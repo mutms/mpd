@@ -560,8 +560,8 @@ upstream package or whose meaning is clear from the bare word:
 
 **`mdl-` prefix** for Moodle-project-type tools whose bare name would
 be too generic or collide with system commands: `mdl-install`,
-`mdl-cache-purge`, `mdl-cron`, `mdl-upgrade`,
-`mdl-data-purge`. The prefix is also a usability cue — when an AI agent
+`mdl-cache-purge`, `mdl-cron`, `mdl-upgrade`. The prefix is also a
+usability cue — when an AI agent
 or a human sees `mdl-cron` on PATH, it's unambiguously the
 mpd-installed Moodle cron, not the system cron daemon.
 

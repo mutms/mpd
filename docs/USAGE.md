@@ -421,7 +421,6 @@ Stack-independent ones first:
 | `mdl-cache-purge`                           | Run `admin/cli/purge_caches.php` for the current project.                                                                                                                                                                                                                                               |
 | `mdl-cron`                                  | Run `admin/cli/cron.php` (one cycle) for the current project.                                                                                                                                                                                                                                           |
 | `mdl-upgrade`                               | Run `admin/cli/upgrade.php --non-interactive` for the current project. Use after a git pull that updates code.                                                                                                                                                                                          |
-| `mdl-data-purge`                            | Revert the current project to pre-configured state — drops the DB, wipes dataroots (incl. phpunit + behat), removes generated config files. Preserves `mpd.env` (edit before re-configure to switch DB engine etc.) and the source tree. Prompts for the project name to confirm; pass `--yes` to skip. |
 | `phpunit` / `phpunit-init` / `phpunit-util` | Run, initialize, and inspect Moodle's PHPUnit suite.                                                                                                                                                                                                                                                    |
 | `behat` / `behat-init` / `behat-util`       | Run, initialize, and inspect Moodle's Behat suite.                                                                                                                                                                                                                                                      |
 | `grunt`                                     | Wraps `npm install` + `grunt` for the current project's Moodle JS build.                                                                                                                                                                                                                                |
@@ -431,6 +430,11 @@ The `mdl-` prefix marks Moodle-specific operations whose bare name
 would otherwise collide with system commands or be too generic
 (`mdl-cron` vs system `cron`). Bare names match upstream tools
 (`phpunit`, `behat`, `grunt`).
+
+To throw a project's data away and start it again, there is no tool —
+use the verb, [`mpd reset`](#starting-over-without-re-cloning-mpd-reset).
+It works from inside the runtime too, and unlike a tool it can also stop
+the project first, drop its DNS record, and mark it unconfigured.
 
 **Project-type-level (Astro):** none, deliberately.
 
