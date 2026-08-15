@@ -1,28 +1,23 @@
 #!/bin/bash
-# Tool: install or update moodle-plugin-ci into /opt/mpd/mpci/.
-# Runs as the calling user. Uses sudo only to create the dev-owned
-# install dir; composer create-project / update then run unprivileged
-# against the dev-owned tree (per ARCHITECTURE.md §7 privilege model).
-# The dev/AI invokes as bare `mpci-install`, never `sudo mpci-install`.
+# Tool: install moodle-plugin-ci into /srv/extra/mpci/.
+# Idempotent: no-op if the phar is already there. Re-run after
+# `rm` to pick up a newer release.
+# /srv is the persistent data volume, so this survives a runtime
+# rebuild (unlike /usr/local/bin) and needs no privilege.
 set -euo pipefail
 
-TARGET="/opt/mpd/mpci"
+TARGET="/srv/extra/mpci/moodle-plugin-ci.phar"
+URL="https://github.com/moodlehq/moodle-plugin-ci/releases/latest/download/moodle-plugin-ci.phar"
 
-# /opt/ is root-owned. Create /opt/mpd/ + /opt/mpd/mpci/ once with
-# dev-user ownership; subsequent operations need no privilege.
-if [ ! -d "$TARGET" ]; then
-    DEV_USER=$(id -un)
-    sudo install -d -m 0755 -o "$DEV_USER" -g "$DEV_USER" /opt/mpd
-    sudo install -d -m 0755 -o "$DEV_USER" -g "$DEV_USER" "$TARGET"
+if [ -f "$TARGET" ]; then
+    echo "moodle-plugin-ci already installed at $TARGET — skipping."
+    exit 0
 fi
 
-if [ -d "$TARGET/vendor" ]; then
-    echo "Updating moodle-plugin-ci at $TARGET..."
-    cd "$TARGET"
-    composer update --no-interaction
-else
-    echo "Installing moodle-plugin-ci into $TARGET..."
-    composer create-project --no-interaction moodlehq/moodle-plugin-ci "$TARGET"
-fi
+mkdir -p "$(dirname "$TARGET")"
+echo "Downloading moodle-plugin-ci..."
+curl -fsSL -o "$TARGET.tmp" "$URL"
+chmod 755 "$TARGET.tmp"
+mv "$TARGET.tmp" "$TARGET"
 
-echo "Done. Use 'mpci' to run moodle-plugin-ci commands."
+echo "moodle-plugin-ci installed at $TARGET. Use 'mpci' to run it."

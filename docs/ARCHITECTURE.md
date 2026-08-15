@@ -568,8 +568,11 @@ mpd-installed Moodle cron, not the system cron daemon.
 **Suffixes**:
 
 - `-install` — fetches/installs a tool into runtime FS (typically
-  `/usr/local/bin/`, never under `/srv/`). Runtime-wide, one-shot.
-  Examples: `composer-install`, `node-install`, `mpci-install`.
+  `/usr/local/bin/`). Runtime-wide, one-shot. Examples:
+  `composer-install`, `node-install`, `mpci-install`. `mpci-install` is
+  the exception that installs to `/srv/extra/mpci/`: nothing re-runs it
+  after a rebuild the way `build.sh` re-runs `composer-install`, so the
+  phar lives on the data volume instead of the container overlay.
 - `-init` — readies a tool's state for the *current* project
   (cwd-walks to find the project root, does whatever's needed).
   Project-scoped. May include some installation as a side effect (npm

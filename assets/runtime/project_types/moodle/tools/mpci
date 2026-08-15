@@ -4,11 +4,11 @@
 # All arguments are passed through to moodle-plugin-ci.
 set -euo pipefail
 
-MPCI_BIN="/opt/mpd/mpci/bin/moodle-plugin-ci"
+MPCI_PHAR="/srv/extra/mpci/moodle-plugin-ci.phar"
 
-if [ ! -f "$MPCI_BIN" ]; then
+if [ ! -f "$MPCI_PHAR" ]; then
     echo "Error: moodle-plugin-ci not installed — run 'mpci-install' first" >&2
     exit 1
 fi
 
-exec php "$MPCI_BIN" "$@"
+exec php "$MPCI_PHAR" "$@"
