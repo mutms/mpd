@@ -466,6 +466,36 @@ Tools are bind-mounted at `/opt/mpd/assets/...` and put on
 PATH from there by the skel `~/.bashrc`. Edits on the VM are immediately
 visible inside the runtime — no rebuild, nothing to re-link.
 
+#### Ask mpd, don't read its files
+
+A tool that needs to know something about the project — is it
+configured, which database engine, what host to connect to, where the
+dataroot is — calls **`mpd show <project> --json`** and reads the answer
+with `jq`. It does **not** open `/srv/meta/<project>/*.json` or compose
+paths like `<databaseId>.db.<zone>` itself.
+
+```bash
+STATUS=$(mpd show "$PROJECT" --json)
+DBHOST=$(printf '%s' "$STATUS" | jq -r '.database.host')
+```
+
+The Moodle type wraps this in `scripts/mpd-env.sh` as `moodle_status`,
+`moodle_status_field` and `moodle_configured`, fetched once per script —
+the call is ~0.2s over the runtime's control socket, fine once and too
+much in a loop.
+
+The rule exists because those files are mpd's, and a script that opens
+them is a copy of mpd's schema written where nothing can check it. It
+became possible only when `mpd` started working from inside a runtime;
+before that the files were the sole channel, which is why older tools
+read them.
+
+Two exceptions, both of which run *inside* the command that produces the
+answer and so cannot ask for it: a project type's `configure.sh` and
+`project-setup.sh` (they write `effective.json`, so they read it), and
+the caddy watcher (`assets/runtime/caddy/`), which reacts to `/srv/meta`
+changing via inotify.
+
 #### Naming
 
 - **Bare name** for upstream-known tools (`composer`, `php`,

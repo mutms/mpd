@@ -552,6 +552,31 @@ caller. After it returns, phase 2 (`assets/runtime/build.sh`)
 runs as the dev user via `podman exec -u`. Shapes (1) and (2) are
 enforced in review.
 
+### How a tool learns about its project
+
+`mpd show <project> --json` (`cli.ShowProjectJSON`,
+`go/internal/cli/projectstatus.go`) is the one interface a tool uses to
+ask about a project: whether it is configured, its type and state, its
+directory and data directory, its zone, its URLs, the settings the
+project type resolved, and its database — engine, version, and the
+`host` / `name` / `user` needed to connect.
+
+Tools must not read `/srv/meta/<project>/*.json` directly, and must not
+compose derived values such as `<databaseId>.db.<zone>`. Those are
+mpd's, and a shell copy of them is a schema duplicated where nothing can
+check it. The interface exists at all because `mpd` now answers from
+inside a runtime over the control socket (§ "mpd from inside the
+runtime"); before that, reading the files was the only option, which is
+why older tools did.
+
+Two exceptions, both running inside the command that produces the
+answer: a project type's `configure.sh` and `project-setup.sh`, which
+write `effective.json` and so read it, and the caddy watcher, which
+reacts to `/srv/meta` changing through inotify.
+
+The document is additive-only — fields may be added, never renamed or
+removed, because tools read them by name.
+
 ### Naming conventions
 
 **Bare names** are used for tools whose name matches a well-known
@@ -560,7 +585,9 @@ upstream package or whose meaning is clear from the bare word:
 
 **`mdl-` prefix** for Moodle-project-type tools whose bare name would
 be too generic or collide with system commands: `mdl-install`,
-`mdl-cache-purge`, `mdl-cron`, `mdl-upgrade`. The prefix is also a
+`mdl-cache-purge`, `mdl-cron`, `mdl-upgrade`, `mdl-data-backup`,
+`mdl-data-restore` (bare `mdl-backup` would read as Moodle's own course
+backup, which is a different thing entirely). The prefix is also a
 usability cue — when an AI agent
 or a human sees `mdl-cron` on PATH, it's unambiguously the
 mpd-installed Moodle cron, not the system cron daemon.
@@ -750,12 +777,16 @@ path is identical on both sides.
 
 Read/write contract:
 
-- **Project backup tools write here.** Project-type-specific tools
-  (e.g. the planned `mdl-backup` under
-  `assets/runtime/project_types/moodle/tools/`) tar dataroot +
-  DB dumps into `/srv/backups/` from inside the runtime. Backup is
-  currently a Moodle-only concern; other project types keep state in
-  the source tree (so `git` is their backup mechanism).
+- **Project backup tools write here.** `mdl-data-backup` /
+  `mdl-data-restore` (under
+  `assets/runtime/project_types/moodle/tools/`) tar the dataroot plus a
+  DB dump into `/srv/backups/projects/<project>/<name>.tgz` from inside
+  the runtime. Backup is a Moodle-only concern: the dataroot ↔ DB
+  coupling makes "snapshot the project" a real unit, while other project
+  types keep their state in the source tree (so `git` is their backup
+  mechanism). They are tools rather than verbs because the runtime can
+  do all of it — tar `/srv`, dump over the network to
+  `<databaseId>.db.<zone>` — and neither one touches VM state.
 - **Runtime backups write here too.** `mpd --runtime-backup` runs the
   hook scripts under `assets/runtime/backup.d/NN-*.sh` inside the
   runtime as the dev user, each receiving the backup directory as

@@ -1,0 +1,209 @@
+#!/bin/bash
+# mdl-data-restore — load data saved by mdl-data-backup into an empty
+# project.
+#
+# Run it from the project directory, inside the runtime:
+#
+#   cd /srv/projects/<project>
+#   mdl-data-restore --list        # what is there to restore
+#   mdl-data-restore before-upgrade
+#
+# It only ever writes. The project has to be empty first, which is what
+# `mpd reset` is for:
+#
+#   mpd reset          # drops the database, wipes the dataroot
+#   mpd configure      # makes an empty database to restore into
+#   mdl-data-restore before-upgrade
+#
+# Restoring over a project that still has data is refused, and the
+# message says the same thing. Emptying a project is destructive and
+# belongs to the one command that does it properly: `mpd reset` also
+# stops the project, tears down what the project type built, and drops
+# the DNS record — none of which a tool in here can reach.
+#
+# It does not touch the source tree, and it does not apply the mpd.env
+# in the bundle — that copy is there to read. If the backup was made on
+# a different database engine, edit mpd.env yourself and run
+# `mpd configure` before restoring.
+#
+# The site stays up while this runs, with Moodle's CLI maintenance mode
+# blocking the web interface. This is a development snapshot, not a
+# production restore.
+set -euo pipefail
+
+source /opt/mpd/assets/runtime/project_types/moodle/scripts/mpd-env.sh
+
+BACKUP_DIR="/srv/backups/projects/${PROJECT}"
+
+list_bundles() {
+    if ! compgen -G "${BACKUP_DIR}/*.tgz" >/dev/null; then
+        echo "No backups for '${PROJECT}'. Make one with: mdl-data-backup"
+        return 0
+    fi
+    printf '%-28s %-8s %-18s %s\n' "BUNDLE" "SIZE" "DATABASE" "MOODLE"
+    for f in "${BACKUP_DIR}"/*.tgz; do
+        manifest=$(tar -xzOf "$f" manifest.json 2>/dev/null || echo '{}')
+        printf '%-28s %-8s %-18s %s\n' \
+            "$(basename "$f" .tgz)" \
+            "$(du -h "$f" | cut -f1)" \
+            "$(printf '%s' "$manifest" | jq -r '.dbTag // "?"')" \
+            "$(printf '%s' "$manifest" | jq -r '.moodleRelease // "?"')"
+    done
+}
+
+BUNDLE_NAME=""
+for arg in "$@"; do
+    case "$arg" in
+        --list|-l) list_bundles; exit 0 ;;
+        -*)        echo "Unknown argument: $arg" >&2; exit 2 ;;
+        *)         BUNDLE_NAME="$arg" ;;
+    esac
+done
+
+if [ -z "$BUNDLE_NAME" ]; then
+    echo "Which backup? Run 'mdl-data-restore --list' to see them." >&2
+    exit 2
+fi
+
+BUNDLE="${BACKUP_DIR}/${BUNDLE_NAME}.tgz"
+if [ ! -f "$BUNDLE" ]; then
+    echo "No backup named '${BUNDLE_NAME}' for '${PROJECT}'." >&2
+    echo "Run 'mdl-data-restore --list' to see what is there." >&2
+    exit 1
+fi
+
+if ! moodle_configured; then
+    echo "Project '${PROJECT}' is not configured — there is no database to restore into." >&2
+    echo "Run \`mpd configure\` first." >&2
+    exit 1
+fi
+DB_ENGINE=$(moodle_status_field '.database.engine')
+DB_TAG=$(moodle_status_field '.settings.dbTag')
+DBHOST=$(moodle_status_field '.database.host')
+if [ -z "$DB_ENGINE" ] || [ -z "$DBHOST" ]; then
+    echo "No database recorded for '${PROJECT}' — nothing to restore into." >&2
+    exit 1
+fi
+
+MANIFEST=$(tar -xzOf "$BUNDLE" manifest.json 2>/dev/null || echo '{}')
+FROM_ENGINE=$(printf '%s' "$MANIFEST" | jq -r '.dbEngine // empty')
+FROM_TAG=$(printf '%s' "$MANIFEST" | jq -r '.dbTag // empty')
+FROM_RELEASE=$(printf '%s' "$MANIFEST" | jq -r '.moodleRelease // empty')
+FROM_CREATED=$(printf '%s' "$MANIFEST" | jq -r '.created // "unknown"')
+
+# A dump is written in its engine's own dialect, so this one is a refusal
+# rather than a warning: postgres SQL will not load into MariaDB, and a
+# half-loaded database is worse than none.
+if [ -n "$FROM_ENGINE" ] && [ "$FROM_ENGINE" != "$DB_ENGINE" ]; then
+    echo "This backup is from ${FROM_ENGINE}, and '${PROJECT}' now runs ${DB_ENGINE}." >&2
+    echo "Set MPD_DB back to a ${FROM_ENGINE} version in mpd.env, run \`mpd configure\`," >&2
+    echo "then restore." >&2
+    exit 1
+fi
+
+# The target has to be empty, and the database is where that is worth
+# checking: loading a dump on top of live tables is how you get a site
+# that half works. An empty database also means an empty dataroot in
+# practice, because the only way to get one is `mpd reset`, which clears
+# both — and it means restoring twice in a row is refused the second
+# time rather than merging two dataroots.
+case "$DB_ENGINE" in
+    postgres|mariadb|mysql) ;;
+    *) echo "Unknown database engine '${DB_ENGINE}' — cannot restore." >&2; exit 1 ;;
+esac
+TABLE_COUNT=$(moodle_db_table_count)
+
+if [ "${TABLE_COUNT:-0}" -ne 0 ]; then
+    TABLE_NOUN="tables"
+    [ "$TABLE_COUNT" -eq 1 ] && TABLE_NOUN="table"
+    cat >&2 <<EOF
+'${PROJECT}' still has data — its database holds ${TABLE_COUNT} ${TABLE_NOUN}.
+
+Restore only writes into an empty project. Empty this one first:
+
+    mpd reset
+    mpd configure
+    mdl-data-restore ${BUNDLE_NAME}
+
+\`mpd reset\` is the command that destroys data. It also stops the
+project and tears down what the project type built, which is why this
+tool does not try to do it.
+EOF
+    exit 1
+fi
+
+DATA_DIR=$(moodle_status_field '.dataDir')
+DATAROOT="${DATA_DIR}/dataroot"
+
+# Moodle's CLI maintenance mode is a file in the dataroot, which
+# lib/setup.php checks before it opens a database connection — so the web
+# interface is fenced off even now, with no database worth connecting to.
+# Written directly rather than through `admin/cli/maintenance.php`,
+# which needs a database to run at all.
+#
+# A file that was already there is somebody's deliberate maintenance
+# mode. Leave it, and leave it behind afterwards.
+MAINT_FILE="${DATAROOT}/climaintenance.html"
+MAINT_WAS_ON=0
+[ -f "$MAINT_FILE" ] && MAINT_WAS_ON=1
+
+STAGING="$(mktemp -d)"
+cleanup() {
+    rm -rf "$STAGING"
+    if [ "$MAINT_WAS_ON" -eq 0 ]; then
+        rm -f "$MAINT_FILE"
+    fi
+}
+trap cleanup EXIT
+
+mkdir -p "$DATAROOT"
+if [ "$MAINT_WAS_ON" -eq 0 ]; then
+    cat >"$MAINT_FILE" <<'HTML'
+<!doctype html>
+<title>Restore in progress</title>
+<p>This site is being restored and will be back in a moment.</p>
+HTML
+fi
+
+echo "Restoring '${BUNDLE_NAME}' into '${PROJECT}' (taken ${FROM_CREATED})"
+
+# Unpacked before anything is loaded: a bundle that will not open should
+# say so while the project is still exactly as it was.
+tar -xzf "$BUNDLE" -C "$STAGING" manifest.json db.sql.gz mpd.env
+
+echo "  database (${FROM_TAG:-$FROM_ENGINE} → ${DB_TAG:-$DB_ENGINE})"
+case "$DB_ENGINE" in
+    postgres)
+        # As the project role, so every table the dump creates is owned
+        # by the role Moodle connects as. `mpd configure` made the
+        # database and the role; this only fills it.
+        gunzip -c "${STAGING}/db.sql.gz" \
+            | PGPASSWORD="${PROJECT}" psql -h "$DBHOST" -U "${PROJECT}" -d "${PROJECT}" \
+                -q -v ON_ERROR_STOP=1 >/dev/null
+        ;;
+    mariadb|mysql)
+        client="mariadb"
+        [ "$DB_ENGINE" = "mysql" ] && client="mysql"
+        gunzip -c "${STAGING}/db.sql.gz" \
+            | "$client" -h "$DBHOST" -u root -proot "${PROJECT}"
+        ;;
+esac
+
+echo "  dataroot"
+tar -xzf "$BUNDLE" -C "$DATA_DIR" dataroot
+
+NOW_RELEASE=""
+if [ -f "${PROJECT_DIR}/version.php" ]; then
+    NOW_RELEASE=$(grep -oP "^\\\$release\s*=\s*'\K[^']+" "${PROJECT_DIR}/version.php" || true)
+fi
+
+cat <<EOF
+
+Restored '${BUNDLE_NAME}' into '${PROJECT}'.
+
+Next:
+  1. mdl-cache-purge
+EOF
+if [ -n "$FROM_RELEASE" ] && [ -n "$NOW_RELEASE" ] && [ "$FROM_RELEASE" != "$NOW_RELEASE" ]; then
+    echo "  2. mdl-upgrade   (backup is Moodle ${FROM_RELEASE}, code here is ${NOW_RELEASE})"
+fi

@@ -8,27 +8,27 @@ the work.
 
 Concrete shape, a use case driving it.
 
-- **`mdl-backup` / `mdl-restore` (Moodle)** — one tar bundle per
-  project (dataroot + DB dump + config snapshot), copied off the VM
-  from `/srv/backups/`. Moodle-only because the dataroot ↔ DB
-  coupling makes "snapshot the project" a real, named unit; other
-  project types keep state in `git`.
+- **`mpd env <project>`** — print the layered `MPD_*` env for a project
+  and say **which layer set each key**: runtime defaults → type
+  defaults → your `mpd-virt.env` → the project's `mpd.env`. Pattern
+  borrowed from Laravel's `php artisan config:show`.
 
-- **`mpd ps <project>`** — single-screen project status. Runtime +
-  PHP version + DB engine/version + enabled services + URLs + xdebug
-  mode, all in one view. Pattern borrowed from Laravel's
-  `php artisan about` (familiar to Moodle devs increasingly working
-  in both ecosystems). All data already exists in
-  `cli.ShowProject` / state files — this is presentation, not new
-  logic.
+  Not covered by `mpd show --json`, which is worth stating because it
+  looks like it should be. That document's `settings` block is
+  `effective.json` — the seven values a project type's `configure.sh`
+  resolved (`phpVersion`, `dbTag`, `behat`, …), not the `MPD_*` set,
+  and it records answers without reasons. The question `env` exists to
+  answer is "why is this 1 when I never set it", and nothing can answer
+  that from an answer alone.
 
-- **`mpd env <project>`** — print the resolved layered env for a
-  project (runtime defaults → type defaults → vm overrides → project
-  mpd.env), showing which layer set each `MPD_*` key. Pattern
-  borrowed from Laravel's `php artisan config:show`. Especially
-  useful when the four-layer cascade lands a value you didn't
-  expect. Implementation: invoke `source-mpd-env.sh` with verbose
-  tracing, or re-implement the resolver in Go for cleaner output.
+  The case got stronger once `mpd-virt.env` started arriving from the
+  Mac: a value you did not expect may have been set on a machine you
+  are not logged into.
+
+  Implementation: verbose tracing in `source-mpd-env.sh`, which is the
+  only thing that implements the cascade — Go deliberately does not
+  (see `ARCHITECTURE.md` §8), so re-implementing the resolver there
+  would create the second copy that section exists to prevent.
 
 ## Parked: other ideas
 

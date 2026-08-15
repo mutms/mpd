@@ -216,7 +216,11 @@ Scope clarification:
 
 Project command routing contract:
 
-- `mpd show <project>` -> show project info
+- `mpd show <project>` -> show project info. `--json` prints it as one
+  JSON document instead — state, directories, zone, URLs, resolved
+  settings and the database's engine/host/name/user. That is the
+  interface in-runtime tools use to ask about a project; they do not read
+  `/srv/meta` themselves (see [`ARCHITECTURE.md` §7](ARCHITECTURE.md)).
 - `mpd create <project> [--type=<type>] ...` -> create flow (default type: `moodle`)
 - `mpd help <project>` -> project/type/runtime verb help
 - other verbs -> one cobra command per verb in `go/cmd/mpd/main.go`,

@@ -156,6 +156,8 @@ func verbArgs(verb string) []string {
 		return []string{"MPD_DB=", "MPD_PHP_VERSION=", "MPD_MOODLE_BEHAT=", "--yes"}
 	case "delete", "reset":
 		return []string{"--yes"}
+	case "show":
+		return []string{"--json"}
 	default:
 		return nil
 	}

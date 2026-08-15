@@ -44,8 +44,8 @@ boundary, not a layering one.
   vhosts from `/srv/meta/*/urls.json`), `templates/header.caddyfile`.
 - **`project_types/moodle/`** — Moodle support: `phpunit`, `behat`,
   `mdl-cron`, `mdl-cache-purge`, `mdl-install`, `mdl-upgrade`, `grunt`,
-  `mpci` / `mpci-install`. See `docs/USAGE.md`
-  for the full per-tool table.
+  `mpci` / `mpci-install`, `mdl-data-backup` / `mdl-data-restore`. See
+  `docs/USAGE.md` for the full per-tool table.
 - **`project_types/astro/`** — Astro dev-server support:
   `astro-rebuild`, `astro-upgrade`.
 - **`project_types/<type>/template/`** — files seeded into the project

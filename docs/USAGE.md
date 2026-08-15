@@ -417,10 +417,11 @@ Stack-independent ones first:
 
 | Tool                                        | What it does                                                                                                                                                                                                                                                                                            |
 |---------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `mdl-install`                               | Run `admin/cli/install_database.php` for the current project, with composer install + sensible defaults from `mpd.env`.                                                                                                                                                                                 |
+| `mdl-install`                               | Run `admin/cli/install_database.php` for the current project, with composer install + sensible defaults from `mpd.env`. Refuses if the project is unconfigured or already installed — checked before composer runs.                                                                                      |
 | `mdl-cache-purge`                           | Run `admin/cli/purge_caches.php` for the current project.                                                                                                                                                                                                                                               |
 | `mdl-cron`                                  | Run `admin/cli/cron.php` (one cycle) for the current project.                                                                                                                                                                                                                                           |
 | `mdl-upgrade`                               | Run `admin/cli/upgrade.php --non-interactive` for the current project. Use after a git pull that updates code.                                                                                                                                                                                          |
+| `mdl-data-backup` / `mdl-data-restore`      | Save and restore the current project's database + dataroot as one `.tgz` in `/srv/backups/projects/<project>/`. `mdl-data-restore --list` shows what is there. See [Backups](#backups).                                                                                                                 |
 | `phpunit` / `phpunit-init` / `phpunit-util` | Run, initialize, and inspect Moodle's PHPUnit suite.                                                                                                                                                                                                                                                    |
 | `behat` / `behat-init` / `behat-util`       | Run, initialize, and inspect Moodle's Behat suite.                                                                                                                                                                                                                                                      |
 | `grunt`                                     | Wraps `npm install` + `grunt` for the current project's Moodle JS build.                                                                                                                                                                                                                                |
@@ -486,16 +487,58 @@ Two details make the plain command work, both handled for you:
 
 ## Backups
 
-**Project backups** (`mdl-backup` / `mdl-restore`) are on the
-[roadmap](ROADMAP.md). Today the workflow is:
+**Project backups** are `mdl-data-backup` / `mdl-data-restore`, two
+Moodle tools you run from the project directory inside the runtime:
 
-- Inside the runtime, write whatever bundle you want into
-  `/srv/backups/` (a data-volume subdirectory).
-- From your laptop, scp it off the VM — `/srv` is mounted there:
+```bash
+ssh mpd-<NNN>
+cd /srv/projects/moodle45
+mdl-data-backup before-upgrade     # or no name, for a UTC timestamp
+mdl-data-restore --list
+mdl-data-restore before-upgrade
+```
 
-  ```bash
-  scp <vm>:/srv/backups/<file> ~/Downloads/
-  ```
+One `.tgz` per backup in `/srv/backups/projects/<project>/`, holding the
+database, the dataroot, the project's `mpd.env`, and a manifest recording
+the database engine, the Moodle release and the PHP version. It skips the
+source tree (that is git's job), the PHPUnit and Behat dataroots
+(`phpunit-init` / `behat-init` rebuild them), and Moodle's caches,
+sessions and trash.
+
+The site stays up throughout. Both tools write Moodle's CLI maintenance
+file (`climaintenance.html`) into the dataroot for the duration, which
+`lib/setup.php` checks before it opens a database connection — so the web
+interface returns 503 while the dump or reload runs, and a maintenance
+mode you set yourself is left alone. This is a development snapshot, not
+a production backup: neither tool stops the project, and an `mdl-cron`
+you start yourself can still write underneath it.
+
+**Restore only ever writes**, so the project has to be empty first —
+which is what [`mpd reset`](#starting-over-without-re-cloning-mpd-reset)
+is for:
+
+```bash
+mpd reset          # drops the database, wipes the dataroot
+mpd configure      # makes an empty database to restore into
+mdl-data-restore before-upgrade
+```
+
+Restoring over a project that still holds data is refused, with that
+same recipe in the message. Destroying data belongs to `mpd reset`,
+which also stops the project, tears down what the project type built and
+drops the DNS record — none of which a tool inside the runtime can
+reach. It is the same reason there is no `mdl-data-purge`.
+
+Restore also refuses a bundle taken on a different database engine — a
+PostgreSQL dump cannot load into MariaDB. A different Moodle release is
+a warning rather than a refusal, and it tells you to run `mdl-upgrade`
+afterwards.
+
+From your laptop, scp a bundle off the VM — `/srv` is mounted there:
+
+```bash
+scp mpd-<NNN>-vm:/srv/backups/projects/<project>/<name>.tgz ~/Downloads/
+```
 
 **Runtime backups** exist now and cover something different: the
 home-directory pieces that live only inside the runtime container and

@@ -39,6 +39,70 @@ moodle_run() {
     exec php "$rel" "$@"
 }
 
+# moodle_status
+#
+# This project's status, as JSON, from `mpd show --json`.
+#
+# Ask mpd rather than reading /srv/meta: the layout of that directory is
+# mpd's, and a script that opens it is a copy of mpd's own schema written
+# in a language that cannot check it. `mpd` runs in here now — over the
+# runtime's control socket — so there is no longer a reason to guess.
+#
+# Fetched once per script. The call is about 0.2s, which is nothing for a
+# tool that runs it once and too much to repeat in a loop.
+moodle_status() {
+    if [ -z "${_MPD_STATUS:-}" ]; then
+        _MPD_STATUS=$(mpd show "$PROJECT" --json) || return 1
+    fi
+    printf '%s' "$_MPD_STATUS"
+}
+
+# moodle_status_field <jq-path> — one string out of moodle_status.
+#
+# For strings only. `// empty` treats a false boolean as absent, which is
+# a jq trap, so booleans get their own accessor below.
+moodle_status_field() {
+    moodle_status | jq -r "$1 // empty"
+}
+
+# moodle_configured — succeeds when `mpd configure` has run for this
+# project, so the database exists and config.php has been written.
+moodle_configured() {
+    [ "$(moodle_status | jq -r '.configured')" = "true" ]
+}
+
+# moodle_db_table_count
+#
+# How many tables this project's database holds. Prints the number, or
+# fails when the project has no database yet.
+#
+# "Is this project already carrying data?" is a question several tools
+# have to answer before they do anything — mdl-install must not install
+# over a site, mdl-data-restore must not load a dump on top of one — and
+# the database is the only place the answer cannot go stale.
+moodle_db_table_count() {
+    local engine host client
+    engine=$(moodle_status_field '.database.engine') || return 1
+    host=$(moodle_status_field '.database.host')
+    [ -n "$engine" ] && [ -n "$host" ] || return 1
+
+    case "$engine" in
+        postgres)
+            PGPASSWORD="${PROJECT}" psql -h "$host" -U "${PROJECT}" -d "${PROJECT}" -tAc \
+                "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'"
+            ;;
+        mariadb|mysql)
+            client="mariadb"
+            [ "$engine" = "mysql" ] && client="mysql"
+            "$client" -h "$host" -u root -proot -N -B -e \
+                "SELECT count(*) FROM information_schema.tables WHERE table_schema='${PROJECT}'"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 # Layered MPD_* env via the secure whitelist parser (NOT raw `source` — a
 # malicious project's mpd.env with `MPD_FOO=$(rm -rf ~)` would otherwise
 # execute when cloned from git). Loads runtime defaults → type defaults →

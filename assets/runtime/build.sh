@@ -34,6 +34,20 @@ curl -fsSL https://packages.sury.org/php/apt.gpg \
 echo "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" \
     | sudo tee /etc/apt/sources.list.d/sury-php.list >/dev/null
 
+# ── PostgreSQL repository ────────────────────────────────────────────────────
+# Debian Trixie ships client 17, and mpd's own default is postgres:latest,
+# which is 18 — and pg_dump refuses outright to read a server newer than
+# itself. psql tolerates the gap, so nothing noticed until a tool wanted a
+# dump. PGDG carries the current client, and Debian's pg_wrapper dispatches
+# /usr/bin/pg_dump to the newest version installed, which still reads every
+# older server. Tracking `postgresql-client` from here means the next major
+# arrives with the next runtime rebuild rather than as a broken backup.
+curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    | sudo gpg --dearmor -o /usr/share/keyrings/pgdg.gpg
+
+echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt/ $(lsb_release -sc)-pgdg main" \
+    | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+
 sudo apt-get update -qq
 
 # ── Install all PHP versions + DB clients + caddy in one apt pass ────────────

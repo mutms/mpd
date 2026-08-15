@@ -44,7 +44,7 @@ var version = "dev"
 
 // projectCommands is the verb-first half of the CLI: everything that
 // acts on one project.
-const projectCommands = `  show       [projectname]                     project details
+const projectCommands = `  show       [projectname] [--json]            project details (--json for scripts)
   create     [projectname] [--type=<type>]     (default type: moodle)
   configure  [projectname] [KEY=VALUE ...]     (e.g. MPD_DB=postgres:18, MPD_PHP_VERSION=8.4;
                                                full set lives in /srv/projects/<projectname>/mpd.env)
@@ -121,6 +121,10 @@ type flags struct {
 	control    bool
 	yes        bool
 	debug      bool
+
+	// json belongs to `show`, not to the root — it is registered on that
+	// command only.
+	json bool
 }
 
 func main() {
@@ -607,12 +611,22 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 			func(ctx context.Context, c *cobra.Command, name string, d cli.ProjectDeps) error {
 				return cli.ProjectStop(ctx, c.OutOrStdout(), name, d)
 			}),
-		simple("show [project]", "Show project details (default: the one you are in)",
-			func(ctx context.Context, c *cobra.Command, name string, d cli.ProjectDeps) error {
-				cli.ShowProject(ctx, c.OutOrStdout(), name, d.State, d.Podman, d.Observer, d.Net, d.UID)
-				return nil
-			}),
 	)
+
+	// show carries the one verb-level flag in the set. --json is what
+	// in-runtime tools read instead of opening /srv/meta themselves, so it
+	// has to reach them: `show` is forwarded over the control socket, and
+	// a verb flag rides along with it.
+	showCmd := simple("show [project]", "Show project details (default: the one you are in)",
+		func(ctx context.Context, c *cobra.Command, name string, d cli.ProjectDeps) error {
+			if f.json {
+				return cli.ShowProjectJSON(ctx, c.OutOrStdout(), name, d.State, d.Podman, d.Observer, d.Net)
+			}
+			cli.ShowProject(ctx, c.OutOrStdout(), name, d.State, d.Podman, d.Observer, d.Net, d.UID)
+			return nil
+		})
+	showCmd.Flags().BoolVar(&f.json, "json", false, "print the project's status as JSON")
+	verbs = append(verbs, showCmd)
 
 	// reset DOES infer from the working directory, unlike delete. The reason
 	// delete refuses — it removes the directory you are standing in — does
