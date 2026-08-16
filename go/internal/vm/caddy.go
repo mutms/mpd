@@ -92,8 +92,14 @@ func ConfigureCaddy(ctx context.Context, out io.Writer, user, bindIP,
 	// that race on a VM and in a container alike; StartLimitIntervalSec=0
 	// keeps systemd from giving up if the bridge takes more than a few
 	// seconds.
+	//
+	// LimitNPROC is lifted because the packaged unit caps it at 512 and the
+	// kernel checks that cap at execve against ALL of the User='s processes
+	// — fine headless, but a GNOME session (a converted sandbox) alone puts
+	// the dev user past 512, and then every reload dies with EAGAIN before
+	// caddy even runs.
 	dropIn := fmt.Sprintf("[Unit]\nStartLimitIntervalSec=0\n\n[Service]\n"+
-		"User=%s\nGroup=%s\nRestart=on-failure\nRestartSec=2s\n", user, user)
+		"User=%s\nGroup=%s\nRestart=on-failure\nRestartSec=2s\nLimitNPROC=infinity\n", user, user)
 	dropInChanged, err := WriteRootOwnedFile(ctx, caddyDropIn, dropIn)
 	if err != nil {
 		return err
