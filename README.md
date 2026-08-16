@@ -63,9 +63,10 @@ Remote-SSH — `ssh mpd-<NNN>` lands in the runtime). On macOS, [mpd-virt](https
 creates or adopts the VM and wires the host side in one shot; on Linux and
 Windows the in-repo automation is [setup/linux/](setup/linux/README.md) and
 [setup/windows/](setup/windows/README.txt) (less exercised). A sandbox is
-adopted with `mpd-virt takeover <NNN> --backend=<backend>` (a desktop
-install ships avahi, so the box is usually found over mDNS; pass the IP
-if discovery doesn't reach it) — projects survive.
+adopted by running [setup/mpd-prepare-takeover.sh](setup/mpd-prepare-takeover.sh)
+in the VM (a sandbox deliberately has no SSH server until then; the prep
+script adds it plus mDNS discovery), then
+`mpd-virt takeover <NNN> --backend=<backend>` — projects survive.
 
 ## Documentation
 

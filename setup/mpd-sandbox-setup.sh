@@ -208,7 +208,8 @@ In THIS VM (if it has a desktop), open Firefox and browse to:
     https://${nnn}.mpd.test/
 
 From your HOST browser (macOS / Windows / Linux), reach it over an
-SSH SOCKS proxy — no host routing or /etc/hosts needed:
+SSH SOCKS proxy — no host routing or /etc/hosts needed
+(requires sshd in the VM: sudo apt-get install openssh-server):
 
   1. Open the tunnel (leave it running):
          ssh -D 1080 -N ${USER:-skodak}@${vm_ip}

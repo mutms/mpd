@@ -235,8 +235,12 @@ fi
 # here (not by `mpd --vm-setup`) so the packages arrive with the
 # platform prep, before takeover needs the mDNS name — and so mpd itself
 # never assumes it runs under a hypervisor.
-step "Guest integration (avahi-daemon, qemu-guest-agent)"
+# openssh-server is here too: takeover drives the box over SSH, and a
+# desktop install ships without sshd unless the "SSH server" task was
+# ticked — prep makes the box adoptable regardless.
+step "Guest integration (openssh-server, avahi-daemon, qemu-guest-agent)"
 need=()
+dpkg -s openssh-server   >/dev/null 2>&1 || need+=(openssh-server)
 dpkg -s avahi-daemon     >/dev/null 2>&1 || need+=(avahi-daemon)
 dpkg -s qemu-guest-agent >/dev/null 2>&1 || need+=(qemu-guest-agent)
 if [ "${#need[@]}" -gt 0 ]; then
@@ -246,6 +250,7 @@ if [ "${#need[@]}" -gt 0 ]; then
 else
     ok "already installed"
 fi
+sudo systemctl enable --now ssh >/dev/null 2>&1 || true
 if sudo systemctl enable --now avahi-daemon >/dev/null 2>&1; then
     ok "avahi-daemon active (${host}.local over mDNS)"
 else
