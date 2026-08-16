@@ -38,8 +38,8 @@ die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
 # --- 1. Hostname must be mpd-<NNN> -----------------------------------
 # The hostname is mpd's single source of truth: the id, zone, subnet and
-# every name derive from it. Managed ids are 001..254, a zero-padded
-# three-digit identifier (mpd-virt carves them into per-backend blocks).
+# every name derive from it. Managed ids are 100..254 — always exactly
+# three digits, the same characters everywhere the id appears.
 # You set this at install time; prep only validates it.
 step "Hostname"
 host="$(hostname -s 2>/dev/null || cut -d. -f1 /etc/hostname | tr -d '[:space:]')"
@@ -52,8 +52,7 @@ esac
 nnn="${host#mpd-}"
 id10="$((10#${nnn}))"    # force base-10 so a leading zero isn't read as octal
 if [ "${id10}" -lt 100 ] || [ "${id10}" -gt 254 ]; then
-    die "id ${nnn} is out of range. Managed VMs are 100..254.
-(000 is the sandbox — use mpd-sandbox-setup.sh; 001..099 is the DHCP pool.)"
+    die "id ${nnn} is out of range. Managed VMs are 100..254 (001..099 is the DHCP pool)."
 fi
 ok "hostname '${host}' (id ${nnn})"
 

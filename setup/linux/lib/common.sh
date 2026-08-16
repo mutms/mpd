@@ -49,9 +49,9 @@ CA_SUBJECT_MATCH="mpd.test local development CA"
 mpd_net_from_vm_ip() {
     local vm_ip="$1" octet label
     octet="${vm_ip##*.}"
-    [[ "$octet" =~ ^[0-9]+$ ]] && [ "$octet" -le 254 ] \
-        || die "cannot derive VM id from IP '${vm_ip}'"
-    label=$(printf '%03d' "$octet")
+    [[ "$octet" =~ ^[0-9]+$ ]] && [ "$octet" -ge 100 ] && [ "$octet" -le 254 ] \
+        || die "cannot derive VM id from IP '${vm_ip}' — VM ids are 100..254"
+    label="$octet"
     CONTAINER_SUBNET_PREFIX="${MPD_SUBNET_PREFIX}.${octet}.0/24"
     CONTAINER_PROBE_IP="${MPD_SUBNET_PREFIX}.${octet}.3"
     DNSMASQ_IP="${CONTAINER_PROBE_IP}"
@@ -457,7 +457,7 @@ generate_vm_ca() {
     local key_path="$1" cert_path="$2" root_pem="$3" root_key="$4" octet="$5"
     local vm_id zone conf csr days end_date end_s now_s
 
-    vm_id=$(printf '%03d' "$octet")
+    vm_id="$octet"
     zone="${vm_id}.mpd.test"
 
     # Nothing may outlive its issuer: a certificate valid past its CA's

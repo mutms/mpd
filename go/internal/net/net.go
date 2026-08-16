@@ -5,8 +5,9 @@
 //
 // Each VM owns one /24 and one DNS zone, both keyed on the VM's id (read
 // from its hostname, mpd-<NNN>): VM 150
-// serves 10.163.150.0/24 and the zone 150.mpd.test. Ids run 001–254 as
-// zero-padded identifiers. The host part of an address never varies — the
+// serves 10.163.150.0/24 and the zone 150.mpd.test. Ids run 100–254 —
+// always exactly three digits, so the id reads the same everywhere it
+// appears. The host part of an address never varies — the
 // VM itself is always .1, the runtime .2, databases .10–.99, extra
 // service containers .100–.199 — only the third octet moves, and it
 // always equals the VM id. That is what lets a workstation reach several
@@ -73,15 +74,15 @@ type Net struct {
 	label string
 }
 
-// New builds a Net for a VM id. Valid ids are 1–254: the id is a zero-padded
-// three-digit identifier (mpd-001), and its value doubles as the third octet
-// of the VM's /24. mpd-virt carves this range into per-backend blocks; mpd
-// itself only cares that the id names a legal octet.
+// New builds a Net for a VM id. Valid ids are 100–254: always three digits,
+// and the value doubles as the third octet of the VM's /24 (255 is the
+// broadcast address; starting at 100 removes any padded/unpadded duality and
+// matches Proxmox's own VMID floor).
 func New(octet int) (Net, error) {
-	if octet < 1 || octet > 254 {
-		return Net{}, fmt.Errorf("VM id %d is not in the managed range 001–254", octet)
+	if octet < 100 || octet > 254 {
+		return Net{}, fmt.Errorf("VM id %d is not in the managed range 100–254", octet)
 	}
-	return Net{octet: octet, label: fmt.Sprintf("%03d", octet)}, nil
+	return Net{octet: octet, label: strconv.Itoa(octet)}, nil
 }
 
 // Current builds the Net for this VM by deriving its id from the
@@ -103,8 +104,8 @@ func Current() (Net, error) {
 				"    bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-prepare-takeover.sh)")
 	}
 	octet, err := strconv.Atoi(id)
-	if err != nil {
-		return Net{}, fmt.Errorf("hostname mpd-%s: %q is not a number", id, id)
+	if err != nil || strconv.Itoa(octet) != id {
+		return Net{}, fmt.Errorf("hostname mpd-%s: %q is not a plain number 100-254", id, id)
 	}
 	return New(octet)
 }
@@ -137,7 +138,7 @@ func readHostname() string {
 	return h
 }
 
-// VMID is the VM's 3-digit id, zero-padded ("022", "150").
+// VMID is the VM's three-digit id ("150").
 func (n Net) VMID() string { return n.label }
 
 // Octet is the third octet of this VM's subnet, equal to its id.

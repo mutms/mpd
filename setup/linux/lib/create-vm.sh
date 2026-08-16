@@ -41,6 +41,8 @@ for arg in "$@"; do
 done
 
 [ -n "$VM_OCTET" ]         || die "Missing --octet"
+{ [ "$VM_OCTET" -ge 100 ] && [ "$VM_OCTET" -le 254 ]; } 2>/dev/null \
+    || die "octet ${VM_OCTET} out of range — VM ids are 100..254"
 [ -n "$VM_USER" ]          || die "Missing --user"
 [ -n "$SSH_KEY" ]          || die "Missing --ssh-pub-key"
 [ -n "$VM_MEMORY_GB" ]     || die "Missing --memory-gb"
@@ -427,8 +429,8 @@ ssh_cmd "$VM_IP" "$VM_USER" \
 ok "mpd binary built"
 ok "Bootstrap complete"
 
-step "Issuing this VM's signing CA (constrained to $(printf '%03d' "$VM_OCTET").mpd.test)"
-VM_CA_DIR="${STATE_DIR}/$(printf '%03d' "$VM_OCTET")/ca"
+step "Issuing this VM's signing CA (constrained to ${VM_OCTET}.mpd.test)"
+VM_CA_DIR="${STATE_DIR}/${VM_OCTET}/ca"
 VM_CA_PEM="${VM_CA_DIR}/vmCA.pem"
 VM_CA_KEY="${VM_CA_DIR}/vmCA-key.pem"
 mkdir -p "$VM_CA_DIR"
