@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${SCRIPT_DIR}/00-common.sh"
 
 # --- DNS sanity check ---------------------------------------------------
-# The platform bootstrap (sandbox/takeover prep script, or cloud-init)
+# The platform bootstrap (sandbox/adoption prep script, or cloud-init)
 # reconfigured networking not long ago. If DNS is broken — e.g.
 # networkd hasn't pushed DNS to systemd-resolved yet — apt-get update
 # below would fail with "Temporary failure resolving". Probe once, try
@@ -68,7 +68,7 @@ BUILD_PKGS=(
 
 # qemu-guest-agent improves hypervisor↔guest integration on KVM/Parallels.
 # avahi-daemon advertises <hostname>.local over mDNS, which is how
-# `mpd-virt takeover <NNN>` finds a box when no IP is given. Both are
+# `mpd-virt adopt <NNN>` finds a box when no IP is given. Both are
 # harmless where the hypervisor or network ignores them.
 EXTRA_PKGS=(
     qemu-guest-agent
@@ -94,7 +94,7 @@ fi
 step "Guest integration services"
 # Debian enables+starts avahi-daemon on install; converge explicitly so a
 # box where it was stopped or disabled still comes back. Not fatal: on an
-# exotic box mDNS discovery just won't work and takeover takes an
+# exotic box mDNS discovery just won't work and adoption takes an
 # explicit IP instead.
 if sudo systemctl enable --now avahi-daemon >/dev/null 2>&1; then
     ok "avahi-daemon active ($(hostname -s).local over mDNS)"
@@ -109,7 +109,7 @@ fi
 # BindsTo= + After= its .device unit, and a device unit that no udev
 # event will ever activate has no job timeout. `systemctl start` on a
 # box without the device therefore does not fail — it blocks forever,
-# which is how takeover hung on an Apple-virtualisation guest.
+# which is how adoption hung on an Apple-virtualisation guest.
 if [ -e /dev/virtio-ports/org.qemu.guest_agent.0 ]; then
     if sudo systemctl start qemu-guest-agent >/dev/null 2>&1; then
         ok "qemu-guest-agent running"

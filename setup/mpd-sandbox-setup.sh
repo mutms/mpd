@@ -7,12 +7,12 @@
 # can create in one command. You live in the VM (or reach it over an SSH
 # SOCKS proxy from your host browser).
 #
-# Same first half as mpd-prepare-takeover.sh (hostname mpd-<NNN>, sudo,
+# Same first half as mpd-prepare-adopt.sh (hostname mpd-<NNN>, sudo,
 # network stack → systemd-networkd + systemd-resolved). The difference is
 # the second half: here we install mpd and run `mpd --vm-setup` IN the VM,
 # so the CA is generated locally. Because the hostname is a real
 # mpd-<NNN>, this same VM can later be adopted as a managed VM with
-# `mpd-virt takeover <NNN> <IP>` from a Mac — that re-roots the certs to
+# `mpd-virt adopt <NNN> <IP>` from a Mac — that re-roots the certs to
 # the Mac's CA; your projects survive.
 #
 # Run it ON THE VM, as your dev user (NOT root). Step 3 asks for one
@@ -35,7 +35,7 @@ ok()   { printf '    ok: %s\n' "$*"; }
 warn() { printf '    warn: %s\n' "$*"; }
 die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
-# --- 1. Hostname must be mpd-<NNN> (same gate as takeover prep) -------
+# --- 1. Hostname must be mpd-<NNN> (same gate as adoption prep) -------
 step "Hostname"
 host="$(hostname -s 2>/dev/null || cut -d. -f1 /etc/hostname | tr -d '[:space:]')"
 case "${host}" in
@@ -86,7 +86,7 @@ else
 fi
 
 # --- 3. Network stack → systemd-networkd + systemd-resolved ----------
-# Identical to mpd-prepare-takeover.sh: keep the DHCP address, convert
+# Identical to mpd-prepare-adopt.sh: keep the DHCP address, convert
 # whatever manages the link, converge over one reboot.
 step "IPv6 off + IPv4 forwarding"
 printf 'net.ipv6.conf.all.disable_ipv6 = 1\nnet.ipv6.conf.default.disable_ipv6 = 1\nnet.ipv6.conf.lo.disable_ipv6 = 1\n' \
@@ -152,7 +152,7 @@ ok "systemd-resolved + systemd-networkd active, DNS resolves"
 
 # --- 4. Install mpd from source --------------------------------------
 # 20-git-clone clones the repo to /opt/mpd (and creates /var/lib/mpd);
-# 40/50 install deps + build the binary. Same steps takeover drives over
+# 40/50 install deps + build the binary. Same steps adoption drives over
 # SSH — here they run locally.
 step "Install mpd (clone + build)"
 if [ ! -d /opt/mpd/.git ]; then
@@ -167,7 +167,7 @@ ok "mpd built at /opt/mpd/bin/mpd"
 
 # --- 5. mpd --vm-setup: generates the in-VM self-signed CA -----------
 # No CA was pushed, so mpd generates its own and installs it in the
-# system trust store. (A later `mpd-virt takeover` would push a Mac CA
+# system trust store. (A later `mpd-virt adopt` would push a Mac CA
 # and re-root; both paths end at the same working platform.)
 step "mpd --vm-setup (self-signed CA, generated in this VM)"
 mpd --vm-setup
@@ -234,6 +234,6 @@ Create a demo Moodle site (one command, takes a few minutes):
 Later, adopt this VM as a managed VM from a Mac (re-roots the CA to
 the Mac's, projects survive):
 
-    mpd-virt takeover ${nnn} ${vm_ip}
+    mpd-virt adopt ${nnn} ${vm_ip}
 ================================================================
 EOF

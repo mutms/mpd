@@ -23,7 +23,7 @@ repo exists on disk. They inline their own helpers and don't source
 `00-common.sh` for shared logging helpers. There is no networking step:
 hostname, static IP and the systemd-networkd/-resolved stack are the
 platform bootstrap's job (cloud-init on the automated platforms;
-`setup/mpd-sandbox-setup.sh` or `setup/mpd-prepare-takeover.sh` on a
+`setup/mpd-sandbox-setup.sh` or `setup/mpd-prepare-adopt.sh` on a
 hand-installed box).
 
 ## Invocation flows
@@ -56,8 +56,8 @@ ssh    … mpd --vm-setup
 Cloud-init flows (KVM, Hyper-V, UTM) handle the sudo bit via their
 `user-data` natively, so step 10 is a silent no-op there — and they own
 hostname + netplan, so there is no networking step. A hand-installed
-box headed for `mpd-virt takeover` gets its hostname + network stack
-from `setup/mpd-prepare-takeover.sh` first.
+box headed for `mpd-virt adopt` gets its hostname + network stack
+from `setup/mpd-prepare-adopt.sh` first.
 
 ### Upgrade (any VM)
 

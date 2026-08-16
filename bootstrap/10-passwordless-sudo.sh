@@ -10,7 +10,7 @@
 #   1. VM-name gate: hostname must be mpd-template, mpd-sandbox,
 #      mpd-template-<suffix>, mpd-sandbox-<suffix>, or mpd-NNN (3-digit).
 #      The -<suffix> forms exist so a developer can keep several
-#      pre-takeover templates and sandboxes side by side (e.g.
+#      pre-adoption templates and sandboxes side by side (e.g.
 #      mpd-template-trixie, mpd-sandbox-utm). The canonical mpd-NNN
 #      hostname is set directly (at install, by cloud-init, or by the
 #      developer) — mpd derives its identity from it. Refuses anything
@@ -42,9 +42,9 @@ case "${CURRENT_HOSTNAME}" in
     mpd-[0-9][0-9][0-9])                  ;;
     *)
         die "Refusing to run: hostname is '${CURRENT_HOSTNAME}', must be one of:
-    mpd-template          mpd-template-<suffix>   (pre-takeover template VMs)
-    mpd-sandbox           mpd-sandbox-<suffix>    (pre-takeover sandbox VMs)
-    mpd-NNN  (3-digit)                            (post-takeover, managed)
+    mpd-template          mpd-template-<suffix>   (pre-adoption template VMs)
+    mpd-sandbox           mpd-sandbox-<suffix>    (pre-adoption sandbox VMs)
+    mpd-NNN  (3-digit)                            (post-adoption, managed)
 Set it first, e.g.:
     sudo hostnamectl set-hostname mpd-sandbox-trixie
     sudo hostnamectl set-hostname mpd-template-parallels

@@ -14,7 +14,7 @@ Purpose: describe how `mpd` is structured, what is currently in scope, and where
   in-VM via `setup/mpd-sandbox-setup.sh`. Same `mpd` binary; the host
   stays untouched. The standalone way to try mpd/mudev — or to let an
   AI agent do Moodle development with the VM as its safety boundary —
-  before `mpd-virt takeover` converts the box to the managed workflow.
+  before `mpd-virt adopt` converts the box to the managed workflow.
 
 Current scope:
 
@@ -691,7 +691,7 @@ VM makes "VM-wide" a distinction without a difference, while a developer
 routinely runs several VMs that should share one set of defaults. The
 authoritative copy therefore lives on the Mac at
 `~/.mpd-virt/mpd-virt.env`, and mpd-virt pushes it to
-`/var/lib/mpd/env/mpd-virt.env` on takeover, start and update. The Mac
+`/var/lib/mpd/env/mpd-virt.env` on adopt, start and update. The Mac
 is the source of truth: an edit made inside the VM survives only until
 the next push. A VM with no mpd-virt behind it (a sandbox) gets the file
 seeded once from `assets/vm/mpd-virt.env` by `mpd --vm-setup` and owns it
@@ -760,7 +760,7 @@ run in both. They differ only at *setup* in how the CA is provisioned:
 `mpd --vm-setup` generates a self-signed CA in the VM when none was pushed
 (sandbox), or uses the name-constrained per-VM CA that host-side `mpd-virt`
 pushed (managed). A sandbox can be adopted as a managed VM later; the
-takeover re-roots the CA and the projects survive.
+adoption re-roots the CA and the projects survive.
 
 `/var/lib/mpd/conf/` remains the durable-config dir (CA under `caroot/`,
 service certs under `service/`) — it survives runtime-state wipes; the rest
@@ -957,7 +957,7 @@ See detailed docs:
   (`dnsmasq.Reconcile`, records passed in by the cli layer); TLS
 - `assets/` — runtime/type/service scripts/config/templates + `runtime/skel/`
 - `bootstrap/` — VM bring-up steps 10–50 (passwordless sudo, repo clone, apt, build)
-- `setup/` — host-side bootstrap: the sandbox + takeover-prep scripts, `linux/`, `windows/` (macOS lives in the `mpd-virt` repo)
+- `setup/` — host-side bootstrap: the sandbox + adoption-prep scripts, `linux/`, `windows/` (macOS lives in the `mpd-virt` repo)
 - `docs/` — behavioral and architecture contracts
 
 ## 13) Contributor Change Map

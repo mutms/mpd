@@ -300,7 +300,7 @@ Most likely this VM has not been prepared (or a reboot was left
 unfinished). Run the prepare script on the VM and follow its reboot
 prompt until it reports ready:
 
-    bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-prepare-takeover.sh)
+    bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-prepare-adopt.sh)
 
 (For a self-contained sandbox, mpd-sandbox-setup.sh does the same and
 then installs mpd.)`)

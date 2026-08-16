@@ -12,11 +12,11 @@ Pick the path that matches your host:
 
 - **macOS + Parallels / UTM / Proxmox / cloud (automated)** —
   [`mpd-virt`](https://github.com/mutms/mpd-virt) (separate repo).
-  `mpd-virt takeover <NNN> <IP>` adopts any reachable Debian Trixie box:
+  `mpd-virt adopt <NNN> <IP>` adopts any reachable Debian Trixie box:
   it runs the bootstrap pipeline over SSH, installs `mpd`, and wires host
   reachability — the **mpd-proxy WireGuard overlay** for daily transparent
   access, or a **SOCKS-over-SSH** fallback (`ssh -N mpd-<NNN>-socks`) that
-  needs no sudo. `mpd-virt delete` / `uninstall` tear things down; VM power
+  needs no sudo. `mpd-virt remove` / `uninstall` un-adopt and tear the host side down; VM power
   (where the backend supports it) via `mpd-virt start|stop` or the
   hypervisor's GUI.
 - **Ubuntu 26.04 LTS + libvirt/KVM (automated)** —

@@ -55,7 +55,7 @@ step "Updating mpd source"
 bash "${SCRIPT_DIR}/20-git-clone.sh"
 
 # --- Converge the base package set --------------------------------------
-# Same step takeover runs, so a package added to the base set (or a
+# Same step adoption runs, so a package added to the base set (or a
 # guest-integration service like avahi) reaches already-adopted boxes on
 # their next update. Fast no-op when everything is installed.
 

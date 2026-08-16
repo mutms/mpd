@@ -20,7 +20,7 @@ the user sits and where `mpd` runs:
   hypervisor, and a snapshot rolls anything back. User installs Debian
   Trixie desktop in any hypervisor (hostname `mpd-<NNN>`), snapshots, runs
   `setup/mpd-sandbox-setup.sh` inside the VM. A sandbox is a try-out, not
-  a dead end: `mpd-virt takeover` later converts it into a managed mpd VM
+  a dead end: `mpd-virt adopt` later converts it into a managed mpd VM
   for the daily workflow, projects intact.
 - **mpd VM** — automated Debian Trixie VM driven by a matched-host
   bootstrap (Parallels Desktop Pro / UTM on macOS via `mpd-virt` —
@@ -611,7 +611,7 @@ found." Internal sudo on specific operations is the right shape.
   renaming files.
 
 **Throw-away-VM smoke checks** (rerun freely — all idempotent):
-- fresh VM via `setup/mpd-sandbox-setup.sh` (or `mpd-virt takeover`
+- fresh VM via `setup/mpd-sandbox-setup.sh` (or `mpd-virt adopt`
   from a Mac)
 - `mpd --vm-setup`, `mpd --vm-start`, `mpd --vm-status`
 - optional: `mpd create/start/stop <project>` end-to-end including HTTPS hit

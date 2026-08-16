@@ -1,5 +1,5 @@
 #!/bin/bash
-# setup/mpd-prepare-takeover.sh
+# setup/mpd-prepare-adopt.sh
 #
 # Prepares a fresh Debian Trixie install — desktop OR server — to be
 # adopted by the host-side `mpd-virt` orchestrator. Run it ON THE VM, as
@@ -10,7 +10,7 @@
 # systemd-networkd + systemd-resolved). When every check is green it
 # prints the exact command to run on the Mac:
 #
-#     mpd-virt takeover <NNN> --backend=<backend>
+#     mpd-virt adopt <NNN> --backend=<backend>
 #
 # with the id read from the hostname and the IP left to mDNS discovery
 # (avahi is set up below) — plus the explicit-IP variant as a fallback.
@@ -18,14 +18,14 @@
 # Wgettable / self-contained: it runs before the mpd repo is cloned, so
 # it inlines its own helpers rather than sourcing bootstrap/00-common.sh.
 #
-#   bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-prepare-takeover.sh)
+#   bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-prepare-adopt.sh)
 #
 # Idempotent — safe to re-run after a partial step or a reboot.
 #
 # Steps: (1) hostname gate mpd-<NNN>, (2) passwordless sudo, (3) convert
 # the network stack to systemd-networkd + systemd-resolved (desktop:
 # NetworkManager; server: ifupdown), (4) guest integration (avahi mDNS +
-# qemu-guest-agent), (5) readiness check → prints the takeover command.
+# qemu-guest-agent), (5) readiness check → prints the adopt command.
 # Step 3 asks for one reboot; the re-run finishes and prints the command.
 
 set -euo pipefail
@@ -68,13 +68,13 @@ step "Operating system"
 ok "Debian Trixie"
 
 # --- 2. Passwordless sudo for the current (non-root) user ------------
-# Takeover drives the VM over SSH as this user and never types a
+# Adoption drives the VM over SSH as this user and never types a
 # password, so `sudo -n` must be silent. Refuse root: the whole point is
 # an unprivileged dev account that can escalate without a prompt.
 step "Passwordless sudo for $(id -un)"
 [ "$(id -u)" -ne 0 ] \
     || die "run this as your dev user, not root.
-Takeover drives the VM as an unprivileged user over SSH; root has no
+Adoption drives the VM as an unprivileged user over SSH; root has no
 authorized key and no home for mpd to live in."
 
 # Guard the probe with `command -v`: a minimal server has no sudo at all,
@@ -129,11 +129,11 @@ fi
 # as the DNS sink (so `mpd --vm-setup` can inject the *.mpd.test
 # resolver). A desktop ships NetworkManager, a server ships ifupdown;
 # both are converted. We keep the DHCP address — the IP is never pinned
-# here, it is read at the end and handed to takeover.
+# here, it is read at the end and handed to adoption.
 #
 # The switch completes on a reboot: this run only DISABLES the old
 # manager (so SSH/console survive), then asks for a reboot + re-run. The
-# second run finds the stack already on networkd and prints the takeover
+# second run finds the stack already on networkd and prints the adopt
 # line.
 
 step "IPv6 off + IPv4 forwarding"
@@ -187,7 +187,7 @@ else
     ok "link already on systemd-networkd"
 fi
 
-# --- 4. Readiness + the takeover line --------------------------------
+# --- 4. Readiness + the adopt line --------------------------------
 if [ "${reboot_needed}" = 1 ]; then
     echo
     echo "================================================================"
@@ -228,14 +228,14 @@ fi
 
 # --- Guest integration: mDNS advertisement + hypervisor agent ---------
 # avahi-daemon advertises <host>.local over mDNS — that is how
-# `mpd-virt takeover <NNN>` finds this box when you don't hand it an IP.
+# `mpd-virt adopt <NNN>` finds this box when you don't hand it an IP.
 # qemu-guest-agent lets KVM-family hypervisors (UTM, Proxmox,
 # virt-manager) see the guest; on Debian it is udev-activated only where
 # the virtio device exists, so it sits idle everywhere else. Installed
 # here (not by `mpd --vm-setup`) so the packages arrive with the
-# platform prep, before takeover needs the mDNS name — and so mpd itself
+# platform prep, before adoption needs the mDNS name — and so mpd itself
 # never assumes it runs under a hypervisor.
-# openssh-server is here too: takeover drives the box over SSH, and a
+# openssh-server is here too: adoption drives the box over SSH, and a
 # desktop install ships without sshd unless the "SSH server" task was
 # ticked — prep makes the box adoptable regardless.
 step "Guest integration (openssh-server, avahi-daemon, qemu-guest-agent)"
@@ -254,7 +254,7 @@ sudo systemctl enable --now ssh >/dev/null 2>&1 || true
 if sudo systemctl enable --now avahi-daemon >/dev/null 2>&1; then
     ok "avahi-daemon active (${host}.local over mDNS)"
 else
-    warn "avahi-daemon could not be enabled — pass the IP to takeover explicitly"
+    warn "avahi-daemon could not be enabled — pass the IP to adopt explicitly"
 fi
 # Gated on the device, never attempted-and-caught: the unit is BindsTo= +
 # After= its .device unit, and a device unit no udev event will activate
@@ -271,15 +271,15 @@ fi
 vm_ip="$(ip -4 -o addr show "${iface}" | awk '{print $4}' | cut -d/ -f1 | head -1)"
 echo
 echo "================================================================"
-echo "  ${host} is ready for takeover."
+echo "  ${host} is ready for adoption."
 echo
 echo "  On your Mac, run (--backend = where the box runs:"
 echo "  generic | parallels | container | utm | proxmox):"
 echo
-echo "      mpd-virt takeover ${nnn} --backend=<backend>"
+echo "      mpd-virt adopt ${nnn} --backend=<backend>"
 echo
 echo "  The box advertises itself over mDNS; if that doesn't reach"
 echo "  your Mac, give the IP explicitly:"
 echo
-echo "      mpd-virt takeover ${nnn} ${vm_ip} --backend=<backend>"
+echo "      mpd-virt adopt ${nnn} ${vm_ip} --backend=<backend>"
 echo "================================================================"
