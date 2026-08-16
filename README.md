@@ -24,8 +24,12 @@ assistant at this repo and ask.
 
 ## Try it: Sandbox VM
 
-One VM, one script, no host configuration — and you can adopt it as a
-managed VM later without losing projects.
+A standalone local VM with a GNOME desktop for trying out mpd and
+[mudev](https://github.com/mutms/mudev) — one script, no host
+configuration. It is also a safe playground for Moodle development with an
+AI agent: everything the agent touches stays inside the VM, and a snapshot
+rolls it back. You can adopt the sandbox as a managed VM later without
+losing projects.
 
 Install **Debian Trixie (13) with GNOME** in any hypervisor (UTM, Parallels,
 VMware, Hyper-V, virt-manager/KVM, VirtualBox…): 8 GB RAM / 4 CPUs
@@ -53,13 +57,15 @@ lists what's available. `mpd --vm-upgrade` updates mpd in place later.
 
 ## Daily driver: mpd VM
 
-Same VM, headless, with your laptop's own browser and IDE resolving
-`*.mpd.test` directly. On macOS, [mpd-virt](https://github.com/mutms/mpd-virt)
+Same VM, headless, with your laptop's own browser resolving `*.mpd.test`
+directly and your IDE connected over remote SSH (PhpStorm Gateway, VS Code
+Remote-SSH — `ssh mpd-<NNN>` lands in the runtime). On macOS, [mpd-virt](https://github.com/mutms/mpd-virt)
 creates or adopts the VM and wires the host side in one shot; on Linux and
 Windows the in-repo automation is [setup/linux/](setup/linux/README.md) and
 [setup/windows/](setup/windows/README.txt) (less exercised). A sandbox is
-adopted with `mpd-virt takeover <NNN> --backend=<backend>` (the box is
-found over mDNS; pass the IP if that can't reach it) — projects survive.
+adopted with `mpd-virt takeover <NNN> --backend=<backend>` (a desktop
+install ships avahi, so the box is usually found over mDNS; pass the IP
+if discovery doesn't reach it) — projects survive.
 
 ## Documentation
 

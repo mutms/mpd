@@ -12,10 +12,16 @@ Moodle plugin work, built around a reproducible runtime container, local DNS,
 and HTTPS endpoints. It has two user-facing modes, distinguished by where
 the user sits and where `mpd` runs:
 
-- **Sandbox VM** — full GNOME desktop *inside* the VM, `mpd` runs in
-  the VM. User installs Debian Trixie desktop in any hypervisor,
-  snapshots, runs `setup/mpd-sandbox-setup.sh` inside the
-  VM. Host stays untouched.
+- **Sandbox VM** — a standalone local VM with a full GNOME desktop where a
+  developer tries out `mpd` and `mudev`: browser, terminal, and `mpd` all
+  live *inside* the VM, and the host stays untouched. The same isolation
+  makes it a safe place to try Moodle development with an AI agent — the
+  agent can act freely inside the VM, the blast radius ends at the
+  hypervisor, and a snapshot rolls anything back. User installs Debian
+  Trixie desktop in any hypervisor (hostname `mpd-<NNN>`), snapshots, runs
+  `setup/mpd-sandbox-setup.sh` inside the VM. A sandbox is a try-out, not
+  a dead end: `mpd-virt takeover` later converts it into a managed mpd VM
+  for the daily workflow, projects intact.
 - **mpd VM** — automated Debian Trixie VM driven by a matched-host
   bootstrap (Parallels Desktop Pro / UTM on macOS via `mpd-virt` —
   primary; libvirt/KVM on Ubuntu and Hyper-V on Windows are automated
@@ -24,7 +30,9 @@ the user sits and where `mpd` runs:
   `gnome-start` / `gnome-stop` (persistent across reboots). User stays
   on their host: host browser visits `*.<NNN>.mpd.test` directly via
   the mpd-proxy WireGuard overlay or a SOCKS-over-SSH tunnel + CA
-  trust; host terminal SSHes into the VM to use the `mpd` CLI.
+  trust; host terminal SSHes into the VM to use the `mpd` CLI, and the
+  IDE works over remote SSH (PhpStorm Gateway, VS Code Remote-SSH —
+  `ssh mpd-<NNN>` lands in the runtime).
 
 `mpd` itself is a single Linux binary that runs **inside the VM**. The
 macOS-host orchestrator (`mpd-virt`) that drives Parallels lives in a

@@ -11,8 +11,10 @@ Purpose: describe how `mpd` is structured, what is currently in scope, and where
   orchestrator (own repo); headless by default, GNOME toggleable
   on demand. Primary target.
 - `sandbox`: same Debian Trixie VM but with a GNOME desktop, set up
-  in-VM via `setup/mpd-sandbox-setup.sh`. Same `mpd` binary;
-  the host stays untouched.
+  in-VM via `setup/mpd-sandbox-setup.sh`. Same `mpd` binary; the host
+  stays untouched. The standalone way to try mpd/mudev — or to let an
+  AI agent do Moodle development with the VM as its safety boundary —
+  before `mpd-virt takeover` converts the box to the managed workflow.
 
 Current scope:
 
