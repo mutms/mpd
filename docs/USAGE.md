@@ -130,6 +130,8 @@ mpd create --type=moodle
 #      mpd configure MPD_DB=postgres:18
 #      mpd configure MPD_PHP_VERSION=8.4
 #    Or edit /srv/projects/moodle51/mpd.env directly.
+#    A legacy PHP an old branch needs (e.g. MPD_PHP_VERSION=7.4) is
+#    fetched on demand at configure/start — no extra step.
 
 # 3. Configure — provisions the DB container, creates the DB,
 #    writes config.php, runs the Moodle install.
@@ -408,6 +410,7 @@ Stack-independent ones first:
 | Tool               | What it does                                                                                                                                      |
 |--------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
 | `php`              | Project-aware PHP wrapper, registered as the Debian `php` alternative (so `/usr/bin/php` is it) — picks the project's `MPD_PHP_VERSION`, falls back to 8.2 outside a project tree. |
+| `php-install`      | Install one PHP version on demand: `php-install 7.4`. The current versions are baked in; legacy EOL ones (7.4, 8.0) are not. `mpd configure`/`start` call this for you when a project's `MPD_PHP_VERSION` is not present, so you rarely run it by hand. Idempotent. |
 | `composer`         | The Composer phar; installed at `/usr/local/bin/composer` by `composer-install` at provision time.                                                |
 | `composer-install` | Idempotent install of Composer to `/usr/local/bin/`. Re-runs no-op.                                                                               |
 | `composer-upgrade` | Force-reinstalls Composer (bypass idempotency). Use instead of `composer self-update` — the phar is root-owned and self-update can't write to it. |

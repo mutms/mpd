@@ -47,6 +47,14 @@ fi
 # shellcheck source=/dev/null
 source /opt/mpd/assets/runtime/lib/source-mpd-env.sh
 PHP_VER="${MPD_PHP_VERSION}"
+
+# The current PHP versions are baked into the image; a legacy one this
+# project asks for is installed on demand. php-install is idempotent and
+# no-ops instantly for a version already present, so this is cheap on the
+# common path. A version that cannot be installed fails start loudly here,
+# rather than silently skipping the FPM pool below into a 502.
+/opt/mpd/assets/runtime/tools/php-install "$PHP_VER"
+
 FPM_PORT=$(jq -r '.phpFpmPort // empty' "$EFFECTIVE_FILE")
 if [ -z "$FPM_PORT" ]; then
     echo "Error: phpFpmPort not set in ${EFFECTIVE_FILE}" >&2

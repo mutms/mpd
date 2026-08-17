@@ -57,6 +57,13 @@ source /opt/mpd/assets/runtime/lib/source-mpd-env.sh
 PHP_VER="${MPD_PHP_VERSION}"
 BEHAT="${MPD_MOODLE_BEHAT}"
 
+# Install a legacy PHP version on demand — the current set is baked into the
+# image, older EOL versions arrive only when a project asks for one. Done at
+# configure time too (not just start) so CLI tools like mdl-install run on the
+# project's real version instead of the php wrapper's fallback. Idempotent and
+# instant when the version is already present.
+/opt/mpd/assets/runtime/tools/php-install "$PHP_VER"
+
 # MPD_DB (docker tag form): "postgres", "postgres:17", "postgres:latest", or
 # "" (empty = no DB). Bare engine expands to engine:latest. mpd re-validates
 # on the read side, so this script can be lenient about edge cases.

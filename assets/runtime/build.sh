@@ -55,28 +55,16 @@ sudo apt-get update -qq
 # separate dpkg invocations (5 versions × ~5 extension calls + DB clients).
 # apt resolves dependencies once and downloads in parallel — significantly
 # faster on a fresh runtime build.
-REQUIRED_EXTS="cli fpm curl gd intl mbstring pgsql soap xml zip mysql"
-# Optional extensions may lag for newest PHP versions on Sury, so we filter
-# the list to packages that actually exist in the apt index instead of
-# letting one missing optional take down the install.
-OPTIONAL_EXTS="opcache redis apcu xmlrpc"
+#
+# The package list and the per-version FPM/php.ini setup live in
+# lib/php-configure.sh, shared with tools/php-install so an on-demand legacy
+# version (php-install 7.4) is set up exactly like a baked one.
+# shellcheck source=/dev/null
+. /opt/mpd/assets/runtime/lib/php-configure.sh
 
 PKG_LIST=""
 for VER in $PHP_VERSIONS; do
-    for EXT in $REQUIRED_EXTS; do
-        PKG_LIST="${PKG_LIST} php${VER}-${EXT}"
-    done
-    for EXT in $OPTIONAL_EXTS; do
-        # PHP 8.5 bundles OPcache — no separate php8.5-opcache package.
-        if [ "$VER" = "8.5" ] && [ "$EXT" = "opcache" ]; then
-            continue
-        fi
-        if apt-cache show "php${VER}-${EXT}" >/dev/null 2>&1; then
-            PKG_LIST="${PKG_LIST} php${VER}-${EXT}"
-        else
-            echo "Warning: optional extension php${VER}-${EXT} not available — skipping."
-        fi
-    done
+    PKG_LIST="${PKG_LIST} $(mpd_php_package_list "$VER")"
 done
 
 echo "Installing PHP versions ${PHP_VERSIONS} + DB clients + caddy in one apt pass..."
@@ -95,33 +83,11 @@ sudo apt-get install -y --no-install-recommends \
     jq
 
 # ── Per-version FPM configuration (file ops only — no apt) ────────────────────
+# mpd_php_configure_version (lib/php-configure.sh) writes the Moodle php.ini
+# defaults, points the default pool at its unix socket, and enables + starts
+# php<ver>-fpm — the same setup tools/php-install applies to a legacy version.
 for VER in $PHP_VERSIONS; do
-    # Moodle-required php.ini settings (FPM and CLI)
-    for SAPI in fpm cli; do
-        INI_DIR="/etc/php/${VER}/${SAPI}/conf.d"
-        if [ -d "$INI_DIR" ]; then
-            sudo tee "${INI_DIR}/99-moodle.ini" >/dev/null << 'INIEOF'
-max_input_vars = 10000
-upload_max_filesize = 200M
-post_max_size = 206M
-zend.exception_ignore_args = On
-INIEOF
-        fi
-    done
-
-    # Configure FPM pool — listen on unix socket
-    POOL_CONF="/etc/php/${VER}/fpm/pool.d/www.conf"
-    if [ -f "$POOL_CONF" ]; then
-        sudo sed -i "s|^listen = .*|listen = /run/php/php${VER}-fpm.sock|" "$POOL_CONF"
-    fi
-
-    # Enable and start FPM for this version if the unit exists.
-    if [ -f "/lib/systemd/system/php${VER}-fpm.service" ] || [ -f "/usr/lib/systemd/system/php${VER}-fpm.service" ]; then
-        sudo systemctl enable "php${VER}-fpm"
-        sudo systemctl start "php${VER}-fpm" || true
-    else
-        echo "Warning: php${VER}-fpm.service does not exist after install — continuing."
-    fi
+    mpd_php_configure_version "$VER"
 done
 
 # ── `php` as a real Debian alternative ───────────────────────────────────────
