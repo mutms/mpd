@@ -6,6 +6,14 @@
 # finished binary directly, so there is nothing left to install.
 GO_DIR := $(CURDIR)/go
 
+# Version stamped into the binary (`mpd version`). mpd is always compiled
+# from this checkout, so the value is diagnostic: `git describe` gives the
+# nearest tag, or the bare commit hash before any tag exists, with "-dirty"
+# appended for uncommitted changes — enough to know exactly which code a
+# misbehaving binary was built from.
+VERSION := $(shell git -C $(CURDIR) describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS := -X main.version=$(VERSION)
+
 # Build with the Go that Debian Trixie ships (golang-go, currently
 # 1.24.x) and nothing else.
 #
@@ -24,7 +32,7 @@ export GOTOOLCHAIN = local
 
 build install:
 	@mkdir -p bin
-	cd $(GO_DIR) && go build -o $(CURDIR)/bin/mpd ./cmd/mpd
+	cd $(GO_DIR) && go build -ldflags "$(LDFLAGS)" -o $(CURDIR)/bin/mpd ./cmd/mpd
 	@echo "Native binary: bin/mpd"
 
 test:
