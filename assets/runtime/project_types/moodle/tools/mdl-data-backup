@@ -7,11 +7,14 @@
 #   mdl-data-backup            # names the bundle after the date and time
 #   mdl-data-backup before-upgrade
 #
-# The bundle goes to /srv/backups/projects/<project>/<name>.tgz and holds
-# the database, the dataroot, this project's mpd.env, and a manifest
-# saying what it came from. Copy one off the VM with scp from your Mac:
+# The bundle goes to /srv/backups/projects/<name>.tgz and holds the
+# database, the dataroot, this project's mpd.env, and a manifest saying
+# what it came from. Every project's backups share this one directory, so
+# a bundle can be restored into any project — name yours so you can tell
+# them apart (mdl-data-backup akreditace_start). Copy one off the VM with
+# scp from your Mac:
 #
-#   scp mpd-<NNN>-vm:/srv/backups/projects/<project>/<name>.tgz .
+#   scp mpd-<NNN>-vm:/srv/backups/projects/<name>.tgz .
 #
 # It does not save the source tree — that is what git is for — and it
 # does not save the PHPUnit or Behat dataroots, which `phpunit-init` and
@@ -55,7 +58,7 @@ if [ ! -d "$DATAROOT" ]; then
     exit 1
 fi
 
-OUT_DIR="/srv/backups/projects/${PROJECT}"
+OUT_DIR="/srv/backups/projects"
 OUT_FILE="${OUT_DIR}/${BUNDLE_NAME}.tgz"
 if [ -e "$OUT_FILE" ]; then
     echo "Backup '${BUNDLE_NAME}' already exists at ${OUT_FILE}." >&2
@@ -109,7 +112,9 @@ case "$DB_ENGINE" in
     mariadb|mysql)
         client="mariadb-dump"
         [ "$DB_ENGINE" = "mysql" ] && client="mysqldump"
-        "$client" -h "$DBHOST" -u root -proot \
+        # --skip-ssl: the client defaults SSL on, but the DB container
+        # serves plaintext on the private network, so it would refuse.
+        "$client" -h "$DBHOST" -u root -proot --skip-ssl \
             --single-transaction --routines --events --no-tablespaces \
             "${PROJECT}" | gzip -c >"${STAGING}/db.sql.gz"
         ;;

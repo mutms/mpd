@@ -94,7 +94,9 @@ moodle_db_table_count() {
         mariadb|mysql)
             client="mariadb"
             [ "$engine" = "mysql" ] && client="mysql"
-            "$client" -h "$host" -u root -proot -N -B -e \
+            # --skip-ssl: the client defaults SSL on, but the DB container
+            # serves plaintext on the private network, so it would refuse.
+            "$client" -h "$host" -u root -proot --skip-ssl -N -B -e \
                 "SELECT count(*) FROM information_schema.tables WHERE table_schema='${PROJECT}'"
             ;;
         *)

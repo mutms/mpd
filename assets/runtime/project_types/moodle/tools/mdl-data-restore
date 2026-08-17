@@ -33,19 +33,23 @@ set -euo pipefail
 
 source /opt/mpd/assets/runtime/project_types/moodle/scripts/mpd-env.sh
 
-BACKUP_DIR="/srv/backups/projects/${PROJECT}"
+# Every project's backups share this one directory, so a bundle taken
+# from one project can be restored into another. The manifest carries the
+# project it came from, which `--list` shows.
+BACKUP_DIR="/srv/backups/projects"
 
 list_bundles() {
     if ! compgen -G "${BACKUP_DIR}/*.tgz" >/dev/null; then
-        echo "No backups for '${PROJECT}'. Make one with: mdl-data-backup"
+        echo "No backups yet. Make one with: mdl-data-backup"
         return 0
     fi
-    printf '%-28s %-8s %-18s %s\n' "BUNDLE" "SIZE" "DATABASE" "MOODLE"
+    printf '%-28s %-8s %-14s %-18s %s\n' "BUNDLE" "SIZE" "FROM" "DATABASE" "MOODLE"
     for f in "${BACKUP_DIR}"/*.tgz; do
         manifest=$(tar -xzOf "$f" manifest.json 2>/dev/null || echo '{}')
-        printf '%-28s %-8s %-18s %s\n' \
+        printf '%-28s %-8s %-14s %-18s %s\n' \
             "$(basename "$f" .tgz)" \
             "$(du -h "$f" | cut -f1)" \
+            "$(printf '%s' "$manifest" | jq -r '.project // "?"')" \
             "$(printf '%s' "$manifest" | jq -r '.dbTag // "?"')" \
             "$(printf '%s' "$manifest" | jq -r '.moodleRelease // "?"')"
     done
@@ -67,7 +71,7 @@ fi
 
 BUNDLE="${BACKUP_DIR}/${BUNDLE_NAME}.tgz"
 if [ ! -f "$BUNDLE" ]; then
-    echo "No backup named '${BUNDLE_NAME}' for '${PROJECT}'." >&2
+    echo "No backup named '${BUNDLE_NAME}'." >&2
     echo "Run 'mdl-data-restore --list' to see what is there." >&2
     exit 1
 fi
@@ -184,8 +188,10 @@ case "$DB_ENGINE" in
     mariadb|mysql)
         client="mariadb"
         [ "$DB_ENGINE" = "mysql" ] && client="mysql"
+        # --skip-ssl: the client defaults SSL on, but the DB container
+        # serves plaintext on the private network, so it would refuse.
         gunzip -c "${STAGING}/db.sql.gz" \
-            | "$client" -h "$DBHOST" -u root -proot "${PROJECT}"
+            | "$client" -h "$DBHOST" -u root -proot --skip-ssl "${PROJECT}"
         ;;
 esac
 

@@ -421,7 +421,7 @@ Stack-independent ones first:
 | `mdl-cache-purge`                           | Run `admin/cli/purge_caches.php` for the current project.                                                                                                                                                                                                                                               |
 | `mdl-cron`                                  | Run `admin/cli/cron.php` (one cycle) for the current project.                                                                                                                                                                                                                                           |
 | `mdl-upgrade`                               | Run `admin/cli/upgrade.php --non-interactive` for the current project. Use after a git pull that updates code.                                                                                                                                                                                          |
-| `mdl-data-backup` / `mdl-data-restore`      | Save and restore the current project's database + dataroot as one `.tgz` in `/srv/backups/projects/<project>/`. `mdl-data-restore --list` shows what is there. See [Backups](#backups).                                                                                                                 |
+| `mdl-data-backup` / `mdl-data-restore`      | Save and restore the current project's database + dataroot as one `.tgz` in the shared `/srv/backups/projects/` pile (restorable into any project). `mdl-data-restore --list` shows what is there. See [Backups](#backups).                                                                                                                 |
 | `phpunit` / `phpunit-init` / `phpunit-util` | Run, initialize, and inspect Moodle's PHPUnit suite.                                                                                                                                                                                                                                                    |
 | `behat` / `behat-init` / `behat-util`       | Run, initialize, and inspect Moodle's Behat suite.                                                                                                                                                                                                                                                      |
 | `grunt`                                     | Wraps `npm install` + `grunt` for the current project's Moodle JS build.                                                                                                                                                                                                                                |
@@ -498,9 +498,12 @@ mdl-data-restore --list
 mdl-data-restore before-upgrade
 ```
 
-One `.tgz` per backup in `/srv/backups/projects/<project>/`, holding the
-database, the dataroot, the project's `mpd.env`, and a manifest recording
-the database engine, the Moodle release and the PHP version. It skips the
+One `.tgz` per backup in `/srv/backups/projects/`, holding the database,
+the dataroot, the project's `mpd.env`, and a manifest recording the
+database engine, the Moodle release and the PHP version. Every project's
+backups share that one directory, so a bundle can be restored into any
+project — name yours to tell them apart, and `mdl-data-restore --list`
+shows which project each came from. It skips the
 source tree (that is git's job), the PHPUnit and Behat dataroots
 (`phpunit-init` / `behat-init` rebuild them), and Moodle's caches,
 sessions and trash.
@@ -532,12 +535,13 @@ reach. It is the same reason there is no `mdl-data-purge`.
 Restore also refuses a bundle taken on a different database engine — a
 PostgreSQL dump cannot load into MariaDB. A different Moodle release is
 a warning rather than a refusal, and it tells you to run `mdl-upgrade`
-afterwards.
+afterwards. These same checks make a cross-project restore safe: it is
+just a restore whose bundle happens to come from another project.
 
 From your laptop, scp a bundle off the VM — `/srv` is mounted there:
 
 ```bash
-scp mpd-<NNN>-vm:/srv/backups/projects/<project>/<name>.tgz ~/Downloads/
+scp mpd-<NNN>-vm:/srv/backups/projects/<name>.tgz ~/Downloads/
 ```
 
 **Runtime backups** exist now and cover something different: the

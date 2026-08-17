@@ -782,8 +782,10 @@ Read/write contract:
 - **Project backup tools write here.** `mdl-data-backup` /
   `mdl-data-restore` (under
   `assets/runtime/project_types/moodle/tools/`) tar the dataroot plus a
-  DB dump into `/srv/backups/projects/<project>/<name>.tgz` from inside
-  the runtime. Backup is a Moodle-only concern: the dataroot ↔ DB
+  DB dump into `/srv/backups/projects/<name>.tgz` from inside the
+  runtime. Every project's backups share that one directory, so a bundle
+  can be restored into any project (the manifest records where it came
+  from). Backup is a Moodle-only concern: the dataroot ↔ DB
   coupling makes "snapshot the project" a real unit, while other project
   types keep their state in the source tree (so `git` is their backup
   mechanism). They are tools rather than verbs because the runtime can
