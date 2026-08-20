@@ -4,17 +4,20 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
+	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
 )
 
 // Column widths for the project and DB tables.
 const (
 	colCurrent  = 10
+	colBranch   = 20
 	colDNS      = 28
 	colDatabase = 16
 	colDBStatus = 10
@@ -86,7 +89,7 @@ func ListProjects(out io.Writer, s state.Store) {
 	}
 
 	fmt.Fprintln(out, Col("PROJECT", colService)+Col("STATUS", colStatus)+
-		Col("TYPE", colCurrent)+Col("RUNTIME", colCurrent)+
+		Col("TYPE", colCurrent)+Col("BRANCH", colBranch)+
 		Col("DB", colDatabase)+"URL")
 	fmt.Fprintln(out, Rule(100))
 
@@ -95,15 +98,46 @@ func ListProjects(out io.Writer, s state.Store) {
 		if db == "" {
 			db = "-"
 		}
-		rt := p.RuntimeName
-		if rt == "" {
-			rt = "—"
-		}
 		fmt.Fprintln(out, Col(p.Name, colService)+
 			StatusLabel(p.Status(), colStatus)+
-			Col(p.Type, colCurrent)+Col(rt, colCurrent)+
+			Col(p.Type, colCurrent)+Col(gitBranch(p.Name), colBranch)+
 			Col(db, colDatabase)+p.MainURL())
 	}
+}
+
+// gitBranch reads a project's checked-out branch straight from
+// /srv/projects/<name>/.git/HEAD — no `git` subprocess, per the
+// host-command rule. Returns the branch name, a short commit for a
+// detached HEAD, or "-" when the tree is not a git checkout.
+func gitBranch(name string) string {
+	head, ok := srv.Read(filepath.Join(srv.ProjectDir(name), ".git", "HEAD"))
+	if !ok {
+		return "-"
+	}
+	head = strings.TrimSpace(head)
+	if ref := strings.TrimPrefix(head, "ref: refs/heads/"); ref != head {
+		return ref
+	}
+	// Detached HEAD: the file holds a bare commit hash. Only treat it as
+	// one when it actually looks like a hash — a `.git` that is a gitdir
+	// pointer file (worktrees, submodules) is neither a ref nor a hash.
+	if isHex(head) && len(head) >= 7 {
+		return head[:7]
+	}
+	return "-"
+}
+
+// isHex reports whether s is a non-empty string of hex digits.
+func isHex(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
+			return false
+		}
+	}
+	return true
 }
 
 func labelOr(item podman.PsItem, key, fallback string) string {
