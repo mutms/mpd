@@ -40,6 +40,13 @@ type ProjectURL struct {
 }
 
 // Project is one registered project, as stored in projects.json.
+//
+// Autostart is the whole of a project's lifecycle intent: true after
+// `mpd start`, false after `mpd stop`. It is what a reboot honours (see
+// RuntimeStart) and what Status reports. There is deliberately no stored
+// "observed" state to disagree with it — a start that does not fully
+// succeed sets Autostart back to false, so the flag is kept honest in the
+// safe direction (better to read stopped and be running than the reverse).
 type Project struct {
 	Name            string       `json:"name"`
 	Type            string       `json:"type"`
@@ -47,8 +54,26 @@ type Project struct {
 	DatabaseEngine  string       `json:"databaseEngine"`
 	DatabaseVersion string       `json:"databaseVersion"`
 	RuntimeName     string       `json:"runtimeName"`
-	Requested       string       `json:"requested"`
+	Autostart       bool         `json:"autostart"`
 	URLs            []ProjectURL `json:"urls"`
+}
+
+// Status is the single lifecycle word shown for a project.
+//
+//   - "not initialised" — scaffolded by `mpd init` (or emptied by `mpd
+//     reset`) but never configured: it has no runtime, database or URLs.
+//     A project only gains a RuntimeName once `mpd start` has configured
+//     it, so the empty runtime is the reliable signal.
+//   - "started" / "stopped" — the Autostart intent for a configured
+//     project.
+func (p Project) Status() string {
+	if p.RuntimeName == "" {
+		return "not initialised"
+	}
+	if p.Autostart {
+		return "started"
+	}
+	return "stopped"
 }
 
 // MainURL is the URL to show for a project: the first entry whose kind is
@@ -79,12 +104,19 @@ func (p Project) MainURL() string {
 }
 
 // Database is one DB container, as stored in databases.json.
+//
+// Status is a cache of the observed running/stopped state. Autostart is
+// persisted intent, set by `mpd --db-start` / `--db-stop`: it makes an
+// explicitly-started database sticky across a reboot even when no project
+// needs it. A project starting a database it needs does NOT change this
+// flag — the project's own Autostart is what brings that database back.
 type Database struct {
 	DatabaseID    string `json:"databaseId"`
 	Engine        string `json:"engine"`
 	Version       string `json:"version"`
 	ContainerName string `json:"containerName"`
 	Status        string `json:"status"`
+	Autostart     bool   `json:"autostart"`
 }
 
 // Runtime is one runtime's persisted intent, from runtimes/<name>/meta.json.
@@ -255,6 +287,21 @@ func (s Store) SaveDatabases(entries []Database) error {
 	return s.writeJSON("databases.json", struct {
 		Databases []Database `json:"databases"`
 	}{entries})
+}
+
+// SetDatabaseAutostart records a database's autostart intent, keeping the
+// rest of its cached record. A no-op when the id is unknown — the cache is
+// rebuilt from podman, so a database that does not exist has nothing to
+// remember.
+func (s Store) SetDatabaseAutostart(id string, v bool) error {
+	dbs := s.Databases()
+	for i := range dbs {
+		if dbs[i].DatabaseID == id {
+			dbs[i].Autostart = v
+			return s.SaveDatabases(dbs)
+		}
+	}
+	return nil
 }
 
 // SaveProjects replaces projects.json.

@@ -36,7 +36,7 @@ func ShowProject(ctx context.Context, out io.Writer, name string, s state.Store,
 		}
 	}
 	if !found {
-		fmt.Fprintf(out, "Project '%s' not found. Create it: mpd %s create\n", name, name)
+		fmt.Fprintf(out, "Project '%s' not found. Create it: mpd init %s\n", name, name)
 		return
 	}
 
@@ -49,18 +49,17 @@ func ShowProject(ctx context.Context, out io.Writer, name string, s state.Store,
 	if cfg := configurationDisplay(entry); cfg != "" {
 		fmt.Fprintln(out, field("Configuration:", cfg))
 	}
-	fmt.Fprintln(out, field("Requested:", entry.Requested))
-	fmt.Fprintln(out, field("Current:", string(o.Project(ctx, entry))))
+	fmt.Fprintln(out, field("Status:", entry.Status()))
 
 	if entry.RuntimeName == "" {
-		fmt.Fprintf(out, "%s\n\n  mpd %s create\n", field("Runtime:", "—"), name)
+		fmt.Fprintf(out, "%s\n\n  mpd start %s\n", field("Runtime:", "—"), name)
 		return
 	}
 
 	rt := entry.RuntimeName
 	rtRunning := p.Running(ctx, o.RuntimeContainer(rt))
 
-	if entry.Requested == "running" && rtRunning {
+	if entry.Autostart && rtRunning {
 		fmt.Fprintln(out, field("Runtime:", rt))
 		writeURLs(out, entry.URLs)
 		fmt.Fprintln(out, field("SSH:", "ssh "+n.RuntimeAlias()))
@@ -75,7 +74,7 @@ func ShowProject(ctx context.Context, out io.Writer, name string, s state.Store,
 	}
 	fmt.Fprintln(out, field("Runtime:", fmt.Sprintf("%s  (last used — %s)", rt, live)))
 	fmt.Fprintln(out, field("Directory:", "/srv/projects/"+name))
-	fmt.Fprintf(out, "\n  mpd %s start\n", name)
+	fmt.Fprintf(out, "\n  mpd start %s\n", name)
 }
 
 // writeURLs prints the URL block, label column padded to the widest

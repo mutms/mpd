@@ -34,7 +34,7 @@ func TestStatusLabelIsPlainWhenNotATerminal(t *testing.T) {
 	if strings.Contains(got, "\033[") {
 		t.Errorf("StatusLabel = %q, want no ANSI escapes when piped", got)
 	}
-	if got != "running     " {
+	if got != "running         " {
 		t.Errorf("StatusLabel = %q, want padded to %d", got, colStatus)
 	}
 }

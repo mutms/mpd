@@ -49,7 +49,7 @@ func Status(ctx context.Context, out io.Writer, s state.Store, p *podman.Client,
 		if u := pr.MainURL(); u != "" {
 			url = "   " + u
 		}
-		fmt.Fprintf(out, "  %s   %s%s\n", pr.Name, pr.Requested, url)
+		fmt.Fprintf(out, "  %s   %s%s\n", pr.Name, pr.Status(), url)
 	}
 
 	runtimeExists, runtimeUp := false, false
@@ -73,7 +73,7 @@ func Status(ctx context.Context, out io.Writer, s state.Store, p *podman.Client,
 	if unregistered := UnregisteredProjectDirs(known); len(unregistered) > 0 {
 		fmt.Fprintln(out, "\nUnregistered project directories:")
 		for _, name := range unregistered {
-			fmt.Fprintf(out, "  %s→ mpd %s create\n", Col(name, 24), name)
+			fmt.Fprintf(out, "  %s→ mpd init %s\n", Col(name, 24), name)
 		}
 	}
 

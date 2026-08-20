@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mutms/mpd/go/internal/current"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/state"
@@ -15,11 +14,10 @@ import (
 
 // Column widths for the project and DB tables.
 const (
-	colRequested = 12
-	colCurrent   = 10
-	colDNS       = 28
-	colDatabase  = 16
-	colDBStatus  = 10
+	colCurrent  = 10
+	colDNS      = 28
+	colDatabase = 16
+	colDBStatus = 10
 )
 
 // ListDatabases renders `list dbs`.
@@ -75,20 +73,21 @@ func ListDatabases(ctx context.Context, out io.Writer, n net.Net, p *podman.Clie
 
 // ListProjects renders `list projects`.
 //
-// The REQUESTED and STATUS columns are different things and must be
-// computed differently: requested is persisted intent, status is a live
-// observation via internal/current. Rendering requested twice looks
-// plausible and hides exactly the divergence the table exists to show.
-func ListProjects(ctx context.Context, out io.Writer, s state.Store, o current.Observer) {
+// One STATUS column, from state.Project.Status: the autostart intent
+// ("started"/"stopped"), or "not initialised" for a project that has never
+// been configured. There is no separate live-observation column — a start
+// that does not fully come up records itself stopped, so the stored status
+// is the honest one.
+func ListProjects(out io.Writer, s state.Store) {
 	projects := s.Projects()
 	if len(projects) == 0 {
 		fmt.Fprintln(out, "No projects found.")
 		return
 	}
 
-	fmt.Fprintln(out, Col("PROJECT", colService)+Col("REQUESTED", colRequested)+
-		Col("STATUS", colCurrent)+Col("TYPE", colCurrent)+
-		Col("RUNTIME", colCurrent)+Col("DB", colDatabase)+"URL")
+	fmt.Fprintln(out, Col("PROJECT", colService)+Col("STATUS", colStatus)+
+		Col("TYPE", colCurrent)+Col("RUNTIME", colCurrent)+
+		Col("DB", colDatabase)+"URL")
 	fmt.Fprintln(out, Rule(100))
 
 	for _, p := range projects {
@@ -101,8 +100,7 @@ func ListProjects(ctx context.Context, out io.Writer, s state.Store, o current.O
 			rt = "—"
 		}
 		fmt.Fprintln(out, Col(p.Name, colService)+
-			StatusLabel(p.Requested, colRequested)+
-			StatusLabel(string(o.Project(ctx, p)), colCurrent)+
+			StatusLabel(p.Status(), colStatus)+
 			Col(p.Type, colCurrent)+Col(rt, colCurrent)+
 			Col(db, colDatabase)+p.MainURL())
 	}

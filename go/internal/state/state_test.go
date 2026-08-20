@@ -61,8 +61,29 @@ func TestProjectsAreSortedByName(t *testing.T) {
 	}
 }
 
+func TestProjectStatus(t *testing.T) {
+	cases := []struct {
+		name string
+		p    Project
+		want string
+	}{
+		{"fresh init: no runtime", Project{Name: "a"}, "not initialised"},
+		{"configured and started", Project{Name: "a", RuntimeName: "runtime", Autostart: true}, "started"},
+		{"configured and stopped", Project{Name: "a", RuntimeName: "runtime", Autostart: false}, "stopped"},
+		{"autostart without a runtime is still not initialised",
+			Project{Name: "a", Autostart: true}, "not initialised"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.p.Status(); got != tc.want {
+				t.Errorf("Status() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestMainURL(t *testing.T) {
-	running := Project{RuntimeName: "php", Requested: "running"}
+	running := Project{RuntimeName: "php", Autostart: true}
 
 	// kind "web" wins.
 	p := running
@@ -95,7 +116,7 @@ func TestMainURL(t *testing.T) {
 // still this project's — it just answers with a dead page until
 // something serves again.
 func TestMainURLSurvivesStop(t *testing.T) {
-	p := Project{RuntimeName: "php", Requested: "stopped",
+	p := Project{RuntimeName: "php", Autostart: false,
 		URLs: []ProjectURL{{Kind: "web", URL: "https://web/"}}}
 	if got := p.MainURL(); got != "https://web/" {
 		t.Errorf("MainURL() = %q for a stopped project, want the web URL", got)
@@ -104,7 +125,7 @@ func TestMainURLSurvivesStop(t *testing.T) {
 
 // No runtime means no address to publish under.
 func TestMainURLSuppressedWithoutRuntime(t *testing.T) {
-	p := Project{RuntimeName: "", Requested: "running",
+	p := Project{RuntimeName: "", Autostart: true,
 		URLs: []ProjectURL{{Kind: "web", URL: "https://web/"}}}
 	if got := p.MainURL(); got != "" {
 		t.Errorf("MainURL() = %q with no runtime, want empty", got)

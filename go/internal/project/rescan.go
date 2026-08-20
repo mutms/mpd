@@ -19,6 +19,7 @@ type metaJSON struct {
 	DatabaseEngine  string `json:"databaseEngine"`
 	DatabaseVersion string `json:"databaseVersion"`
 	DatabaseID      string `json:"databaseId"`
+	RuntimeName     string `json:"runtime"`
 }
 
 // Rescan rebuilds projects.json from what is actually on the data
@@ -68,13 +69,18 @@ func Rescan(ctx context.Context, out io.Writer, s state.Store) error {
 			projects = append(projects, known)
 			continue
 		}
+		// A project only has a meta project.json once it has been
+		// configured, so RuntimeName carried from there is what marks it
+		// "initialised" rather than freshly scaffolded. Lifecycle intent
+		// (autostart) is not on the volume, so it comes back stopped.
 		projects = append(projects, state.Project{
 			Name:            e.Name,
 			Type:            e.Type,
 			DatabaseID:      e.DatabaseID,
 			DatabaseEngine:  e.DatabaseEngine,
 			DatabaseVersion: e.DatabaseVersion,
-			Requested:       "stopped",
+			RuntimeName:     e.RuntimeName,
+			Autostart:       false,
 		})
 	}
 	if err := s.SaveProjects(projects); err != nil {

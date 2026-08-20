@@ -51,7 +51,7 @@ const projectCommands = `  status     [projectname] [--json]            project 
                                                /srv/projects/<projectname>/mpd.env)
   stop       [projectname]
   reset      [projectname] [--yes]             destroy its DB + data, keep the code;
-                                               leaves it not-configured
+                                               leaves it not initialised
   delete     <projectname> [--yes]             (never inferred — name it explicitly)
   help       <projectname>                     verb reference for one project
   run        <command> [args...]               run a command in the runtime of the
@@ -516,7 +516,7 @@ func listCmd() *cobra.Command {
 
 			switch what {
 			case "projects":
-				cli.ListProjects(ctx, out, s, current.NewObserver(n.VMID(), p))
+				cli.ListProjects(out, s)
 			case "services":
 				cli.ListServices(ctx, out, n, p, s)
 			case "infra":

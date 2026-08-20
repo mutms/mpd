@@ -145,7 +145,7 @@ func WriteMeta(ctx context.Context, p *podman.Client, uid string, entry state.Pr
 		"databaseId":      entry.DatabaseID,
 		"databaseEngine":  entry.DatabaseEngine,
 		"databaseVersion": entry.DatabaseVersion,
-		"requested":       entry.Requested,
+		"autostart":       entry.Autostart,
 		"webRoot":         "/srv/projects/" + entry.Name,
 	}
 	// Always emit urls, possibly empty, so consumers need not distinguish

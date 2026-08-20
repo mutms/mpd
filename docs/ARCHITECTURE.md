@@ -222,55 +222,60 @@ State mutation convention:
 
 Goal: keep state transitions auditable and prevent inconsistent partial writes.
 
-### Persisted intent vs live observation
+### Lifecycle intent and the single Status
 
-mpd splits resource state into two distinct concepts:
+A project's lifecycle is one persisted boolean, `state.Project.Autostart`:
+true after `mpd start`, false after `mpd stop`. There is deliberately no
+second, stored "observed" state for a project to disagree with — the old
+`requested`/`current` split showed two columns whose divergence was more
+confusing than useful. What a project reports is a single word,
+`state.Project.Status()`:
 
-- **`requested`** — persisted intent, written to disk. Mutated *only*
-  by explicit user actions: the project verbs (`mpd <p>
-  create/start/stop/delete`), the runtime lifecycle (`mpd --vm-setup`
-  creates the single runtime, `mpd --runtime-rebuild` recreates it),
-  and the service flags (`mpd
-  --service-enable/--service-disable/--service-uninstall/--service-purge`).
-  Survives reboots. Lives in `state.Project.Requested`,
-  `state.Runtime.Requested` and `state.Service.Enabled`
-  (`go/internal/state/state.go`).
-- **`current`** — live observation, computed on each query from
-  podman (no persistence). Domain: `running`, `stopped`,
-  `missing` (no container exists). Accessors:
-  `current.Observer.Runtime`, `.Project`, `.DB` —
-  `go/internal/current/current.go`.
+- **not initialised** — scaffolded by `mpd init` (or emptied by `mpd
+  reset`) but never configured: no runtime, database or URLs. A project
+  only gains a `RuntimeName` once `mpd start` has configured it, so the
+  empty runtime is the signal.
+- **started** / **stopped** — the `Autostart` intent for a configured
+  project.
 
-Reconciliation closes the gap: `mpd --vm-start` walks `requested` and
-brings `current` into agreement; `mpd --gc` (planned) does the
-opposite trim. This is the same desired-vs-observed model used by
-Kubernetes, systemd, and Terraform.
+`mpd start` and `mpd stop` are **idempotent** — each always tries to start
+or stop everything — and `start` is **fail-safe**: it sets `Autostart` to
+true only after every step succeeds, and back to false if any step fails.
+Recording a limping project as stopped is harmless; the reverse would hide
+a broken site behind a green status, so the flag is only ever wrong in the
+safe direction.
 
-DBs have **no `requested` field** — they're emergent; DB lifecycle is
-derived from runtime + project records (see `docs/HOOKS.md` §"Resource
-lifecycle model"). Extra services **do** carry persisted intent:
-`/var/lib/mpd/state/services.json` holds one entry per installed
-service — presence means installed, `Enabled` decides whether it runs
-(and auto-starts); absence means uninstalled. The enabled set is also
-published to `/srv/meta/services.json` so in-runtime consumers
-(`configure.sh`) can read it. The single runtime's record lives at
-`/var/lib/mpd/state/runtimes/runtime/meta.json`.
+Databases carry the same `Autostart` boolean
+(`state.Database.Autostart`), set by `mpd --db-start` / `--db-stop`, so an
+explicitly-started engine is **sticky** across a reboot even when no
+project needs it. A project starting a database it needs does *not* touch
+that flag — the project's own `Autostart` is what brings the database back.
+The rest of a database's record (running/stopped `Status`) is a cache
+rebuilt from podman; `db.RebuildStateCache` carries the `Autostart` flag
+forward across rebuilds, since it is the one thing podman cannot report.
 
-Display layers show both columns side-by-side (`mpd list`,
-`mpd <project> show`). Divergence — e.g.
-`requested=running, current=stopped` after a reboot but before
-`mpd --vm-start` — is legible from the listing alone.
+The runtime and extra services keep their own intent fields:
+`state.Runtime.Requested` (the single runtime, at
+`/var/lib/mpd/state/runtimes/runtime/meta.json`) and
+`state.Service.Enabled` (`/var/lib/mpd/state/services.json` — presence
+means installed, `Enabled` decides whether it runs and auto-starts;
+absence means uninstalled). The enabled set is also published to
+`/srv/meta/services.json` for in-runtime consumers (`configure.sh`).
 
-Out-of-process consumers
-don't have podman access, so they can't compute `current` themselves.
-mpd writes a snapshot to
-`/var/lib/mpd/state/current-state.json` (`current.Snapshot` —
-runtimes/projects/databases name → status map plus a `refreshedAt`
-timestamp), refreshed by the lifecycle commands
-(`current.Observer.Refresh`). The portal reads live state through
-`current.Observer` in-process. Nothing under `/var/lib/mpd/state/` is
-mounted into containers; what the runtime gets instead is this VM's
-addressing at `/srv/meta/vm.json` on the data volume.
+Reconciliation: `mpd --vm-start` starts the runtime, then the databases
+that should autostart (those a `--db-start` marked sticky, plus those an
+autostart project needs), then restores every project whose `Autostart`
+is set; `mpd --gc` (planned) does the opposite trim.
+
+`go/internal/current/` still computes a live observation from podman
+(`running`/`stopped`/`missing`), used to write
+`/var/lib/mpd/state/current-state.json` (`current.Snapshot`) for
+out-of-process consumers that have no podman access, and to show the live
+running/stopped state of database, service and infra containers on the
+portal. It is **not** joined into a project's Status any more. Nothing
+under `/var/lib/mpd/state/` is mounted into containers; what the runtime
+gets instead is this VM's addressing at `/srv/meta/vm.json` on the data
+volume.
 
 ## 6) Assets and Extension Contract
 

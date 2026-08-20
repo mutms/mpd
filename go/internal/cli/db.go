@@ -37,7 +37,7 @@ func DBStart(ctx context.Context, out io.Writer, input string,
 	}
 	if p.Running(ctx, ref.Container) {
 		fmt.Fprintf(out, "%s is already running.\n", ref.Container)
-		return syncDatabaseState(ctx, p, s, dns)
+		return syncDatabaseState(ctx, p, s, dns, ref.ID, true)
 	}
 	if code, err := p.Start(ctx, ref.Container); err != nil || code != 0 {
 		return fmt.Errorf("Failed to start '%s'.", ref.Container)
@@ -46,7 +46,9 @@ func DBStart(ctx context.Context, out io.Writer, input string,
 		return err
 	}
 	Ok(out, "%s is running.", ref.Container)
-	return syncDatabaseState(ctx, p, s, dns)
+	// Sticky: an explicitly started database comes back on the next reboot,
+	// even if no project needs it.
+	return syncDatabaseState(ctx, p, s, dns, ref.ID, true)
 }
 
 // DBStop stops a running DB container.
@@ -62,25 +64,37 @@ func DBStop(ctx context.Context, out io.Writer, input string,
 	}
 	if !p.Running(ctx, ref.Container) {
 		fmt.Fprintf(out, "%s is already stopped.\n", ref.Container)
-		return syncDatabaseState(ctx, p, s, dns)
+		return syncDatabaseState(ctx, p, s, dns, ref.ID, false)
 	}
 	if code, err := p.Stop(ctx, ref.Container); err != nil || code != 0 {
 		return fmt.Errorf("Failed to stop '%s'.", ref.Container)
 	}
 	Ok(out, "%s stopped.", ref.Container)
-	return syncDatabaseState(ctx, p, s, dns)
+	// Clear the sticky flag: an explicit stop means it should stay down
+	// across a reboot unless a project pulls it back up.
+	return syncDatabaseState(ctx, p, s, dns, ref.ID, false)
 }
 
-// syncDatabaseState reconciles both derived artifacts after any DB
-// lifecycle change: the databases.json cache and dnsmasq's records.
+// syncDatabaseState reconciles the derived artifacts after any DB
+// lifecycle change: the databases.json cache and dnsmasq's records. When
+// setAutostart is a lifecycle verb's own intent (start → true, stop →
+// false), it is recorded for the given databaseId after the cache is
+// rebuilt; pass id "" to leave autostart flags untouched.
 //
-// Both must happen on *every* path, including the "already running" and
-// "already stopped" ones. Those look like no-ops but are exactly when
-// the cache is most likely to be stale — something changed the container
-// outside mpd, which is why the user is running the command.
-func syncDatabaseState(ctx context.Context, p *podman.Client, s state.Store, dns dnsmasq.Manager) error {
+// The cache and DNS rebuild must happen on *every* path, including the
+// "already running" and "already stopped" ones. Those look like no-ops but
+// are exactly when the cache is most likely to be stale — something
+// changed the container outside mpd, which is why the user ran the command.
+func syncDatabaseState(ctx context.Context, p *podman.Client, s state.Store,
+	dns dnsmasq.Manager, id string, autostart bool) error {
+
 	if err := db.RebuildStateCache(ctx, p, s); err != nil {
 		return err
+	}
+	if id != "" {
+		if err := s.SetDatabaseAutostart(id, autostart); err != nil {
+			return err
+		}
 	}
 	_, err := dns.EnsureDatabaseRecords(ctx)
 	return err
@@ -97,7 +111,8 @@ func DBCreate(ctx context.Context, out io.Writer, input string, p *podman.Client
 	if err := db.Ensure(ctx, ref, p, n, uid, out); err != nil {
 		return err
 	}
-	return syncDatabaseState(ctx, p, s, dns)
+	// Creating a database explicitly is a start: make it sticky too.
+	return syncDatabaseState(ctx, p, s, dns, ref.ID, true)
 }
 
 // DBDelete removes a DB container and its data.
@@ -156,7 +171,9 @@ func DBDelete(ctx context.Context, out io.Writer, in io.Reader, input string,
 		return err
 	}
 	Ok(out, "'%s' and %s/ removed.", ref.Container, dataDir)
-	return syncDatabaseState(ctx, p, s, dns)
+	// The row drops out of the rebuilt cache with the container, taking its
+	// autostart flag with it — nothing to record.
+	return syncDatabaseState(ctx, p, s, dns, "", false)
 }
 
 // promptYesNo asks for confirmation, defaulting to no. Anything other

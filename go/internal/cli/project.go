@@ -63,29 +63,61 @@ func ProjectStart(ctx context.Context, out io.Writer, name string, settings []st
 		return fmt.Errorf("Project '%s' not found. Create it: mpd init %s", name, name)
 	}
 
+	url, err := startProject(ctx, out, name, settings, d)
+	if err != nil {
+		// Fail-safe: a start that did not fully succeed is recorded as
+		// stopped, never left claiming to run. Showing stopped for
+		// something that limped up is harmless; the reverse hides a broken
+		// site behind a green status. Best-effort — the start error is
+		// what the caller needs to see.
+		markStopped(out, d.State, name)
+		return err
+	}
+
+	// Only now, after every step succeeded, is the project marked to
+	// autostart. Re-read first: reconcileProject persisted its own view of
+	// the entry (runtime, database, URLs).
+	if entry, found := findProject(d.State, name); found {
+		entry.Autostart = true
+		if err := d.State.UpsertProject(entry); err != nil {
+			return err
+		}
+	}
+
+	Ok(out, "'%s' is running.", name)
+	if url != "" {
+		fmt.Fprintf(out, "  %s\n", url)
+	}
+	return nil
+}
+
+// startProject configures a project and runs its server-side start
+// lifecycle, returning the URL to print. It does not touch the autostart
+// flag — ProjectStart owns that, so the flag is set exactly once, after
+// success, and cleared on any failure.
+func startProject(ctx context.Context, out io.Writer, name string, settings []string,
+	d ProjectDeps) (string, error) {
+
 	// Configure first: this is what makes `mpd start` a one-verb path from
 	// a fresh `mpd init`. It applies settings, runs configure.sh, and
 	// provisions the database, certificate and DNS. It leaves the runtime
 	// up, which is exactly what the start tail below needs.
 	if err := reconcileProject(ctx, out, name, settings, d); err != nil {
-		return err
+		return "", err
 	}
 
-	// Re-read: reconcileProject persisted the freshly-configured entry
-	// (runtime name, database fields, URLs).
 	entry, found := findProject(d.State, name)
 	if !found {
-		return fmt.Errorf("Project '%s' not found after configure.", name)
+		return "", fmt.Errorf("Project '%s' not found after configure.", name)
 	}
 	container := d.Observer.RuntimeContainer(entry.RuntimeName)
-
 	ev := hookProject(entry, container, d)
 
 	// Pre-start: runtime and DB are up, project setup has not run. Hook
 	// authors apply migrations or seed data here. Failure aborts —
 	// a project whose precondition failed should not come up.
 	if err := hooks.Fire(ctx, out, hooks.ProjectPreStart(ctx, ev, d.Podman), "start", d.Podman); err != nil {
-		return err
+		return "", err
 	}
 
 	// Certificate and DNS were already provisioned by reconcileProject
@@ -96,13 +128,8 @@ func ProjectStart(ctx context.Context, out io.Writer, name string, settings []st
 		script := assets.TypeScript(cfg.AssetsType, "project-setup.sh")
 		code, err := project.Exec(ctx, d.Podman, container, d.DevUser, "bash", script, name)
 		if err != nil || code != 0 {
-			return fmt.Errorf("project-setup.sh failed.")
+			return "", fmt.Errorf("project-setup.sh failed.")
 		}
-	}
-
-	entry.Requested = "running"
-	if err := d.State.UpsertProject(entry); err != nil {
-		return err
 	}
 
 	// Post-start: fully live. Failures warn but never undo the start.
@@ -114,12 +141,21 @@ func ProjectStart(ctx context.Context, out io.Writer, name string, settings []st
 	if !hasType || cfg.WaitForURL {
 		waitForURL(ctx, out, url)
 	}
+	return url, nil
+}
 
-	Ok(out, "'%s' is running.", name)
-	if url != "" {
-		fmt.Fprintf(out, "  %s\n", url)
+// markStopped records a project as stopped, best-effort. Used on the
+// fail-safe path where the real error is a start failure the caller is
+// already returning, so a problem writing state is only warned about.
+func markStopped(out io.Writer, s state.Store, name string) {
+	entry, found := findProject(s, name)
+	if !found || !entry.Autostart {
+		return
 	}
-	return nil
+	entry.Autostart = false
+	if err := s.UpsertProject(entry); err != nil {
+		fmt.Fprintf(out, "Warning: could not record '%s' as stopped: %v\n", name, err)
+	}
 }
 
 // waitForURL blocks until the project's main URL answers, up to ~30s.
@@ -221,11 +257,11 @@ func ProjectStop(ctx context.Context, out io.Writer, name string, d ProjectDeps)
 	if !found {
 		return fmt.Errorf("Project '%s' not found. Create it: mpd init %s", name, name)
 	}
-	if entry.Requested != "running" {
-		fmt.Fprintf(out, "'%s' is already stopped.\n", name)
-		return nil
-	}
 
+	// Idempotent: stop always runs, even on an already-stopped project.
+	// Every step below is best-effort, so re-running is harmless and the
+	// project ends up recorded stopped either way — which is the point,
+	// since a stop must never leave a project claiming to run.
 	container := d.Observer.RuntimeContainer(entry.RuntimeName)
 	ev := hookProject(entry, container, d)
 
@@ -250,7 +286,7 @@ func ProjectStop(ctx context.Context, out io.Writer, name string, d ProjectDeps)
 		}
 	}
 
-	entry.Requested = "stopped"
+	entry.Autostart = false
 	if err := d.State.UpsertProject(entry); err != nil {
 		return err
 	}
@@ -323,7 +359,7 @@ func ProjectDelete(ctx context.Context, out io.Writer, in io.Reader, name string
 
 	// Stop first so the type's stop path runs while its runtime is still
 	// up — after removal there is nothing left to stop cleanly.
-	if entry.Requested == "running" {
+	if entry.Autostart {
 		if err := ProjectStop(ctx, out, name, d); err != nil {
 			fmt.Fprintf(out, "Warning: stop failed, continuing with delete: %v\n", err)
 		}
@@ -439,7 +475,7 @@ func ProjectReset(ctx context.Context, out io.Writer, in io.Reader, name string,
 	// Stop while the runtime is still up, so the type's stop path and the
 	// pre-stop hooks run against a live project — the same ordering
 	// argument as delete.
-	if entry.Requested == "running" {
+	if entry.Autostart {
 		if err := ProjectStop(ctx, out, name, d); err != nil {
 			fmt.Fprintf(out, "Warning: stop failed, continuing with reset: %v\n", err)
 		}
@@ -487,11 +523,11 @@ func ProjectReset(ctx context.Context, out io.Writer, in io.Reader, name string,
 
 	// Exactly what ProjectCreate writes. Assembled field by field rather
 	// than by clearing the old entry, so a field added to state.Project
-	// later cannot silently survive a reset.
+	// later cannot silently survive a reset. No RuntimeName and no
+	// Autostart, so Status reports "not initialised" until the next start.
 	if err := d.State.UpsertProject(state.Project{
-		Name:      entry.Name,
-		Type:      entry.Type,
-		Requested: "not-configured",
+		Name: entry.Name,
+		Type: entry.Type,
 	}); err != nil {
 		return err
 	}
@@ -624,9 +660,9 @@ func reconcileProject(ctx context.Context, out io.Writer, name string, args []st
 	}
 
 	entry.URLs, _ = project.ReadURLs(name)
-	if entry.Requested == "not-configured" && entry.Type != "" {
-		entry.Requested = "stopped"
-	}
+	// Setting RuntimeName above is what moves the project out of "not
+	// initialised"; the Autostart flag it carries is left untouched here,
+	// because start and stop are the only things that own it.
 	if err := project.WriteMeta(ctx, d.Podman, d.UID, entry); err != nil {
 		return err
 	}
@@ -861,8 +897,10 @@ func ProjectCreate(ctx context.Context, out io.Writer, name string, opts CreateO
 	// Registered only after scaffolding succeeds. If anything above
 	// failed, no entry is written and /srv/projects/<name>/ is left for
 	// the developer to inspect, fix, or remove.
+	// No RuntimeName and no Autostart: Status reports "not initialised"
+	// until the first `mpd start` configures it.
 	if err := d.State.UpsertProject(state.Project{
-		Name: name, Type: typeName, Requested: "not-configured",
+		Name: name, Type: typeName,
 	}); err != nil {
 		return err
 	}

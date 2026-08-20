@@ -178,11 +178,22 @@ func WaitFor(ctx context.Context, ref Ref, p *podman.Client, out interface{ Writ
 
 // RebuildStateCache rewrites databases.json from what podman reports.
 //
-// The containers are the truth; databases.json is a cache for readers
-// without podman access (the portal, in-runtime tools). Entries missing
-// any identifying label are skipped rather than guessed at — a
-// half-labelled container is not a database mpd manages.
+// The containers are the truth for existence and running state;
+// databases.json is a cache for readers without podman access (the portal,
+// in-runtime tools). Entries missing any identifying label are skipped
+// rather than guessed at — a half-labelled container is not a database mpd
+// manages.
+//
+// The one thing not derivable from podman is the Autostart intent, so it
+// is carried forward from the existing cache by databaseId. A container
+// that has gone away drops its flag with its row, which is correct — there
+// is nothing left to autostart.
 func RebuildStateCache(ctx context.Context, p *podman.Client, s state.Store) error {
+	autostart := map[string]bool{}
+	for _, existing := range s.Databases() {
+		autostart[existing.DatabaseID] = existing.Autostart
+	}
+
 	var entries []state.Database
 	for _, item := range p.Ps(ctx, "label=mpd.type=db") {
 		id := item.Label("mpd.name")
@@ -205,6 +216,7 @@ func RebuildStateCache(ctx context.Context, p *podman.Client, s state.Store) err
 			Version:       version,
 			ContainerName: container,
 			Status:        status,
+			Autostart:     autostart[id],
 		})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].DatabaseID < entries[j].DatabaseID })

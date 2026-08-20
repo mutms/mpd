@@ -75,12 +75,11 @@ func TestProjectDerivation(t *testing.T) {
 		project state.Project
 		want    State
 	}{
-		{"no runtime assigned", state.Project{Requested: "running"}, Missing},
-		{"runtime container gone", state.Project{RuntimeName: "gone", Requested: "running"}, Missing},
-		{"runtime stopped", state.Project{RuntimeName: "other", Requested: "running"}, Stopped},
-		{"runtime running and requested", state.Project{RuntimeName: "runtime", Requested: "running"}, Running},
-		{"runtime running but not requested", state.Project{RuntimeName: "runtime", Requested: "stopped"}, Stopped},
-		{"runtime running, never configured", state.Project{RuntimeName: "runtime", Requested: "not-configured"}, Stopped},
+		{"no runtime assigned", state.Project{Autostart: true}, Missing},
+		{"runtime container gone", state.Project{RuntimeName: "gone", Autostart: true}, Missing},
+		{"runtime stopped", state.Project{RuntimeName: "other", Autostart: true}, Stopped},
+		{"runtime running and autostart", state.Project{RuntimeName: "runtime", Autostart: true}, Running},
+		{"runtime running but not autostart", state.Project{RuntimeName: "runtime", Autostart: false}, Stopped},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -91,13 +90,13 @@ func TestProjectDerivation(t *testing.T) {
 	}
 }
 
-// current must never be a copy of requested — that hides exactly the
-// divergence the display exists to surface (e.g. after a reboot).
-func TestCurrentIsNotRequested(t *testing.T) {
+// current must be an observation, not a copy of intent: a project with
+// Autostart set but a stopped runtime is observed stopped, not running.
+func TestCurrentIsObserved(t *testing.T) {
 	o := NewObserver("150", fakePodman(map[string]bool{"mpd-150-runtime": false}))
-	p := state.Project{RuntimeName: "php", Requested: "running"}
-	if got := o.Project(context.Background(), p); got == State(p.Requested) {
-		t.Fatalf("Project() = %q, which equals requested — current must be observed, not copied", got)
+	p := state.Project{RuntimeName: "runtime", Autostart: true}
+	if got := o.Project(context.Background(), p); got != Stopped {
+		t.Fatalf("Project() = %q, want stopped — current must be observed, not copied from Autostart", got)
 	}
 }
 

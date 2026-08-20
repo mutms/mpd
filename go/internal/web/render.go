@@ -33,19 +33,18 @@ type View struct {
 	Infra     []InfraRow
 }
 
-// ProjectRow carries both because they answer different questions:
-// Requested is persisted intent, Status is a live observation
-// (current.Observer). Rendering one twice would hide exactly the
-// disagreement worth seeing — "requested running, status stopped" is the
-// interesting case.
+// ProjectRow shows one project. Status is the single lifecycle word from
+// state.Project.Status ("started"/"stopped"/"not initialised"); Running is
+// just whether that word is "started", used to colour the badge. There is
+// no separate live-observation column — a start that does not fully come
+// up records itself stopped, so the stored status is the honest one.
 type ProjectRow struct {
-	Name      string
-	Requested string
-	Status    string
-	Running   bool
-	Type      string
-	Runtime   string
-	URL       string
+	Name    string
+	Status  string
+	Running bool
+	Type    string
+	Runtime string
+	URL     string
 	// Connection details for the project's database. The portal is the
 	// only place these are written down: db.CreateFor derives all three
 	// from the project name (docs/SECURITY.md calls it a dev-only
@@ -118,19 +117,17 @@ func projectRows(ctx context.Context, d Deps, projects []state.Project,
 
 	rows := make([]ProjectRow, 0, len(projects))
 	for _, p := range projects {
-		current := string(d.Observer.Project(ctx, p))
 		rows = append(rows, ProjectRow{
-			Name:      p.Name,
-			Requested: dash(p.Requested),
-			Status:    dash(current),
-			Running:   current == "running",
-			Type:      dash(p.Type),
-			Runtime:   dash(p.RuntimeName),
-			URL:       p.MainURL(),
-			DBHost:    dbHost(d, p),
-			DBUser:    p.Name,
-			DBPass:    p.Name,
-			Links:     projectLinks(d, p, dbUp, live),
+			Name:    p.Name,
+			Status:  p.Status(),
+			Running: p.Status() == "started",
+			Type:    dash(p.Type),
+			Runtime: dash(p.RuntimeName),
+			URL:     p.MainURL(),
+			DBHost:  dbHost(d, p),
+			DBUser:  p.Name,
+			DBPass:  p.Name,
+			Links:   projectLinks(d, p, dbUp, live),
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })

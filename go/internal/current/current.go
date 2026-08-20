@@ -86,7 +86,7 @@ func (o Observer) Project(ctx context.Context, p state.Project) State {
 	case Stopped:
 		return Stopped
 	default:
-		if p.Requested == "running" {
+		if p.Autostart {
 			return Running
 		}
 		return Stopped

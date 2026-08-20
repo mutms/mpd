@@ -15,8 +15,9 @@ import (
 // Column widths, shared by every listing so the tables line up.
 const (
 	colService = 14
-	colStatus  = 12
-	colIP      = 16
+	// Wide enough for the longest project status, "not initialised".
+	colStatus = 16
+	colIP     = 16
 )
 
 // Col left-pads s to width w. The obvious implementation truncates when
@@ -32,9 +33,12 @@ func Col(s string, w int) string {
 // Rule is the horizontal separator under a table header.
 func Rule(width int) string { return strings.Repeat("─", width) }
 
-// Status wording used across every listing.
+// Status wording used across every listing. "running"/"stopped" are the
+// live container words (databases, services, infra); "started" is a
+// project's autostart intent, coloured like "running".
 const (
 	StatusRunning    = "running"
+	StatusStarted    = "started"
 	StatusStopped    = "stopped"
 	StatusNotCreated = "not-created"
 )
@@ -68,7 +72,7 @@ func StatusLabel(status string, width int) string {
 		return padded
 	}
 	switch status {
-	case StatusRunning:
+	case StatusRunning, StatusStarted:
 		return "\033[32m" + padded + "\033[0m"
 	case StatusStopped:
 		return "\033[33m" + padded + "\033[0m"

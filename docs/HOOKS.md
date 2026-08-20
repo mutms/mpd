@@ -47,23 +47,26 @@ recognised. `mpd --vm-stop` will fire it.
 The hook engine assumes a specific persistence model — important for
 understanding *when* events fire:
 
-| Resource | Persisted intent (`requested`)                                                              | Live state (`current`)                |
+| Resource | Persisted lifecycle intent                                                                  | Live state (`current`)                |
 |----------|---------------------------------------------------------------------------------------------|---------------------------------------|
-| Runtime  | Yes — written by the internals of `--vm-setup`/`--vm-start`/`--vm-stop` and `--runtime-rebuild` (no lifecycle flags of its own) | Computed from podman every query      |
-| Project  | Yes — written only by `mpd <p> create/start/stop/delete`                                    | Derived from runtime + project record |
-| Database | **No** — emergent from project records                                                      | Computed from podman                  |
-| Service  | Yes — `services.json` (installed + enabled), written by the `--service-*` flags             | Computed from podman                  |
+| Runtime  | `Requested`, written by the internals of `--vm-setup`/`--vm-start`/`--vm-stop` and `--runtime-rebuild` (no lifecycle flags of its own) | Computed from podman every query      |
+| Project  | `Autostart` bool — true after `mpd start`, false after `mpd stop`                           | Derived from runtime + project record |
+| Database | `Autostart` bool — set by `mpd --db-start` / `--db-stop` (sticky across reboot)             | Computed from podman                  |
+| Service  | `Enabled`, `services.json` (installed + enabled), written by the `--service-*` flags        | Computed from podman                  |
 
-Reconciliation: `mpd --vm-start` walks `requested` and brings `current`
-into agreement — including re-creating enabled service containers. Stopping
-mpd or rebooting the VM preserves `requested`; `mpd --vm-start` (or the
-systemd `mpd.service` unit at boot) restores running state. See
+Reconciliation: `mpd --vm-start` starts the runtime, then the databases
+that should autostart, then restores every project whose `Autostart` is
+set — including re-creating enabled service containers. Stopping mpd or
+rebooting the VM preserves this intent; `mpd --vm-start` (or the systemd
+`mpd.service` unit at boot) restores running state. See
 `docs/ARCHITECTURE.md` §5 for the full state model.
 
-DBs have no `requested` because they're emergent. DB lifecycle is driven
-by runtime start (which pre-warms every DB any project might need),
-project start (which re-creates a missing container on demand) and
-`mpd --gc` (planned reclamation).
+A database's `Autostart` makes an explicitly-started engine come back on
+its own after a reboot even when no project needs it. Beyond that, DB
+lifecycle is driven by runtime start (which starts the autostart
+databases), project start (which re-creates or starts the database a
+project needs, without touching its `Autostart` flag) and `mpd --gc`
+(planned reclamation).
 
 ## Event catalogue
 
@@ -350,9 +353,9 @@ runs at boot and survives logout.
 
 **At boot**: user systemd starts → `default.target` → `mpd.service`
 ExecStart fires `mpd --vm-start`, which reconciles the runtime, every
-project in `requested=running` state, and every enabled extra service
-back to live containers (and pre-warms the projects' DBs). The dev user
-can SSH in seconds later and find the env already up.
+autostart project, and every enabled extra service back to live
+containers (and starts the autostart databases). The dev user can SSH in
+seconds later and find the env already up.
 
 **At shutdown**: `shutdown -h now`, `poweroff`, `reboot`,
 `mpd --vm-restart`, GNOME shutdown menu, and `virsh shutdown <vm>` all

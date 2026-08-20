@@ -77,12 +77,11 @@ const projectsHTML = `{{define "projects"}}
   <h2>Projects</h2>
   {{if .Projects}}
   <table>
-    <tr><th>Project</th><th>Requested</th><th>Status</th><th>Type</th>
+    <tr><th>Project</th><th>Status</th><th>Type</th>
         <th>Runtime</th><th>Database</th><th>URL</th></tr>
     {{range .Projects}}
     <tr>
       <td class="name">{{.Name}}</td>
-      <td class="meta">{{.Requested}}</td>
       <td><span class="badge {{if .Running}}on{{end}}">{{.Status}}</span></td>
       <td class="meta">{{.Type}}</td>
       <td class="meta">{{.Runtime}}</td>

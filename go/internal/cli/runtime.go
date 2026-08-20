@@ -22,7 +22,7 @@ import (
 
 // RuntimeStop stops the runtime container.
 //
-// Projects keep requested=running: the user stopped the runtime, not
+// Projects keep their Autostart flag: the user stopped the runtime, not
 // the projects, and that distinction is what lets RuntimeStart bring
 // them back. Their dnsmasq records are dropped though — a URL that
 // resolves to a stopped runtime gives a confusing connection error
@@ -145,10 +145,10 @@ func saveRuntimeIntent(ctx context.Context, requested string,
 //     is up, but services boot asynchronously — without the wait, an
 //     immediate `ssh` after this command hits "connection refused" and
 //     looks like a failure.
-//  2. Pre-warm every database any project might want, running or
-//     stopped, so a later `mpd start <project>` never waits on a cold
-//     engine.
-//  3. Restore projects whose requested state is running. RuntimeStop
+//  2. Start the databases that should autostart: those a `mpd --db-start`
+//     marked sticky, plus those an autostart project needs. A database
+//     used only by a stopped project stays down.
+//  3. Restore projects whose Autostart flag is set. RuntimeStop
 //     deliberately left their intent alone, so this is where that
 //     intent is honoured again.
 func RuntimeStart(ctx context.Context, out io.Writer, p *podman.Client,
@@ -177,7 +177,12 @@ func RuntimeStart(ctx context.Context, out io.Writer, p *podman.Client,
 	}
 	Ok(out, "Started the runtime.")
 
-	ensureProjectDatabases(ctx, out, p, s, n, uid)
+	ensureAutostartDatabases(ctx, out, p, s, n, uid)
+	// Refresh the cache so databases.json reflects what is now running,
+	// while preserving the autostart flags it carries.
+	if err := db.RebuildStateCache(ctx, p, s); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to refresh database cache: %v\n", err)
+	}
 	// Same reason as in ProjectStart: a DB container created a moment ago
 	// has an address nothing has published yet.
 	if _, err := dns.EnsureDatabaseRecords(ctx); err != nil {
@@ -213,23 +218,36 @@ func waitForSSHD(ctx context.Context, out io.Writer, ip string) error {
 	return nil
 }
 
-// ensureProjectDatabases starts each distinct engine:version any project
-// uses. Failures warn rather than abort: a runtime that starts without
-// one of its databases is still useful, and the project that needs it
-// will say so.
-func ensureProjectDatabases(ctx context.Context, out io.Writer,
+// ensureAutostartDatabases starts the databases that should come back on
+// their own after a reboot: the ones a `mpd --db-start` marked to
+// autostart, plus the ones an autostart project needs. A database used
+// only by a stopped project, and never explicitly started, stays down.
+//
+// Failures warn rather than abort: a runtime that starts without one of
+// its databases is still useful, and the project that needs it will say so.
+func ensureAutostartDatabases(ctx context.Context, out io.Writer,
 	p *podman.Client, s state.Store, n net.Net, uid string) {
 
+	// Distinct engine:version tags to start, deduplicated.
 	seen := map[string]bool{}
+	add := func(engine, version string) {
+		if engine == "" {
+			return
+		}
+		seen[engine+":"+version] = true
+	}
+	for _, d := range s.Databases() {
+		if d.Autostart {
+			add(d.Engine, d.Version)
+		}
+	}
 	for _, proj := range s.Projects() {
-		if proj.DatabaseEngine == "" {
-			continue
+		if proj.Autostart {
+			add(proj.DatabaseEngine, proj.DatabaseVersion)
 		}
-		key := proj.DatabaseEngine + ":" + proj.DatabaseVersion
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
+	}
+
+	for key := range seen {
 		ref, err := db.Resolve(ctx, key, p)
 		if err == nil {
 			err = db.Ensure(ctx, ref, p, n, uid, out)
@@ -247,7 +265,7 @@ func restoreRunningProjects(ctx context.Context, out io.Writer, container, runti
 
 	var projects []state.Project
 	for _, proj := range s.Projects() {
-		if proj.Requested == "running" {
+		if proj.Autostart {
 			projects = append(projects, proj)
 		}
 	}
