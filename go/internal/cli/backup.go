@@ -28,13 +28,14 @@ type backupManifest struct {
 	Scripts   []string `json:"scripts"`
 }
 
-// RuntimeBackup saves the runtime's non-project data — Claude Code
-// configuration, shell history — into a timestamped directory under
-// /srv/backups/runtime/.
+// RuntimeBackup saves the developer's home directory inside the runtime
+// into a timestamped directory under /srv/backups/runtime/.
 //
-// Configuration and history only, never binaries: a rebuilt runtime
-// reinstalls its tools fresh (that is the point of a rebuild), so
-// restore hooks re-run installers rather than copying executables back.
+// A deny-list: everything under $HOME except regenerable caches and
+// installed binaries. Binaries are left out on purpose — a rebuilt
+// runtime gets fresh, current tools, and reinstalling one is a single
+// command — so config, dotfiles, IDE settings and shell history come
+// back but caches and binaries do not.
 //
 // The work is asset-side: every assets/runtime/backup.d/*.sh runs
 // inside the runtime as the dev user with the backup directory as $1.

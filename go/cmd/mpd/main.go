@@ -52,7 +52,7 @@ const projectCommands = `  status     [projectname] [--json]            project 
   stop       [projectname]
   reset      [projectname] [--yes]             destroy its DB + data, keep the code;
                                                leaves it not initialised
-  delete     <projectname> [--yes]             (never inferred — name it explicitly)
+  delete     <projectname> [--yes]             (alias: rm; never inferred — name it explicitly)
   help       <projectname>                     verb reference for one project
   run        <command> [args...]               run a command in the runtime of the
                                                project you are standing in
@@ -62,7 +62,7 @@ subdirectory) it defaults to that project.`
 
 // otherCommands are the read-only queries that are neither a project
 // verb nor a VM action.
-const otherCommands = `  list       [projects|services|infra|dbs|network]  (default: projects)
+const otherCommands = `  list       [projects|services|infra|dbs|network]  (default: projects; alias: ls)
   version                                      print the mpd version`
 
 // usage is the short form shown when a command is misspelled.
@@ -190,9 +190,9 @@ func main() {
 	root.Flags().BoolVar(&f.runtimeRebuild, "runtime-rebuild", false,
 		"Delete and re-provision the runtime container (prompts unless --yes).")
 	root.Flags().BoolVar(&f.runtimeBackup, "runtime-backup", false,
-		"Back up non-project runtime data (Claude config, shell history) to /srv/backups/runtime/.")
+		"Back up the runtime's home directory (config, dotfiles, IDE settings, history; not caches or binaries) to /srv/backups/runtime/.")
 	root.Flags().BoolVar(&f.runtimeRestore, "runtime-restore", false,
-		"Restore the newest runtime backup into the (rebuilt) runtime; binaries are reinstalled fresh, not copied.")
+		"Restore the newest runtime backup into the (rebuilt) runtime; binaries are not restored — reinstall them.")
 
 	root.Flags().StringVar(&f.dbCreate, "db-create", "", "Create (or start) a DB container, e.g. `postgres:17`.")
 	root.Flags().StringVar(&f.dbStart, "db-start", "", "Start a stopped DB container `name`.")
@@ -498,6 +498,7 @@ func versionCmd() *cobra.Command {
 func listCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:       "list [projects|services|infra|dbs|network]",
+		Aliases:   []string{"ls"},
 		Short:     "List entities — projects (default), extra services, VM infra, DB containers, or this VM's addressing",
 		ValidArgs: []string{"projects", "services", "infra", "dbs", "network"},
 		Args:      cobra.MatchAll(cobra.MaximumNArgs(1), cobra.OnlyValidArgs),
@@ -664,9 +665,10 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 	// routinely be the directory the caller is standing in. Deleting that
 	// by omission is too easy; naming it is one word.
 	deleteCmd := &cobra.Command{
-		Use:   "delete <project>",
-		Short: "Delete a project, its database, dataroot and source tree",
-		Args:  cobra.MaximumNArgs(1),
+		Use:     "delete <project>",
+		Aliases: []string{"rm"},
+		Short:   "Delete a project, its database, dataroot and source tree",
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				name, inProject := cli.ProjectNameFromCwd()

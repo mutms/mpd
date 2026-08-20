@@ -103,12 +103,13 @@ func candidates(cword int, words []string, s state.Store, a assets.Tree) []strin
 	if cword == 2 && strings.HasPrefix(first, "--") {
 		return optionValues(first, s, a)
 	}
-	if cword == 2 && first == "list" {
+	if cword == 2 && (first == "list" || first == "ls") {
 		return []string{"projects", "services", "infra", "dbs", "network"}
 	}
 	// Verb-first form: the second token is a project name. `init` takes
-	// a NEW name, so no suggestion list applies there.
-	if cword == 2 && IsProjectVerb(first) {
+	// a NEW name, so no suggestion list applies there. `rm` is the alias
+	// for `delete`, so it completes project names too.
+	if cword == 2 && (IsProjectVerb(first) || first == "rm") {
 		if first == "init" {
 			return nil
 		}
@@ -126,7 +127,9 @@ func firstTokenCandidates(prefix string) []string {
 	}
 	out := append([]string{}, ProjectVerbs...)
 	sort.Strings(out)
-	return append(append(out, "list", "version"), GlobalFlags...)
+	// "ls" (list) and "rm" (delete) are command aliases, offered alongside
+	// their canonical names.
+	return append(append(out, "list", "ls", "version", "rm"), GlobalFlags...)
 }
 
 func optionValues(flag string, s state.Store, a assets.Tree) []string {
@@ -155,7 +158,7 @@ func verbArgs(verb string) []string {
 		// start applies KEY=VALUE settings before it configures and
 		// starts. Commonly-set keys; any MPD_* key is accepted.
 		return []string{"MPD_DB=", "MPD_PHP_VERSION=", "MPD_MOODLE_BEHAT="}
-	case "delete", "reset":
+	case "delete", "rm", "reset":
 		return []string{"--yes"}
 	case "status":
 		return []string{"--json"}

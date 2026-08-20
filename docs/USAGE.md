@@ -533,22 +533,24 @@ scp mpd-<NNN>-vm:/srv/backups/projects/<name>.tgz ~/Downloads/
 ```
 
 **Runtime backups** exist now and cover something different: the
-home-directory pieces that live only inside the runtime container and
-die with it — Claude Code configuration (`~/.claude`, `~/.claude.json`)
-and shell history. Configuration and history only, never binaries: a
-rebuilt runtime reinstalls its tools fresh (the restore hook re-runs
-`claude-install` for you), so nothing stale is ever copied back in:
+developer's home directory inside the runtime container, which dies with
+it. It is a deny-list — everything under `$HOME` except regenerable caches
+and installed binaries — so config, dotfiles, IDE settings, SSH
+`known_hosts` and shell history come back, but caches and binaries do not.
+Binaries are left out on purpose: a rebuilt runtime gets fresh, current
+tools, and reinstalling one (e.g. `claude-install`) is a single command,
+so nothing stale is ever copied back in:
 
 ```bash
 mpd --runtime-backup       # → /srv/backups/runtime/<UTC-timestamp>/ + manifest.json
 mpd --runtime-rebuild      # fresh runtime from current assets
-mpd --runtime-restore      # replays the newest backup into it
+mpd --runtime-restore      # untars the newest backup into it
 ```
 
 The work is asset-side — every `assets/runtime/backup.d/NN-*.sh`
 (and `restore.d/` on the way back) runs inside the runtime as the dev
-user with the backup directory as `$1`, so adding a topic is dropping
-a script there, no Go change.
+user with the backup directory as `$1`, so changing what is saved is
+editing a script there, no Go change.
 
 `/srv/backups/` is wiped when the data volume is wiped (`podman volume
 rm`, VM reset, etc.). Always pull off before destructive ops you

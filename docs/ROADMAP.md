@@ -37,8 +37,8 @@ Real possibilities, not committed work.
 - **In-place runtime upgrades** — the runtime is cattle with a
   carry-on bag now: `mpd --runtime-rebuild` recreates it from current
   assets, and `mpd --runtime-backup` / `--runtime-restore` carry the
-  personal pieces (Claude config, shell history — never binaries;
-  tools are reinstalled fresh) across the rebuild via
+  home directory (config, dotfiles, IDE settings, history — never caches
+  or binaries; tools are reinstalled fresh) across the rebuild via
   `assets/runtime/backup.d/` + `restore.d/` scripts.
   What remains parked is a *converging* upgrade that runs inside the
   existing container without a rebuild — the same shape as

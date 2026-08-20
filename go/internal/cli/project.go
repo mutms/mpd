@@ -794,6 +794,9 @@ var projectVerbs = map[string]bool{
 	"status": true, "help": true, "init": true, "reset": true,
 	"start": true, "stop": true, "delete": true, "run": true,
 	"project": true,
+	// Command aliases resolve as commands too, so a project cannot take
+	// their names: "rm" (delete), "ls" (list).
+	"rm": true, "ls": true,
 }
 
 // reservedNames are names a project may not take because they live
@@ -943,7 +946,7 @@ func ShowHelp(out io.Writer, project string, n net.Net) {
 	fmt.Fprintf(out, "  stop       %s\n", project)
 	fmt.Fprintf(out, "  reset      %s [--yes]               destroy the DB + /srv/data/%s/,\n", project, project)
 	fmt.Fprintf(out, "                                              keep the code; then start again\n")
-	fmt.Fprintf(out, "  delete     %s [--yes]\n", project)
+	fmt.Fprintf(out, "  delete     %s [--yes]               (alias: rm)\n", project)
 	fmt.Fprintln(out, "")
 	fmt.Fprintf(out, "Inside /srv/projects/%s/ (or any subdirectory) the name is optional:\n", project)
 	fmt.Fprintln(out, "  mpd start        mpd start KEY=VALUE        mpd status")

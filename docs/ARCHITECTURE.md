@@ -802,14 +802,14 @@ Read/write contract:
   runtime as the dev user, each receiving the backup directory as
   `$1`; the result lands in `/srv/backups/runtime/<UTC-timestamp>/`
   with a `manifest.json`. `mpd --runtime-restore` replays the newest
-  backup through `assets/runtime/restore.d/NN-*.sh`. The shipped hooks
-  cover the home-directory pieces worth carrying across a
-  `--runtime-rebuild`: Claude Code config (`~/.claude`,
-  `~/.claude.json`) and shell history. Configuration only, never
-  binaries — a rebuild exists to reinstall everything fresh, so restore
-  hooks re-run installers (`claude-install`) instead of copying
-  executables back. Deliberately distinct from project backups above —
-  the runtime is cattle with a carry-on bag, projects have their own
+  backup through `assets/runtime/restore.d/NN-*.sh`. The shipped hook
+  archives the whole home directory across a `--runtime-rebuild` on a
+  deny-list: everything under `$HOME` except regenerable caches and
+  installed binaries. Binaries are excluded on purpose — a rebuild exists
+  to reinstall everything fresh, so restore is a plain untar and the dev
+  reinstalls the tools they want (`claude-install`) rather than carrying
+  stale executables across. Deliberately distinct from project backups
+  above — the runtime is cattle with a carry-on bag, projects have their own
   (planned) tooling.
 - **The VM is the exit/entry point.** From the dev's laptop:
   `scp <vm>:/srv/backups/<file> .` pulls a backup off; reverse direction

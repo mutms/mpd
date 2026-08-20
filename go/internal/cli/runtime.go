@@ -78,9 +78,10 @@ func RuntimeDelete(ctx context.Context, out io.Writer, in io.Reader,
 	// what is lost and what survives, because "rebuild the runtime"
 	// sounds cheaper than it is.
 	fmt.Fprintf(out, "Warning: /home/%s/ contents inside the runtime will be lost.\n", devUser)
-	fmt.Fprintln(out, "(IDE settings, shell history, manually installed CLIs in ~/.local/bin)")
-	fmt.Fprintln(out, "`mpd --runtime-backup` first saves config + history; `mpd --runtime-restore` brings")
-	fmt.Fprintln(out, "them back and reinstalls tools fresh — binaries are never copied across a rebuild.")
+	fmt.Fprintln(out, "(config, dotfiles, IDE settings, shell history, manually installed CLIs in ~/.local/bin)")
+	fmt.Fprintln(out, "`mpd --runtime-backup` first saves the home directory (config, dotfiles, IDE settings,")
+	fmt.Fprintln(out, "history — not caches or binaries); `mpd --runtime-restore` untars it back. Binaries are")
+	fmt.Fprintln(out, "not restored — reinstall them (e.g. claude-install).")
 	fmt.Fprintln(out, "Preserved across rebuild: mpd-virt.env (/var/lib/mpd/env/), VM-host skel (/var/lib/mpd/skel/)")
 
 	if !assumeYes && !promptYesNo(out, in,
