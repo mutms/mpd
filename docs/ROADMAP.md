@@ -13,7 +13,7 @@ Concrete shape, a use case driving it.
   defaults → your `mpd-virt.env` → the project's `mpd.env`. Pattern
   borrowed from Laravel's `php artisan config:show`.
 
-  Not covered by `mpd show --json`, which is worth stating because it
+  Not covered by `mpd status --json`, which is worth stating because it
   looks like it should be. That document's `settings` block is
   `effective.json` — the seven values a project type's `configure.sh`
   resolved (`phpVersion`, `dbTag`, `behat`, …), not the `MPD_*` set,

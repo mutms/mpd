@@ -14,7 +14,7 @@ if [ "${MPD_MOODLE_BEHAT:-0}" != "1" ]; then
     echo "The behat.${PROJECT}.${MPD_ZONE} site is not published. Enable it from" >&2
     echo "the VM host (or over SSH to the VM), then re-run behat-init:" >&2
     echo >&2
-    echo "    mpd configure ${PROJECT} MPD_MOODLE_BEHAT=1" >&2
+    echo "    mpd start ${PROJECT} MPD_MOODLE_BEHAT=1" >&2
     exit 1
 fi
 

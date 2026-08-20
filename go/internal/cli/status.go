@@ -37,7 +37,7 @@ func Status(ctx context.Context, out io.Writer, s state.Store, p *podman.Client,
 	projects := s.Projects()
 	sort.Slice(projects, func(i, j int) bool { return projects[i].Name < projects[j].Name })
 	if len(projects) == 0 {
-		fmt.Fprintln(out, "  No projects yet — mpd create <name>")
+		fmt.Fprintln(out, "  No projects yet — mpd init <name>")
 	}
 	for _, pr := range projects {
 		// The project's own URL, not one composed from its name: a type

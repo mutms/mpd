@@ -70,8 +70,7 @@ else
     # project from that same directory, so neither needs the name twice.
     mudev clone "$RECIPE"
 
-    mpd create --type=moodle
-    mpd configure
+    mpd init --type=moodle
     mpd start
 
     echo ""

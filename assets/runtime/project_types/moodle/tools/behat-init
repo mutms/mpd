@@ -15,7 +15,7 @@ if [ "${MPD_MOODLE_BEHAT:-0}" != "1" ]; then
     echo "exist yet, so the site would be unreachable. Enable it from the VM" >&2
     echo "host (or over SSH to the VM), then retry:" >&2
     echo >&2
-    echo "    mpd configure ${PROJECT} MPD_MOODLE_BEHAT=1" >&2
+    echo "    mpd start ${PROJECT} MPD_MOODLE_BEHAT=1" >&2
     exit 1
 fi
 

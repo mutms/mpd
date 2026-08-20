@@ -6,9 +6,8 @@ set -euo pipefail
 #
 # The current PHP versions are baked into the runtime image. Older, EOL
 # versions (7.4, 8.0, …) are not — they arrive here only when a project
-# actually needs one. `mpd configure` and `mpd start` call this for you
-# when a project's MPD_PHP_VERSION is not present yet, so you rarely run
-# it by hand.
+# actually needs one. `mpd start` calls this for you when a project's
+# MPD_PHP_VERSION is not present yet, so you rarely run it by hand.
 #
 # Runs as the dev user inside the runtime, sudo for the privileged ops
 # (AGENTS.md §"Mandatory privilege rule"). Idempotent: a version already

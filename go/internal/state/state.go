@@ -56,7 +56,7 @@ type Project struct {
 // project has no runtime or no URLs.
 //
 // Deliberately not gated on the project running. A configured project is
-// an addressable one — `mpd configure` publishes the vhost, certificate
+// an addressable one — `mpd start` publishes the vhost, certificate
 // and DNS record, and they survive a stop — so the URL is correct whether
 // or not something is serving behind it right now. Hiding it would also
 // be unworkable for project types whose server the developer starts by

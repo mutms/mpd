@@ -41,7 +41,7 @@ moodle_run() {
 
 # moodle_status
 #
-# This project's status, as JSON, from `mpd show --json`.
+# This project's status, as JSON, from `mpd status --json`.
 #
 # Ask mpd rather than reading /srv/meta: the layout of that directory is
 # mpd's, and a script that opens it is a copy of mpd's own schema written
@@ -52,7 +52,7 @@ moodle_run() {
 # tool that runs it once and too much to repeat in a loop.
 moodle_status() {
     if [ -z "${_MPD_STATUS:-}" ]; then
-        _MPD_STATUS=$(mpd show "$PROJECT" --json) || return 1
+        _MPD_STATUS=$(mpd status "$PROJECT" --json) || return 1
     fi
     printf '%s' "$_MPD_STATUS"
 }
@@ -65,7 +65,7 @@ moodle_status_field() {
     moodle_status | jq -r "$1 // empty"
 }
 
-# moodle_configured — succeeds when `mpd configure` has run for this
+# moodle_configured — succeeds when `mpd start` has run for this
 # project, so the database exists and config.php has been written.
 moodle_configured() {
     [ "$(moodle_status | jq -r '.configured')" = "true" ]

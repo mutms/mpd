@@ -93,7 +93,7 @@ const projectsHTML = `{{define "projects"}}
     </tr>
     {{end}}
   </table>
-  {{else}}<p class="empty">No projects yet — <code>mpd create &lt;name&gt;</code>.</p>{{end}}
+  {{else}}<p class="empty">No projects yet — <code>mpd init &lt;name&gt;</code>.</p>{{end}}
 </section>
 {{end}}`
 
@@ -113,7 +113,7 @@ const databasesHTML = `{{define "databases"}}
     </tr>
     {{end}}
   </table>
-  {{else}}<p class="empty">No database containers — one is created by <code>mpd configure</code>.</p>{{end}}
+  {{else}}<p class="empty">No database containers — one is created by <code>mpd start</code>.</p>{{end}}
 </section>
 {{end}}`
 

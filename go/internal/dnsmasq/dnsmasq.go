@@ -9,7 +9,7 @@
 //
 // It was not always so. These records used to be `address=/host/ip`
 // fragments in a `conf-dir=`, which dnsmasq reads only at startup — not
-// even SIGHUP re-reads a config file. Every `mpd create` and `mpd delete`
+// even SIGHUP re-reads a config file. Every `mpd init` and `mpd delete`
 // therefore restarted the resolver, and although the restart itself took
 // 0.2s, a client whose query was in flight paid glibc's full
 // `timeout:5 attempts:2` — ten seconds of "Temporary failure in name

@@ -3,14 +3,14 @@
 # Run by `mpd start <project>` to bring an already-configured Moodle project's
 # runtime-side state into a startable shape:
 #   - Reads phpVersion / phpFpmPort from /srv/meta/<n>/effective.json (written
-#     by scripts/configure.sh during `mpd configure <project>`)
+#     by scripts/configure.sh during `mpd start <project>`)
 #   - Creates /srv/data/<project-name>/{dataroot,dataroot_behat,behat_faildump,dataroot_phpunit}
 #   - Writes per-project FPM pool listening on TCP 127.0.0.1:<phpFpmPort>
 #     (the in-runtime caddy frontdoor reaches it on localhost)
 # No Apache, no /etc/hosts edits — TLS termination + project routing live in
 # the in-runtime caddy frontdoor (mpd-caddy.service).
 # Per-project TLS certs are at /srv/meta/<n>/cert.pem + key.pem (mpd writes them).
-# DB provisioning happens during `mpd configure <project>` — by start time the
+# DB provisioning happens during `mpd start <project>` — by start time the
 # DB container exists and the per-project DB has been created.
 set -euo pipefail
 

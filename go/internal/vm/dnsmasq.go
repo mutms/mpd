@@ -64,7 +64,7 @@ local=/test/
 
 # mpd's records. dnsmasq watches this directory and re-reads it whenever a
 # file is added, changed or removed, flushing the cache for just those
-# names. That is what lets mpd create and mpd delete publish and
+# names. That is what lets mpd init and mpd delete publish and
 # retract records without signalling or restarting the resolver — a
 # restart drops in-flight queries, and a lost query costs the client
 # glibc's full timeout, which is ten seconds by default.

@@ -12,7 +12,7 @@
 # `mpd reset` is for:
 #
 #   mpd reset          # drops the database, wipes the dataroot
-#   mpd configure      # makes an empty database to restore into
+#   mpd start      # makes an empty database to restore into
 #   mdl-data-restore before-upgrade
 #
 # Restoring over a project that still has data is refused, and the
@@ -24,7 +24,7 @@
 # It does not touch the source tree, and it does not apply the mpd.env
 # in the bundle — that copy is there to read. If the backup was made on
 # a different database engine, edit mpd.env yourself and run
-# `mpd configure` before restoring.
+# `mpd start` before restoring.
 #
 # The site stays up while this runs, with Moodle's CLI maintenance mode
 # blocking the web interface. This is a development snapshot, not a
@@ -78,7 +78,7 @@ fi
 
 if ! moodle_configured; then
     echo "Project '${PROJECT}' is not configured — there is no database to restore into." >&2
-    echo "Run \`mpd configure\` first." >&2
+    echo "Run \`mpd start\` first." >&2
     exit 1
 fi
 DB_ENGINE=$(moodle_status_field '.database.engine')
@@ -100,7 +100,7 @@ FROM_CREATED=$(printf '%s' "$MANIFEST" | jq -r '.created // "unknown"')
 # half-loaded database is worse than none.
 if [ -n "$FROM_ENGINE" ] && [ "$FROM_ENGINE" != "$DB_ENGINE" ]; then
     echo "This backup is from ${FROM_ENGINE}, and '${PROJECT}' now runs ${DB_ENGINE}." >&2
-    echo "Set MPD_DB back to a ${FROM_ENGINE} version in mpd.env, run \`mpd configure\`," >&2
+    echo "Set MPD_DB back to a ${FROM_ENGINE} version in mpd.env, run \`mpd start\`," >&2
     echo "then restore." >&2
     exit 1
 fi
@@ -126,7 +126,7 @@ if [ "${TABLE_COUNT:-0}" -ne 0 ]; then
 Restore only writes into an empty project. Empty this one first:
 
     mpd reset
-    mpd configure
+    mpd start
     mdl-data-restore ${BUNDLE_NAME}
 
 \`mpd reset\` is the command that destroys data. It also stops the
@@ -179,7 +179,7 @@ echo "  database (${FROM_TAG:-$FROM_ENGINE} → ${DB_TAG:-$DB_ENGINE})"
 case "$DB_ENGINE" in
     postgres)
         # As the project role, so every table the dump creates is owned
-        # by the role Moodle connects as. `mpd configure` made the
+        # by the role Moodle connects as. `mpd start` made the
         # database and the role; this only fills it.
         gunzip -c "${STAGING}/db.sql.gz" \
             | PGPASSWORD="${PROJECT}" psql -h "$DBHOST" -U "${PROJECT}" -d "${PROJECT}" \

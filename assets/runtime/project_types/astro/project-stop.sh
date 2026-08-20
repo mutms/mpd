@@ -6,7 +6,7 @@
 # here may run a command inside the project.
 #
 # `mpd stop` records the project as stopped. The vhost, certificate and
-# DNS record stay, because those are `mpd configure`'s — so the URL keeps
+# DNS record stay, because those are `mpd start`'s — so the URL keeps
 # resolving and answers again as soon as a server is up.
 set -euo pipefail
 

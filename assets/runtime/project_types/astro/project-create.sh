@@ -1,6 +1,6 @@
 #!/bin/bash
 # project-create.sh <project-name>
-# Run by `mpd create <project>` inside the runtime container, AFTER any
+# Run by `mpd init <project>` inside the runtime container, AFTER any
 # git clone and BEFORE the project is registered as ready.
 #
 # Responsibilities:
@@ -8,7 +8,7 @@
 #     (mpd.env). Existing files are never overwritten — a user-supplied
 #     mpd.env is sacred.
 #   - Add every template/ path to .git/info/exclude.
-# Both are apply_project_template's job; `mpd configure` calls it again so a
+# Both are apply_project_template's job; `mpd start` calls it again so a
 # file added to template/ later reaches projects that already exist.
 set -euo pipefail
 
@@ -25,4 +25,4 @@ fi
 . /opt/mpd/assets/runtime/lib/project-template.sh
 apply_project_template "$PROJECT_NAME" "$TYPE_DIR"
 
-echo "Project '${PROJECT_NAME}' scaffolded — next: mpd configure ${PROJECT_NAME}"
+echo "Project '${PROJECT_NAME}' scaffolded — next: mpd start ${PROJECT_NAME}"

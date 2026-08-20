@@ -6,31 +6,16 @@ set -euo pipefail
 
 source /opt/mpd/assets/runtime/project_types/moodle/scripts/mpd-env.sh
 
-# Checked before composer runs, not after. `composer install` takes
-# minutes on a cold cache, and Moodle's own guards do not fire until long
-# after that — install_database.php stops on tables that already exist,
-# but only once it has bootstrapped.
+# Only that config.php and a database exist — not that the database is
+# empty. install_database.php does the already-installed check itself,
+# and it keys on the real install prefix, so it ignores the test-prefix
+# tables `phpunit-init` leaves in the same database. A table-count guard
+# here would count those too and wrongly refuse a fresh install. If the
+# site really is installed and you want to start over: `mpd reset`, then
+# `mpd start`, then `mdl-install`.
 if ! moodle_configured; then
     echo "Project '${PROJECT}' is not configured yet." >&2
-    echo "Run \`mpd configure\` first: it makes the database and writes config.php." >&2
-    exit 1
-fi
-
-TABLE_COUNT=$(moodle_db_table_count) || TABLE_COUNT=""
-if [ -n "$TABLE_COUNT" ] && [ "$TABLE_COUNT" -ne 0 ]; then
-    TABLE_NOUN="tables"
-    [ "$TABLE_COUNT" -eq 1 ] && TABLE_NOUN="table"
-    cat >&2 <<EOF
-'${PROJECT}' is already installed — its database holds ${TABLE_COUNT} ${TABLE_NOUN}.
-
-To install it again from nothing:
-
-    mpd reset
-    mpd configure
-    mdl-install
-
-\`mpd reset\` is the command that destroys data.
-EOF
+    echo "Run \`mpd start\` first: it makes the database and writes config.php." >&2
     exit 1
 fi
 

@@ -27,7 +27,7 @@ const lockPoll = 100 * time.Millisecond
 // Every mutating verb is a read-modify-write across several files plus
 // podman: UpsertProject reads the whole project list, edits one entry and
 // rewrites the list. writeJSON is atomic per file, so a torn file is not
-// the risk — a lost update is. Two concurrent `mpd create` calls both read
+// the risk — a lost update is. Two concurrent `mpd init` calls both read
 // the same list, each appends its own project, and the second write wins:
 // one project silently disappears from state while its containers, its
 // database and its /srv tree all exist. Nothing later reconciles that,
@@ -39,9 +39,9 @@ const lockPoll = 100 * time.Millisecond
 //
 // # Scope
 //
-// Mutating verbs only. Read-only verbs (show, list, status) deliberately
-// do not take it: making `mpd show` block behind a five-minute `mpd
-// create` would trade a rare lost update for a constant annoyance, and a
+// Mutating verbs only. Read-only verbs (status, list) deliberately
+// do not take it: making `mpd status` block behind a five-minute `mpd
+// start` would trade a rare lost update for a constant annoyance, and a
 // reader racing a writer sees either the old or the new file thanks to the
 // atomic rename — never a partial one.
 //

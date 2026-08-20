@@ -407,10 +407,11 @@ useful signal and is worth keeping.
 
 Verbs are **Go**: cobra commands in `go/cmd/mpd/main.go`, handlers in
 `go/internal/cli/project.go`. The verb set is fixed and small —
-`create`, `configure`, `start`, `stop`, `reset`, `run`, `delete`,
-`show`, `help` — all
+`init`, `start`, `stop`, `reset`, `run`, `delete`,
+`status`, `help` — all
 control-plane code with direct access to `internal/podman` and the state
-APIs. There is no asset-shipped-verb
+APIs. `start` both configures and starts a project (there is no separate
+`configure` verb). There is no asset-shipped-verb
 mechanism: project-type-specific operations live inside the runtime as
 **tools**, not as host-side verbs.
 
@@ -556,7 +557,7 @@ enforced in review.
 
 ### How a tool learns about its project
 
-`mpd show <project> --json` (`cli.ShowProjectJSON`,
+`mpd status <project> --json` (`cli.ShowProjectJSON`,
 `go/internal/cli/projectstatus.go`) is the one interface a tool uses to
 ask about a project: whether it is configured, its type and state, its
 directory and data directory, its zone, its URLs, the settings the
@@ -641,15 +642,15 @@ and tools".
 `mpd.env` files carry runtime configuration that the user is meant to edit:
 DB tag, PHP version, Moodle install defaults, headless-Behat toggle, etc.
 Five named files with distinct lifecycles. Four are *sourced* at every
-`configure`/`start` invocation (the layered hierarchy); the fifth is a
-*seed* used once at project create time.
+`start` invocation, whose configure step reads them (the layered
+hierarchy); the fifth is a *seed* used once at `init` time.
 
 | File             | Path                                                                                      | Owner                                                                                         | Purpose                                                              |
 |------------------|-------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|----------------------------------------------------------------------|
 | Runtime defaults | `assets/runtime/mpd-defaults.env`                                                         | runtime, in repo (read-only)                                                                  | "the default value" for runtime-wide keys; sourced 1st               |
 | Type defaults    | `assets/runtime/project_types/<type>/mpd-defaults.env`                                    | project type, in repo (read-only)                                                             | type-specific overrides of the runtime default; sourced 2nd          |
 | Developer-wide   | `/var/lib/mpd/env/mpd-virt.env` (VM; bind-mounted RO into the runtime container at the same path) | developer, on the Mac at `~/.mpd-virt/mpd-virt.env` — pushed into every VM by mpd-virt; hand-edited in-VM on a sandbox | cross-project, cross-VM preferences and secrets; sourced 3rd |
-| Per-project      | `/srv/projects/<n>/mpd.env`                                                               | seeded from the type's `template/`, mutated by `mpd configure <project> KEY=VALUE` and manual edit | project-scoped truth; sourced 4th, wins                              |
+| Per-project      | `/srv/projects/<n>/mpd.env`                                                               | seeded from the type's `template/`, mutated by `mpd start <project> KEY=VALUE` and manual edit | project-scoped truth; sourced 4th, wins                              |
 | Per-type seed    | `assets/runtime/project_types/<type>/template/mpd.env`                                    | project type, in repo (read-only)                                                             | NOT sourced — copied to `/srv/projects/<n>/mpd.env` by the template mechanism |
 
 **Seeding**: `mpd.env` is one of the files a project type ships in its
@@ -723,7 +724,7 @@ propagate inside the container immediately. No sync, no restart needed.
   validators in `project.ParseMutations` (`go/internal/project/env.go`)
   as they're added.
 
-**CLI surface for editing:** `mpd configure <project> KEY=VALUE [...]`
+**CLI surface for editing:** `mpd start <project> KEY=VALUE [...]`
 parses positional pairs matching `^MPD_[A-Z0-9_]+=.*$`, sanitises in Go
 (reserved-key map for strict validators, otherwise a generic safe-charset
 check that blocks shell metacharacters), and rewrites the corresponding line
@@ -891,7 +892,7 @@ SOCKS, never proxied by any caddy):
 - `adminer` — `.102`, `http://adminer.svc.<NNN>.mpd.test:8080/`.
 - `seleniumv1` — `.103`, `http://seleniumv1.svc.<NNN>.mpd.test:4444/`
   ("v1" so a future Moodle release can require another selenium
-  alongside). Auto-enabled by `mpd configure` when a project sets
+  alongside). Auto-enabled by `mpd start` when a project sets
   `MPD_MOODLE_BEHAT=1`.
 
 Lifecycle: `--service-enable` installs, starts and makes it auto-start

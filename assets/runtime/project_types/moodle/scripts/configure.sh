@@ -1,7 +1,7 @@
 #!/bin/bash
 # configure.sh <project-name>
 # Idempotent project repair/configuration for Moodle. Run by
-# `mpd configure <project>` after mpd has applied any KEY=VALUE mutations
+# `mpd start <project>` after mpd has applied any KEY=VALUE mutations
 # to /srv/projects/<project>/mpd.env.
 #
 # Responsibilities:

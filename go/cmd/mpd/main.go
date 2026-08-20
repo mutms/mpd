@@ -2,7 +2,7 @@
 //
 // Two grammars, deliberately:
 //
-//   - Project work is verb-first — `mpd start myproject`, `mpd create
+//   - Project work is verb-first — `mpd start myproject`, `mpd init
 //     myproject --type=moodle`. It reads like git and is what a developer
 //     types dozens of times a day.
 //   - Everything that acts on the VM or its infrastructure is a flag —
@@ -44,11 +44,11 @@ var version = "dev"
 
 // projectCommands is the verb-first half of the CLI: everything that
 // acts on one project.
-const projectCommands = `  show       [projectname] [--json]            project details (--json for scripts)
-  create     [projectname] [--type=<type>]     (default type: moodle)
-  configure  [projectname] [KEY=VALUE ...]     (e.g. MPD_DB=postgres:18, MPD_PHP_VERSION=8.4;
-                                               full set lives in /srv/projects/<projectname>/mpd.env)
-  start      [projectname]
+const projectCommands = `  status     [projectname] [--json]            project details (--json for scripts)
+  init       [projectname] [--type=<type>]     scaffold a new project (default type: moodle)
+  start      [projectname] [KEY=VALUE ...]     configure + start (e.g. MPD_DB=postgres:18,
+                                               MPD_PHP_VERSION=8.4; full set lives in
+                                               /srv/projects/<projectname>/mpd.env)
   stop       [projectname]
   reset      [projectname] [--yes]             destroy its DB + data, keep the code;
                                                leaves it not-configured
@@ -602,22 +602,40 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 		return build(use, short, true, run)
 	}
 
+	// start is not built with `build` above: it takes KEY=VALUE settings in
+	// addition to an optional project name, so it parses its args with
+	// SplitStartArgs rather than ProjectArg. It configures then starts.
+	startCmd := &cobra.Command{
+		Use:   "start [project] [KEY=VALUE ...]",
+		Short: "Configure and start a project (default: the one you are in)",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(c *cobra.Command, args []string) error {
+			name, settings, err := cli.SplitStartArgs(args)
+			if err != nil {
+				return err
+			}
+			d, err := projectDeps()
+			if err != nil {
+				return err
+			}
+			return withLock(c.Context(), c.OutOrStdout(), d.State, func() error {
+				return cli.ProjectStart(c.Context(), c.OutOrStdout(), name, settings, d)
+			})
+		},
+	}
 	verbs = append(verbs,
-		mutating("start [project]", "Start a project (default: the one you are in)",
-			func(ctx context.Context, c *cobra.Command, name string, d cli.ProjectDeps) error {
-				return cli.ProjectStart(ctx, c.OutOrStdout(), name, d)
-			}),
+		startCmd,
 		mutating("stop [project]", "Stop a project (default: the one you are in)",
 			func(ctx context.Context, c *cobra.Command, name string, d cli.ProjectDeps) error {
 				return cli.ProjectStop(ctx, c.OutOrStdout(), name, d)
 			}),
 	)
 
-	// show carries the one verb-level flag in the set. --json is what
+	// status carries the one verb-level flag in the set. --json is what
 	// in-runtime tools read instead of opening /srv/meta themselves, so it
-	// has to reach them: `show` is forwarded over the control socket, and
+	// has to reach them: `status` is forwarded over the control socket, and
 	// a verb flag rides along with it.
-	showCmd := simple("show [project]", "Show project details (default: the one you are in)",
+	statusCmd := simple("status [project]", "Show project details (default: the one you are in)",
 		func(ctx context.Context, c *cobra.Command, name string, d cli.ProjectDeps) error {
 			if f.json {
 				return cli.ShowProjectJSON(ctx, c.OutOrStdout(), name, d.State, d.Podman, d.Observer, d.Net)
@@ -625,8 +643,8 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 			cli.ShowProject(ctx, c.OutOrStdout(), name, d.State, d.Podman, d.Observer, d.Net, d.UID)
 			return nil
 		})
-	showCmd.Flags().BoolVar(&f.json, "json", false, "print the project's status as JSON")
-	verbs = append(verbs, showCmd)
+	statusCmd.Flags().BoolVar(&f.json, "json", false, "print the project's status as JSON")
+	verbs = append(verbs, statusCmd)
 
 	// reset DOES infer from the working directory, unlike delete. The reason
 	// delete refuses — it removes the directory you are standing in — does
@@ -670,32 +688,13 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 	}
 	deleteCmd.Flags().BoolVar(&f.yes, "yes", false, "Skip the confirmation prompt")
 
-	configureCmd := &cobra.Command{
-		Use:   "configure [project] [KEY=VALUE ...]",
-		Short: "Apply mpd.env changes and reconcile the project",
-		Args:  cobra.ArbitraryArgs,
-		RunE: func(c *cobra.Command, args []string) error {
-			name, settings, err := cli.SplitConfigureArgs(args)
-			if err != nil {
-				return err
-			}
-			d, err := projectDeps()
-			if err != nil {
-				return err
-			}
-			return withLock(c.Context(), c.OutOrStdout(), d.State, func() error {
-				return cli.ProjectConfigure(c.Context(), c.OutOrStdout(), name, settings, d)
-			})
-		},
-	}
-
 	var opts cli.CreateOptions
-	createCmd := &cobra.Command{
-		Use:   "create [project]",
+	initCmd := &cobra.Command{
+		Use:   "init [project]",
 		Short: "Scaffold a new project (default: the directory you are in)",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
-			name, err := cli.ProjectArg("create", args)
+			name, err := cli.ProjectArg("init", args)
 			if err != nil {
 				return err
 			}
@@ -712,7 +711,7 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 			})
 		},
 	}
-	createCmd.Flags().StringVar(&opts.Type, "type", "", "Project type (default: inferred, else moodle)")
+	initCmd.Flags().StringVar(&opts.Type, "type", "", "Project type (default: inferred, else moodle)")
 
 	runCmd := &cobra.Command{
 		Use:   "run [--] <command> [args...]",
@@ -731,7 +730,7 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 		},
 	}
 
-	verbs = append(verbs, deleteCmd, configureCmd, createCmd, runCmd)
+	verbs = append(verbs, deleteCmd, initCmd, runCmd)
 
 	return verbs
 }

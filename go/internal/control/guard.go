@@ -47,7 +47,7 @@ import (
 // Request is what an in-runtime client asks the VM to do.
 type Request struct {
 	// Argv is the command as typed, without the program name:
-	// ["create", "moodle45", "--type=moodle"].
+	// ["init", "moodle45", "--type=moodle"].
 	Argv []string `json:"argv"`
 	// Cwd is the client's working directory. Meaningful across the
 	// boundary only because /srv is the same tree at the same path on the
@@ -125,7 +125,7 @@ var blockedFlags = map[string]string{
 
 // flagName strips any =value so a flag matches its denylist key whether
 // written --vm-stop or (hypothetically) --vm-stop=1. A non-flag argument
-// — a project name, a KEY=VALUE configure setting — never matches,
+// — a project name, a KEY=VALUE start setting — never matches,
 // because every denied entry begins with "--".
 func flagName(arg string) string {
 	name, _, _ := strings.Cut(arg, "=")
@@ -247,13 +247,13 @@ func (g Guard) Check(r Request) (Decision, error) {
 		return decide(r.Argv), nil
 	}
 
-	// Not a registered project. Only `create` does anything useful with
+	// Not a registered project. Only `init` does anything useful with
 	// that; the rest are left to fail in the child with mpd's own
 	// "not found" message rather than a second, differently-worded one.
-	if verb != "create" {
+	if verb != "init" {
 		return decide(r.Argv), nil
 	}
-	argv, err := g.checkCreateType(name, r.Argv)
+	argv, err := g.checkInitType(name, r.Argv)
 	if err != nil {
 		return Decision{}, err
 	}
@@ -300,7 +300,7 @@ func explicitProject(verb string, argv []string) string {
 		if strings.HasPrefix(arg, "-") {
 			continue
 		}
-		if verb == "configure" && strings.Contains(arg, "=") {
+		if verb == "start" && strings.Contains(arg, "=") {
 			continue
 		}
 		return arg
@@ -308,12 +308,12 @@ func explicitProject(verb string, argv []string) string {
 	return ""
 }
 
-// checkCreateType validates a declared `--type` against the types the
+// checkInitType validates a declared `--type` against the types the
 // asset tree actually defines. With a single runtime there is no
 // ownership to enforce any more — an undeclared type is left for the
 // child to infer (name match, else the moodle default), same as on the
 // VM.
-func (g Guard) checkCreateType(name string, argv []string) ([]string, error) {
+func (g Guard) checkInitType(name string, argv []string) ([]string, error) {
 	all := g.Assets.AllProjectTypes()
 
 	if declared, ok := typeFlag(argv); ok {
@@ -341,9 +341,9 @@ func (g Guard) project(name string) (state.Project, bool) {
 // CLI's own rules: the first positional argument after the verb, else the
 // project whose tree the caller is standing in.
 //
-// Returns "" when neither applies. `configure` takes KEY=VALUE settings in
+// Returns "" when neither applies. `start` takes KEY=VALUE settings in
 // the same positional slot, so a token containing `=` is a setting and not
-// a name (see cli.SplitConfigureArgs).
+// a name (see cli.SplitStartArgs).
 func targetProject(verb string, argv []string, cwd string) string {
 	if name := explicitProject(verb, argv); name != "" {
 		return name

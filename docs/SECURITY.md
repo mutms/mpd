@@ -395,7 +395,7 @@ Four properties carry that:
    not the machine that world runs on (the mutating `--vm-*` lifecycle),
    nor the runtime lifecycle it depends on
    (`--runtime-rebuild`/`--runtime-restore`).
-   What remains on `create` is that a declared `--type` must name a type
+   What remains on `init` is that a declared `--type` must name a type
    the asset tree actually defines (`moodle`, `astro`) — an undeclared
    type is left for the child to infer, same as on the VM.
 

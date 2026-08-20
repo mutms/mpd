@@ -13,14 +13,14 @@ import (
 	"github.com/mutms/mpd/go/internal/state"
 )
 
-// ProjectStatus is what `mpd show <project> --json` prints: everything a
+// ProjectStatus is what `mpd status <project> --json` prints: everything a
 // script needs to know about a project, in one document.
 //
 // It exists because the in-runtime tools need these answers and, before
 // mpd could be called from inside a runtime, had no way to ask — so they
 // read /srv/meta/<project>/*.json themselves and built values like the
 // database host by hand. Every one of those was a copy of a layout mpd
-// owns, in a language with no way to check it. Now that `mpd show`
+// owns, in a language with no way to check it. Now that `mpd status`
 // answers from either side, the files are mpd's business again.
 //
 // Additive changes only: a field may be added, but tools in the wild

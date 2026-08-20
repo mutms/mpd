@@ -57,7 +57,7 @@ type RuntimeHost struct {
 // options too removes the first-value-wins ordering subtlety entirely.
 //
 // The FQDN is listed as a pattern alongside the aliases so that the long
-// form `mpd show` prints picks up the same User and host-key handling.
+// form `mpd status` prints picks up the same User and host-key handling.
 //
 // Host keys are deliberately not verified: a runtime is a container that
 // gets deleted and recreated freely, so its host key changes as a matter

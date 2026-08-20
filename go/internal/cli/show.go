@@ -17,7 +17,7 @@ import (
 // showLabelWidth is the left column of the key/value show output.
 const showLabelWidth = 16
 
-// ShowProject renders `mpd show <project>`.
+// ShowProject renders `mpd status <project>`.
 //
 // Two shapes, not one: a project whose runtime is up AND that was asked
 // to run gets the full detail (URLs, SSH, resolved settings); anything

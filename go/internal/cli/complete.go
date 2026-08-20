@@ -27,7 +27,7 @@ import (
 // ProjectVerbs are the tokens accepted as the first positional argument.
 // They are reserved as project names, so a project can never collide with
 // a verb.
-var ProjectVerbs = []string{"configure", "create", "delete", "help", "reset", "run", "show", "start", "stop"}
+var ProjectVerbs = []string{"delete", "help", "init", "reset", "run", "start", "status", "stop"}
 
 // IsProjectVerb reports whether a token is a project verb.
 func IsProjectVerb(token string) bool {
@@ -106,10 +106,10 @@ func candidates(cword int, words []string, s state.Store, a assets.Tree) []strin
 	if cword == 2 && first == "list" {
 		return []string{"projects", "services", "infra", "dbs", "network"}
 	}
-	// Verb-first form: the second token is a project name. `create` takes
+	// Verb-first form: the second token is a project name. `init` takes
 	// a NEW name, so no suggestion list applies there.
 	if cword == 2 && IsProjectVerb(first) {
-		if first == "create" {
+		if first == "init" {
 			return nil
 		}
 		return projectNames(s)
@@ -147,16 +147,17 @@ func optionValues(flag string, s state.Store, a assets.Tree) []string {
 // verbArgs completes the flags of `mpd <verb> <project> …`.
 func verbArgs(verb string) []string {
 	switch verb {
-	case "create":
+	case "init":
 		// No --db here: project-type knobs live in mpd.env and are set
-		// through configure.
+		// through start.
 		return []string{"--type=", "--yes"}
-	case "configure":
-		// Commonly-set keys; any MPD_* key is accepted.
-		return []string{"MPD_DB=", "MPD_PHP_VERSION=", "MPD_MOODLE_BEHAT=", "--yes"}
+	case "start":
+		// start applies KEY=VALUE settings before it configures and
+		// starts. Commonly-set keys; any MPD_* key is accepted.
+		return []string{"MPD_DB=", "MPD_PHP_VERSION=", "MPD_MOODLE_BEHAT="}
 	case "delete", "reset":
 		return []string{"--yes"}
-	case "show":
+	case "status":
 		return []string{"--json"}
 	default:
 		return nil

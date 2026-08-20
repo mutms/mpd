@@ -65,8 +65,8 @@ func testStore(t *testing.T, projects ...state.Project) state.Store {
 // runtime should reach it — do not just update the expectation.
 func TestAllowedVerbsTracksProjectVerbs(t *testing.T) {
 	want := map[string]bool{
-		"configure": true, "create": true, "delete": true,
-		"help": true, "show": true, "start": true, "stop": true,
+		"init": true, "delete": true,
+		"help": true, "status": true, "start": true, "stop": true,
 		// reset is project-scoped and needs VM privilege (drop the database,
 		// privileged removal under /srv), so it is a verb a runtime cannot
 		// perform for itself — and a corrupted database is something you
@@ -197,9 +197,9 @@ func TestBlockedFlagAfterVerbRefused(t *testing.T) {
 	g := testGuard(t, "runtime", state.Project{Name: "moodle45", RuntimeName: "runtime"})
 	for _, argv := range [][]string{
 		{"start", "moodle45", "--vm-stop"},
-		{"create", "x", "--runtime-rebuild"},
-		{"show", "moodle45", "--control"},
-		{"configure", "moodle45", "--vm-setup"},
+		{"init", "x", "--runtime-rebuild"},
+		{"status", "moodle45", "--control"},
+		{"start", "moodle45", "--vm-setup"},
 	} {
 		if _, err := g.Check(Request{Argv: argv, Cwd: "/srv"}); err == nil {
 			t.Errorf("%v should be refused", argv)
@@ -216,7 +216,7 @@ func TestMalformedCwdRefused(t *testing.T) {
 		"/srv/projects/../../etc", // not lexically clean: reaches out of the tree
 		"/srv/./projects",         // not lexically clean
 	} {
-		if _, err := g.Check(Request{Argv: []string{"show", "x"}, Cwd: cwd}); err == nil {
+		if _, err := g.Check(Request{Argv: []string{"status", "x"}, Cwd: cwd}); err == nil {
 			t.Errorf("cwd %q should be refused as malformed", cwd)
 		}
 	}
@@ -228,7 +228,7 @@ func TestMalformedCwdRefused(t *testing.T) {
 func TestCwdOutsideSrvRunsFromSrv(t *testing.T) {
 	g := testGuard(t, "runtime", state.Project{Name: "moodle45", RuntimeName: "runtime"})
 	for _, cwd := range []string{"/home/skodak", "/etc", "/srvsomething", "/"} {
-		decision, err := g.Check(Request{Argv: []string{"show", "moodle45"}, Cwd: cwd})
+		decision, err := g.Check(Request{Argv: []string{"status", "moodle45"}, Cwd: cwd})
 		if err != nil {
 			t.Errorf("cwd %q with an explicit project should work, got: %v", cwd, err)
 			continue
@@ -244,7 +244,7 @@ func TestCwdOutsideSrvRunsFromSrv(t *testing.T) {
 func TestCwdInsideSrvIsPreserved(t *testing.T) {
 	g := testGuard(t, "runtime", state.Project{Name: "moodle45", RuntimeName: "runtime"})
 	want := "/srv/projects/moodle45/public"
-	decision, err := g.Check(Request{Argv: []string{"show"}, Cwd: want})
+	decision, err := g.Check(Request{Argv: []string{"status"}, Cwd: want})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,9 +275,9 @@ func TestOwnProjectAllowedByCwd(t *testing.T) {
 }
 
 // A declared --type must exist in the assets tree, in both flag forms.
-func TestCreateValidatesDeclaredType(t *testing.T) {
+func TestInitValidatesDeclaredType(t *testing.T) {
 	g := testGuard(t, "runtime")
-	_, err := g.Check(Request{Argv: []string{"create", "thing", "--type=rails"}, Cwd: "/srv/projects/thing"})
+	_, err := g.Check(Request{Argv: []string{"init", "thing", "--type=rails"}, Cwd: "/srv/projects/thing"})
 	if err == nil {
 		t.Fatal("an unknown type should be refused")
 	}
@@ -288,9 +288,9 @@ func TestCreateValidatesDeclaredType(t *testing.T) {
 	}
 
 	for _, argv := range [][]string{
-		{"create", "thing", "--type=astro"},
-		{"create", "thing", "--type", "astro"},
-		{"create", "thing", "--type=moodle"},
+		{"init", "thing", "--type=astro"},
+		{"init", "thing", "--type", "astro"},
+		{"init", "thing", "--type=moodle"},
 	} {
 		if _, err := g.Check(Request{Argv: argv, Cwd: "/srv/projects/thing"}); err != nil {
 			t.Errorf("%v should be allowed, got: %v", argv, err)
@@ -300,13 +300,13 @@ func TestCreateValidatesDeclaredType(t *testing.T) {
 
 // Without --type the child's own inference and default apply — the guard
 // passes the argv through untouched.
-func TestCreateWithoutTypePassesThrough(t *testing.T) {
+func TestInitWithoutTypePassesThrough(t *testing.T) {
 	g := testGuard(t, "runtime")
-	decision, err := g.Check(Request{Argv: []string{"create", "newthing"}, Cwd: "/srv/projects/newthing"})
+	decision, err := g.Check(Request{Argv: []string{"init", "newthing"}, Cwd: "/srv/projects/newthing"})
 	if err != nil {
-		t.Fatalf("create without --type should pass through: %v", err)
+		t.Fatalf("init without --type should pass through: %v", err)
 	}
-	if got := strings.Join(decision.Argv, " "); got != "create newthing" {
+	if got := strings.Join(decision.Argv, " "); got != "init newthing" {
 		t.Errorf("argv should be untouched, got %q", got)
 	}
 }
@@ -314,7 +314,7 @@ func TestCreateWithoutTypePassesThrough(t *testing.T) {
 // Check must never mutate the caller's slice — the argv is reused.
 func TestCheckDoesNotMutateRequestArgv(t *testing.T) {
 	g := testGuard(t, "runtime")
-	argv := []string{"create", "newthing"}
+	argv := []string{"init", "newthing"}
 	original := strings.Join(argv, " ")
 	if _, err := g.Check(Request{Argv: argv, Cwd: "/srv/projects/newthing"}); err != nil {
 		t.Fatal(err)
@@ -324,20 +324,20 @@ func TestCheckDoesNotMutateRequestArgv(t *testing.T) {
 	}
 }
 
-func TestConfigureSettingIsNotMistakenForProjectName(t *testing.T) {
+func TestStartSettingIsNotMistakenForProjectName(t *testing.T) {
 	g := testGuard(t, "runtime", state.Project{Name: "moodle45", RuntimeName: "runtime"})
 	// The project must come from cwd, not from the KEY=VALUE token.
 	if _, err := g.Check(Request{
-		Argv: []string{"configure", "MPD_DB=postgres:18"},
+		Argv: []string{"start", "MPD_DB=postgres:18"},
 		Cwd:  "/srv/projects/moodle45",
 	}); err != nil {
-		t.Errorf("configure with only settings should resolve from cwd, got: %v", err)
+		t.Errorf("start with only settings should resolve from cwd, got: %v", err)
 	}
 }
 
 func TestMissingCallingRuntimeIsRefused(t *testing.T) {
 	g := testGuard(t, "")
-	if _, err := g.Check(Request{Argv: []string{"show", "x"}, Cwd: "/srv"}); err == nil {
+	if _, err := g.Check(Request{Argv: []string{"status", "x"}, Cwd: "/srv"}); err == nil {
 		t.Fatal("a request with no calling runtime must be refused")
 	}
 }

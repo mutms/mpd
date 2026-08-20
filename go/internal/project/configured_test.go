@@ -58,7 +58,7 @@ func TestCheckConfiguredRejectsAnotherVMsZone(t *testing.T) {
 	}
 	// The message has to carry both zones and the remedy, or it sends the
 	// reader looking in the wrong place.
-	for _, want := range []string{"m45.150.mpd.test", "180.mpd.test", "mpd configure m45"} {
+	for _, want := range []string{"m45.150.mpd.test", "180.mpd.test", "mpd start m45"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error does not mention %q:\n%s", want, err)
 		}

@@ -80,7 +80,7 @@ with snapshot/revert as the safety net for letting an agent rip.
   by default): Mailpit (`http://mailpit.svc.<NNN>.mpd.test:8025/` — one shared
   inbox, each project publishing a pre-filtered link), Adminer, Selenium.
   Behat is auto-wired when a project asks: `MPD_MOODLE_BEHAT=1` makes
-  `mpd configure` enable the seleniumv1 service and publish
+  `mpd start` enable the seleniumv1 service and publish
   `https://behat.<project>.<NNN>.mpd.test/`.
 - No host pollution: no Homebrew PHP, no system Apache, no `brew upgrade`
   breakage.
@@ -381,9 +381,10 @@ this section is the "how to write one" follow-up.
 > A capability is a **verb** if and only if it does work that the
 > runtime container can't do for itself. Otherwise it's a **tool**.
 
-Almost everything is a tool. The verb set is fixed and small — `create`,
-`configure`, `start`, `stop`, `reset`, `run`, `delete`, `show`, `help`
-— all Go, all in the control plane. Project-type-specific functionality (cron, phpunit,
+Almost everything is a tool. The verb set is fixed and small — `init`,
+`start`, `stop`, `reset`, `run`, `delete`, `status`, `help`
+— all Go, all in the control plane. `start` configures and starts in one
+step; there is no separate `configure` verb. Project-type-specific functionality (cron, phpunit,
 composer, …) is exposed inside the runtime container where SSH sessions
 and AI agents run; you reach it via PATH after `ssh mpd-<NNN>` from the
 workstation, or `ssh mpd-<NNN>-runtime` / `ssh runtime` from inside the
@@ -478,12 +479,12 @@ visible inside the runtime — no rebuild, nothing to re-link.
 
 A tool that needs to know something about the project — is it
 configured, which database engine, what host to connect to, where the
-dataroot is — calls **`mpd show <project> --json`** and reads the answer
+dataroot is — calls **`mpd status <project> --json`** and reads the answer
 with `jq`. It does **not** open `/srv/meta/<project>/*.json` or compose
 paths like `<databaseId>.db.<zone>` itself.
 
 ```bash
-STATUS=$(mpd show "$PROJECT" --json)
+STATUS=$(mpd status "$PROJECT" --json)
 DBHOST=$(printf '%s' "$STATUS" | jq -r '.database.host')
 ```
 
@@ -614,5 +615,5 @@ found." Internal sudo on specific operations is the right shape.
 - fresh VM via `setup/mpd-sandbox-setup.sh` (or `mpd-virt adopt`
   from a Mac)
 - `mpd --vm-setup`, `mpd --vm-start`, `mpd --vm-status`
-- optional: `mpd create/start/stop <project>` end-to-end including HTTPS hit
+- optional: `mpd init/start/stop <project>` end-to-end including HTTPS hit
 - `mpd --vm-stop`

@@ -71,7 +71,7 @@ func TestPassedDescriptorsAreTheCallersFiles(t *testing.T) {
 		return response{Exit: 0}
 	})
 
-	code, err := forwardWithFiles(path, []string{"show", "moodle45"}, os.Stdin, f, os.Stderr)
+	code, err := forwardWithFiles(path, []string{"status", "moodle45"}, os.Stdin, f, os.Stderr)
 	if err != nil {
 		t.Fatalf("ForwardTo: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestRequestCrossesIntact(t *testing.T) {
 	})
 
 	t.Setenv("TERM", "xterm-256color")
-	wantArgv := []string{"create", "moodle45", "--type=moodle"}
+	wantArgv := []string{"init", "moodle45", "--type=moodle"}
 	if _, err := forwardWithFiles(path, wantArgv, os.Stdin, os.Stdout, os.Stderr); err != nil {
 		t.Fatalf("ForwardTo: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestExitCodePropagates(t *testing.T) {
 		path := serveOne(t, func(Request, []*os.File) response {
 			return response{Exit: want}
 		})
-		got, err := forwardWithFiles(path, []string{"show", "x"}, os.Stdin, os.Stdout, os.Stderr)
+		got, err := forwardWithFiles(path, []string{"status", "x"}, os.Stdin, os.Stdout, os.Stderr)
 		if err != nil {
 			t.Fatalf("ForwardTo: %v", err)
 		}
@@ -190,7 +190,7 @@ func TestReceiveRejectsWrongFDCount(t *testing.T) {
 		if count > 0 {
 			rights = syscall.UnixRights(fds...)
 		}
-		if _, _, err := unixConn.WriteMsgUnix([]byte(`{"argv":["show"],"cwd":"/srv"}`+"\n"), rights, nil); err != nil {
+		if _, _, err := unixConn.WriteMsgUnix([]byte(`{"argv":["status"],"cwd":"/srv"}`+"\n"), rights, nil); err != nil {
 			t.Fatal(err)
 		}
 

@@ -405,7 +405,7 @@ func Drop(ctx context.Context, out io.Writer, engine, container, dbName string, 
 // CreateFor creates a per-project user and database in a running engine.
 //
 // Idempotent: re-running on an existing project is a no-op, because
-// `mpd configure` runs it every time and must not fail on the second
+// `mpd start` runs it every time and must not fail on the second
 // call. User, password and database name are all the project name — a
 // documented dev-only choice (docs/SECURITY.md).
 func CreateFor(ctx context.Context, out io.Writer, engine, container, dbName string, p *podman.Client) error {

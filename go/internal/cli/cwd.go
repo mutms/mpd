@@ -66,8 +66,8 @@ func ProjectArg(verb string, args []string) (string, error) {
 		verb, srv.Projects, verb)
 }
 
-// SplitConfigureArgs separates `mpd configure`'s project name from its
-// KEY=VALUE settings.
+// SplitStartArgs separates `mpd start`'s project name from its KEY=VALUE
+// settings.
 //
 // Both are positional, and the project may be omitted, so something has
 // to tell them apart: a setting always contains `=`, and a project name
@@ -76,14 +76,14 @@ func ProjectArg(verb string, args []string) (string, error) {
 // anything else means every token is a setting and the project comes
 // from the cwd.
 //
-//	mpd configure moodle45 MPD_DB=postgres:18   → explicit project
-//	mpd configure MPD_DB=postgres:18            → project from cwd
-//	mpd configure                               → project from cwd, no changes
-func SplitConfigureArgs(args []string) (project string, settings []string, err error) {
+//	mpd start moodle45 MPD_DB=postgres:18   → explicit project
+//	mpd start MPD_DB=postgres:18            → project from cwd
+//	mpd start                               → project from cwd, no changes
+func SplitStartArgs(args []string) (project string, settings []string, err error) {
 	if len(args) > 0 && !strings.Contains(args[0], "=") {
 		return args[0], args[1:], nil
 	}
-	name, resolveErr := ProjectArg("configure", nil)
+	name, resolveErr := ProjectArg("start", nil)
 	if resolveErr != nil {
 		return "", nil, resolveErr
 	}

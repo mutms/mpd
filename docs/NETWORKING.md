@@ -215,7 +215,7 @@ the path.
 Records live as hosts files in `/var/lib/mpd/state/dns/`, read via
 dnsmasq's `hostsdir=`. dnsmasq watches that directory and re-reads it on
 every add, change and remove, flushing the cache for just the affected
-names. Publishing a record is a file write and nothing else — `mpd create`,
+names. Publishing a record is a file write and nothing else — `mpd init`,
 `mpd start`, `mpd stop` and `mpd delete` never signal or restart the
 resolver.
 

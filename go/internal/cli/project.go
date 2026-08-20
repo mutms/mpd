@@ -42,78 +42,42 @@ type ProjectDeps struct {
 	UID      string
 }
 
-// ProjectStart brings a project up.
+// ProjectStart configures a project and brings it up — the two used to be
+// separate verbs (`configure` then `start`), now one.
 //
-// Order matters throughout: the runtime and database must be up before
-// pre-start hooks fire (they exist to prepare the database), the cert
-// and DNS record must exist before the type's setup script runs (which
-// may probe its own URL), and `requested` is only recorded after setup
-// succeeds — so a failed start does not leave a project claiming to run.
-func ProjectStart(ctx context.Context, out io.Writer, name string, d ProjectDeps) error {
-	entry, found := findProject(d.State, name)
-	if !found {
-		return fmt.Errorf("Project '%s' not found. Create it: mpd %s create", name, name)
-	}
-	if entry.RuntimeName == "" {
-		// The project exists but has never been configured — the state
-		// `create` leaves, and the state `reset` returns it to. Configure is
-		// what assigns the runtime and builds the database, so pointing at
-		// `create` here would send the caller to a verb that refuses because
-		// the project already exists.
-		return fmt.Errorf("Project '%s' is not configured yet, so it has no runtime or database.\n"+
-			"Run: mpd configure %s", name, name)
+// It always reconciles first: settings (KEY=VALUE) land in mpd.env, the
+// type's configure.sh runs, and the database, certificate and DNS record
+// are provisioned from the result — so `mpd start` after an mpd.env edit
+// makes reality match the file. Then it starts.
+//
+// Order matters throughout the start tail: the runtime and database are
+// already up (reconcileProject ensured them), so pre-start hooks fire
+// against a live database, the type's setup script runs against a cert
+// and DNS that already exist, and `requested` is only recorded after
+// setup succeeds — so a failed start does not leave a project claiming to
+// run.
+func ProjectStart(ctx context.Context, out io.Writer, name string, settings []string,
+	d ProjectDeps) error {
+
+	if _, found := findProject(d.State, name); !found {
+		return fmt.Errorf("Project '%s' not found. Create it: mpd init %s", name, name)
 	}
 
-	container := d.Observer.RuntimeContainer(entry.RuntimeName)
-	if !d.Podman.Exists(ctx, container) {
-		return fmt.Errorf("The runtime does not exist. Run: mpd --vm-setup")
-	}
-	if !d.Podman.Running(ctx, container) {
-		if err := RuntimeStart(ctx, out, d.Podman, d.State,
-			d.Dnsmasq, d.Observer, d.Net, d.DevUser, d.UID); err != nil {
-			return err
-		}
-	}
-
-	if entry.DatabaseEngine != "" {
-		ref, err := db.Resolve(ctx, entry.DatabaseEngine+":"+entry.DatabaseVersion, d.Podman)
-		if err != nil {
-			return err
-		}
-		if err := db.Ensure(ctx, ref, d.Podman, d.Net, d.UID, out); err != nil {
-			return err
-		}
-		// db.Ensure may have just created the container, and its address
-		// is only known once it exists. Without this the project comes up
-		// with a database it cannot name: Moodle reports
-		// "dbconnectionfailed" on a DB that is running and healthy.
-		if _, err := d.Dnsmasq.EnsureDatabaseRecords(ctx); err != nil {
-			return err
-		}
-	}
-
-	// urls.json is the source of truth; projects.json holds a copy that
-	// only `configure` refreshes. Re-read it before anything downstream
-	// uses it — the cert SANs and the DNS record below are both composed
-	// from entry.URLs, so a stale copy silently re-establishes a project
-	// under names it no longer has.
-	//
-	// Checked BEFORE it is adopted: configuration judged unusable must not
-	// be written into state, or a failed start leaves projects.json
-	// advertising another VM's URLs.
-	urls := entry.URLs
-	if fresh, ok := project.ReadURLs(name); ok {
-		urls = fresh
-	}
-	if err := project.CheckConfigured(name, urls, d.Net); err != nil {
+	// Configure first: this is what makes `mpd start` a one-verb path from
+	// a fresh `mpd init`. It applies settings, runs configure.sh, and
+	// provisions the database, certificate and DNS. It leaves the runtime
+	// up, which is exactly what the start tail below needs.
+	if err := reconcileProject(ctx, out, name, settings, d); err != nil {
 		return err
 	}
-	if !sameURLs(urls, entry.URLs) {
-		entry.URLs = urls
-		if err := d.State.UpsertProject(entry); err != nil {
-			return err
-		}
+
+	// Re-read: reconcileProject persisted the freshly-configured entry
+	// (runtime name, database fields, URLs).
+	entry, found := findProject(d.State, name)
+	if !found {
+		return fmt.Errorf("Project '%s' not found after configure.", name)
 	}
+	container := d.Observer.RuntimeContainer(entry.RuntimeName)
 
 	ev := hookProject(entry, container, d)
 
@@ -124,17 +88,8 @@ func ProjectStart(ctx context.Context, out io.Writer, name string, d ProjectDeps
 		return err
 	}
 
-	if err := project.EnsureCert(ctx, out, name, entry.URLs, d.Net, d.Podman, d.UID); err != nil {
-		return err
-	}
-
-	runtimeIP := d.Podman.Label(ctx, container, "mpd.ip")
-	if body, ok := project.DNSRecords(name, entry.URLs, runtimeIP, d.Net); ok {
-		if _, err := d.Dnsmasq.WriteRecord(name, body); err != nil {
-			return err
-		}
-	}
-
+	// Certificate and DNS were already provisioned by reconcileProject
+	// above, so the start tail goes straight to the type's setup script.
 	cfg, hasType := d.Assets.ProjectTypeConfig(entry.Type)
 	if hasType && d.Assets.HasTypeFile(cfg.AssetsType, "project-setup.sh") {
 		fmt.Fprintf(out, "\n\033[1m==> Setting up '%s' in the runtime\033[0m\n", name)
@@ -264,7 +219,7 @@ func trustingClient() (*http.Client, error) {
 func ProjectStop(ctx context.Context, out io.Writer, name string, d ProjectDeps) error {
 	entry, found := findProject(d.State, name)
 	if !found {
-		return fmt.Errorf("Project '%s' not found. Create it: mpd %s create", name, name)
+		return fmt.Errorf("Project '%s' not found. Create it: mpd init %s", name, name)
 	}
 	if entry.Requested != "running" {
 		fmt.Fprintf(out, "'%s' is already stopped.\n", name)
@@ -474,7 +429,7 @@ func ProjectReset(ctx context.Context, out io.Writer, in io.Reader, name string,
 	fmt.Fprintf(out, "Database: %s\n", dbStr)
 	fmt.Fprintf(out, "Keeps:    /srv/projects/%s/ (code, mpd.env, config.php)\n", name)
 	fmt.Fprintf(out, "Destroys: the '%s' database and everything in /srv/data/%s/\n", name, name)
-	fmt.Fprintf(out, "Leaves '%s' not configured — run `mpd configure %s` next.\n", name, name)
+	fmt.Fprintf(out, "Leaves '%s' not configured — run `mpd start %s` next.\n", name, name)
 
 	if !assumeYes && !promptName(out, in, name, "reset") {
 		fmt.Fprintln(out, "Aborted.")
@@ -544,23 +499,27 @@ func ProjectReset(ctx context.Context, out io.Writer, in io.Reader, name string,
 	fmt.Fprintln(out, "")
 	Ok(out, "Project '%s' reset — code kept, data gone, not configured.", name)
 	fmt.Fprintf(out, "  Edit /srv/projects/%s/mpd.env (e.g. MPD_DB) if needed, then:\n", name)
-	fmt.Fprintf(out, "    mpd configure %s\n", name)
+	fmt.Fprintf(out, "    mpd start %s\n", name)
 	return nil
 }
 
-// ProjectConfigure applies mpd.env mutations, runs the project type's
-// configure.sh, and reconciles everything that depends on its output.
+// reconcileProject applies mpd.env mutations, runs the project type's
+// configure.sh, and reconciles everything that depends on its output. It
+// is the configure half of `mpd start`, always run before the start tail.
 //
 // The order is a data dependency chain, not a preference: mutations land
 // in mpd.env → configure.sh resolves the four-layer env and emits
 // effective.json + urls.json → mpd reads dbTag from effective.json to
 // provision the database → URLs drive cert and DNS.
-func ProjectConfigure(ctx context.Context, out io.Writer, name string, args []string,
+//
+// It leaves the runtime running: its only caller, ProjectStart, is about
+// to use it.
+func reconcileProject(ctx context.Context, out io.Writer, name string, args []string,
 	d ProjectDeps) error {
 
 	entry, found := findProject(d.State, name)
 	if !found {
-		return fmt.Errorf("Project '%s' not found. Create it: mpd %s create", name, name)
+		return fmt.Errorf("Project '%s' not found. Create it: mpd init %s", name, name)
 	}
 
 	mutations, err := project.ParseMutations(args, func(tag string) error {
@@ -572,7 +531,7 @@ func ProjectConfigure(ctx context.Context, out io.Writer, name string, args []st
 	}
 
 	// Type is immutable — it decides which asset scripts run, so changing
-	// it would mean re-scaffolding, which is what `create` is for.
+	// it would mean re-scaffolding, which is what `init` is for.
 	if entry.Type == "" {
 		return fmt.Errorf("Project type is not set for '%s'.\n"+
 			"Create a new project to choose a type (default: moodle).", name)
@@ -585,8 +544,7 @@ func ProjectConfigure(ctx context.Context, out io.Writer, name string, args []st
 	if !d.Podman.Exists(ctx, container) {
 		return fmt.Errorf("The runtime does not exist. Run: mpd --vm-setup")
 	}
-	runtimeWasRunning := d.Podman.Running(ctx, container)
-	if !runtimeWasRunning {
+	if !d.Podman.Running(ctx, container) {
 		if err := RuntimeStart(ctx, out, d.Podman, d.State,
 			d.Dnsmasq, d.Observer, d.Net, d.DevUser, d.UID); err != nil {
 			return err
@@ -680,13 +638,12 @@ func ProjectConfigure(ctx context.Context, out io.Writer, name string, args []st
 		return err
 	}
 
-	// DNS is published here, not at start: a configured project is an
-	// addressable one. The name resolving while nothing serves it yields
+	// DNS is published here, before the start tail: a configured project is
+	// an addressable one. The name resolving while nothing serves it yields
 	// a dead page, which is the honest answer — and the only one that
 	// works for types whose server the developer starts by hand (astro),
 	// where mpd never learns that the dev server came up. The record is
-	// read off the container label rather than a live inspect, so it is
-	// available even when configure left the runtime stopped.
+	// read off the container label rather than a live inspect.
 	runtimeIP := d.Podman.Label(ctx, container, "mpd.ip")
 	if body, ok := project.DNSRecords(name, entry.URLs, runtimeIP, d.Net); ok {
 		if _, err := d.Dnsmasq.WriteRecord(name, body); err != nil {
@@ -694,22 +651,9 @@ func ProjectConfigure(ctx context.Context, out io.Writer, name string, args []st
 		}
 	}
 
-	// Configure is meant to be low-impact: if it had to start the runtime
-	// to do repair work, put it back unless something is actually using it.
-	if !runtimeWasRunning {
-		inUse := false
-		for _, p := range d.State.Projects() {
-			if p.Requested == "running" {
-				inUse = true
-				break
-			}
-		}
-		if !inUse {
-			_ = RuntimeStop(ctx, out, d.Podman, d.State, d.Dnsmasq, d.Observer)
-		}
-	}
-
-	Ok(out, "Project '%s' configured. Type: %s, Status: %s", name, entry.Type, entry.Requested)
+	// The runtime is left running: ProjectStart is about to use it for the
+	// start tail (hooks, project-setup.sh). Reclaiming an idle runtime is
+	// `mpd --gc`'s job, not this path's.
 	return nil
 }
 
@@ -745,7 +689,7 @@ func warnPortClash(out io.Writer, name string, effective map[string]any, s state
 		fmt.Fprintf(out, "  Only one of them can serve at a time, and while that one is up it\n")
 		fmt.Fprintf(out, "  answers for both URLs — you would get its site at the other's address.\n")
 		fmt.Fprintf(out, "  Give one a different server.port in astro.config.mjs, then re-run\n")
-		fmt.Fprintf(out, "  mpd configure %s\n", name)
+		fmt.Fprintf(out, "  mpd start %s\n", name)
 		return
 	}
 }
@@ -811,8 +755,9 @@ func sameURLs(a, b []state.ProjectURL) bool {
 // projectVerbs are names a project may not take, because `mpd <name>
 // <verb>` would become ambiguous.
 var projectVerbs = map[string]bool{
-	"show": true, "help": true, "create": true, "configure": true,
-	"start": true, "stop": true, "delete": true, "project": true,
+	"status": true, "help": true, "init": true, "reset": true,
+	"start": true, "stop": true, "delete": true, "run": true,
+	"project": true,
 }
 
 // reservedNames are names a project may not take because they live
@@ -831,12 +776,13 @@ type CreateOptions struct {
 	Type string
 }
 
-// ProjectCreate scaffolds a new project.
+// ProjectCreate scaffolds a new project — the `mpd init` verb.
 //
-// Deliberately does NOT configure it: create lays down the source tree
+// Deliberately does NOT configure it: init lays down the source tree
 // and an mpd.env seeded from the type's template, then stops so the
-// developer can edit that file before anything acts on it. `configure`
-// is the step that resolves the env and provisions a database.
+// developer can edit that file before anything acts on it. `mpd start`
+// is the step that resolves the env, provisions a database and brings
+// the project up.
 func ProjectCreate(ctx context.Context, out io.Writer, name string, opts CreateOptions,
 	d ProjectDeps, home string) error {
 
@@ -861,16 +807,16 @@ func ProjectCreate(ctx context.Context, out io.Writer, name string, opts CreateO
 	// moodle as mpd's overall default.
 	//
 	// The tree outranks the name because it is evidence rather than a
-	// guess: `mpd create docs` on a checkout holding astro.config.mjs is
-	// an astro project whatever the directory is called. Creating into an
-	// existing tree is the normal path — `create` does not fetch source,
+	// guess: `mpd init docs` on a checkout holding astro.config.mjs is
+	// an astro project whatever the directory is called. Initialising an
+	// existing tree is the normal path — `init` does not fetch source,
 	// so the clone usually happened first.
 	typeName := opts.Type
 	if typeName == "" {
 		matched := d.Assets.DetectTypeFromTree(srv.ProjectDir(name))
 		if len(matched) > 1 {
 			return fmt.Errorf("/srv/projects/%s looks like more than one project type (%s).\n"+
-				"Say which one: mpd create %s --type=<type>",
+				"Say which one: mpd init %s --type=<type>",
 				name, strings.Join(matched, ", "), name)
 		}
 		if len(matched) == 1 {
@@ -924,7 +870,7 @@ func ProjectCreate(ctx context.Context, out io.Writer, name string, opts CreateO
 	fmt.Fprintln(out, "")
 	Ok(out, "Project '%s' scaffolded.", name)
 	fmt.Fprintf(out, "  Edit /srv/projects/%s/mpd.env if needed, then:\n", name)
-	fmt.Fprintf(out, "    mpd configure %s\n", name)
+	fmt.Fprintf(out, "    mpd start %s\n", name)
 	return nil
 }
 
@@ -951,18 +897,18 @@ func ensureRuntime(ctx context.Context, out io.Writer, d ProjectDeps, home strin
 func ShowHelp(out io.Writer, project string, n net.Net) {
 	fmt.Fprintf(out, "Usage: mpd <verb> %s [options...]\n", project)
 	fmt.Fprintln(out, "\nVerbs:")
-	fmt.Fprintf(out, "  show       %s [--json]              project details (--json for scripts)\n", project)
-	fmt.Fprintf(out, "  create     %s [--type=<type>]       (default type: moodle)\n", project)
-	fmt.Fprintf(out, "  configure  %s [KEY=VALUE ...]       (e.g. MPD_DB=postgres:18, MPD_PHP_VERSION=8.4;\n", project)
-	fmt.Fprintf(out, "                                              full set lives in /srv/projects/%s/mpd.env)\n", project)
-	fmt.Fprintf(out, "  start      %s\n", project)
+	fmt.Fprintf(out, "  status     %s [--json]              project details (--json for scripts)\n", project)
+	fmt.Fprintf(out, "  init       %s [--type=<type>]       scaffold mpd.env (default type: moodle)\n", project)
+	fmt.Fprintf(out, "  start      %s [KEY=VALUE ...]       configure + start (e.g. MPD_DB=postgres:18,\n", project)
+	fmt.Fprintf(out, "                                              MPD_PHP_VERSION=8.4; full set lives in\n")
+	fmt.Fprintf(out, "                                              /srv/projects/%s/mpd.env)\n", project)
 	fmt.Fprintf(out, "  stop       %s\n", project)
 	fmt.Fprintf(out, "  reset      %s [--yes]               destroy the DB + /srv/data/%s/,\n", project, project)
-	fmt.Fprintf(out, "                                              keep the code; then configure again\n")
+	fmt.Fprintf(out, "                                              keep the code; then start again\n")
 	fmt.Fprintf(out, "  delete     %s [--yes]\n", project)
 	fmt.Fprintln(out, "")
 	fmt.Fprintf(out, "Inside /srv/projects/%s/ (or any subdirectory) the name is optional:\n", project)
-	fmt.Fprintln(out, "  mpd start        mpd configure KEY=VALUE        mpd show")
+	fmt.Fprintln(out, "  mpd start        mpd start KEY=VALUE        mpd status")
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "Project-type-specific operations (mdl-cron, phpunit, composer, …) are tools,")
 	fmt.Fprintln(out, "not host-side verbs. SSH into the runtime and run them on PATH:")

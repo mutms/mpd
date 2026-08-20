@@ -124,20 +124,18 @@ mudev clone moodle/release/5.1.5
 
 # 2. Scaffold (seeds mpd.env from the type's template; no DB yet).
 #    No project name needed — it comes from the directory you are in.
-mpd create --type=moodle
+mpd init --type=moodle
 
-# 3. (optional) override defaults before configure:
-#      mpd configure MPD_DB=postgres:18
-#      mpd configure MPD_PHP_VERSION=8.4
-#    Or edit /srv/projects/moodle51/mpd.env directly.
+# 3. (optional) override defaults before the first start. Pass them to
+#    start as KEY=VALUE, or edit /srv/projects/moodle51/mpd.env directly:
+#      mpd start moodle51 MPD_DB=postgres:18
+#      mpd start moodle51 MPD_PHP_VERSION=8.4
 #    A legacy PHP an old branch needs (e.g. MPD_PHP_VERSION=7.4) is
-#    fetched on demand at configure/start — no extra step.
+#    fetched on demand at start — no extra step.
 
-# 3. Configure — provisions the DB container, creates the DB,
-#    writes config.php, runs the Moodle install.
-mpd configure moodle51
-
-# 4. Start the project.
+# 4. Start — one verb configures and brings it up: provisions the DB
+#    container, creates the DB, writes config.php, publishes the URL.
+#    (Install Moodle itself with `mdl-install` inside the runtime.)
 mpd start moodle51
 ```
 
@@ -150,14 +148,14 @@ by the local CA), no warnings.
 
 ```bash
 mpd --service-enable=mailpit
-mpd configure moodle51        # regenerate config-mpd.php → $CFG->smtphosts
+mpd start moodle51        # regenerate config-mpd.php → $CFG->smtphosts
 ```
 
 The project then publishes an informational "mail" link —
 `http://mailpit.svc.<NNN>.mpd.test:8025/?q=moodle51.<NNN>.mpd.test`, the
 shared Mailpit inbox pre-filtered to this project.
 
-**Behat**: set `MPD_MOODLE_BEHAT=1` and re-run `mpd configure` —
+**Behat**: set `MPD_MOODLE_BEHAT=1` and re-run `mpd start` —
 that auto-enables the `seleniumv1` service, points `wd_host` at it, and
 wires `https://behat.moodle51.<NNN>.mpd.test/` automatically.
 
@@ -196,11 +194,11 @@ SOCKS tunnel like everything else; no TLS, no proxying):
 |--------------|--------------------------------------------|---------------------------------------------------------------|
 | `mailpit`    | `http://mailpit.svc.<NNN>.mpd.test:8025/`  | Shared mail catch-all; SMTP on `:1025`. Data volume survives uninstall. |
 | `adminer`    | `http://adminer.svc.<NNN>.mpd.test:8080/`  | DB web UI; the portal offers pre-filled per-project links.    |
-| `seleniumv1` | `http://seleniumv1.svc.<NNN>.mpd.test:4444/` | Behat browser; auto-enabled by `mpd configure` on a Behat-enabled Moodle project. |
+| `seleniumv1` | `http://seleniumv1.svc.<NNN>.mpd.test:4444/` | Behat browser; auto-enabled by `mpd start` on a Behat-enabled Moodle project. |
 
 Enabled services survive reboots (`mpd --vm-start` reconciles them) and
 their enabled-set is visible to project `configure` scripts — which is
-why toggling mailpit calls for a `mpd configure <project>` re-run on
+why toggling mailpit calls for a `mpd start <project>` re-run on
 mail-aware projects.
 
 ## Running runtime commands from the VM
@@ -312,10 +310,9 @@ the runtime and the project verbs work there:
 ```bash
 ssh mpd-<NNN>
 cd /srv/projects/newproject          # a directory that isn't a project yet
-mpd create --type=moodle             # scaffolds it
-mpd configure newproject
-mpd start newproject
-mpd show newproject
+mpd init --type=moodle               # scaffolds it
+mpd start newproject                 # configures + starts in one step
+mpd status newproject
 ```
 
 It is the same binary — `/opt/mpd` is bind-mounted read-only, so there is
@@ -325,8 +322,8 @@ it. Because your terminal's own file descriptors are handed to the process
 on the VM, output streams live and in colour, exit codes propagate into
 `$?`, and a confirmation prompt like `mpd delete`'s reads your keystrokes.
 
-**Most of mpd works here.** Project verbs (`create`, `configure`,
-`start`, `stop`, `reset`, `delete`, `show`, `help` — deletes included),
+**Most of mpd works here.** Project verbs (`init`, `start`, `stop`,
+`reset`, `delete`, `status`, `help` — deletes included),
 database management (`--db-*`), extra services (`--service-*`),
 `--runtime-backup`, the read-only `--vm-status` and `--check-hooks`,
 `list` and `version` all forward to the VM. A short denylist stays in a VM
@@ -410,7 +407,7 @@ Stack-independent ones first:
 | Tool               | What it does                                                                                                                                      |
 |--------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
 | `php`              | Project-aware PHP wrapper, registered as the Debian `php` alternative (so `/usr/bin/php` is it) — picks the project's `MPD_PHP_VERSION`, falls back to 8.2 outside a project tree. |
-| `php-install`      | Install one PHP version on demand: `php-install 7.4`. The current versions are baked in; legacy EOL ones (7.4, 8.0) are not. `mpd configure`/`start` call this for you when a project's `MPD_PHP_VERSION` is not present, so you rarely run it by hand. Idempotent. |
+| `php-install`      | Install one PHP version on demand: `php-install 7.4`. The current versions are baked in; legacy EOL ones (7.4, 8.0) are not. `mpd start` calls this for you when a project's `MPD_PHP_VERSION` is not present, so you rarely run it by hand. Idempotent. |
 | `composer`         | The Composer phar; installed at `/usr/local/bin/composer` by `composer-install` at provision time.                                                |
 | `composer-install` | Idempotent install of Composer to `/usr/local/bin/`. Re-runs no-op.                                                                               |
 | `composer-upgrade` | Force-reinstalls Composer (bypass idempotency). Use instead of `composer self-update` — the phar is root-owned and self-update can't write to it. |
@@ -445,7 +442,7 @@ the project first, drop its DNS record, and mark it unconfigured.
 Astro ships its own commands and its own docs for them, so mpd adds
 nothing: run `npm run dev`, `npm run build`, `npx @astrojs/upgrade`
 exactly as astro.build describes. mpd does not run the dev server
-either — `mpd configure <project>` publishes the vhost, certificate and
+either — `mpd start <project>` publishes the vhost, certificate and
 DNS, and the URL starts answering the moment you start the server
 yourself:
 
@@ -476,7 +473,7 @@ can never fight the server you started yourself.
 
 caddy terminates TLS and reverse-proxies to `localhost:<port>`, where
 `<port>` is `server.port` from `astro.config.mjs` (default 4321).
-Change it there and re-run `mpd configure <project>` so caddy follows.
+Change it there and re-run `mpd start <project>` so caddy follows.
 
 Two details make the plain command work, both handled for you:
 
@@ -525,7 +522,7 @@ is for:
 
 ```bash
 mpd reset          # drops the database, wipes the dataroot
-mpd configure      # makes an empty database to restore into
+mpd start      # makes an empty database to restore into
 mdl-data-restore before-upgrade
 ```
 
@@ -572,28 +569,26 @@ care about.
 ## Starting over without re-cloning: `mpd reset`
 
 `mpd reset <project>` throws away everything a project generated and puts
-it back in the state `mpd create` left it in, **keeping the source tree**.
+it back in the state `mpd init` left it in, **keeping the source tree**.
 Two things it is for:
 
 ```bash
 # The database is corrupted, or the data is not worth keeping.
 mpd reset moodle45
-mpd configure moodle45            # fresh, empty database
-mpd start moodle45
+mpd start moodle45            # reconfigures + starts: fresh, empty database
 # then install Moodle again from the runtime: ssh mpd-<NNN>, mdl-install
 
 # Switch database engine on an existing site.
 mpd reset moodle45
 vi /srv/projects/moodle45/mpd.env  # MPD_DB=postgres:18
-mpd configure moodle45            # config-mpd.php regenerated for the new engine
-mpd start moodle45
+mpd start moodle45            # config-mpd.php regenerated for the new engine, then started
 ```
 
 **Kept:** `/srv/projects/<project>/` — the code, git history, `mpd.env`
 and `config.php`. That is the point: nothing is re-cloned and no
 hand-edited settings are lost. `config.php` is written only when missing,
 while `config-mpd.php` (wwwroot, dataroot, DB credentials) is regenerated
-on every `configure` — which is what lets the database change underneath
+on every `mpd start` — which is what lets the database change underneath
 an unchanged `config.php`.
 
 **Destroyed:** the project's database, everything inside
@@ -602,9 +597,9 @@ generated metadata in `/srv/meta/<project>/` including its TLS
 certificate, and the project's DNS record.
 
 **Left not configured.** Afterwards the project has no database, no
-dataroot and no runtime assignment, so `mpd start` refuses until you run
-`mpd configure`. That is also what makes the engine switch work, since
-`configure` is what reads the new `MPD_DB`.
+dataroot and no runtime assignment — the next `mpd start` reconfigures it
+from `mpd.env` before bringing it up. That is also what makes the engine
+switch work, since `start`'s configure step reads the new `MPD_DB`.
 
 The database *engine container* keeps running. It is shared by every
 project on that `engine:version`, so stopping it would reach outside this
@@ -633,10 +628,10 @@ mpd list infra                   # infra: the runtime container, dnsmasq + the p
 mpd list dbs                     # list DB containers
 mpd list network                 # this VM's addressing: id, zone, subnet, gateway
 
-mpd show <project>               # show project info
-mpd create <project> [...]       # scaffold a new project
-mpd configure <project> [K=V]    # apply mpd.env, (re)provision DB
-mpd start <project> / stop       # run/halt the project
+mpd status <project>             # show project info
+mpd init <project> [...]         # scaffold a new project
+mpd start <project> [K=V]        # apply mpd.env, configure + start (K=V, e.g. MPD_DB=postgres:18)
+mpd stop <project>               # halt the project
 mpd reset <project>              # destroy DB + data, keep the code (type the name to confirm)
 mpd delete <project>             # remove the project entirely (type the name to confirm)
 mpd help <project>               # all verbs for this project type

@@ -28,7 +28,7 @@
 # template file may live in a directory whose other contents are tracked
 # upstream (Moodle's .phpstorm.meta.php/ is exactly that).
 #
-# Idempotent — called on both `mpd create` and `mpd configure`, so a file added
+# Idempotent — called on both `mpd init` and `mpd start`, so a file added
 # to template/ later reaches projects that already exist.
 #
 # Runs as the dev user; /srv/projects is dev-owned, so no sudo is needed.

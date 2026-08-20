@@ -5,7 +5,7 @@
 # Prints. That is the whole job.
 #
 # mpd sets up the caddy frontdoor and nothing else: the vhost, the TLS
-# certificate and the DNS record, all written by `mpd configure`. The
+# certificate and the DNS record, all written by `mpd start`. The
 # server behind them is Astro's own, started and stopped by the developer
 # with the commands in Astro's docs.
 #
@@ -25,7 +25,7 @@ SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 EFFECTIVE_FILE="/srv/meta/${PROJECT_NAME}/effective.json"
 
 if [ ! -f "$EFFECTIVE_FILE" ]; then
-    echo "Error: ${EFFECTIVE_FILE} missing — run mpd configure ${PROJECT_NAME} first" >&2
+    echo "Error: ${EFFECTIVE_FILE} missing — run mpd start ${PROJECT_NAME} first" >&2
     exit 1
 fi
 
@@ -54,4 +54,4 @@ echo "    npm run dev                   # foreground, Ctrl-C to stop"
 echo "    npx astro dev --background    # detached; dev status / logs --follow / stop"
 echo ""
 echo "The port comes from server.port in astro.config.mjs (default 4321)."
-echo "Change it there, then re-run: mpd configure ${PROJECT_NAME}"
+echo "Change it there, then re-run: mpd start ${PROJECT_NAME}"

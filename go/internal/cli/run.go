@@ -44,7 +44,7 @@ func Run(ctx context.Context, out io.Writer, d ProjectDeps, command []string) er
 		return err
 	}
 	if entry.RuntimeName == "" {
-		return fmt.Errorf("Project '%s' has no runtime yet. Run: mpd configure %s",
+		return fmt.Errorf("Project '%s' has no runtime yet. Run: mpd start %s",
 			entry.Name, entry.Name)
 	}
 
@@ -99,7 +99,7 @@ func projectFromCwd(s state.Store, what string) (state.Project, string, error) {
 	entry, found := findProject(s, name)
 	if !found {
 		return state.Project{}, "", fmt.Errorf(
-			"%s: '%s' is not a registered project.\nRun: mpd create %s", what, name, name)
+			"%s: '%s' is not a registered project.\nRun: mpd init %s", what, name, name)
 	}
 	cwd, err := os.Getwd()
 	if err != nil {

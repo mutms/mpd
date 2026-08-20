@@ -68,7 +68,7 @@ unset _d _mpd_assets
 # The same binary the VM runs, reached through the read-only /opt/mpd mount.
 # It detects that it is inside a runtime (via /etc/mpd/runtime) and forwards
 # project commands to the VM over this runtime's control socket, so
-# `mpd create`, `mpd start` and friends work from here without a second
+# `mpd init`, `mpd start` and friends work from here without a second
 # terminal. Guarded because /opt/mpd/bin/mpd only exists once the VM has
 # been built with `make install`.
 [ -x /opt/mpd/bin/mpd ] && PATH="/opt/mpd/bin:$PATH"
