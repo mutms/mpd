@@ -27,6 +27,7 @@ var page = template.Must(template.New("page").Parse(
 type View struct {
 	Zone      string
 	Host      string
+	Version   string
 	Projects  []ProjectRow
 	Services  []ServiceRow
 	Databases []DatabaseRow
@@ -96,7 +97,7 @@ type ServiceRow struct {
 // mid-render and report a mix of before and after.
 func pageData(ctx context.Context, d Deps) View {
 	host, _ := os.Hostname()
-	v := View{Zone: d.Net.Zone(), Host: host}
+	v := View{Zone: d.Net.Zone(), Host: host, Version: d.Version}
 	projects := d.State.Projects()
 
 	// Gathered once and shared: the project rows need to know whether a

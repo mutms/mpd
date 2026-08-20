@@ -62,8 +62,7 @@ subdirectory) it defaults to that project.`
 
 // otherCommands are the read-only queries that are neither a project
 // verb nor a VM action.
-const otherCommands = `  list       [projects|services|infra|dbs|network]  (default: projects; alias: ls)
-  version                                      print the mpd version`
+const otherCommands = `  list       [projects|services|infra|dbs|network]  (default: projects; alias: ls)`
 
 // usage is the short form shown when a command is misspelled.
 const usage = `Usage:
@@ -167,6 +166,15 @@ func main() {
 		},
 	}
 
+	// Enables the `--version` / `-v` flags (cobra rejects them as unknown
+	// flags otherwise, before any RunE dispatch can see them). The template
+	// drops cobra's default "mpd version X" prefix so both print just the
+	// bare version string. There is deliberately no `version` subcommand.
+	// runsLocallyInRuntime already answers these in the runtime instead of
+	// forwarding to the VM.
+	root.Version = version
+	root.SetVersionTemplate("{{.Version}}\n")
+
 	// Declaration order, not alphabetical: the help then reads as the
 	// groups below — VM lifecycle, runtimes, databases, modifiers —
 	// instead of interleaving them.
@@ -223,7 +231,7 @@ func main() {
 	// own shims under assets/completions/, installed by --vm-setup.
 	root.CompletionOptions.DisableDefaultCmd = true
 
-	root.AddCommand(versionCmd(), listCmd())
+	root.AddCommand(listCmd())
 	root.AddCommand(projectVerbCmds(&f)...)
 	root.SetHelpCommand(helpCmd())
 
@@ -271,6 +279,7 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 			Observer:   current.NewObserver(n.VMID(), p),
 			Assets:     assets.New(),
 			UnitActive: vm.UnitActive,
+			Version:    version,
 		})
 	case f.control:
 		// Long-running, like --web. Deliberately does NOT take the state
@@ -359,16 +368,17 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 // runsLocallyInRuntime reports whether a command should be answered inside
 // the runtime instead of forwarded to the VM.
 //
-// Only things that are true of the binary itself. `version` reports the
-// build of the binary being asked, and /opt/mpd is the same checkout on
-// both sides, so answering locally is both correct and faster. Everything
-// else needs state, podman or the network, none of which exist here.
+// Only things that are true of the binary itself. `--version`/`-v` report
+// the build of the binary being asked, and /opt/mpd is the same checkout
+// on both sides, so answering locally is both correct and faster.
+// Everything else needs state, podman or the network, none of which exist
+// here.
 func runsLocallyInRuntime(args []string) bool {
 	if len(args) == 0 {
 		return false
 	}
 	switch args[0] {
-	case "version", "--version", "-v":
+	case "--version", "-v":
 		return true
 	}
 	return false
@@ -470,18 +480,6 @@ func helpCmd() *cobra.Command {
 				return err
 			}
 			cli.ShowHelp(c.OutOrStdout(), args[0], n)
-			return nil
-		},
-	}
-}
-
-func versionCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "version",
-		Short: "Print the mpd version",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println(version)
 			return nil
 		},
 	}

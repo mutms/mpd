@@ -63,7 +63,7 @@ const shellHTML = `{{define "page"}}<!doctype html>
 
 <header>
   <h1>mpd <span>— {{.Zone}}</span></h1>
-  <p class="sub">{{.Host}}</p>
+  <p class="sub">{{.Host}}{{if .Version}} · mpd {{.Version}}{{end}}</p>
 </header>
 
 {{template "projects" .}}

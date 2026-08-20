@@ -47,6 +47,9 @@ type Deps struct {
 	State    state.Store
 	Observer current.Observer
 	Assets   assets.Tree
+	// Version is the mpd build version (`git describe --tags`), stamped
+	// into the binary and shown in the portal header.
+	Version string
 	// UnitActive reports whether a systemd-backed service is running,
 	// injected so rendering never shells out on its own. The bool is the
 	// unit's scope — true for a `systemctl --user` unit.

@@ -129,7 +129,7 @@ func firstTokenCandidates(prefix string) []string {
 	sort.Strings(out)
 	// "ls" (list) and "rm" (delete) are command aliases, offered alongside
 	// their canonical names.
-	return append(append(out, "list", "ls", "version", "rm"), GlobalFlags...)
+	return append(append(out, "list", "ls", "rm"), GlobalFlags...)
 }
 
 func optionValues(flag string, s state.Store, a assets.Tree) []string {
