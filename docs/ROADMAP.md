@@ -60,9 +60,9 @@ Real possibilities, not committed work.
 - **Pre-built runtime image** — publish a versioned OCI image for the
   unified runtime to a registry (GitHub Container Registry or similar)
   so `mpd --vm-setup` / `--runtime-rebuild` pulls instead of builds.
-  Cuts the first-run wait from several minutes to seconds. `demo`
-  becomes near-instant after the image pull. `make images` builds and
-  pushes it; CI runs it on release tags.
+  Cuts the first-run wait from several minutes to seconds — the first
+  `mpd start` is near-instant after the image pull. `make images` builds
+  and pushes it; CI runs it on release tags.
 
 - **`mpd --gc`** — sweep unreferenced DB containers, orphaned data
   dirs, dnsmasq records for deleted projects. Open question: destructive
@@ -89,6 +89,6 @@ Real possibilities, not committed work.
 
 - **`mdl-demo` — throwaway Moodle demos.** A "fat" all-in-one image
   (Apache+PHP+MariaDB+Moodle+demo data): instant, disposable Moodle,
-  distinct from the in-VM `demo` verb (which provisions a Moodle project
-  inside the mpd VM). Design brainstorm in
+  distinct from a project you develop in the mpd VM (assembled with
+  `mudev clone` and brought up with `mpd start`). Design brainstorm in
   [`proposals/mdl-demo.md`](proposals/mdl-demo.md). No work scheduled.

@@ -6,5 +6,5 @@
   mpd come with ABSOLUTELY NO WARRANTY, to the extent permitted by law.
 
   Open https://%%ZONE%%             — status of everything on this VM
-  Type  [33mdemo[0m                            — list the recipes available here
-  Type  [33mdemo moodle/release/4.5.12 m45[0m  — build that recipe as project "m45"
+  Run   [33mmudev[0m                           — assemble a Moodle tree from a recipe
+  Then  [33mmpd init[0m + [33mmpd start[0m               — register, configure, start (docs/USAGE.md)

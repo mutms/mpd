@@ -195,7 +195,7 @@ EOF
     ok "launcher opens https://${nnn}.mpd.test/"
 fi
 
-# --- 8. Done: SOCKS access + demo instructions ----------------------
+# --- 8. Done: SOCKS access + first-project instructions -------------
 vm_ip="$(ip -4 -o addr show "${iface}" | awk '{print $4}' | cut -d/ -f1 | head -1)"
 cat <<EOF
 
@@ -226,9 +226,14 @@ SSH SOCKS proxy — no host routing or /etc/hosts needed
 
   4. Browse to:  https://${nnn}.mpd.test/
 
-Create a demo Moodle site (one command, takes a few minutes):
+Create your first Moodle site (a few minutes) — mudev assembles the
+tree from a recipe, then mpd configures and starts it:
 
-    demo moodle/release/5.0.1 moodle50
+    mkdir -p /srv/projects/moodle50 && cd \$_
+    mudev clone moodle/release/5.0.1   # run 'mudev' alone to list recipes
+    mpd init                           # register the new project
+    mpd start                          # configure + start
+    mdl-install                        # install Moodle
     # then browse to  https://moodle50.${nnn}.mpd.test/
 
 Later, adopt this VM as a managed VM from a Mac (re-roots the CA to

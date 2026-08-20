@@ -93,25 +93,13 @@ no host CA trust to set up. Open Firefox inside the VM and browse to
 
 ## First project — Moodle
 
-### Quick demo (one command)
-
-Inside the VM, `demo` creates a fully installed Moodle site in one shot:
-
-```bash
-demo moodle/release/4.5.12 demo45
-```
-
-The first argument is a mudev recipe — a Moodle branch plus a plugin set
-plus config — resolved from `/srv/extra/mdl-recipes/` by identifier, or
-read from a path. The second is the project name. Run `demo` with no
-arguments to list the recipes present on this VM.
-
-`mudev clone` assembles the tree, then mpd provisions the database,
-installs Moodle, and prints the URL and admin credentials.
-Takes a few minutes. Idempotent — re-running just starts the existing
-project.
-
-### Manual setup (full control)
+The tree comes from [mudev](https://github.com/mutms/mudev): it assembles a
+Moodle branch plus a plugin set plus config from a recipe. Recipes resolve
+from `/srv/extra/mdl-recipes/` by identifier (e.g. `moodle/release/4.5.12`)
+or read from a path; run `mudev` with no arguments to list what is present
+on this VM. Once the tree is in place, `mpd init` registers it as a project,
+`mpd start` configures and brings it up, and `mdl-install` installs Moodle
+itself.
 
 Inside the VM:
 

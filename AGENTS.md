@@ -113,12 +113,12 @@ headless. Useful for an occasional in-VM Firefox session or GUI debugging.
 **Timing expectations:** first-time VM bootstrap 5–15 min (image download,
 apt, Go toolchain, build); first `mpd --vm-setup` (includes the runtime
 build) 3–5 min;
-subsequent `mpd start <project>` a few seconds; `demo <recipe> <name>` a few
-minutes the first time, near-instant on re-runs; VM resume from suspend,
-seconds.
+subsequent `mpd start <project>` a few seconds; assembling a fresh Moodle
+tree with `mudev clone <recipe>` then `mpd start` a few minutes the first
+time, seconds on re-runs; VM resume from suspend, seconds.
 
 **Top-level repo layout:** `bin/` (built `bin/mpd` plus committed VM tools:
-`demo`, `claude-install`, `gnome-start`/`gnome-stop`), `go/` (control plane),
+`claude-install`, `gnome-start`/`gnome-stop`), `go/` (control plane),
 `assets/` (runtime/service definitions and shell), `bootstrap/`
 (VM bring-up steps), `setup/` (per-platform host orchestration), `docs/`.
 Runtime state lives at `/var/lib/mpd/` (see Fixed in-VM paths below).

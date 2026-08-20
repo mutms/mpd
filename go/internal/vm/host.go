@@ -108,8 +108,8 @@ var requiredPackages = []struct{ Package, Binary string }{
 	// before mpd exists, and repeating it here keeps it converging on a
 	// VM bootstrapped earlier. mpd itself never shells out to jq — it
 	// parses JSON in Go, and jq is not on the internal/exec allow-list —
-	// but `bin/demo` uses it, and so does anyone reading /srv/meta by
-	// hand.
+	// but the in-runtime Moodle tools use it, and so does anyone reading
+	// /srv/meta by hand.
 	{"jq", "/usr/bin/jq"},
 	{"caddy", "/usr/bin/caddy"}, // TLS frontdoor for `mpd --web`
 	// Full vim, not vim-tiny: vim-tiny ships no defaults.vim, so it

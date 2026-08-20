@@ -519,16 +519,16 @@ bash "${SCRIPT_DIR}/create-vm.sh" \
     --host-ca-key="$HOST_CA_KEY"
 
 # ============================================================
-# Stage 6 — Pre-warm demo stack
+# Stage 6 — Pre-warm the database image
 # ============================================================
 # Best-effort: a failure here just means lazy provisioning later.
 
 # The runtime container itself is created by `mpd --vm-setup` (stage 5).
-step "Pre-warming demo database"
+step "Pre-warming the database image"
 if ssh_cmd "$VM_IP" "$VM_USER" 'mpd --db-create=postgres:latest'; then
     ok "postgres:latest ready"
 else
-    warn "postgres:latest pre-warm failed; demo will provision on first run"
+    warn "postgres:latest pre-warm failed; the DB provisions on first mpd start"
 fi
 
 # ============================================================

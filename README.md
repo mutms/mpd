@@ -46,14 +46,12 @@ It converts the network stack (one reboot), installs mpd, and generates the
 CA. Then, for your first Moodle:
 
 ```bash
-mpd --vm-setup                       # idempotent; no-op if the setup script ran it
-demo moodle/release/4.5.12 demo45    # fully installed Moodle in one command
+mkdir -p /srv/projects/m45 && cd $_
+mudev clone moodle/release/4.5.12       # assemble the tree from a recipe
+mpd init                                # register new project
+mpd start                               # configure + start the project
+mdl-install                             # install Moodle
 ```
-
-`demo` prints the URL and admin credentials — open it in the VM's Firefox,
-and `ssh mpd-<NNN>` for a shell inside the runtime serving it. Recipes
-come from [mudev](https://github.com/mutms/mudev); `demo` with no arguments
-lists what's available. `mpd --vm-upgrade` updates mpd in place later.
 
 ## Daily driver: mpd VM
 
