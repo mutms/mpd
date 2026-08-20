@@ -1,15 +1,12 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"sort"
 	"strings"
 
-	"github.com/mutms/mpd/go/internal/current"
 	"github.com/mutms/mpd/go/internal/net"
-	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
 )
@@ -19,14 +16,15 @@ const showLabelWidth = 16
 
 // ShowProject renders `mpd status <project>`.
 //
-// Two shapes, not one: a project whose runtime is up AND that was asked
-// to run gets the full detail (URLs, SSH, resolved settings); anything
-// else gets the short form plus the single next command to type. The
-// long form would be misleading otherwise — it lists URLs that nothing
-// is serving.
-func ShowProject(ctx context.Context, out io.Writer, name string, s state.Store,
-	p *podman.Client, o current.Observer, n net.Net, uid string) {
-
+// Two shapes, not one: a started project gets the full detail (URLs, SSH,
+// resolved settings); a stopped or not-yet-initialised one gets the short
+// form plus the single next command to type. The long form would be
+// misleading otherwise — it lists URLs that nothing is serving.
+//
+// The single runtime is deliberately not shown: there is exactly one, it
+// is always running, and it is named the same for every project, so a
+// per-project "Runtime:" line carries no information.
+func ShowProject(out io.Writer, name string, s state.Store, n net.Net) {
 	var entry state.Project
 	found := false
 	for _, candidate := range s.Projects() {
@@ -51,16 +49,13 @@ func ShowProject(ctx context.Context, out io.Writer, name string, s state.Store,
 	}
 	fmt.Fprintln(out, field("Status:", entry.Status()))
 
+	// Not initialised: no addresses to show yet, just the command to run.
 	if entry.RuntimeName == "" {
-		fmt.Fprintf(out, "%s\n\n  mpd start %s\n", field("Runtime:", "—"), name)
+		fmt.Fprintf(out, "\n  mpd start %s\n", name)
 		return
 	}
 
-	rt := entry.RuntimeName
-	rtRunning := p.Running(ctx, o.RuntimeContainer(rt))
-
-	if entry.Autostart && rtRunning {
-		fmt.Fprintln(out, field("Runtime:", rt))
+	if entry.Autostart {
 		writeURLs(out, entry.URLs)
 		fmt.Fprintln(out, field("SSH:", "ssh "+n.RuntimeAlias()))
 		fmt.Fprintln(out, field("Directory:", "/srv/projects/"+name))
@@ -68,11 +63,8 @@ func ShowProject(ctx context.Context, out io.Writer, name string, s state.Store,
 		return
 	}
 
-	live := "stopped"
-	if rtRunning {
-		live = "running"
-	}
-	fmt.Fprintln(out, field("Runtime:", fmt.Sprintf("%s  (last used — %s)", rt, live)))
+	// Stopped: its addresses survive a stop, but lead with how to bring
+	// it back rather than listing URLs that answer with a dead page.
 	fmt.Fprintln(out, field("Directory:", "/srv/projects/"+name))
 	fmt.Fprintf(out, "\n  mpd start %s\n", name)
 }

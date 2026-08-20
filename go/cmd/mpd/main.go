@@ -640,7 +640,7 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 			if f.json {
 				return cli.ShowProjectJSON(ctx, c.OutOrStdout(), name, d.State, d.Podman, d.Observer, d.Net)
 			}
-			cli.ShowProject(ctx, c.OutOrStdout(), name, d.State, d.Podman, d.Observer, d.Net, d.UID)
+			cli.ShowProject(c.OutOrStdout(), name, d.State, d.Net)
 			return nil
 		})
 	statusCmd.Flags().BoolVar(&f.json, "json", false, "print the project's status as JSON")
