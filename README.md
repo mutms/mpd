@@ -21,6 +21,7 @@ assistant at this repo and ask.
 | [mpd-virt](https://github.com/mutms/mpd-virt)   | on the Mac              | creates/adopts VMs, host reachability + CA trust                         |
 | [mpd-proxy](https://github.com/mutms/mpd-proxy) | on the Mac, as root     | optional: transparent `*.mpd.test` for every app via a WireGuard overlay |
 | [mudev](https://github.com/mutms/mudev)         | on the VM + in runtimes | assembles Moodle trees from recipes; the plugin/recipe catalogues        |
+| [mdl-demo](https://github.com/mutms/mdl-demo)   | any container host      | throwaway all-in-one Moodle demos — pick a version in its web UI         |
 
 ## Try it: Sandbox VM
 
