@@ -65,10 +65,6 @@ Operational flags include:
   `mpd --vm-setup` writes, enables and **restarts** on every run — so a
   template change reaches the browser with `make install && mpd --vm-setup`.
   Loopback only; caddy on the VM terminates TLS in front of it.
-- `--check-hooks` — cross-reference `assets/.../hooks/<event>.d/`
-  directories against the Go `Event` catalogue and print warnings
-  for orphans, removed audiences, and revision bumps. Also runs at the
-  end of `mpd --vm-setup`.
 - runtime mutators — the runtime is created by `--vm-setup` and
   started/stopped by `--vm-start`/`--vm-stop`, so its daily lifecycle has
   no flags of its own; what remains is:
@@ -159,7 +155,7 @@ is scanned across the whole argv, so a blocked flag cannot ride along on a
 project verb. Everything else forwards: project verbs (including `delete`),
 database management (`--db-*`, `--db-delete` included), extra services
 (`--service-*`, purge included), `--runtime-backup`, the read-only
-`--vm-status` and `--check-hooks`, and `list`. With a
+`--vm-status`, and `list`. With a
 single runtime there is no cross-runtime ownership check any more — every
 registered project belongs to the caller — and a declared `--type` merely
 has to be one the assets tree defines (`moodle`, `astro`). `version` is

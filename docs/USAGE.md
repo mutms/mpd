@@ -313,8 +313,8 @@ on the VM, output streams live and in colour, exit codes propagate into
 **Most of mpd works here.** Project verbs (`init`, `start`, `stop`,
 `reset`, `delete`, `status`, `help` — deletes included),
 database management (`--db-*`), extra services (`--service-*`),
-`--runtime-backup`, the read-only `--vm-status` and `--check-hooks`,
-`list` and `version` all forward to the VM. A short denylist stays in a VM
+`--runtime-backup`, the read-only `--vm-status`,
+and `list` all forward to the VM. A short denylist stays in a VM
 terminal — the things that would terminate the runtime you're sitting in:
 the VM lifecycle (`--vm-setup`/`--vm-upgrade`/`--vm-start`/`--vm-stop`/`--vm-restart`),
 the runtime lifecycle (`--runtime-rebuild`, `--runtime-restore`), and the
@@ -610,7 +610,6 @@ mpd --vm-upgrade                    # pull + rebuild mpd, then re-run --vm-setup
 mpd --vm-start                      # reconcile current → requested (runtime, projects with state=running, enabled services)
 mpd --vm-stop                       # graceful DB shutdown via EventMpdPreStop, then sudo systemctl poweroff
 mpd --vm-restart                    # graceful stop, then sudo systemctl reboot; mpd auto-starts on boot
-mpd --check-hooks                # cross-reference asset hook dirs against the Event catalogue
 
 mpd list                         # list all projects (default)
 mpd list services                # the optional extra services (mailpit, adminer, seleniumv1)

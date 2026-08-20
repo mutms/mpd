@@ -98,8 +98,8 @@ const (
 // blockedFlags are the global-flag commands a runtime may NOT ask for,
 // each with the reason shown to the caller. Everything not listed —
 // project verbs, --db-*, --service-* (deletes and purges included),
-// --runtime-backup, the read-only --vm-status and --check-hooks, list,
-// version, and the --yes/--debug/--help modifiers — is forwarded: with a
+// --runtime-backup, the read-only --vm-status, list, and the
+// --yes/--debug/--help modifiers — is forwarded: with a
 // single runtime there is no other tenant to protect, so the fence is
 // only around what would terminate the runtime the caller is standing in
 // (directly, or by stopping/rebuilding the VM under it) or start a

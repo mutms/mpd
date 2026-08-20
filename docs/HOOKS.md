@@ -39,7 +39,7 @@ echo "Sending SIGTERM (smart shutdown) to postgres..."
 kill -TERM 1 2>/dev/null || true
 ```
 
-Run `chmod +x` on the file, then `mpd --check-hooks` to confirm it's
+Run `chmod +x` on the file; `mpd --vm-setup` reports whether it's
 recognised. `mpd --vm-stop` will fire it.
 
 ## Resource lifecycle model
@@ -307,8 +307,7 @@ The dispatcher and type definitions live in
 
 The dispatcher knows the full Go event catalogue and can walk the
 filesystem for installed hook scripts. Cross-referencing the two on
-`mpd --vm-setup` (and on demand via `mpd --check-hooks`) produces three
-classes of warning:
+`mpd --vm-setup` produces three classes of warning:
 
 - **Orphan hook (event removed)** — `hooks/<event>.d/` exists for an
   event that's no longer in the catalogue.

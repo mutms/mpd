@@ -28,7 +28,6 @@ import (
 	"github.com/mutms/mpd/go/internal/control"
 	"github.com/mutms/mpd/go/internal/current"
 	"github.com/mutms/mpd/go/internal/dnsmasq"
-	"github.com/mutms/mpd/go/internal/hooks"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/runtime"
@@ -115,11 +114,10 @@ type flags struct {
 	serviceUninstall string
 	servicePurge     string
 
-	checkHooks bool
-	web        bool
-	control    bool
-	yes        bool
-	debug      bool
+	web     bool
+	control bool
+	yes     bool
+	debug   bool
 
 	// json belongs to `show`, not to the root — it is registered on that
 	// command only.
@@ -221,8 +219,6 @@ func main() {
 	root.Flags().BoolVar(&f.control, "control", false,
 		"Serve project commands sent from inside runtimes (systemd: mpd-control.service).")
 
-	root.Flags().BoolVar(&f.checkHooks, "check-hooks", false,
-		"Cross-reference hook directories against the event catalogue. Also runs at the end of --vm-setup.")
 	root.Flags().BoolVar(&f.yes, "yes", false, "Skip confirmation prompts (for scripted use).")
 	root.Flags().BoolVar(&f.debug, "debug", false, "Print debug information.")
 
@@ -317,9 +313,6 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 		return withLock(ctx, out, d.State, func() error { return cli.Stop(ctx, out, d, state.Dir) })
 	case f.vmRestart:
 		return withLock(ctx, out, state.New(), func() error { return cli.Restart(ctx, out, state.Dir) })
-	case f.checkHooks:
-		hooks.Diagnose(c.ErrOrStderr(), state.Dir)
-		return nil
 	}
 
 	if f.runtimeRebuild {

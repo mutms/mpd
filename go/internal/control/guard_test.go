@@ -136,8 +136,7 @@ func TestNewlyAllowedCommandsPass(t *testing.T) {
 		{"--service-enable", "mailpit"},
 		{"--service-purge=mailpit"},
 		{"--runtime-backup"},
-		{"--vm-status"},   // read-only, allowed
-		{"--check-hooks"}, // read-only diagnostic, allowed
+		{"--vm-status"}, // read-only, allowed
 		{"list"},
 		{"nonsense"},
 	} {
@@ -162,7 +161,6 @@ func TestEveryGlobalFlagClassified(t *testing.T) {
 		"--db-stop":           true,
 		"--db-delete":         true,
 		"--vm-status":         true, // read-only
-		"--check-hooks":       true, // read-only diagnostic
 		"--yes":               true, // modifier, not an action
 		"--debug":             true, // modifier, not an action
 		"--help":              true, // modifier, not an action

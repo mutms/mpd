@@ -359,7 +359,7 @@ down or restore the runtime it is calling from (`--runtime-rebuild`,
 `--control`) — those are refused — and it cannot ask the VM to execute an
 arbitrary command (`run` loops back to where the caller already is). The
 line is "don't terminate the runtime you are standing in": read-only
-introspection (`--vm-status`, `--check-hooks`) forwards.
+introspection (`--vm-status`) forwards.
 
 Four properties carry that:
 
