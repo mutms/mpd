@@ -1,0 +1,10 @@
+{
+  "detect": {
+    "files": [
+      "go/cmd/mdl-demo/main.go"
+    ]
+  },
+  "start": {
+    "waitForURL": false
+  }
+}
