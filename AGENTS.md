@@ -25,9 +25,10 @@ the user sits and where `mpd` runs:
 - **mpd VM** — automated Debian Trixie VM driven by a matched-host
   bootstrap (Parallels Desktop Pro / UTM on macOS via `mpd-virt` —
   primary; libvirt/KVM on Ubuntu and Hyper-V on Windows are automated
-  in-repo but less exercised). Defaults to
-  headless; GNOME is installed and toggleable on demand via
-  `gnome-start` / `gnome-stop` (persistent across reboots). User stays
+  in-repo but less exercised). Defaults to headless; GNOME is installed
+  and toggleable on demand via `gnome-start` / `gnome-stop` (persistent
+  across reboots), and `gnome-install` adds a minimal desktop to a VM
+  that never had one. User stays
   on their host: host browser visits `*.<NNN>.mpd.test` directly via
   the mpd-proxy WireGuard overlay or a SOCKS-over-SSH tunnel + CA
   trust; host terminal SSHes into the VM to use the `mpd` CLI, and the
@@ -108,7 +109,13 @@ first-class consumer.
 **Both modes ship GNOME.** Sandbox boots into it; mpd VM defaults to headless
 but GNOME is installed and toggleable — `gnome-start` brings the desktop up
 (and pins it as the boot target until you flip back), `gnome-stop` returns to
-headless. Useful for an occasional in-VM Firefox session or GUI debugging.
+headless. Useful for an occasional in-VM Firefox session or GUI debugging. A
+VM that arrived without a desktop gets a minimal one — GNOME Shell, GDM,
+Chromium, nothing else — from `gnome-install`. `rdp-start` / `rdp-stop` then
+open and close an RDP port onto that desktop, for devices that can hold
+neither an SSH tunnel nor the WireGuard overlay (a tablet). RDP is the one
+mpd port authenticated by a password rather than a key; see
+`docs/SECURITY.md`.
 
 **Timing expectations:** first-time VM bootstrap 5–15 min (image download,
 apt, Go toolchain, build); first `mpd --vm-setup` (includes the runtime
@@ -118,7 +125,8 @@ tree with `mudev clone <recipe>` then `mpd start` a few minutes the first
 time, seconds on re-runs; VM resume from suspend, seconds.
 
 **Top-level repo layout:** `bin/` (built `bin/mpd` plus committed VM tools:
-`claude-install`, `gnome-start`/`gnome-stop`), `go/` (control plane),
+`claude-install`, `gnome-install`, `gnome-start`/`gnome-stop`,
+`rdp-start`/`rdp-stop`), `go/` (control plane),
 `assets/` (runtime/service definitions and shell), `bootstrap/`
 (VM bring-up steps), `setup/` (per-platform host orchestration), `docs/`.
 Runtime state lives at `/var/lib/mpd/` (see Fixed in-VM paths below).

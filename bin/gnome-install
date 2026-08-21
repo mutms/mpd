@@ -1,0 +1,190 @@
+#!/bin/bash
+# gnome-install — add a minimal GNOME desktop plus Chromium to this VM.
+#
+# An mpd VM is headless by default and a managed VM arrives with GNOME
+# already installed. This is for the VMs that do not: a plain Debian
+# Trixie netinst with no desktop task selected, or a server-flavoured
+# image you want to look at with a browser once in a while.
+#
+# It installs GNOME Shell, GDM, a terminal and Chromium — and nothing
+# else. `--no-install-recommends` keeps the rest of `gnome-core` out,
+# including NetworkManager, which mpd deliberately does not run (the VM
+# is on systemd-networkd; the sandbox and adoption bootstraps purge NM).
+# GNOME's network panel is empty as a result; nothing else notices.
+#
+# Nothing is started and the boot target is left exactly as it was found,
+# even though installing GDM would otherwise flip it to graphical. Bring
+# the desktop up with `gnome-start`, put it away with `gnome-stop`.
+#
+# Idempotent: a second run installs nothing and changes nothing.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+. "${SCRIPT_DIR}/../bootstrap/00-common.sh"
+
+usage() {
+    cat <<'EOF'
+Usage: gnome-install [--yes]
+
+Install a minimal GNOME desktop and Chromium in this VM.
+
+  --yes, -y   do not ask before downloading
+
+Afterwards: `gnome-start` to boot into the desktop, `gnome-stop` to go
+back to headless, `rdp-start` to reach the desktop from a tablet.
+EOF
+}
+
+ASSUME_YES=0
+case "${1:-}" in
+    -y | --yes) ASSUME_YES=1 ;;
+    -h | --help)
+        usage
+        exit 0
+        ;;
+    "") ;;
+    *) die "Unknown argument: $1 (accepts --yes)" ;;
+esac
+
+# --- Graphics device ----------------------------------------------------
+# GNOME renders through DRM: gdm starts a Wayland greeter, which needs a
+# /dev/dri device. Debian's *cloud* kernel ships no DRM drivers at all --
+# drivers/gpu/drm/ in its module tree is empty -- so on a VM built from a
+# genericcloud image the desktop installs fine and then shows a black
+# console, while the text console keeps working because VGA text mode
+# needs no driver. Say so before the download rather than after.
+HAS_DRM=1
+
+step "Graphics device"
+if [ -d /dev/dri ]; then
+    ok "DRM device present ($(ls /dev/dri | tr '\n' ' '))"
+else
+    HAS_DRM=0
+    warn "no /dev/dri — this kernel has no graphics driver"
+    case "$(uname -r)" in
+        *-cloud-*)
+            warn "running the cloud kernel ($(uname -r)), which ships none by design"
+            warn "fix: sudo apt-get install linux-image-amd64, then reboot"
+            ;;
+        *)
+            warn "no DRM driver bound to this VM's display adapter"
+            ;;
+    esac
+    warn "the desktop will install, but the VM console stays black until this is fixed"
+    warn "'rdp-start' is unaffected — xorgxrdp's X server needs no graphics device"
+fi
+
+# --- Package set -------------------------------------------------------
+# Deliberately short. Each entry earns its place:
+#
+#   gnome-session           GNOME Shell, mutter, settings-daemon, the
+#                           portal, Xwayland — the desktop itself
+#   gnome-session-xsession  the X11 session. Only a Recommends of
+#                           gnome-session, so it has to be named — and
+#                           xrdp needs it (`rdp-start`)
+#   gdm3                    the greeter `gnome-start` shows on the console
+#   gnome-terminal          a terminal inside the desktop
+#   gnome-control-center    display, keyboard and language settings
+#   chromium                the browser, from Debian's own repo
+#   xdg-utils               xdg-open, which the mpd desktop launcher uses
+#
+# Anything more (an editor, a file manager beyond what GNOME Shell pulls
+# in, a second browser) is an ordinary `sudo apt-get install` away.
+GNOME_PKGS=(
+    gnome-session gnome-session-xsession gdm3
+    gnome-terminal gnome-control-center
+    chromium xdg-utils
+)
+
+step "Desktop packages"
+
+missing=()
+for pkg in "${GNOME_PKGS[@]}"; do
+    dpkg -s "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
+done
+
+if [ ${#missing[@]} -eq 0 ]; then
+    ok "all ${#GNOME_PKGS[@]} packages already installed — nothing to do"
+    echo
+    echo "Run 'gnome-start' to switch this VM into the desktop."
+    exit 0
+fi
+
+ok "to install: ${missing[*]}"
+
+if [ "${ASSUME_YES}" = 0 ]; then
+    # Size the download before asking. --print-uris needs no root and
+    # prints "'<uri>' <file> <bytes> <hash>" per package.
+    dl_mb="$(apt-get install --print-uris -qq --no-install-recommends "${missing[@]}" 2>/dev/null \
+        | awk '{s+=$3} END {if (s > 0) printf "%.0f", s/1048576}')"
+    if [ -n "${dl_mb}" ]; then
+        printf '\nThis pulls in the full GNOME dependency chain — about %s MB to download.\n' "${dl_mb}"
+    else
+        printf '\nThis pulls in the full GNOME dependency chain — several hundred MB.\n'
+    fi
+    [ -t 0 ] || die "Not a terminal — re-run interactively, or pass --yes."
+    read -r -p "Continue? [y/N] " reply
+    case "${reply}" in
+        y | Y | yes | YES) ;;
+        *) die "Cancelled." ;;
+    esac
+fi
+
+# Installing a display manager makes systemd's default target graphical,
+# which would silently turn a headless VM into a desktop one at the next
+# boot. Remember what the VM was set to and put it back.
+prev_target="$(systemctl get-default)"
+gdm_was_active=0
+systemctl is-active --quiet gdm3 2>/dev/null && gdm_was_active=1
+
+apt_get update -qq
+apt_get install -y --no-install-recommends "${missing[@]}"
+ok "installed ${#missing[@]} package(s)"
+
+step "Boot target"
+now_target="$(systemctl get-default)"
+if [ "${now_target}" != "${prev_target}" ]; then
+    sudo systemctl set-default "${prev_target}" >/dev/null
+    ok "restored default target to ${prev_target} (gdm3 install had set ${now_target})"
+else
+    ok "unchanged: ${prev_target}"
+fi
+
+# Debian starts gdm3 the moment it is configured. If this VM was headless
+# before, it still is.
+if [ "${gdm_was_active}" = 0 ] && systemctl is-active --quiet gdm3 2>/dev/null; then
+    sudo systemctl stop gdm3
+    ok "stopped gdm3 (this VM was headless before)"
+fi
+
+cat <<EOF
+
+================================================================
+  GNOME installed
+================================================================
+
+Nothing is running yet. From here:
+
+    gnome-start     boot into the desktop now, and at every reboot
+    gnome-stop      back to headless
+    rdp-start       reach the desktop over RDP (tablet, thin client)
+
+Chromium already trusts this VM's mpd CA — 'mpd --vm-setup' imports it
+into ~/.pki/nssdb, which is the store Chromium reads. If a project URL
+still warns, re-run 'mpd --vm-setup' and restart Chromium.
+EOF
+
+if [ "${HAS_DRM}" = 0 ]; then
+    cat <<EOF
+WARNING — this VM has no graphics device (no /dev/dri), so 'gnome-start'
+will leave the console black. The text console still works, and so does
+'rdp-start'. To fix the console:
+
+    sudo apt-get install linux-image-amd64
+    sudo reboot
+
+Then check with 'uname -r' that you booted a kernel without '-cloud' in
+its name.
+EOF
+fi

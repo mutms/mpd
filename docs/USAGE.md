@@ -91,6 +91,53 @@ inside the VM, so there's no host route, no host resolver drop-in, and
 no host CA trust to set up. Open Firefox inside the VM and browse to
 `https://<NNN>.mpd.test/`.
 
+## The VM's desktop, and reaching it from a tablet
+
+An mpd VM boots headless. The desktop is there for the times a browser
+has to run *inside* the VM — checking a project URL without the host-side
+overlay, or a GUI you cannot drive over SSH.
+
+```bash
+gnome-install    # only on a VM that has no desktop at all: installs
+                 # GNOME Shell, GDM, a terminal and Chromium, and
+                 # nothing else. Starts nothing; the boot target is left
+                 # exactly as it was. ~320 MB. Idempotent.
+gnome-start      # switch to the desktop now, and at every reboot
+gnome-stop       # back to headless, now and at every reboot
+```
+
+`gnome-install` is for a VM that arrived without a desktop — a plain
+Debian netinst with no task selected, or a server image. A sandbox VM and
+a `mpd-virt`-provisioned VM already have GNOME; there `gnome-start` is
+all you need. NetworkManager is deliberately left out (mpd runs the VM on
+systemd-networkd), so GNOME's network panel is empty. Nothing else
+notices.
+
+**From an iPad or another device with no SSH tunnel:**
+
+```bash
+rdp-start        # installs xrdp, asks for a login password, opens tcp/3389
+rdp-stop         # closes it again, now and at boot
+```
+
+`rdp-start` prompts for a password because it needs one: xrdp
+authenticates through PAM, and the dev user of an mpd VM normally has no
+password at all (SSH is pubkey-only, sudo is NOPASSWD). Having set it, the
+tool turns SSH password authentication off — with a key already installed
+— so the password buys RDP and nothing else. Connect to `<vm-ip>:3389` as
+your usual username; the client will warn once about xrdp's self-signed
+certificate.
+
+Two things to know:
+
+- **Log out of the console first.** GNOME does not run twice for the same
+  user, so a session on the VM's console and an RDP session collide.
+  `gnome-stop` is the tidy way.
+- **This is the one mpd port held by a password**, not a key. Reach it
+  over a hypervisor's host-only network, or a private network fronted by
+  a bastion or a zero-trust tunnel — and run `rdp-stop` when you are
+  done. [SECURITY.md](SECURITY.md) has the full reasoning.
+
 ## First project — Moodle
 
 The tree comes from [mudev](https://github.com/mutms/mudev): it assembles a
@@ -665,6 +712,16 @@ mpd --service-uninstall=<name>   # remove the container, keep its data volume
 mpd --service-purge=<name>       # remove the container AND the volume
 
 mpd --help                       # full flag reference
+```
+
+VM-side tools, not `mpd` verbs — they act on the VM itself, not on a
+project (see "The VM's desktop, and reaching it from a tablet"):
+
+```bash
+gnome-install                    # minimal GNOME + Chromium, on a VM with no desktop
+gnome-start / gnome-stop         # desktop on / off, persistent across reboots
+rdp-start / rdp-stop             # open / close RDP on tcp/3389 (opt-in, password-authenticated)
+claude-install                   # Claude Code on the VM itself (same script the runtime ships)
 ```
 
 ## Updating mpd

@@ -27,30 +27,18 @@ Write-Step "Preparing Debian Trixie cloud image"
 New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
 New-Item -ItemType Directory -Force -Path $TempDir  | Out-Null
 
-$CachedArchive = Join-Path $CacheDir $CloudFile
-if (Test-Path $CachedArchive) {
-    Write-Ok "Using cached: $CloudFile"
+$CachedImage = Join-Path $CacheDir $CloudImage
+if (Test-Path $CachedImage) {
+    Write-Ok "Using cached: $CloudImage"
 } else {
-    Write-Info "Downloading $CloudFile (~200 MB)..."
+    Write-Info "Downloading $CloudImage (~420 MB)..."
     $ProgressPreference = "SilentlyContinue"
-    Invoke-WebRequest -Uri "$CloudBase/$CloudFile" -OutFile $CachedArchive
+    Invoke-WebRequest -Uri "$CloudBase/$CloudImage" -OutFile $CachedImage
     $ProgressPreference = "Continue"
     Write-Ok "Downloaded"
 }
 
-# ── 3. Extract raw image ──────────────────────────────────────────────────────
-
-Write-Info "Extracting raw disk image..."
-& tar -xJf $CachedArchive -C $TempDir
-if ($LASTEXITCODE -ne 0) { throw "tar extraction failed." }
-
-$RawFile = Get-ChildItem $TempDir -Recurse -Filter "*.raw" | Select-Object -First 1
-if (-not $RawFile) {
-    throw "Could not find disk image in the archive. Contents: $(Get-ChildItem $TempDir -Recurse | Select-Object -ExpandProperty Name)"
-}
-Write-Ok "Disk image: $($RawFile.Name)"
-
-# ── 4. Convert raw -> VHDX and resize ────────────────────────────────────────
+# ── 3. Convert qcow2 -> VHDX and resize ──────────────────────────────────────
 
 Write-Step "Converting and resizing disk image"
 
@@ -58,18 +46,16 @@ $VmStorePath = Join-Path (Get-VMHost).VirtualHardDiskPath $VmName
 New-Item -ItemType Directory -Force -Path $VmStorePath | Out-Null
 $VhdxPath = Join-Path $VmStorePath "$VmName.vhdx"
 
-Write-Info "Converting raw -> VHDX via WSL qemu-img (takes a minute)..."
-$wslRaw  = Convert-ToWSLPath $RawFile.FullName
-$wslVhdx = Convert-ToWSLPath $VhdxPath
-Invoke-WSLScript "qemu-img convert -f raw -O vhdx -o subformat=dynamic '$wslRaw' '$wslVhdx'"
+Write-Info "Converting qcow2 -> VHDX via WSL qemu-img (takes a minute)..."
+$wslImage = Convert-ToWSLPath $CachedImage
+$wslVhdx  = Convert-ToWSLPath $VhdxPath
+Invoke-WSLScript "qemu-img convert -f qcow2 -O vhdx -o subformat=dynamic '$wslImage' '$wslVhdx'"
 
 Write-Info "Resizing to ${DiskSizeGb} GB..."
 Resize-VHD -Path $VhdxPath -SizeBytes ($DiskSizeGb * 1GB)
 Write-Ok "VHDX ready: $VhdxPath"
 
-Remove-Item $RawFile.FullName -Force
-
-# ── 5. Cloud-init seed ISO ────────────────────────────────────────────────────
+# ── 4. Cloud-init seed ISO ────────────────────────────────────────────────────
 
 Write-Step "Creating cloud-init seed ISO (via WSL genisoimage)"
 

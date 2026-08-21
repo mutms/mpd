@@ -114,39 +114,33 @@ SEED_ISO="${POOL_DIR}/${VM_NAME}-seed.iso"
 
 step "Preparing Debian Trixie cloud image"
 
-CACHED_ARCHIVE="${TEMP_DIR}/${CLOUD_ARCHIVE}"
-if [ -f "$CACHED_ARCHIVE" ]; then
-    ok "Using cached: $(basename "$CACHED_ARCHIVE")"
+CACHED_IMAGE="${TEMP_DIR}/${CLOUD_IMAGE}"
+if [ -f "$CACHED_IMAGE" ]; then
+    ok "Using cached: $(basename "$CACHED_IMAGE")"
 else
-    echo "    Downloading ${CLOUD_ARCHIVE} (~250 MB)..."
-    curl -L --progress-bar -o "$CACHED_ARCHIVE" "${CLOUD_BASE}/${CLOUD_ARCHIVE}"
-    ok "Downloaded: ${CLOUD_ARCHIVE}"
+    echo "    Downloading ${CLOUD_IMAGE} (~420 MB)..."
+    curl -L --progress-bar -o "$CACHED_IMAGE" "${CLOUD_BASE}/${CLOUD_IMAGE}"
+    ok "Downloaded: ${CLOUD_IMAGE}"
 fi
 
-# --- Extract raw + convert+resize to qcow2 in the pool ---
+# --- Copy + resize into the pool ---
 
-step "Converting raw image to qcow2 in pool (${VM_DISK_SIZE}G sparse)"
+step "Writing qcow2 into pool (${VM_DISK_SIZE}G sparse)"
 
-# Clear any leftover raw images from prior runs so the freshly-extracted file
-# is unambiguous (the extracted name varies by Debian release).
-find "$TEMP_DIR" -maxdepth 1 \( -name "*.raw" -o -name "disk.*" \) -delete 2>/dev/null || true
-tar -xJf "$CACHED_ARCHIVE" -C "$TEMP_DIR"
-RAW_FILE=$(find "$TEMP_DIR" -maxdepth 1 -name "*.raw" -print -quit)
-if [ -z "$RAW_FILE" ]; then
-    RAW_FILE=$(find "$TEMP_DIR" -maxdepth 1 -name "disk.*" -print -quit)
-fi
-[ -z "$RAW_FILE" ] && die "Could not find raw disk image in archive"
-
-# Reject too-small target sizes upfront.
-RAW_BYTES=$(stat -c %s "$RAW_FILE")
+# Reject too-small target sizes upfront. The download is qcow2, so its file
+# size is what is allocated, not what the guest sees — ask qemu-img for the
+# virtual size instead of stat'ing the file.
+IMAGE_BYTES=$(qemu-img info "$CACHED_IMAGE" | sed -n 's/^virtual size: .*(\([0-9]\{1,\}\) bytes)$/\1/p')
+[ -n "$IMAGE_BYTES" ] || die "Could not read the virtual size of ${CACHED_IMAGE}"
 TARGET_BYTES=$((VM_DISK_SIZE * 1024 * 1024 * 1024))
-if [ "$TARGET_BYTES" -lt "$RAW_BYTES" ]; then
-    die "Requested disk size ${VM_DISK_SIZE}G is smaller than the cloud image ($((RAW_BYTES / 1024 / 1024 / 1024))G). Pick a larger size."
+if [ "$TARGET_BYTES" -lt "$IMAGE_BYTES" ]; then
+    die "Requested disk size ${VM_DISK_SIZE}G is smaller than the cloud image ($((IMAGE_BYTES / 1024 / 1024 / 1024))G). Pick a larger size."
 fi
 
-qemu-img convert -O qcow2 -o lazy_refcounts=on "$RAW_FILE" "$DISK_PATH"
+# convert rather than cp: it applies lazy_refcounts and leaves the cached
+# download untouched, so the resize below cannot corrupt the cache.
+qemu-img convert -f qcow2 -O qcow2 -o lazy_refcounts=on "$CACHED_IMAGE" "$DISK_PATH"
 qemu-img resize "$DISK_PATH" "${VM_DISK_SIZE}G" >/dev/null
-rm -f "$RAW_FILE"
 ok "qcow2 ready at ${DISK_PATH}"
 
 # --- Cloud-init seed ISO ---

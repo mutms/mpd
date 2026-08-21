@@ -160,6 +160,19 @@ runtime — lives behind those two doors: over the overlay or a SOCKS
 tunnel through sshd, shells via ProxyJump through sshd. Nothing is
 published on the VM's LAN address.
 
+**The one opt-in third port: `tcp/3389` — RDP.** `rdp-start` installs and
+starts xrdp so the VM's GNOME desktop can be reached from a device that
+can hold neither an SSH tunnel nor the WireGuard overlay — a tablet. It
+is off after every bootstrap, it is never enabled on your behalf, and
+`rdp-stop` removes it from the boot path again. It breaks the property
+above in one specific way: xrdp authenticates through PAM, so the door is
+held by the dev user's **password**, not a key. `rdp-start` narrows that
+where it can — it turns SSH password authentication off (once a key is
+installed) so the new password is an RDP credential only. Treat the port
+accordingly: a hypervisor's host-only network, or a private network
+reached through a bastion or a zero-trust tunnel. Not the open internet.
+See "Intentional compromises".
+
 **Topology therefore no longer matters — and that is the security win.**
 Because the only things reachable across the network are wg and ssh, a VM
 is safe to run anywhere the laptop can reach it by IP:
@@ -199,8 +212,8 @@ SOCKS/ProxyJump — never from the LAN or a public network.
 container→internet masquerade), but forwarding *into* the subnet is what
 the firewall blocks. The two are independent: outbound NAT keeps working,
 inbound routing is denied — so an mpd VM is safe even on an untrusted
-network, its only exposed ports being sshd and WireGuard. See
-`docs/NETWORKING.md`.
+network, its only exposed ports being sshd and WireGuard (plus `tcp/3389`
+on a VM where you ran `rdp-start`). See `docs/NETWORKING.md`.
 
 ## Portal security
 
@@ -457,6 +470,25 @@ own guest console (or single-user mode) and replace
 `~/.ssh/authorized_keys` with your new public key directly — there is no
 network path in without a trusted key.
 
+### RDP (opt-in, off by default)
+
+`rdp-start` opens `tcp/3389` onto the VM's GNOME desktop for devices
+that cannot run an SSH tunnel or the WireGuard overlay. xrdp
+authenticates through PAM, so this endpoint is held by the dev user's
+Unix **password** — the only password-authenticated door mpd ever opens,
+and the reason the tool prompts for one: on an mpd VM that account
+normally has none at all.
+
+To keep the blast radius to RDP alone, `rdp-start` writes
+`/etc/ssh/sshd_config.d/20-mpd-no-ssh-password.conf`
+(`PasswordAuthentication no`) once it has confirmed a key is already
+installed, so the new password cannot be replayed against sshd. It warns
+instead of locking you out when there is no key yet.
+
+`rdp-stop` disables the service and the port. The password stays set for
+the next `rdp-start`; `sudo passwd -l <user>` clears it, on a headless VM
+only — a locked password also fails at the GNOME greeter.
+
 ### Database credentials
 
 Dev-only credentials — not designed for security:
@@ -540,6 +572,7 @@ would be unacceptable in production.
 | Behat uses a separate subdomain                              | Behat runs on `behat.<project>.<NNN>.mpd.test` (HTTPS, same cert). The seleniumv1 service is a stock upstream image without the mpd CA, so the generated behat config sets `acceptInsecureCerts` for its browser sessions.                          |
 | Shared data volume across containers                         | The runtime and the DB containers mount `mpd-data-volume` at `/srv/`. A process in one container can read/write data belonging to another. This is the single-volume design — simplicity over isolation.                             |
 | SSH agent forwarding                                         | `ssh -A` passes the developer's key into the container. Any process running as the dev user inside the container could use the forwarded key for the duration of the session. Standard SSH risk — same as forwarding into any remote server. |
+| RDP on `tcp/3389` (`rdp-start`)                              | A third open port, and the only one authenticated by a password instead of a key — xrdp has PAM and nothing else. Off unless you run `rdp-start`, removed again by `rdp-stop`. `rdp-start` sets the dev user's password, then turns SSH password authentication off so that password buys RDP and nothing more. Expose it on a host-only network or behind a bastion / zero-trust tunnel; the desktop it fronts has the same full access to `/srv/` as any shell in the VM. |
 | Dev database credentials                                     | User, password, and database name all equal the project name. Superuser passwords are `postgres`/`root`. See "Database credentials" above.                                                                                                   |
 
 ## Design decisions

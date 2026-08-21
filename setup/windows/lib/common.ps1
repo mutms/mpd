@@ -16,8 +16,12 @@ $PrefixLen      = 24
 $MpdSubnetPrefix = "10.163"
 $MpdRootDomain   = "mpd.test"
 $VmNamePrefix   = "mpd-"
-$CloudBase      = "https://cloud.debian.org/images/cloud/trixie/20260501-2465"
-$CloudFile      = "debian-13-genericcloud-amd64-20260501-2465.tar.xz"
+# "generic", NOT "genericcloud": genericcloud is built on Debian's cloud
+# kernel, which ships no DRM drivers, so a VM built from it shows a black
+# screen the moment anything graphical starts. generic carries the full
+# kernel and still uses cloud-init, for ~90 MB more download.
+$CloudBase      = "https://cloud.debian.org/images/cloud/trixie/20260819-2575"
+$CloudImage     = "debian-13-generic-amd64-20260819-2575.qcow2"
 $CacheDir       = Join-Path $env:LOCALAPPDATA "mpd\cache"
 $TempDir        = Join-Path $env:TEMP "mpd-vm-build"
 $MpdUserDir     = Join-Path $env:USERPROFILE ".mpd-virt"

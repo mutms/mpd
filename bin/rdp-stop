@@ -1,0 +1,78 @@
+#!/bin/bash
+# rdp-stop — close the RDP door that `rdp-start` opened.
+#
+# Stops xrdp and takes it off the boot path, so tcp/3389 is gone now and
+# stays gone after a reboot. The packages stay installed; a later
+# `rdp-start` is then just the password prompt and a service start.
+#
+# What it does NOT do is clear the login password. Locking it could shut
+# you out of the VM's own console greeter, and that call is yours — the
+# command to do it is printed at the end.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+. "${SCRIPT_DIR}/../bootstrap/00-common.sh"
+
+usage() {
+    cat <<'EOF'
+Usage: rdp-stop
+
+Stop xrdp and disable it at boot. Re-open with `rdp-start`.
+EOF
+}
+
+case "${1:-}" in
+    -h | --help)
+        usage
+        exit 0
+        ;;
+    "") ;;
+    *) die "Unknown argument: $1 (takes none)" ;;
+esac
+
+RDP_USER="$(id -un)"
+RDP_PORT=3389
+POLKIT_RULE=/etc/polkit-1/rules.d/49-mpd-rdp-colord.rules
+
+step "xrdp service"
+if ! dpkg -s xrdp >/dev/null 2>&1; then
+    ok "xrdp is not installed — nothing to close"
+    exit 0
+fi
+
+# xrdp.service pulls xrdp-sesman in, but disabling only the front door
+# would leave sesman enabled at boot. Name both.
+sudo systemctl disable --now xrdp xrdp-sesman >/dev/null 2>&1 || true
+if systemctl is-active --quiet xrdp; then
+    die "xrdp is still running — inspect: systemctl status xrdp"
+fi
+ok "stopped and disabled"
+
+step "colord polkit rule"
+if [ -f "${POLKIT_RULE}" ]; then
+    sudo rm -f "${POLKIT_RULE}"
+    ok "removed ${POLKIT_RULE}"
+else
+    ok "not present"
+fi
+
+step "Port ${RDP_PORT}"
+if ss -ltn 2>/dev/null | grep -q ":${RDP_PORT}\b"; then
+    warn "something is still listening on ${RDP_PORT} — inspect: sudo ss -ltnp | grep ${RDP_PORT}"
+else
+    ok "closed"
+fi
+
+cat <<EOF
+
+RDP is off. This VM is back to sshd and WireGuard only.
+
+The login password for ${RDP_USER} is still set — 'rdp-start' will reuse
+it. To clear it as well:
+
+    sudo passwd -l ${RDP_USER}
+
+Do that only on a headless VM: a locked password cannot log in at the
+GNOME greeter either. SSH keys and passwordless sudo are unaffected.
+EOF

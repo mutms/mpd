@@ -95,10 +95,19 @@ DESKTOP_APPS_DIR="${HOME}/.local/share/applications"
 DESKTOP_APPS_SHORTCUT="${DESKTOP_APPS_DIR}/mpd.desktop"
 DESKTOP_USER_SHORTCUT="${HOME}/Desktop/mpd.desktop"
 
-# Cloud image URL — Debian Trixie generic-cloud amd64 (host arch).
-# The VM is x86_64 on Ubuntu+KVM; arm64 host support can come later.
-CLOUD_BASE="https://cloud.debian.org/images/cloud/trixie/20260501-2465"
-CLOUD_ARCHIVE="debian-13-genericcloud-amd64-20260501-2465.tar.xz"
+# Cloud image — Debian Trixie "generic" amd64, as a ready-made qcow2.
+#
+# "generic", NOT "genericcloud". genericcloud is built on Debian's cloud
+# kernel, whose module tree carries no DRM drivers at all. A VM built from
+# it has no /dev/dri, so the text console works but anything graphical —
+# gdm, a Wayland greeter — shows a black screen and no useful error. The
+# generic variant ships the full kernel and still uses cloud-init. It is
+# ~90 MB larger, which is noise next to what `mpd --vm-setup` installs.
+#
+# The VM is x86_64 on Ubuntu+KVM (create-vm.sh pins arch='x86_64'
+# machine='q35' in the domain XML); arm64 host support can come later.
+CLOUD_BASE="https://cloud.debian.org/images/cloud/trixie/20260819-2575"
+CLOUD_IMAGE="debian-13-generic-amd64-20260819-2575.qcow2"
 
 # --- Output helpers ---
 
