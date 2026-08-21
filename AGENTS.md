@@ -214,7 +214,7 @@ Runtime/project-type behavior + service container assets live under `assets/`:
   (phase 2, dev user), `mpd-defaults.env`, `skel/`, `tools/`, `lib/`,
   `caddy/` (the in-runtime TLS frontdoor), `backup.d/`/`restore.d/`
   (`--runtime-backup`/`--runtime-restore` hooks),
-  `project_types/{moodle,astro}/`
+  `project_types/{moodle,astro,mdl-demo}/`
 - `assets/services/<n>/...` — built service images (adminer's
   Containerfile; the other extras pull upstream images)
 - `assets/completions/` — shell completion shims

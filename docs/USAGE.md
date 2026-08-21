@@ -324,7 +324,7 @@ you are already in the runtime, so run the command directly.
 Two details worth knowing:
 
 - **`--type` must exist.** A declared `--type` is checked against the
-  types the assets tree defines (`moodle`, `astro`); leave it out and
+  types the assets tree defines (`moodle`, `astro`, `mdl-demo`); leave it out and
   mpd infers it exactly as on the VM (name match, else the `moodle`
   default).
 - **`cd` where it matters.** Inside `/srv/projects/<name>/` the project
@@ -472,6 +472,35 @@ Two details make the plain command work, both handled for you:
   `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=.mpd.test`, without which
   Vite rejects the proxied `Host` header with "Blocked request. This
   host is not allowed."
+
+**Project-type-level (mdl-demo): none either.**
+
+An `mdl-demo` project is the source tree of
+[mdl-demo](https://github.com/mutms/mdl-demo), the throwaway-Moodle
+container. mpd publishes its front door and nothing more: `mpd start
+<project>` writes two reverse-proxy URLs, `https://<project>.<NNN>.mpd.test`
+(the management console) and `https://site.<project>.<NNN>.mpd.test` (the
+demo site), with the certificate and DNS records to match. Both point at
+fixed ports on the VM — 6381 and 6382 — which is where the project's own
+`make run` puts its test container:
+
+```bash
+ssh mpd-<NNN>-vm                  # the VM, not the runtime: podman lives here
+cd /srv/projects/<project>
+make image                        # build the image
+make run                          # start mpd-test-mdl-demo on 6381/6382
+```
+
+`make run` also tells the container its public URLs, so the console's
+install form suggests the `site.` address. The container listens on the
+VM's interfaces (the runtime's caddy reaches it at the bridge gateway),
+which the host-only vmnet keeps private. One test container per VM —
+`make run` replaces the previous one.
+
+For trying mdl-demo's macOS launcher (or any other script written for
+Apple `container`) on the VM, `/opt/mpd/bin/container` is a podman-backed
+stand-in covering the everyday verbs (`run`, `start`, `stop`, `rm`,
+`inspect`, `exec`, `logs`, `ls`).
 
 ## Backups
 

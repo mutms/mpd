@@ -285,7 +285,7 @@ volume.
   (`Containerfile`, `bootstrap.sh`, `build.sh`, `mpd-defaults.env`,
   `skel/`, `tools/`, `lib/`, `caddy/`, `backup.d/`, `restore.d/`)
 - Project-type behavior: `assets/runtime/project_types/<type>/...`
-  (current types: `moodle`, `astro`)
+  (current types: `moodle`, `astro`, `mdl-demo`)
 - Project-type files placed in the project directory: `template/` and
   `generated/` (see below)
 - Runtime / project-type tools: single executable per file under

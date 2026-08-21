@@ -1,0 +1,16 @@
+#!/bin/sh
+# Apple `container` look-alike backed by rootful podman, so scripts written
+# for macOS (mdl-demo's launcher, for one) can be tried on the VM unchanged:
+#
+#   MDL_DEMO_IMAGE=localhost/mdl-demo /srv/projects/mdl-demo/launcher/mdl-demo create 7777
+#
+# Only the everyday verbs are covered — run, start, stop, rm, inspect, exec,
+# logs, ls — which podman shares verb-for-verb. `ls` is rendered with the
+# name first, as Apple container prints it, so column-based filters agree.
+# Anything image/system-level (`container image push`, `container system
+# start`) is not translated; use podman directly for that.
+verb="$1"; shift
+case "$verb" in
+    ls) exec sudo podman ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}' "$@" ;;
+    *)  exec sudo podman "$verb" "$@" ;;
+esac
