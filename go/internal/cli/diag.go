@@ -58,6 +58,8 @@ type DiagDeps struct {
 	// than derived: internal/control imports this package, so naming its
 	// path here would close an import cycle.
 	ControlSocket string
+	// Version is the running binary's stamped version, from main.
+	Version string
 }
 
 // Diag runs every probe and returns a non-nil error when any of them
@@ -67,6 +69,7 @@ type DiagDeps struct {
 func Diag(ctx context.Context, out io.Writer, d DiagDeps) error {
 	r := &diagRun{out: out}
 
+	diagVersion(r, d)
 	diagIdentity(ctx, r, d)
 	diagNetwork(ctx, r, d)
 	diagTLS(ctx, r, d)
@@ -115,6 +118,45 @@ func (r *diagRun) summary() error {
 		ui.OK(r.out, "all %d checks passed", total)
 	}
 	return nil
+}
+
+// --- Version -------------------------------------------------------------
+
+// diagVersion opens the sweep by naming the binary that produced it.
+// First because every line below is only meaningful against a known
+// version — a diag pasted into a bug report without one is a description
+// of an unknown program.
+func diagVersion(r *diagRun, d DiagDeps) {
+	r.step("mpd")
+	r.note("version %s (%s)", d.Version, vm.BinaryPath)
+
+	c := d.State.Config()
+	switch {
+	case c.LastUpgradeVersion == "":
+		r.note("last --vm-upgrade: never run on this VM")
+	case c.LastUpgradeVersion == d.Version:
+		r.note("last --vm-upgrade: %s, %s", c.LastUpgradeVersion, diagWhen(c.LastUpgradeAt))
+	default:
+		// Running something other than what the last upgrade installed is
+		// normal on a VM where mpd itself is developed (a local `make
+		// install`), and a real finding anywhere else.
+		r.note("last --vm-upgrade: %s, %s — the running binary is a local build",
+			c.LastUpgradeVersion, diagWhen(c.LastUpgradeAt))
+	}
+}
+
+// diagWhen renders a recorded timestamp as a date plus how long ago, and
+// falls back to the raw string rather than hiding a value it cannot parse.
+func diagWhen(stamp string) string {
+	t, err := time.Parse(time.RFC3339, stamp)
+	if err != nil {
+		return stamp
+	}
+	days := int(time.Since(t).Hours() / 24)
+	if days < 1 {
+		return t.Format(time.DateOnly) + " (today)"
+	}
+	return fmt.Sprintf("%s (%d days ago)", t.Format(time.DateOnly), days)
 }
 
 // --- Identity and certificates ------------------------------------------

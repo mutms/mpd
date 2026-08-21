@@ -46,10 +46,12 @@ Global command dispatch is first-match, single-action per invocation.
 
 Operational flags include:
 - `--vm-status` — context-aware status (text)
-- `--vm-diag` — read-only health sweep: probes certificates, DNS, subnet
-  routing, portal TLS, the runtime, the optional desktop/RDP layer, and
-  every container that state says should be running. Exits non-zero if any
-  check failed, so it works as a scripted gate. Distinct from
+- `--vm-diag` — read-only health sweep. Opens by naming the running
+  version and when this VM was last `--vm-upgrade`d, then probes
+  certificates, DNS, subnet routing, portal TLS, the runtime, the optional
+  desktop/RDP layer, and every container that state says should be
+  running. Exits non-zero if any check failed, so it works as a scripted
+  gate. Distinct from
   `--vm-status`, which renders mpd's own state files: diag *probes*, which
   is what catches the failures that leave those files looking correct — a
   VPN capturing DNS, claiming the container subnet, or intercepting TLS.

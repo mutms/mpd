@@ -684,7 +684,8 @@ mpd                              # status (a bare mpd falls through to --vm-stat
 mpd --vm-status                     # text status of services + projects
 mpd --vm-diag                       # read-only health sweep; non-zero exit if anything failed
 
-mpd --vm-upgrade                    # pull + rebuild mpd, then re-run --vm-setup (see below)
+mpd --vm-upgrade                    # pull + rebuild mpd, then re-run --vm-setup (see below);
+                                 # records the version it landed on, shown by --vm-diag
 mpd --vm-start                      # reconcile current → requested (runtime, projects with state=running, enabled services)
 mpd --vm-stop                       # graceful DB shutdown via EventMpdPreStop, then sudo systemctl poweroff
 mpd --vm-restart                    # graceful stop, then sudo systemctl reboot; mpd auto-starts on boot

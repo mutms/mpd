@@ -189,6 +189,18 @@ func (s Store) RuntimeNames() []string {
 type Config struct {
 	UID  string `json:"uid"`
 	User string `json:"user"`
+
+	// LastUpgradeVersion and LastUpgradeAt record the most recent
+	// successful `mpd --vm-upgrade`: the version the new binary reports,
+	// and when it was applied.
+	//
+	// Written by the upgrade rather than derived, because nothing else
+	// can know it afterwards — `--version` tells you what is running now,
+	// which after a manual `make install` is a different question. Empty
+	// on a VM that has never been upgraded, which is not an error: a
+	// freshly bootstrapped VM has only ever been set up.
+	LastUpgradeVersion string `json:"lastUpgradeVersion,omitempty"`
+	LastUpgradeAt      string `json:"lastUpgradeAt,omitempty"`
 }
 
 // Config reads config.json; a missing file yields the zero value.
