@@ -161,6 +161,7 @@ func TestEveryGlobalFlagClassified(t *testing.T) {
 		"--db-stop":           true,
 		"--db-delete":         true,
 		"--vm-status":         true, // read-only
+		"--vm-diag":           true, // read-only probes; useful from inside a runtime
 		"--yes":               true, // modifier, not an action
 		"--debug":             true, // modifier, not an action
 		"--help":              true, // modifier, not an action

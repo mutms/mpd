@@ -38,3 +38,10 @@ func Note(out io.Writer, format string, args ...any) {
 func Warn(out io.Writer, format string, args ...any) {
 	fmt.Fprintf(out, "  Warning: %s\n", fmt.Sprintf(format, args...))
 }
+
+// Fail prints a failure line: the mirror of OK, for a check that did not
+// pass. Read-only commands use it to report a broken state they are not
+// going to fix; a command that mutates should return an error instead.
+func Fail(out io.Writer, format string, args ...any) {
+	fmt.Fprintf(out, "\033[1;31m✗ %s\033[0m\n", fmt.Sprintf(format, args...))
+}

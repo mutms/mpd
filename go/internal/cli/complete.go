@@ -62,6 +62,7 @@ var GlobalFlags = []string{
 	"--db-stop",
 	"--db-delete",
 	"--vm-status",
+	"--vm-diag",
 	"--web",
 	"--control",
 	"--yes",

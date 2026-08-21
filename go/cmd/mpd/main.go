@@ -99,6 +99,7 @@ type flags struct {
 	vmStop    bool
 	vmRestart bool
 	vmStatus  bool
+	vmDiag    bool
 
 	runtimeRebuild bool
 	runtimeBackup  bool
@@ -192,6 +193,8 @@ func main() {
 		"Reboot the VM (graceful DB shutdown via the systemd unit; mpd auto-starts on boot).")
 	root.Flags().BoolVar(&f.vmStatus, "vm-status", false,
 		"Show context-aware status (text output).")
+	root.Flags().BoolVar(&f.vmDiag, "vm-diag", false,
+		"Probe this VM and report what works: certificates, DNS, routing, TLS, runtime, desktop. Read-only; exits non-zero on failure.")
 
 	root.Flags().BoolVar(&f.runtimeRebuild, "runtime-rebuild", false,
 		"Delete and re-provision the runtime container (prompts unless --yes).")
@@ -313,6 +316,22 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 		return withLock(ctx, out, d.State, func() error { return cli.Stop(ctx, out, d, state.Dir) })
 	case f.vmRestart:
 		return withLock(ctx, out, state.New(), func() error { return cli.Restart(ctx, out, state.Dir) })
+	case f.vmDiag:
+		// No lock: every probe is a read, a lookup or a dial, so a diag
+		// must stay runnable while another mpd command holds the lock —
+		// that is exactly when someone reaches for it.
+		n, err := net.Current()
+		if err != nil {
+			return err
+		}
+		p := podman.New()
+		return cli.Diag(ctx, out, cli.DiagDeps{
+			Net:           n,
+			Podman:        p,
+			State:         state.New(),
+			Observer:      current.NewObserver(n.VMID(), p),
+			ControlSocket: control.SocketPath(runtime.Name),
+		})
 	}
 
 	if f.runtimeRebuild {

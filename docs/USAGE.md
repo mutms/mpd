@@ -682,6 +682,7 @@ the wrong site. `--yes` skips the question for scripted use.
 ```bash
 mpd                              # status (a bare mpd falls through to --vm-status)
 mpd --vm-status                     # text status of services + projects
+mpd --vm-diag                       # read-only health sweep; non-zero exit if anything failed
 
 mpd --vm-upgrade                    # pull + rebuild mpd, then re-run --vm-setup (see below)
 mpd --vm-start                      # reconcile current → requested (runtime, projects with state=running, enabled services)

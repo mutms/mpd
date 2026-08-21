@@ -35,6 +35,25 @@ const (
 	nftBin           = "/usr/sbin/nft"
 )
 
+// FirewallLoaded reports whether the container-subnet firewall table is
+// present in the running ruleset. Read-only — for diagnostics; the table
+// is installed by EnsureFirewall.
+//
+// Lives here rather than in the caller so the private table name stays
+// private: a probe that spells the table out itself is a second copy of
+// the schema, in a place nothing checks.
+func FirewallLoaded(ctx context.Context) bool {
+	// "nft", not nftBin: exec.Cmd.Name is a bare allow-listed name, which
+	// the exec package resolves to the absolute path itself. Passing the
+	// path here would miss the allow-list and always report "not loaded".
+	res, err := exec.Capture(ctx, exec.Cmd{
+		Name: "nft",
+		Args: []string{"list", "table", "inet", firewallTable},
+		Sudo: true,
+	})
+	return err == nil && !res.Failed()
+}
+
 // firewallRuleBody renders the idempotent nft program. The add/delete/add
 // preamble gives our table a clean slate on every apply without touching any
 // other table (netavark's included).

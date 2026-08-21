@@ -46,6 +46,13 @@ Global command dispatch is first-match, single-action per invocation.
 
 Operational flags include:
 - `--vm-status` — context-aware status (text)
+- `--vm-diag` — read-only health sweep: probes certificates, DNS, subnet
+  routing, portal TLS, the runtime, the optional desktop/RDP layer, and
+  every container that state says should be running. Exits non-zero if any
+  check failed, so it works as a scripted gate. Distinct from
+  `--vm-status`, which renders mpd's own state files: diag *probes*, which
+  is what catches the failures that leave those files looking correct — a
+  VPN capturing DNS, claiming the container subnet, or intercepting TLS.
 - `--vm-setup` — idempotent first-run/reset; takes no argument (see below).
 - `--vm-upgrade` — pull and rebuild mpd (plus mudev and the `/srv/extra`
   catalogues), then re-run `--vm-setup`. Refuses over uncommitted changes
@@ -155,7 +162,7 @@ is scanned across the whole argv, so a blocked flag cannot ride along on a
 project verb. Everything else forwards: project verbs (including `delete`),
 database management (`--db-*`, `--db-delete` included), extra services
 (`--service-*`, purge included), `--runtime-backup`, the read-only
-`--vm-status`, and `list`. With a
+`--vm-status` and `--vm-diag`, and `list`. With a
 single runtime there is no cross-runtime ownership check any more — every
 registered project belongs to the caller — and a declared `--type` merely
 has to be one the assets tree defines (`moodle`, `astro`). `version` is
