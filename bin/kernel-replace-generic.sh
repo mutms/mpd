@@ -219,10 +219,16 @@ sudo update-grub >/dev/null 2>&1
 ok "GRUB_DEFAULT pinned to the generic entry"
 
 # Prove the pin resolves before telling anyone to reboot on it.
-case "$(sed -n 's/^[[:space:]]*set default="\(.*\)"$/\1/p' /boot/grub/grub.cfg | head -1)" in
-    "${TARGET}") ok "grub.cfg default resolves to the generic entry" ;;
-    *) die "grub.cfg default did not take the pin — do not reboot; inspect /boot/grub/grub.cfg" ;;
-esac
+#
+# Fixed-string search of the whole file, NOT the first `set default=` line:
+# grub.cfg carries two of them, and the first is `set default="${next_entry}"`
+# inside the one-shot `grub-reboot` branch. Reading that one compares the
+# literal text ${next_entry} against the pin and always reports failure.
+if grep -qF "set default=\"${TARGET}\"" /boot/grub/grub.cfg; then
+    ok "grub.cfg default resolves to the generic entry"
+else
+    die "grub.cfg did not take the pin — do not reboot; inspect /boot/grub/grub.cfg"
+fi
 
 cat <<EOF
 
