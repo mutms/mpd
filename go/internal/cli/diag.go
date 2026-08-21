@@ -514,6 +514,27 @@ func diagDesktop(ctx context.Context, r *diagRun) {
 	switch {
 	case vm.UnitActive(ctx, "xrdp", false) && diagDial("127.0.0.1", "3389"):
 		r.warn("RDP is OPEN on tcp/3389 — the one port held by a password, not a key. `rdp-stop` closes it")
+		// GNOME runs once per user. With a console session already
+		// holding the systemd user units, an RDP login starts
+		// gnome-session-failed instead of a shell — which arrives as a
+		// black screen and says nothing anywhere. Reported here rather
+		// than only by rdp-start, because the console login usually
+		// happens afterwards.
+		user := vm.DetectIdentity().User
+		if s := diagConsoleSession(ctx); s != "" {
+			r.warn("...and %s holds a console session (%s) — an RDP login will get a black screen",
+				user, s)
+		}
+		// Autologin turns the collision from something you can cause into
+		// something that happens at every boot, so terminating the session
+		// is not a fix — it comes back. Report it even when no console
+		// session is live right now.
+		if who := gdmAutoLogin(); who != "" {
+			r.warn("...and gdm autologin is on for %s — the console claims the desktop at every boot. "+
+				"`gnome-stop` is the fix; terminating the session only lasts until the next reboot", who)
+		} else if diagConsoleSession(ctx) != "" {
+			r.note("`gnome-stop` to stay headless, or log out at the console before connecting")
+		}
 	case vm.UnitActive(ctx, "xrdp", false):
 		r.fail("xrdp is running but nothing is listening on 3389")
 	default:
@@ -529,6 +550,81 @@ func kernelRelease() string {
 		return ""
 	}
 	return strings.TrimSpace(string(raw))
+}
+
+// gdmAutoLogin returns the user gdm logs in automatically, or "" when
+// autologin is off. World-readable, so no privilege is needed.
+func gdmAutoLogin() string {
+	raw, err := os.ReadFile("/etc/gdm3/daemon.conf")
+	if err != nil {
+		return ""
+	}
+	return parseGDMAutoLogin(string(raw))
+}
+
+// parseGDMAutoLogin reads the [daemon] keys out of gdm's config. Both
+// keys matter: AutomaticLogin names a user whether or not
+// AutomaticLoginEnable is set, so reporting the name alone would warn
+// about autologin that is configured but switched off.
+func parseGDMAutoLogin(conf string) string {
+	var enabled bool
+	var user string
+	for _, line := range strings.Split(conf, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, found := strings.Cut(line, "=")
+		if !found {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		switch strings.ToLower(key) {
+		case "automaticloginenable":
+			switch strings.ToLower(value) {
+			case "true", "yes", "1":
+				enabled = true
+			}
+		case "automaticlogin":
+			user = value
+		}
+	}
+	if !enabled || user == "" {
+		return ""
+	}
+	return user
+}
+
+// diagConsoleSession returns the id of a local (seat) graphical session
+// belonging to this user, or "" when there is none.
+func diagConsoleSession(ctx context.Context) string {
+	res, err := exec.Capture(ctx, exec.Cmd{
+		Name: "loginctl",
+		Args: []string{"list-sessions", "--no-legend"},
+	})
+	if err != nil || res.Failed() {
+		return ""
+	}
+	return seatSessionOf(res.Stdout, vm.DetectIdentity().User)
+}
+
+// seatSessionOf finds a session on a physical seat belonging to user, in
+// `loginctl list-sessions --no-legend` output. Split out from the exec
+// call so it can be tested against real output.
+//
+// Columns: SESSION UID USER SEAT LEADER CLASS TTY IDLE SINCE. A session
+// with no seat ("-") is an ssh or systemd-manager session and cannot own
+// the desktop; a seat session belonging to Debian-gdm is the greeter, not
+// a login, and holds none of this user's units.
+func seatSessionOf(out, user string) string {
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) >= 4 && f[2] == user && strings.HasPrefix(f[3], "seat") {
+			return f[0]
+		}
+	}
+	return ""
 }
 
 func diagDefaultTarget(ctx context.Context) string {

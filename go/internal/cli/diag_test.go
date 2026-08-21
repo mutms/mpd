@@ -99,3 +99,78 @@ func TestRouteDevice(t *testing.T) {
 		})
 	}
 }
+
+// seatSessionOf decides whether an RDP login is about to collide with a
+// desktop session that already holds this user's systemd units. Both
+// samples are real `loginctl list-sessions --no-legend` output from a VM
+// where that collision happened.
+func TestSeatSessionOf(t *testing.T) {
+	// Console login present: skodak holds seat0 on tty2. An RDP login
+	// here lands on gnome-session-failed — a black screen.
+	const colliding = `      1 1000 skodak     -     735    manager       -    no   -
+     11 1000 skodak     seat0 22666  user          tty2 no   -
+     12 1000 skodak     -     34381  user          -    no   -
+     c4 1000 skodak     -     35800  user          -    no   -`
+
+	// After that session logged out: the only seat session left is gdm's
+	// greeter, which is a different user and holds none of skodak's units.
+	const clear = `      1 1000 skodak     -     735    manager       -    no   -
+     12 1000 skodak     -     34381  user          -    no   -
+     13  105 Debian-gdm -     36211  manager-early -    no   -
+     c5  105 Debian-gdm seat0 36200  greeter       tty1 no   -`
+
+	if got := seatSessionOf(colliding, "skodak"); got != "11" {
+		t.Errorf("seatSessionOf(colliding) = %q, want \"11\"", got)
+	}
+	if got := seatSessionOf(clear, "skodak"); got != "" {
+		t.Errorf("seatSessionOf(clear) = %q, want \"\" (greeter is not a login)", got)
+	}
+	if got := seatSessionOf("", "skodak"); got != "" {
+		t.Errorf("seatSessionOf(empty) = %q, want \"\"", got)
+	}
+}
+
+// gdm autologin makes the RDP black screen structural rather than
+// incidental: the console claims the desktop at every boot, so
+// terminating the session is not a fix. Both samples are real
+// /etc/gdm3/daemon.conf content from a VM where autologin was turned on
+// and then off again — note that switching it off leaves AutomaticLogin
+// naming a user, which is exactly the false positive to avoid.
+func TestParseGDMAutoLogin(t *testing.T) {
+	const on = `# GDM configuration storage
+
+[daemon]
+AutomaticLoginEnable=True
+AutomaticLogin=skodak
+# Uncomment the line below to force the login screen to use Xorg
+#WaylandEnable=false
+
+# Enabling automatic login
+#  AutomaticLoginEnable = true
+#  AutomaticLogin = user1
+
+[security]
+`
+	const off = `# GDM configuration storage
+
+[daemon]
+AutomaticLoginEnable=False
+AutomaticLogin=skodak
+
+[security]
+`
+	if got := parseGDMAutoLogin(on); got != "skodak" {
+		t.Errorf("parseGDMAutoLogin(on) = %q, want \"skodak\"", got)
+	}
+	if got := parseGDMAutoLogin(off); got != "" {
+		t.Errorf("parseGDMAutoLogin(off) = %q, want \"\" — the key still names a user", got)
+	}
+	// A commented-out example must never be read as configuration.
+	if got := parseGDMAutoLogin("[daemon]\n#  AutomaticLoginEnable = true\n#  AutomaticLogin = user1\n"); got != "" {
+		t.Errorf("parseGDMAutoLogin(comments only) = %q, want \"\"", got)
+	}
+	// Enabled with no user named is not an autologin.
+	if got := parseGDMAutoLogin("[daemon]\nAutomaticLoginEnable=true\n"); got != "" {
+		t.Errorf("parseGDMAutoLogin(no user) = %q, want \"\"", got)
+	}
+}
