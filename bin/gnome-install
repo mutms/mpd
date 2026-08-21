@@ -36,6 +36,42 @@ back to headless, `rdp-start` to reach the desktop from a tablet.
 EOF
 }
 
+# Point Chromium at this VM's portal, https://<NNN>.mpd.test/.
+#
+# Written under policies/recommended/, not policies/managed/: the
+# recommended tier supplies a default and leaves the setting editable, so
+# a developer who wants a different home page just changes it in Chromium.
+# managed would grey the setting out.
+#
+# The VM id comes from the hostname (mpd-<NNN>), which is mpd's own source
+# of identity — the same one net.Current reads.
+install_chromium_homepage() {
+    local host nnn url dir
+    host="$(hostname -s)"
+    nnn="${host#mpd-}"
+
+    step "Chromium home page"
+    if [ "${nnn}" = "${host}" ] || [ -z "${nnn}" ] || [ -n "${nnn//[0-9]/}" ]; then
+        warn "hostname ${host} is not mpd-<NNN> — skipping the home page"
+        return 0
+    fi
+
+    url="https://${nnn}.mpd.test/"
+    dir=/etc/chromium/policies/recommended
+    sudo install -d -m 755 "${dir}"
+    sudo tee "${dir}/mpd-homepage.json" >/dev/null <<EOF
+{
+  "HomepageLocation": "${url}",
+  "HomepageIsNewTabPage": false,
+  "ShowHomeButton": true,
+  "RestoreOnStartup": 4,
+  "RestoreOnStartupURLs": ["${url}"]
+}
+EOF
+    sudo chmod 644 "${dir}/mpd-homepage.json"
+    ok "${url} — home button and startup page (editable in Chromium)"
+}
+
 ASSUME_YES=0
 case "${1:-}" in
     -y | --yes) ASSUME_YES=1 ;;
@@ -54,11 +90,18 @@ esac
 # genericcloud image the desktop installs fine and then shows a black
 # console, while the text console keeps working because VGA text mode
 # needs no driver. Say so before the download rather than after.
-HAS_DRM=1
+# The test is a card device, not the directory: /dev/dri can exist holding
+# nothing but by-path/ when no driver has bound.
+DRM_DEVS=""
+for _dev in /dev/dri/card*; do
+    [ -e "${_dev}" ] || continue
+    DRM_DEVS="${DRM_DEVS}${DRM_DEVS:+ }$(basename "${_dev}")"
+done
 
 step "Graphics device"
-if [ -d /dev/dri ]; then
-    ok "DRM device present ($(ls /dev/dri | tr '\n' ' '))"
+if [ -n "${DRM_DEVS}" ]; then
+    HAS_DRM=1
+    ok "DRM device present (${DRM_DEVS})"
 else
     HAS_DRM=0
     warn "no /dev/dri — this kernel has no graphics driver"
@@ -105,7 +148,8 @@ for pkg in "${GNOME_PKGS[@]}"; do
 done
 
 if [ ${#missing[@]} -eq 0 ]; then
-    ok "all ${#GNOME_PKGS[@]} packages already installed — nothing to do"
+    ok "all ${#GNOME_PKGS[@]} packages already installed"
+    install_chromium_homepage
     echo
     echo "Run 'gnome-start' to switch this VM into the desktop."
     exit 0
@@ -157,6 +201,8 @@ if [ "${gdm_was_active}" = 0 ] && systemctl is-active --quiet gdm3 2>/dev/null; 
     sudo systemctl stop gdm3
     ok "stopped gdm3 (this VM was headless before)"
 fi
+
+install_chromium_homepage
 
 cat <<EOF
 

@@ -100,7 +100,8 @@ overlay, or a GUI you cannot drive over SSH.
 ```bash
 gnome-install    # only on a VM that has no desktop at all: installs
                  # GNOME Shell, GDM, a terminal and Chromium, and
-                 # nothing else. Starts nothing; the boot target is left
+                 # nothing else. Points Chromium's home page at this
+                 # VM's portal. Starts nothing; the boot target is left
                  # exactly as it was. ~320 MB. Idempotent.
 gnome-start      # switch to the desktop now, and at every reboot
 gnome-stop       # back to headless, now and at every reboot
