@@ -472,13 +472,24 @@ func diagDesktop(ctx context.Context, r *diagRun) {
 
 	if _, err := os.Stat("/usr/bin/gnome-session"); err != nil {
 		r.note("GNOME not installed (headless VM — `gnome-install` adds it)")
+		// Not a problem while the VM stays headless, but it decides
+		// whether `gnome-install` can ever produce a visible desktop, and
+		// finding that out afterwards costs a kernel swap and a reboot.
+		if k := kernelRelease(); strings.Contains(k, "-cloud") {
+			r.note("kernel %s has no DRM drivers — a desktop here would need "+
+				"linux-image-amd64 first", k)
+		}
 	} else {
 		r.ok("GNOME installed")
 
 		cards, _ := filepath.Glob("/dev/dri/card*")
 		if len(cards) == 0 {
-			r.fail("no DRM device (/dev/dri) — the console will be black. " +
-				"On Debian's cloud kernel: install linux-image-amd64 and reboot")
+			hint := "install a kernel with DRM drivers and reboot"
+			if k := kernelRelease(); strings.Contains(k, "-cloud") {
+				hint = fmt.Sprintf("kernel %s is Debian's cloud kernel, which ships none: "+
+					"install linux-image-amd64 and reboot", k)
+			}
+			r.fail("no DRM device (/dev/dri) — the console will be black. %s", hint)
 		} else {
 			r.ok("graphics device present (%s)", strings.Join(baseNames(cards), " "))
 		}
@@ -508,6 +519,16 @@ func diagDesktop(ctx context.Context, r *diagRun) {
 	default:
 		r.note("RDP installed but stopped (`rdp-start` reopens it)")
 	}
+}
+
+// kernelRelease is `uname -r` without the exec: the flavour suffix is
+// what decides whether this kernel carries DRM drivers at all.
+func kernelRelease() string {
+	raw, err := os.ReadFile("/proc/sys/kernel/osrelease")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(raw))
 }
 
 func diagDefaultTarget(ctx context.Context) string {
