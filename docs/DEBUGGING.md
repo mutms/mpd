@@ -149,3 +149,50 @@ ceiling is the container's `pids-limit`, which the IDE alone won't reach.
 The trigger is getting worse for everyone regardless: newer JetBrains
 backends burn more threads, so every setup now runs closer to whatever
 its ceiling is.
+
+## RDP connects, authenticates, and shows a black screen
+
+**Symptoms.** `rdp-start` has been run, the client connects, the password
+is accepted — and you get a black screen. Nothing in the xrdp logs looks
+wrong, because from xrdp's point of view nothing is: it authenticated,
+started an X server, and handed off.
+
+**Diagnostic.** `mpd --vm-diag` reports it directly. By hand:
+
+```bash
+loginctl list-sessions          # is there a seat0 session for your user?
+ps -eo pid,args | grep gnome-session-failed
+sudo tail /var/log/xrdp-sesman.log
+```
+
+The signature is `Xorg :10` alive and healthy, and
+`gnome-session-failed --allow-logout` running under the RDP session.
+That process *is* the black screen — it is GNOME's "Oh no! Something has
+gone wrong" handler, which paints nothing over RDP.
+
+**Cause.** GNOME runs once per user. If a console session already holds
+that user's systemd session units — someone logged in at the hypervisor
+console, or gdm is configured to log in automatically — the RDP session
+cannot start a second shell and launches the failure handler instead.
+The two ends share one user manager, so the collision can take the
+console session down as well.
+
+**Fix.** Have one owner of the desktop, not two:
+
+```bash
+gnome-stop                      # headless: gdm never runs, RDP owns GNOME
+```
+
+`gnome-stop` is the durable answer because xrdp starts its own X server
+and never involves gdm — a desktop reached over RDP does not want a
+display manager at all. `loginctl terminate-session <id>` clears the
+current collision but not the next one.
+
+**Check autologin.** If `/etc/gdm3/daemon.conf` has
+`AutomaticLoginEnable=True`, the console claims the desktop at every
+boot, so terminating the session is never a fix — it returns after a
+reboot. `mpd --vm-diag` reports this separately from the live session.
+
+The two consistent pairs are `gnome-stop` + RDP (desktop reached
+remotely) and `gnome-start` + `rdp-stop` (desktop on the hypervisor
+console). Both owners at once is the broken state.

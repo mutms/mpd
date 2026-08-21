@@ -129,6 +129,28 @@ tool turns SSH password authentication off — with a key already installed
 your usual username; the client will warn once about xrdp's self-signed
 certificate.
 
+**From an iPad.** Microsoft's Remote Desktop client (the "Windows App" on
+the App Store) connects to `<vm-ip>:3389` and works well:
+
+- Turn on **touch mode** in the in-session toolbar — a tap clicks where
+  you touch, tap-and-hold is a right click, two fingers scroll. Without
+  it your finger drives a trackpad instead, which is what people mean
+  when they say the mouse feels wrong.
+- **Set a screen size** in the connection's settings rather than
+  accepting the tablet's native resolution. xorgxrdp creates whatever
+  mode the client asks for, so the desktop arrives at a size you can
+  actually use.
+- A **keyboard with a trackpad** turns it into a workstation. GNOME is
+  built around a pointer and behaves like itself once it has one.
+- **Sessions survive disconnection.** xrdp reattaches to the existing X
+  server, so the tablet can sleep or change network and you come back to
+  the same desktop. To end one, log out inside GNOME — closing the app
+  only detaches.
+
+This is also the only way into an mpd VM from a tablet: iPadOS cannot do
+the SOCKS or CA-trust setup the other paths need. See
+[NETWORKING.md](NETWORKING.md#a-third-path-dont-reach-in-at-all).
+
 Two things to know:
 
 - **Log out of the console first.** GNOME does not run twice for the same

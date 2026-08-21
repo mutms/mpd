@@ -86,6 +86,29 @@ subnet from the LAN is dropped). Both coexist with a corporate VPN.
 (transparent, every app) or imported into the dedicated browser (no
 `sudo`) makes `*.mpd.test` HTTPS trusted.
 
+### A third path: don't reach in at all
+
+Both paths above exist to export the VM's world to a *remote* browser —
+they carry routing, DNS and certificate trust across to the client. The
+alternative is to leave all three where they already work and move the
+browser instead: run the desktop inside the VM (`gnome-install`), open
+RDP (`rdp-start`), and view it. Chromium in that session resolves `.test`
+through the VM's own dnsmasq and already trusts the mpd CA, so nothing
+about the network has to be true on the client. Only pixels cross.
+
+That makes it the *simplest* path, not a fallback — and on a tablet it is
+the only one. iPadOS has no per-app SOCKS setting and configures a system
+proxy per Wi-Fi network, so SOCKS cannot work on a cellular connection at
+all; trusting the CA means installing a profile and granting system-wide
+trust on a personal device; and mpd-proxy is a macOS binary. Microsoft's
+Remote Desktop client (iPadOS, Android, macOS, Windows) needs none of it.
+
+The cost is the one mpd door authenticated by a password rather than a
+key, so reach it over a private network, a bastion or a zero-trust
+tunnel — never the open internet — and close it with `rdp-stop`. See
+[`SECURITY.md`](SECURITY.md) and the day-to-day steps in
+[`USAGE.md`](USAGE.md#the-vms-desktop-and-reaching-it-from-a-tablet).
+
 ### The container-subnet firewall
 
 `mpd --vm-setup` installs `mpd-firewall.service` — an independent nftables
