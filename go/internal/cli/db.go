@@ -26,7 +26,7 @@ func Ok(out io.Writer, format string, args ...any) {
 
 // DBStart starts a stopped DB container.
 func DBStart(ctx context.Context, out io.Writer, input string,
-	p *podman.Client, s state.Store, dns dnsmasq.Manager) error {
+	p *podman.Client, s state.Store, dns dnsmasq.Manager, n net.Net) error {
 
 	ref, err := db.Resolve(ctx, input, p)
 	if err != nil {
@@ -37,7 +37,7 @@ func DBStart(ctx context.Context, out io.Writer, input string,
 	}
 	if p.Running(ctx, ref.Container) {
 		fmt.Fprintf(out, "%s is already running.\n", ref.Container)
-		return syncDatabaseState(ctx, p, s, dns, ref.ID, true)
+		return syncDatabaseState(ctx, p, s, dns, n, ref.ID, true)
 	}
 	if code, err := p.Start(ctx, ref.Container); err != nil || code != 0 {
 		return fmt.Errorf("Failed to start '%s'.", ref.Container)
@@ -48,12 +48,14 @@ func DBStart(ctx context.Context, out io.Writer, input string,
 	Ok(out, "%s is running.", ref.Container)
 	// Sticky: an explicitly started database comes back on the next reboot,
 	// even if no project needs it.
-	return syncDatabaseState(ctx, p, s, dns, ref.ID, true)
+	return syncDatabaseState(ctx, p, s, dns, n, ref.ID, true)
 }
 
-// DBStop stops a running DB container.
+// DBStop stops a running DB container. Its DNS record stays: the address
+// is pinned to the container, so "connection refused" is the honest
+// answer while it is down.
 func DBStop(ctx context.Context, out io.Writer, input string,
-	p *podman.Client, s state.Store, dns dnsmasq.Manager) error {
+	p *podman.Client, s state.Store, dns dnsmasq.Manager, n net.Net) error {
 
 	ref, err := db.Resolve(ctx, input, p)
 	if err != nil {
@@ -64,7 +66,7 @@ func DBStop(ctx context.Context, out io.Writer, input string,
 	}
 	if !p.Running(ctx, ref.Container) {
 		fmt.Fprintf(out, "%s is already stopped.\n", ref.Container)
-		return syncDatabaseState(ctx, p, s, dns, ref.ID, false)
+		return syncDatabaseState(ctx, p, s, dns, n, ref.ID, false)
 	}
 	if code, err := p.Stop(ctx, ref.Container); err != nil || code != 0 {
 		return fmt.Errorf("Failed to stop '%s'.", ref.Container)
@@ -72,11 +74,11 @@ func DBStop(ctx context.Context, out io.Writer, input string,
 	Ok(out, "%s stopped.", ref.Container)
 	// Clear the sticky flag: an explicit stop means it should stay down
 	// across a reboot unless a project pulls it back up.
-	return syncDatabaseState(ctx, p, s, dns, ref.ID, false)
+	return syncDatabaseState(ctx, p, s, dns, n, ref.ID, false)
 }
 
 // syncDatabaseState reconciles the derived artifacts after any DB
-// lifecycle change: the databases.json cache and dnsmasq's records. When
+// lifecycle change: the databases.json cache and the DNS records. When
 // setAutostart is a lifecycle verb's own intent (start → true, stop →
 // false), it is recorded for the given databaseId after the cache is
 // rebuilt; pass id "" to leave autostart flags untouched.
@@ -86,7 +88,7 @@ func DBStop(ctx context.Context, out io.Writer, input string,
 // are exactly when the cache is most likely to be stale — something
 // changed the container outside mpd, which is why the user ran the command.
 func syncDatabaseState(ctx context.Context, p *podman.Client, s state.Store,
-	dns dnsmasq.Manager, id string, autostart bool) error {
+	dns dnsmasq.Manager, n net.Net, id string, autostart bool) error {
 
 	if err := db.RebuildStateCache(ctx, p, s); err != nil {
 		return err
@@ -96,8 +98,7 @@ func syncDatabaseState(ctx context.Context, p *podman.Client, s state.Store,
 			return err
 		}
 	}
-	_, err := dns.EnsureDatabaseRecords(ctx)
-	return err
+	return PublishDNS(ctx, io.Discard, dns, n, s, false)
 }
 
 // DBCreate creates (or starts) a DB container.
@@ -112,7 +113,7 @@ func DBCreate(ctx context.Context, out io.Writer, input string, p *podman.Client
 		return err
 	}
 	// Creating a database explicitly is a start: make it sticky too.
-	return syncDatabaseState(ctx, p, s, dns, ref.ID, true)
+	return syncDatabaseState(ctx, p, s, dns, n, ref.ID, true)
 }
 
 // DBDelete removes a DB container and its data.
@@ -126,7 +127,7 @@ func DBCreate(ctx context.Context, out io.Writer, input string, p *podman.Client
 // every project on that engine:version, so the prompt names the projects
 // that will lose data rather than describing it abstractly.
 func DBDelete(ctx context.Context, out io.Writer, in io.Reader, input string,
-	p *podman.Client, s state.Store, dns dnsmasq.Manager, assumeYes bool) error {
+	p *podman.Client, s state.Store, dns dnsmasq.Manager, n net.Net, assumeYes bool) error {
 
 	ref, err := db.Resolve(ctx, input, p)
 	if err != nil {
@@ -172,8 +173,8 @@ func DBDelete(ctx context.Context, out io.Writer, in io.Reader, input string,
 	}
 	Ok(out, "'%s' and %s/ removed.", ref.Container, dataDir)
 	// The row drops out of the rebuilt cache with the container, taking its
-	// autostart flag with it — nothing to record.
-	return syncDatabaseState(ctx, p, s, dns, "", false)
+	// autostart flag and its DNS record with it — nothing to record.
+	return syncDatabaseState(ctx, p, s, dns, n, "", false)
 }
 
 // promptYesNo asks for confirmation, defaulting to no. Anything other

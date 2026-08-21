@@ -385,10 +385,6 @@ func ProjectDelete(ctx context.Context, out io.Writer, in io.Reader, name string
 		}
 	}
 
-	if _, err := d.Dnsmasq.RemoveRecord(name); err != nil {
-		return err
-	}
-
 	for _, path := range []string{
 		srv.ProjectDir(name),
 		filepath.Join(srv.Dir, "data", name),
@@ -400,6 +396,11 @@ func ProjectDelete(ctx context.Context, out io.Writer, in io.Reader, name string
 	}
 
 	if err := d.State.DeleteProject(name); err != nil {
+		return err
+	}
+	// After the state change: the record set is recomputed from
+	// projects.json, so this is what retracts the project's names.
+	if err := PublishDNS(ctx, out, d.Dnsmasq, d.Net, d.State, false); err != nil {
 		return err
 	}
 
@@ -505,11 +506,6 @@ func ProjectReset(ctx context.Context, out io.Writer, in io.Reader, name string,
 		}
 	}
 
-	// The record points at a runtime address this project no longer has.
-	if _, err := d.Dnsmasq.RemoveRecord(name); err != nil {
-		return err
-	}
-
 	fmt.Fprintf(out, "\n\033[1m==> Clearing /srv/data/%s/\033[0m\n", name)
 	if err := srv.RemoveContents(ctx, srv.DataDir(name)); err != nil {
 		return err
@@ -529,6 +525,11 @@ func ProjectReset(ctx context.Context, out io.Writer, in io.Reader, name string,
 		Name: entry.Name,
 		Type: entry.Type,
 	}); err != nil {
+		return err
+	}
+	// The entry has no URLs now, so recomputing the record set retracts
+	// the project's names — they pointed at a vhost it no longer has.
+	if err := PublishDNS(ctx, out, d.Dnsmasq, d.Net, d.State, false); err != nil {
 		return err
 	}
 
@@ -650,9 +651,6 @@ func reconcileProject(ctx context.Context, out io.Writer, name string, args []st
 		if err := db.RebuildStateCache(ctx, d.Podman, d.State); err != nil {
 			return err
 		}
-		if _, err := d.Dnsmasq.EnsureDatabaseRecords(ctx); err != nil {
-			return err
-		}
 	} else {
 		// Clear stale DB fields: a project that dropped MPD_DB must stop
 		// claiming a database it no longer uses.
@@ -678,13 +676,11 @@ func reconcileProject(ctx context.Context, out io.Writer, name string, args []st
 	// an addressable one. The name resolving while nothing serves it yields
 	// a dead page, which is the honest answer — and the only one that
 	// works for types whose server the developer starts by hand (astro),
-	// where mpd never learns that the dev server came up. The record is
-	// read off the container label rather than a live inspect.
-	runtimeIP := d.Podman.Label(ctx, container, "mpd.ip")
-	if body, ok := project.DNSRecords(name, entry.URLs, runtimeIP, d.Net); ok {
-		if _, err := d.Dnsmasq.WriteRecord(name, body); err != nil {
-			return err
-		}
+	// where mpd never learns that the dev server came up. The project's
+	// names and the database created above both come out of the one
+	// recompute.
+	if err := PublishDNS(ctx, out, d.Dnsmasq, d.Net, d.State, false); err != nil {
+		return err
 	}
 
 	// The runtime is left running: ProjectStart is about to use it for the

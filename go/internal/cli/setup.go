@@ -129,7 +129,7 @@ func Setup(ctx context.Context, out io.Writer) error {
 	}
 
 	p := podman.New()
-	if err := setupHostTrustAndDNS(ctx, out, n); err != nil {
+	if err := setupHostTrust(ctx, out, n); err != nil {
 		return err
 	}
 	if err := setupNetworkAndVolume(ctx, out, p, n); err != nil {
@@ -189,12 +189,21 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 
-	ui.Step(out, "DNS resolver (dnsmasq)")
-	if err := vm.ConfigureDnsmasq(ctx, out, n.Gateway(), p.NetworkInterface(ctx, Network)); err != nil {
+	// The records first, then the resolver that serves them: dnsmasq reads
+	// /etc/hosts on start, so a block written before the (re)start needs
+	// no reload, and a VM whose cloud-init would wipe the block at boot is
+	// told not to before the block is ever relied on.
+	ui.Step(out, "DNS records in /etc/hosts")
+	if err := vm.DisableCloudInitHosts(ctx, out); err != nil {
 		return err
 	}
-	m := dnsmasq.New(state.Dir, n, p)
-	if err := dnsmasq.Reconcile(ctx, out, m, ServiceDNSRecords(n, s), vmIP, true); err != nil {
+	m := dnsmasq.New(n, p, s)
+	if err := PublishDNS(ctx, out, m, n, s, true); err != nil {
+		return err
+	}
+
+	ui.Step(out, "DNS resolver (dnsmasq)")
+	if err := vm.ConfigureDnsmasq(ctx, out, n.Gateway(), p.NetworkInterface(ctx, Network)); err != nil {
 		return err
 	}
 
@@ -230,7 +239,7 @@ func Setup(ctx context.Context, out io.Writer) error {
 	// Fatal, unlike the report verifyDNS makes: without an upstream the
 	// runtime build below cannot install a single package, and failing
 	// here says why in one screen instead of a hundred lines of apt.
-	if err := vm.RequireDNSUpstream(out, n.Gateway(), net.RootDomain); err != nil {
+	if err := vm.RequireDNSUpstream(ctx, out, n.Gateway()); err != nil {
 		return err
 	}
 	verifyDNS(ctx, out, n)
@@ -329,10 +338,7 @@ func preflight(ctx context.Context, out io.Writer) error {
 	if err := vm.EnsureProcSysWritable(ctx, out); err != nil {
 		return err
 	}
-	if err := vm.EnablePodmanRestart(ctx, out); err != nil {
-		return err
-	}
-	return vm.RequireSystemdResolvedActive(ctx, out)
+	return vm.EnablePodmanRestart(ctx, out)
 }
 
 // setupIdentity derives the VM's addressing from its hostname and reads
@@ -475,9 +481,10 @@ func runtimeSSHHosts(n net.Net) []vm.RuntimeHost {
 	}}
 }
 
-// setupHostTrustAndDNS covers the four places on the VM that have to
-// learn about mpd: three trust stores and the resolver.
-func setupHostTrustAndDNS(ctx context.Context, out io.Writer, n net.Net) error {
+// setupHostTrust covers the three trust stores on the VM that have to
+// learn about mpd's CA. (DNS needs no host-side hook: the VM reads mpd's
+// records from /etc/hosts, see the DNS step in Setup.)
+func setupHostTrust(ctx context.Context, out io.Writer, n net.Net) error {
 	ui.Step(out, "Root Certificate Authority for %s in system trust store", net.RootDomain)
 	vm.TrustCA(ctx, out, vm.CACertPath)
 
@@ -488,9 +495,7 @@ func setupHostTrustAndDNS(ctx context.Context, out io.Writer, n net.Net) error {
 
 	ui.Step(out, "Trust mpd CA in Firefox (enterprise policy)")
 	vm.InstallFirefoxPolicy(ctx, out, vm.CACertPath, n.Zone())
-
-	ui.Step(out, "DNS resolver for %s", net.RootDomain)
-	return vm.ConfigureDNSResolver(ctx, out, net.RootDomain, n.Zone(), n.Gateway())
+	return nil
 }
 
 // setupNetworkAndVolume creates the podman network and the data volume.
@@ -643,7 +648,9 @@ func reconcileCaches(ctx context.Context, out io.Writer, p *podman.Client, s sta
 	} else {
 		ui.OK(out, "Database cache rebuilt (%d database(s) found).", count)
 	}
-	if err := dnsmasq.Reconcile(ctx, out, m, ServiceDNSRecords(n, s), vmIP, false); err != nil {
+	// The rescan above may have found projects and databases the block does
+	// not carry yet.
+	if err := PublishDNS(ctx, out, m, n, s, false); err != nil {
 		return err
 	}
 

@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/mutms/mpd/go/internal/cert"
-	"github.com/mutms/mpd/go/internal/dnsmasq"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/srv"
@@ -24,7 +23,7 @@ import (
 // Hosts returns the unique hostnames from a project's URL list that fall
 // inside this VM's zone, sorted.
 //
-// Single source for both cert SANs and dnsmasq records, so the two can
+// Single source for both cert SANs and DNS records, so the two can
 // never drift. Filtering on the zone rather than the root domain is what
 // stops mpd issuing a local cert for a URL naming another VM's project.
 func Hosts(urls []state.ProjectURL, n net.Net) []string {
@@ -109,20 +108,6 @@ func EnsureCert(ctx context.Context, out io.Writer, name string, urls []state.Pr
 		return err
 	}
 	return srv.Write(srv.MetaFile(name, "cert.sans"), []byte(signature), 0o644)
-}
-
-// DNSRecords returns the resolver's record file for a project: one hosts
-// line per in-zone host, all pointing at its runtime.
-func DNSRecords(name string, urls []state.ProjectURL, runtimeIP string, n net.Net) (string, bool) {
-	hosts := Hosts(urls, n)
-	if len(hosts) == 0 || runtimeIP == "" {
-		return "", false
-	}
-	var b strings.Builder
-	for _, h := range hosts {
-		fmt.Fprintln(&b, dnsmasq.Line(h, runtimeIP))
-	}
-	return b.String(), true
 }
 
 // Exec runs a project script inside its runtime as the dev user.

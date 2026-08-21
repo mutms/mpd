@@ -288,27 +288,6 @@ func sortedKeys(m map[string]string) []string {
 	return keys
 }
 
-// RequireSystemdResolvedActive checks the one network-stack assumption
-// mpd makes. The platform bootstrap scripts are responsible for putting
-// the VM here; mpd only verifies and points at the fix.
-func RequireSystemdResolvedActive(ctx context.Context, out io.Writer) error {
-	if !unitIsActive(ctx, "systemd-resolved.service") {
-		return fmt.Errorf(`systemd-resolved is not active. mpd VM standardizes on
-systemd-networkd + systemd-resolved, which the prepare script sets up.
-
-Most likely this VM has not been prepared (or a reboot was left
-unfinished). Run the prepare script on the VM and follow its reboot
-prompt until it reports ready:
-
-    bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-prepare-adopt.sh)
-
-(For a self-contained sandbox, mpd-sandbox-setup.sh does the same and
-then installs mpd.)`)
-	}
-	ui.OK(out, "systemd-resolved is active.")
-	return nil
-}
-
 func unitIsActive(ctx context.Context, unit string) bool {
 	code, err := exec.Run(ctx, exec.Cmd{
 		Name: "systemctl", Args: []string{"is-active", "--quiet", unit},
@@ -316,51 +295,14 @@ func unitIsActive(ctx context.Context, unit string) bool {
 	return err == nil && code == 0
 }
 
-// ConfigureDNSResolver points systemd-resolved at mpd's resolver for the
-// whole root domain, and makes this VM's own zone a search domain.
-//
-// Routing for the root domain, not this VM's zone: a VM has exactly one
-// resolver and no business resolving another VM's zone, so NXDOMAIN for a
-// foreign zone is the correct in-VM answer.
-//
-// The zone is additionally listed WITHOUT the `~`, which makes it a real
-// search domain, so single-label names resolve here: `runtime` becomes
-// runtime.<NNN>.mpd.test. That is what lets an SSH client reach the
-// runtime by a name a human remembers — with ProxyJump the *jump host*
-// resolves the target through libc, never through ~/.ssh/config, so the
-// short ssh alias cannot serve that case and a resolvable name must.
-// Publishing a bare `runtime` record in dnsmasq instead was rejected (see
-// EnsureSSHConfig): a search domain is scoped to this VM's own resolution
-// and never becomes an answer dnsmasq hands to containers.
-//
-// Cost is one extra query for unqualified names that are not ours;
-// dnsmasq is authoritative for `.test` and answers NXDOMAIN immediately.
-//
-// `reload`, not `restart`, and only when the file actually changed —
-// restarting drops the per-link DNS state resolved is already serving.
-func ConfigureDNSResolver(ctx context.Context, out io.Writer, rootDomain, zone, resolverIP string) error {
-	const path = "/etc/systemd/resolved.conf.d/mpd.conf"
-	content := fmt.Sprintf("[Resolve]\nDNS=%s\nDomains=~%s %s\n", resolverIP, rootDomain, zone)
-
-	changed, err := WriteRootOwnedFile(ctx, path, content)
-	if err != nil {
-		return err
-	}
-	if changed {
-		if code, err := exec.Run(ctx, exec.Cmd{
-			Name: "systemctl", Args: []string{"reload", "systemd-resolved"}, Sudo: true,
-		}); err != nil || code != 0 {
-			return fmt.Errorf("systemctl reload systemd-resolved failed.")
-		}
-	}
-	ui.OK(out, "DNS resolver configured (systemd-resolved → %s for %s; search domain %s).",
-		resolverIP, rootDomain, zone)
-	return nil
-}
-
 // WriteRootOwnedFile installs content at a root-owned path via sudo,
 // reporting whether anything changed. An identical file short-circuits
 // before sudo runs, so a repeat `--vm-setup` neither writes nor prompts.
+//
+// The replacement is atomic: the content is installed beside the target
+// and renamed over it. `install` alone unlinks the destination before
+// copying, leaving an instant with no file — harmless for a unit file,
+// not for /etc/hosts, which every getent on the VM reads.
 func WriteRootOwnedFile(ctx context.Context, path, content string) (bool, error) {
 	if existing, err := os.ReadFile(path); err == nil && string(existing) == content {
 		return false, nil
@@ -377,10 +319,16 @@ func WriteRootOwnedFile(ctx context.Context, path, content string) (bool, error)
 	if err := tmp.Close(); err != nil {
 		return false, err
 	}
+	staged := path + ".mpd-tmp"
 	if code, err := exec.Run(ctx, exec.Cmd{
-		Name: "install", Args: []string{"-D", "-m", "644", tmp.Name(), path}, Sudo: true,
+		Name: "install", Args: []string{"-D", "-m", "644", tmp.Name(), staged}, Sudo: true,
 	}); err != nil || code != 0 {
 		return false, fmt.Errorf("Failed to install %s.", path)
+	}
+	if code, err := exec.Run(ctx, exec.Cmd{
+		Name: "mv", Args: []string{"-f", staged, path}, Sudo: true,
+	}); err != nil || code != 0 {
+		return false, fmt.Errorf("Failed to replace %s.", path)
 	}
 	return true, nil
 }

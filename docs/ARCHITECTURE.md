@@ -722,8 +722,9 @@ propagate inside the container immediately. No sync, no restart needed.
   apparent exception is the `MPD_PHP_*` family (`MPD_PHP_VERSION`,
   `MPD_PHP_FORCE_VERSION`, `MPD_PHP_FALLBACK_VERSION`) — there `PHP`
   names the interpreter those keys select, not the runtime they belong
-  to. (The former `MPD_DNS_UPSTREAM` is gone — dnsmasq reads the VM's
-  systemd-resolved upstream and follows whatever it has configured.)
+  to. (The former `MPD_DNS_UPSTREAM` is gone — dnsmasq forwards to
+  whatever the VM's own `/etc/resolv.conf` lists and follows it as it
+  changes.)
 - **Reserved keys:** `MPD_DB` is owned by `db.ParseTag`
   (engine whitelist + version regex); other reserved keys get strict
   validators in `project.ParseMutations` (`go/internal/project/env.go`)
@@ -845,11 +846,16 @@ Wipe contract:
   `.100–.199` extra service containers. The `net` package
   (`go/internal/net/net.go`) is the single source of truth; nothing else should
   contain `10.163.` or `mpd.test` as a literal.
-- dnsmasq runs **on the VM** (not in a container) and is authoritative for
-  `.test`, bound to the gateway `.1`. The laptop reaches it through the
-  overlay's split-DNS resolver (`/etc/resolver/mpd.test` → mpd-proxy → the
-  right VM) or the SOCKS tunnel's remote DNS. Podman's own DNS is disabled
-  on the network so nothing else holds port 53 on the gateway.
+- DNS records are one managed block in the VM's `/etc/hosts`
+  (`# BEGIN mpd` … `# END mpd`), rewritten from state on every change. The
+  VM resolves its own names from that file through glibc; dnsmasq runs
+  **on the VM** (not in a container), reads the same file, is
+  authoritative for `.test`, and is bound to the gateway `.1` for
+  containers and the laptop. The laptop reaches it through the overlay's
+  split-DNS resolver (`/etc/resolver/mpd.test` → mpd-proxy → the right VM)
+  or the SOCKS tunnel's remote DNS. Podman's own DNS is disabled on the
+  network so nothing else holds port 53 on the gateway, and containers are
+  created with `--hosts-file=none` so they never snapshot the VM's file.
 - TLS certs are signed by the local `mpd` CA: per-project certs (served by
   the in-runtime caddy) and the VM's own service cert, whose single SAN is
   the zone apex — the only name the VM's caddy serves. Extra services are
@@ -860,9 +866,9 @@ deliberately distinct from the optional extra *services* below):
 
 - `dnsmasq` — not a container: Debian's `dnsmasq-base` on the VM as the
   system unit `mpd-dnsmasq.service`, listening on the bridge gateway.
-  Authoritative for `.test`; records are hosts files under
-  `/var/lib/mpd/state/dns/`, which it re-reads on change without a
-  restart. See docs/NETWORKING.md
+  Authoritative for `.test`; records are mpd's block in `/etc/hosts`,
+  re-read on `systemctl reload` (SIGHUP) after every change. See
+  docs/NETWORKING.md
 - the **portal** is not a container: `mpd --web` runs on the VM as the
   user unit `mpd-web.service`, listening on `127.0.0.1:8099`, with
   Debian's caddy in front of it on the bridge gateway terminating TLS for
@@ -950,8 +956,8 @@ See detailed docs:
 - `go/internal/cli/` — command implementations, listing and status
   rendering, setup orchestration, completion
 - `go/internal/vm/` — VM-host operations (paths, identity, CA trust
-  stores, resolver drop-in, motd, shutdown unit) and the VM-integral
-  infra registry (dnsmasq + portal, `vm.InfraServices`)
+  stores, the resolver unit, the cloud-init drop-in, motd, shutdown unit)
+  and the VM-integral infra registry (dnsmasq + portal, `vm.InfraServices`)
 - `go/internal/runtime/`, `go/internal/project/`, `go/internal/db/` —
   orchestration and records
 - `go/internal/service/` — the optional extra service containers
@@ -961,8 +967,9 @@ See detailed docs:
   observed state
 - `go/internal/podman/`, `go/internal/exec/` — the two command gateways
 - `go/internal/net/`, `go/internal/dnsmasq/`, `go/internal/cert/` —
-  addressing; DNS record files and their reconciliation
-  (`dnsmasq.Reconcile`, records passed in by the cli layer); TLS
+  addressing; the DNS record block in `/etc/hosts` and its reconciliation
+  (`dnsmasq.Manager.Reconcile`, service records passed in by the cli
+  layer); TLS
 - `assets/` — runtime/type/service scripts/config/templates + `runtime/skel/`
 - `bootstrap/` — VM bring-up steps 10–50 (passwordless sudo, repo clone, apt, build)
 - `setup/` — host-side bootstrap: the sandbox + adoption-prep scripts, `linux/`, `windows/` (macOS lives in the `mpd-virt` repo)

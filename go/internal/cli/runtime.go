@@ -24,10 +24,7 @@ import (
 //
 // Projects keep their Autostart flag: the user stopped the runtime, not
 // the projects, and that distinction is what lets RuntimeStart bring
-// them back. Their dnsmasq records are dropped though — a URL that
-// resolves to a stopped runtime gives a confusing connection error
-// instead of a clean NXDOMAIN. See docs/HOOKS.md §"Resource lifecycle
-// model".
+// them back. See docs/HOOKS.md §"Resource lifecycle model".
 func RuntimeStop(ctx context.Context, out io.Writer, p *podman.Client,
 	s state.Store, dns dnsmasq.Manager, o current.Observer) error {
 
@@ -42,11 +39,9 @@ func RuntimeStop(ctx context.Context, out io.Writer, p *podman.Client,
 		return err
 	}
 
-	// Project records are left in place. A stopped runtime is a temporary
-	// state — the addresses it holds are still this runtime's, and they
-	// answer again on the next start without a reconcile. Withdrawing
-	// them belongs to RuntimeDelete, where the container (and its
-	// address) really is gone.
+	// DNS is untouched. Project names point at the runtime's fixed address,
+	// which is still this runtime's: a stopped runtime is a temporary state
+	// and the names answer again on the next start.
 	Ok(out, "Stopped the runtime.")
 	return nil
 }
@@ -54,10 +49,10 @@ func RuntimeStop(ctx context.Context, out io.Writer, p *podman.Client,
 // RuntimeDelete removes the runtime container and everything scoped to
 // it.
 //
-// Projects are NOT deleted — only their DNS records, which would
-// otherwise resolve to a runtime that no longer exists. The project
-// records survive so `mpd <project> delete` remains the explicit way to
-// remove them.
+// Projects are NOT deleted, and neither are their DNS names: the runtime
+// has a fixed address, so the names keep pointing where the next runtime
+// will be, and `mpd delete <project>` remains the explicit way to remove
+// a project.
 func RuntimeDelete(ctx context.Context, out io.Writer, in io.Reader,
 	p *podman.Client, s state.Store, dns dnsmasq.Manager, o current.Observer,
 	devUser string, assumeYes bool) error {
@@ -98,19 +93,6 @@ func RuntimeDelete(ctx context.Context, out io.Writer, in io.Reader,
 	// would otherwise accumulate on every rebuild.
 	_, _ = p.VolumeRemove(ctx, runtime.TmpVolume(container))
 
-	// The runtime.<zone> record is NOT removed — it lives in the
-	// reconciled service set (fixed address, published ahead of the
-	// container). A legacy per-runtime record file from older versions
-	// is left alone too: its content is identical, and dnsmasq's
-	// hostsdir drops a name served from a deleted file even when
-	// another file still carries it, until the next restart.
-	// Orphaned projects' records: their URLs would resolve to a runtime
-	// that is gone.
-	for _, projName := range names {
-		if _, err := dns.RemoveRecord(projName); err != nil {
-			return err
-		}
-	}
 	if err := s.DeleteRuntime(runtime.Name); err != nil {
 		return err
 	}
@@ -184,11 +166,8 @@ func RuntimeStart(ctx context.Context, out io.Writer, p *podman.Client,
 	if err := db.RebuildStateCache(ctx, p, s); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to refresh database cache: %v\n", err)
 	}
-	// Same reason as in ProjectStart: a DB container created a moment ago
-	// has an address nothing has published yet.
-	if _, err := dns.EnsureDatabaseRecords(ctx); err != nil {
-		return err
-	}
+	// restoreRunningProjects ends with the DNS publish, which also picks up
+	// any database container created a moment ago.
 	return restoreRunningProjects(ctx, out, container, runtimeIP, p, s, dns, n, devUser, uid)
 }
 
@@ -311,14 +290,10 @@ func restoreRunningProjects(ctx context.Context, out io.Writer, container, runti
 				fmt.Fprintf(os.Stderr, "Warning: project-setup for '%s': %v\n", proj.Name, err)
 			}
 		}
-
-		if body, ok := project.DNSRecords(proj.Name, proj.URLs, runtimeIP, n); ok {
-			if _, err := dns.WriteRecord(proj.Name, body); err != nil {
-				return err
-			}
-		}
 	}
-	return nil
+	// Once, after the loop: the URLs refreshed above feed the record set,
+	// and one recompute covers every project.
+	return PublishDNS(ctx, out, dns, n, s, false)
 }
 
 // RuntimeCreate provisions the runtime and everything that hangs off

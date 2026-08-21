@@ -50,10 +50,6 @@ const (
 	ServiceDir = ConfDir + "/service"
 	TempDir    = ConfDir + "/temp"
 
-	// DNSHostsDir holds the hosts files dnsmasq serves mpd's names from.
-	// dnsmasq watches the directory and re-reads it on every add, change
-	// and remove, so a record lands without signalling or restarting it.
-	DNSHostsDir = StateDir + "/dns"
 	// DnsmasqConfPath is the resolver's configuration, rendered by
 	// --vm-setup. Under ConfDir with the CA rather than under StateDir:
 	// it is mpd's own configuration of the VM, not operational state, and

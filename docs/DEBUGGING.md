@@ -196,3 +196,49 @@ reboot. `mpd --vm-diag` reports this separately from the live session.
 The two consistent pairs are `gnome-stop` + RDP (desktop reached
 remotely) and `gnome-start` + `rdp-stop` (desktop on the hypervisor
 console). Both owners at once is the broken state.
+
+## A `*.mpd.test` name stops resolving after a reboot
+
+**Symptoms.** Right after a reboot, `getent hosts <project>.<NNN>.mpd.test`
+on the VM answers nothing, and `grep 'BEGIN mpd' /etc/hosts` finds no
+block. `mpd --vm-start` repairs it; the next reboot breaks it again.
+
+**Cause.** Something rewrites `/etc/hosts` at boot. On a cloud-init image
+that is cloud-init's `update_etc_hosts` module, driven by
+`manage_etc_hosts: true` in the seed's user-data — Proxmox always sets it,
+and its UI cannot switch it off. The user-data outranks every file under
+`/etc/cloud/`, so a `manage_etc_hosts: false` drop-in changes nothing;
+the module has to be taken out of the list it runs from.
+
+**Diagnostic.**
+
+```bash
+grep -c 'Running module update_etc_hosts' /var/log/cloud-init.log   # grows by one per boot
+cat /etc/cloud/cloud.cfg.d/99-mpd.cfg                               # missing, or lists the module
+```
+
+**Fix.** `mpd --vm-setup` installs the drop-in (`assets/vm/cloud-init-99-mpd.cfg`
+→ `/etc/cloud/cloud.cfg.d/99-mpd.cfg`). After the next reboot the grep
+count stays put and the block survives. A VM from the Debian installer has
+no cloud-init and never shows this; if its `/etc/hosts` loses the block,
+look for whatever else edits the file (`grep -rl /etc/hosts /etc/dhcp
+/lib/dhcpcd /etc/NetworkManager`).
+
+## A container resolves a database or LAN name to a stale address
+
+**Symptoms.** Inside the runtime, `getent hosts <id>.db.<NNN>.mpd.test`
+answers an address that is not what `grep <id> /etc/hosts` on the VM
+shows, and `dig @10.163.<NNN>.1 <name>` from the same container gives the
+right one.
+
+**Cause.** The container's own `/etc/hosts` carries a copy of the VM's
+from the moment it was created — podman's default base hosts file — and
+glibc's `files` lookup wins over DNS. Containers mpd creates now get
+`--hosts-file=none`, so only one created before that change can show this.
+
+**Diagnostic.** `podman exec <container> grep mpd.test /etc/hosts` — any
+mpd name in there is the snapshot.
+
+**Fix.** Recreate the container: `mpd --runtime-rebuild` for the runtime,
+`mpd --db-delete` + `mpd start <project>` for a database, `mpd
+--service-uninstall` + `--service-enable` for a service.

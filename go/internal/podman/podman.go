@@ -399,11 +399,21 @@ func (c *Client) NetworkDNSEnabled(ctx context.Context, name string) bool {
 // The timeout is glibc's, not dnsmasq's: the stock 5s × 2 attempts means a
 // query lost while the resolver restarts costs the caller ten seconds.
 // One second twice is still ample for a resolver on the same host.
+//
+// No base hosts file, also deliberately. Podman's default seeds a
+// container's /etc/hosts from the VM's, and the VM's carries mpd's DNS
+// records — so every container would start with a snapshot of the
+// project, database and LAN names as of its creation, and glibc's `files`
+// lookup would keep answering from that snapshot long after the records
+// moved. With "none" the container gets only podman's own entries (its
+// name, localhost, host.containers.internal) and asks the resolver for
+// everything mpd publishes.
 func DNSOpts(gateway string) []string {
 	return []string{
 		"--dns", gateway,
 		"--dns-option", "timeout:1",
 		"--dns-option", "attempts:2",
+		"--hosts-file", "none",
 	}
 }
 

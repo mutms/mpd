@@ -273,20 +273,21 @@ func diagNetwork(ctx context.Context, r *diagRun, d DiagDeps) {
 		r.fail("resolver not running (%s) — no .test name will resolve", vm.DnsmasqUnit)
 	}
 
-	// Zone resolution through the *system* resolver, not by asking dnsmasq
-	// directly: that is the path everything else on the VM takes, and it is
-	// the one a VPN's resolver takeover breaks.
+	// Zone resolution through NSS, not by asking dnsmasq directly: that is
+	// the path everything else on the VM takes — /etc/hosts first, where
+	// mpd's block lives — and it is the one a stray hosts edit or an
+	// nsswitch change breaks.
 	if addrs := diagLookup(ctx, d.Net.Zone()); len(addrs) == 0 {
-		r.fail("%s does not resolve through the system resolver", d.Net.Zone())
+		r.fail("%s does not resolve on the VM — mpd's block is missing from /etc/hosts (run `mpd --vm-setup`)", d.Net.Zone())
 	} else if !contains(addrs, gateway) {
-		r.fail("%s resolves to %s, expected %s — something else is answering for .test",
+		r.fail("%s resolves to %s, expected %s — something answers before /etc/hosts",
 			d.Net.Zone(), strings.Join(addrs, ", "), gateway)
 	} else {
 		r.ok("%s resolves to %s", d.Net.Zone(), gateway)
 	}
 
-	// The zone answers from a local hosts file even when the resolver has
-	// no upstream at all, so forwarding needs its own probe — see
+	// The zone answers from /etc/hosts even when the resolver has no
+	// upstream at all, so forwarding needs its own probe — see
 	// vm.ForwardsUpstream.
 	if vm.ForwardsUpstream(ctx, gateway) {
 		r.ok("resolver forwards upstream (%s answers)", vm.UpstreamProbeName)

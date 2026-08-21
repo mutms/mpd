@@ -126,7 +126,9 @@ time, seconds on re-runs; VM resume from suspend, seconds.
 
 **Top-level repo layout:** `bin/` (built `bin/mpd` plus committed VM tools:
 `claude-install`, `gnome-install`, `gnome-start`/`gnome-stop`,
-`rdp-start`/`rdp-stop`), `go/` (control plane),
+`rdp-start`/`rdp-stop`, `migrate-vm-network.sh` — the manual migration of
+an existing VM to the `/etc/hosts` DNS layout; `--vm-setup` carries no
+migration logic), `go/` (control plane),
 `assets/` (runtime/service definitions and shell), `bootstrap/`
 (VM bring-up steps), `setup/` (per-platform host orchestration), `docs/`.
 Runtime state lives at `/var/lib/mpd/` (see Fixed in-VM paths below).
@@ -156,10 +158,9 @@ chowns), all enforced at runtime — do not propose alternates.
   etc.). Last-write-wins: VM-host skel overrides shipped skel.
 - `/var/lib/mpd/state/` — mpd-managed operational state. `projects.json`,
   `databases.json`, `services.json`, `current-state.json`,
-  `hooks-state.json`, `runtimes/runtime/` (the single runtime's entry),
-  `dns/`. `dns/` holds the hosts files dnsmasq serves
-  mpd's names from (`hostsdir=`, re-read on change — no restart). Wipe to
-  reset.
+  `hooks-state.json`, `runtimes/runtime/` (the single runtime's entry).
+  Wipe to reset. DNS records are not here: they are a managed block in
+  the VM's `/etc/hosts`, recomputed from this state on every change.
 - `/srv/` — the Podman data volume, bind-mounted onto the VM at `/srv` by
   the `srv.mount` unit and mounted into every container at the same path,
   so `/srv/projects/<name>` means the same thing on both sides. Holds
@@ -180,8 +181,9 @@ The binary is Go, built from `go/` into `bin/mpd` by `make install`:
 - `go/internal/cli/` — command implementations, listing and status
   rendering, setup orchestration, completion candidates
 - `go/internal/vm/` — VM-host operations (fixed paths, identity,
-  CA trust stores, resolver drop-in, motd, shutdown unit) plus the infra
-  descriptors (`InfraServices`: dnsmasq + portal, systemd units on the VM)
+  CA trust stores, the resolver unit, the cloud-init drop-in, motd,
+  shutdown unit) plus the infra descriptors (`InfraServices`: dnsmasq +
+  portal, systemd units on the VM)
 - `go/internal/runtime/` — runtime provisioning and its state cache
 - `go/internal/project/` — project scaffolding, env mutation, certs, rescan
 - `go/internal/service/` — optional extra service containers (mailpit,
@@ -198,9 +200,10 @@ The binary is Go, built from `go/` into `bin/mpd` by `make install`:
   privileged removal
 - `go/internal/state/` — the JSON state files under `/var/lib/mpd/state/`
 - `go/internal/current/` — observed (as opposed to requested) state
-- `go/internal/dnsmasq/` — DNS record files and their reconciliation
-  (`dnsmasq.Reconcile`, records passed in by cli; `vm.ConfigureDnsmasq`
-  owns the resolver itself)
+- `go/internal/dnsmasq/` — the DNS record block in `/etc/hosts`:
+  computed from state, spliced, written, resolver reloaded
+  (`dnsmasq.Manager.Reconcile`, called via `cli.PublishDNS`;
+  `vm.ConfigureDnsmasq` owns the resolver itself)
 - `go/internal/net/` — per-VM addressing: the single source of truth
 - `go/internal/assets/` — reads the `assets/` tree
 - `go/internal/podman/` — the Podman gateway (see the mandatory rule below)

@@ -181,6 +181,47 @@ network's subnet is fixed at create time, so `mpd --vm-setup` refuses when
 it finds a network that disagrees with the VM's id and prints the
 teardown/recreate steps.
 
+## One record store: `/etc/hosts`
+
+Every name mpd publishes is a line in one managed block in the VM's
+`/etc/hosts`:
+
+```
+# BEGIN mpd
+# DNS records for 200.mpd.test, managed by mpd. Edits are overwritten.
+10.163.200.1 200.mpd.test
+10.163.200.2 runtime.200.mpd.test runtime
+10.1.10.200 vm.200.mpd.test
+10.163.200.103 seleniumv1.svc.200.mpd.test
+10.163.200.2 docs.200.mpd.test
+10.163.200.2 m45.200.mpd.test
+10.163.200.11 postgres-18.db.200.mpd.test
+10.1.10.100 forge.mpd.test
+# END mpd
+```
+
+The block is recomputed from state — `projects.json`, `services.json`,
+the database containers' pinned addresses, the LAN hosts file mpd-virt
+pushes in — on every change (`mpd init/start/reset/delete`, database and
+service verbs, `--vm-start`, `--vm-setup`) and rewritten only when it
+differs. Nothing outside the fences is mpd's; the distro's lines and
+anything you add by hand stay as they are.
+
+Two readers, one file:
+
+- **The VM itself** reads it through glibc — `files` leads the `hosts:`
+  line of `nsswitch.conf` on every Debian install — so the VM resolves its
+  own zone without any resolver in the path. No systemd-resolved routing,
+  no search domain, nothing to race at boot.
+- **dnsmasq** reads the same file (its default) and serves it to everyone
+  else.
+
+That is what fixed names failing for minutes after a VM start: a chain of
+resolvers with negative caches was asked about a name before it existed.
+Now the name is in a file that exists before anything boots, and a service
+that is not up yet answers *connection refused* rather than a cached
+NXDOMAIN.
+
 ## One resolver, on the VM
 
 dnsmasq runs **on the VM** — Debian's `dnsmasq-base` package under mpd's
@@ -188,12 +229,12 @@ own `mpd-dnsmasq.service`, configured from `/var/lib/mpd/conf/dnsmasq.conf`
 (rendered by `mpd --vm-setup`; edits are overwritten). It is not a
 container, and there is no second resolver anywhere in the path.
 
-Everything asks it at the same address, `10.163.<NNN>.1`:
+Everyone but the VM asks it at the same address, `10.163.<NNN>.1`:
 
 | Client | How it gets there |
 | --- | --- |
-| Containers | `--dns 10.163.<NNN>.1` at create time, one nameserver, no fallback |
-| The VM | systemd-resolved drop-in: `DNS=10.163.<NNN>.1`, `Domains=~mpd.test` |
+| Containers | `--dns 10.163.<NNN>.1` at create time, one nameserver, no fallback, `--hosts-file=none` |
+| The VM | not through dnsmasq at all — glibc reads `/etc/hosts` |
 | The laptop | mpd-proxy split DNS (`/etc/resolver/mpd.test`), or SOCKS remote DNS — see above |
 
 Podman's own DNS is **off** (`--disable-dns` on the network). Otherwise
@@ -207,6 +248,12 @@ fallback — so a `.test` name would quietly escape to public DNS whenever
 the local resolver blinked, and answer NXDOMAIN instead of failing
 visibly. They also get `timeout:1 attempts:2`, because glibc's stock
 `timeout:5 attempts:2` turns any momentary gap into a ten-second stall.
+And they get **no base hosts file** (`--hosts-file=none`): podman would
+otherwise seed a container's `/etc/hosts` from the VM's, and since the
+VM's now carries mpd's records, every container would start with a
+snapshot that glibc's `files` lookup keeps answering from long after the
+records moved. A container's `/etc/hosts` holds only podman's own
+entries; everything mpd publishes comes from dnsmasq.
 
 ### Authoritative for `.test`, forwarding for everything else
 
@@ -219,43 +266,46 @@ leaked to public DNS for a `.test` name. A VM has exactly one resolver and
 no business answering for another VM's zone, so NXDOMAIN for a foreign
 zone is the correct in-VM answer.
 
-Everything else is forwarded using `/run/systemd/resolve/resolv.conf` — the
-*real* per-link upstream nameservers managed by systemd-resolved, **not**
-the `127.0.0.53` stub, which resolves `.test` by asking dnsmasq and would
-therefore loop. dnsmasq watches that file and adapts when the host switches
-networks (corporate VPN, Wi-Fi) without a restart.
-
-That file also lists dnsmasq's *own* address, because mpd points resolved
-at it for `.test`. Not a loop either: dnsmasq drops any upstream that is
-one of its own addresses, logging `ignoring nameserver <ip> - local
-interface`, and forwards to the remaining per-link ones.
+Everything else is forwarded to whatever the VM's own `/etc/resolv.conf`
+lists — dnsmasq's default, and whoever maintains that file (dhcpcd on a
+headless install, NetworkManager on a desktop, systemd-resolved on a cloud
+image) keeps it current; dnsmasq polls it, so switching networks needs no
+restart. Where the file names systemd-resolved's `127.0.0.53` stub, that
+cannot loop: `local=/test/` means a `.test` name is never forwarded at
+all, and nothing routes `.test` back to dnsmasq.
 
 There is no `MPD_DNS_UPSTREAM` to configure and no hardcoded public DNS in
 the path.
 
-### Records are files, and changing one restarts nothing
+### Changing a record reloads, never restarts
 
-Records live as hosts files in `/var/lib/mpd/state/dns/`, read via
-dnsmasq's `hostsdir=`. dnsmasq watches that directory and re-reads it on
-every add, change and remove, flushing the cache for just the affected
-names. Publishing a record is a file write and nothing else — `mpd init`,
-`mpd start`, `mpd stop` and `mpd delete` never signal or restart the
-resolver.
+After the block changes, mpd sends dnsmasq a SIGHUP (`systemctl reload
+mpd-dnsmasq`). dnsmasq re-reads `/etc/hosts` and `/etc/resolv.conf` and
+clears its cache; queries in flight are answered, not dropped.
 
-This matters more than it sounds. Records used to be `address=/host/ip`
+This matters more than it sounds. Records once lived as `address=/host/ip`
 fragments in a `conf-dir=`, which dnsmasq reads only at startup — not even
 SIGHUP re-reads a config file — so every record change restarted the
 resolver. The restart itself took 0.2s, but a client whose query was in
 flight paid glibc's full timeout: a measured **10.013 seconds** of
 `Temporary failure in name resolution` for every other project on the VM,
-per record change.
+per record change. Hosts lines also answer only the exact name written;
+`address=/x/ip` answered for every name beneath `x` too.
 
-The format change is not just serialisation. `address=/x/ip` answers for
-`x` **and every name beneath it**, so it was a wildcard being used for
-exact names; a hosts entry answers only the name written. Since mpd
-enumerates every name it publishes, exact match is what was always meant,
-and unknown names under the zone now NXDOMAIN by construction rather than
-by careful use of a wildcard.
+### cloud-init and `/etc/hosts`
+
+On a cloud-init image the seed's user-data usually says
+`manage_etc_hosts: true` — Proxmox always writes it, and its UI cannot
+turn it off — which makes cloud-init's `update_etc_hosts` module rewrite
+`/etc/hosts` from a template on **every boot**. Setting
+`manage_etc_hosts: false` under `/etc/cloud/` does not help: the instance
+user-data outranks it. What does work is cloud-init's own override for
+module lists, so `mpd --vm-setup` installs
+`/etc/cloud/cloud.cfg.d/99-mpd.cfg` (from `assets/vm/`), which restates
+`cloud_init_modules` without `update_etc_hosts`. Every other module keeps
+running — hostname, users, keys, whatever the hypervisor configures. A VM
+without cloud-init (a Debian installer VM) needs nothing: nothing there
+touches `/etc/hosts` after installation.
 
 ### Binding the bridge
 
@@ -290,7 +340,7 @@ immediately.
 
 ## Diagnostic record: `vm.<NNN>.mpd.test`
 
-In addition to the runtime / service / project records, dnsmasq serves
+In addition to the runtime / service / project records, the block carries
 one special record ("vm" is a reserved project name for this reason):
 
 ```
@@ -298,9 +348,11 @@ vm.<NNN>.mpd.test → the VM's own LAN IP
 ```
 
 i.e. the **VM's own LAN IP** (e.g. `10.211.55.125` for a managed VM),
-not a container subnet address. It's written into `services.hosts` by
-`dnsmasq.Manager.EnsureServiceRecords` and skipped when no address can
-be read off an interface (`vm.PrimaryIP()` — read live, never recorded).
+not a container subnet address — the one place the LAN address appears
+inside the VM. It is read live off the interface on every reconcile
+(`vm.PrimaryIP()`, never recorded), so a VM that reboots onto a different
+network republishes the new address on `--vm-start`, and skipped when the
+VM has no address yet.
 
 The purpose is identity verification: `mpd-virt`'s reachability check on
 the Mac queries this name and compares the answer to the VM's known IP. A
@@ -344,23 +396,15 @@ What is consistent instead is the *prompt* — the runtime's reads
 without either hostname being changed. Details in
 [`USAGE.md`](USAGE.md#ssh-into-the-runtime).
 
-Note what is *not* here: short names as dnsmasq **records**. dnsmasq
-publishes only fully-qualified names, because this resolver is
-authoritative for the whole `.test` tree (`local=/test/`) — a bare
-`runtime` record would be a name with no zone, answered finally for every
-container on the VM.
-
-The VM itself still resolves the short form, by a narrower route:
-`--vm-setup` gives systemd-resolved this VM's zone as a search domain
-(`Domains=~mpd.test <NNN>.mpd.test`), so `runtime` is qualified to
-`runtime.<NNN>.mpd.test` before it ever reaches dnsmasq. That is scoped
-to the VM's own resolution — containers, which ask dnsmasq directly,
-never see it.
-
-It exists for SSH clients that offer a jump host but no `~/.ssh/config`:
-ProxyJump has the *jump host* resolve the target through libc, so an ssh
-alias cannot help there and a resolvable name must. jump = the VM,
-host = `runtime`.
+The bare `runtime` is the one short name that is a real record: it is an
+alias on the runtime's line in the `/etc/hosts` block
+(`10.163.<NNN>.2 runtime.<NNN>.mpd.test runtime`), so libc on the VM
+resolves it with no search domain involved. It exists for SSH clients that
+offer a jump host but no `~/.ssh/config`: ProxyJump has the *jump host*
+resolve the target through libc, so an ssh alias cannot help there and a
+resolvable name must. jump = the VM, host = `runtime`. Containers see the
+same alias through dnsmasq; nothing in them wants that name, so nothing
+collides.
 
 mpd assumes your laptop user, VM user, and runtime user share the same
 name — that's what makes the bare jump-host form work without explicit

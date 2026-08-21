@@ -13,6 +13,7 @@ import (
 	"github.com/mutms/mpd/go/internal/service"
 	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
+	"github.com/mutms/mpd/go/internal/vm"
 )
 
 // ServiceEnable installs and starts an extra service, records the
@@ -110,23 +111,29 @@ func ReconcileServices(ctx context.Context, out io.Writer,
 	return nil
 }
 
-// ServiceDNSRecords composes every service-file DNS record: the zone
-// apex for the portal (VM infra, at the gateway), the runtime (fixed
-// name at a fixed address, so it is published ahead of the container
-// existing), plus one record per INSTALLED extra service pointing at
-// its own address. dnsmasq itself has no name — it is the thing doing
-// the resolving.
-func ServiceDNSRecords(n net.Net, s state.Store) []dnsmasq.ServiceRecord {
-	records := []dnsmasq.ServiceRecord{
-		{Host: n.Zone(), IP: n.Gateway()},
-		{Host: n.RuntimeFQDN(), IP: n.IP(net.HostRuntime)},
-	}
+// ServiceDNSRecords composes one DNS record per INSTALLED extra service,
+// pointing at its own address. This lives in cli rather than in the
+// dnsmasq package because the service registry is cli's to consult; the
+// fixed infra records (apex, runtime, vm) are the dnsmasq package's own.
+func ServiceDNSRecords(n net.Net, s state.Store) []dnsmasq.Record {
+	var records []dnsmasq.Record
 	for _, entry := range s.Services() {
 		if svc, ok := service.Find(entry.Name); ok {
-			records = append(records, dnsmasq.ServiceRecord{Host: svc.DNS(n), IP: svc.IP(n)})
+			records = append(records, dnsmasq.Record{IP: svc.IP(n), Names: []string{svc.DNS(n)}})
 		}
 	}
 	return records
+}
+
+// PublishDNS recomputes every DNS record from state and rewrites the
+// block in /etc/hosts if it changed. The one call every mutation path
+// ends with — project, database, service, runtime, boot — so nothing has
+// to remember which record it touched. The VM's LAN address is read live
+// here: a VM that rebooted on a different network must not keep answering
+// vm.<zone> with the old one.
+func PublishDNS(ctx context.Context, out io.Writer, dns dnsmasq.Manager,
+	n net.Net, s state.Store, verbose bool) error {
+	return dns.Reconcile(ctx, out, ServiceDNSRecords(n, s), vm.PrimaryIP(), verbose)
 }
 
 // publishServiceState pushes the two derived views of service state:
@@ -135,7 +142,7 @@ func ServiceDNSRecords(n net.Net, s state.Store) []dnsmasq.ServiceRecord {
 func publishServiceState(ctx context.Context, out io.Writer,
 	p *podman.Client, s state.Store, dns dnsmasq.Manager, n net.Net, vmIP string) error {
 
-	if err := dnsmasq.Reconcile(ctx, out, dns, ServiceDNSRecords(n, s), vmIP, false); err != nil {
+	if err := PublishDNS(ctx, out, dns, n, s, false); err != nil {
 		return err
 	}
 	return WriteServicesMeta(s)

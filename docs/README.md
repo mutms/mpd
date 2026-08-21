@@ -69,7 +69,8 @@ Quick reference; full contract in [`ARCHITECTURE.md`](ARCHITECTURE.md).
   the runtime container (`/etc/skel/`-style). Empty by default.
 - `/var/lib/mpd/state/` — mpd-managed operational state
   (projects.json, services.json, runtimes/ — the single runtime's
-  entry — dns/, etc.). Wipe to reset.
+  entry — etc.). Wipe to reset. DNS records live in the VM's
+  `/etc/hosts`, in a block mpd rewrites from this state.
 - `/srv/` — Podman data volume, mounted on the VM and in every
   container at the same path (projects/, data/, meta/, dbs/, extra/,
   backups/).

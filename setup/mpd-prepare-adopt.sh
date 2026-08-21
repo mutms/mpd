@@ -126,9 +126,10 @@ fi
 
 # --- 3. Network stack: systemd-networkd + systemd-resolved -----------
 # mpd standardizes on systemd-networkd for the link and systemd-resolved
-# as the DNS sink (so `mpd --vm-setup` can inject the *.mpd.test
-# resolver). A desktop ships NetworkManager, a server ships ifupdown;
-# both are converted. We keep the DHCP address — the IP is never pinned
+# for the VM's own DNS, so every adopted box runs one known stack. (mpd's
+# *.mpd.test names do not depend on it: they live in /etc/hosts and
+# dnsmasq forwards through whatever /etc/resolv.conf says.) A desktop
+# ships NetworkManager, a server ships ifupdown; both are converted. We keep the DHCP address — the IP is never pinned
 # here, it is read at the end and handed to adoption.
 #
 # The switch completes on a reboot: this run only DISABLES the old

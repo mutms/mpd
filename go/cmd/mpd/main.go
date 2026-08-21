@@ -454,7 +454,7 @@ func serviceAction(ctx context.Context, out interface{ Write([]byte) (int, error
 func dbAction(ctx context.Context, out interface{ Write([]byte) (int, error) },
 	c *cobra.Command, f *flags, name string) error {
 
-	p, s, dns, err := dbDeps()
+	n, p, s, dns, _, err := runtimeDeps()
 	if err != nil {
 		return err
 	}
@@ -462,17 +462,13 @@ func dbAction(ctx context.Context, out interface{ Write([]byte) (int, error) },
 	return withLock(ctx, out, s, func() error {
 		switch {
 		case f.dbCreate != "":
-			n, err := net.Current()
-			if err != nil {
-				return err
-			}
 			return cli.DBCreate(ctx, out, name, p, s, dns, n, devUID())
 		case f.dbStart != "":
-			return cli.DBStart(ctx, out, name, p, s, dns)
+			return cli.DBStart(ctx, out, name, p, s, dns, n)
 		case f.dbStop != "":
-			return cli.DBStop(ctx, out, name, p, s, dns)
+			return cli.DBStop(ctx, out, name, p, s, dns, n)
 		default:
-			return cli.DBDelete(ctx, out, c.InOrStdin(), name, p, s, dns, f.yes)
+			return cli.DBDelete(ctx, out, c.InOrStdin(), name, p, s, dns, n, f.yes)
 		}
 	})
 }
@@ -771,16 +767,8 @@ func runtimeDeps() (net.Net, *podman.Client, state.Store, dnsmasq.Manager, curre
 		return net.Net{}, nil, state.Store{}, dnsmasq.Manager{}, current.Observer{}, err
 	}
 	p := podman.New()
-	return n, p, state.New(), dnsmasq.New(state.Dir, n, p), current.NewObserver(n.VMID(), p), nil
-}
-
-func dbDeps() (*podman.Client, state.Store, dnsmasq.Manager, error) {
-	n, err := net.Current()
-	if err != nil {
-		return nil, state.Store{}, dnsmasq.Manager{}, err
-	}
-	p := podman.New()
-	return p, state.New(), dnsmasq.New(state.Dir, n, p), nil
+	s := state.New()
+	return n, p, s, dnsmasq.New(n, p, s), current.NewObserver(n.VMID(), p), nil
 }
 
 func projectDeps() (cli.ProjectDeps, error) {
@@ -789,10 +777,11 @@ func projectDeps() (cli.ProjectDeps, error) {
 		return cli.ProjectDeps{}, err
 	}
 	p := podman.New()
+	s := state.New()
 	return cli.ProjectDeps{
 		Podman:   p,
-		State:    state.New(),
-		Dnsmasq:  dnsmasq.New(state.Dir, n, p),
+		State:    s,
+		Dnsmasq:  dnsmasq.New(n, p, s),
 		Observer: current.NewObserver(n.VMID(), p),
 		Assets:   assets.New(),
 		Net:      n,

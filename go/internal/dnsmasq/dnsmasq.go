@@ -1,26 +1,25 @@
-// Package dnsmasq maintains the DNS records mpd serves for its own
-// containers.
+// Package dnsmasq publishes the DNS records mpd serves for its names: one
+// managed block in the VM's /etc/hosts.
 //
-// Records are hosts files under <stateDir>/dns/, which the resolver reads
-// via dnsmasq's `hostsdir=`. That directive is the reason this package has
-// no Restart: dnsmasq watches the directory and re-reads it on every add,
-// change and remove, flushing the cache for just the affected names.
-// Publishing a record is a file write and nothing else.
+// /etc/hosts is the single record store on purpose. glibc on the VM reads
+// it first (`files` leads nsswitch's hosts line on every Debian install),
+// so the VM resolves its own zone without any resolver in the path; the
+// resolver on the bridge (dnsmasq, see vm.DnsmasqConfBody) reads the same
+// file and hands the same answers to every container and to the laptop.
+// One file, two readers, no routing between resolvers — which is what
+// removed the "name NXDOMAINs for minutes after boot" failure that a stack
+// of resolvers with negative caches used to produce.
 //
-// It was not always so. These records used to be `address=/host/ip`
-// fragments in a `conf-dir=`, which dnsmasq reads only at startup — not
-// even SIGHUP re-reads a config file. Every `mpd init` and `mpd delete`
-// therefore restarted the resolver, and although the restart itself took
-// 0.2s, a client whose query was in flight paid glibc's full
-// `timeout:5 attempts:2` — ten seconds of "Temporary failure in name
-// resolution" for every other project on the VM.
+// The whole record set is recomputed from state on every change and the
+// block rewritten only when it differs, so there is nothing to add or
+// remove per entity and nothing that can go stale: projects come from
+// projects.json, databases from their containers, services from
+// services.json, LAN names from the file mpd-virt pushes in.
 //
-// The format change is not merely a serialisation detail. `address=/x/ip`
-// answers for x AND every name beneath it, so it was a wildcard that
-// happened to be used for exact names; a hosts entry answers only the
-// name written. Since mpd enumerates every name it publishes, exact match
-// is what was meant all along, and unknown names under the zone now
-// NXDOMAIN by construction rather than by careful use of a wildcard.
+// A changed block is followed by a SIGHUP to dnsmasq (systemctl reload),
+// which re-reads /etc/hosts and clears its cache without dropping in-flight
+// queries. That distinction matters: a restart would cost any client mid-
+// query glibc's full timeout.
 package dnsmasq
 
 import (
@@ -28,196 +27,119 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
+	"github.com/mutms/mpd/go/internal/project"
+	"github.com/mutms/mpd/go/internal/state"
+	"github.com/mutms/mpd/go/internal/ui"
+	"github.com/mutms/mpd/go/internal/vm"
 )
 
-// recordSuffix marks the files in the hosts directory mpd owns. dnsmasq
-// reads every file in a hostsdir regardless of name, so the suffix is for
-// humans and for PruneOutOfZone, not for dnsmasq.
-const recordSuffix = ".hosts"
+// HostsPath is the file the block lives in. A variable so tests can point
+// the manager at a scratch file.
+var HostsPath = "/etc/hosts"
 
-// Manager writes record files into the resolver's hosts directory.
-//
-// No restart method, and none is wanted: see the package comment.
+// Manager computes and publishes the record set.
 type Manager struct {
-	dir string
-	n   net.Net
-	p   *podman.Client
+	n net.Net
+	p *podman.Client
+	s state.Store
+	// lanPath is the hosts(5) file of LAN machines (vm.LanHostsPath); a
+	// field so tests can point it at a fixture.
+	lanPath string
 }
 
-// New returns a Manager writing into <stateDir>/dns/.
-func New(stateDir string, n net.Net, p *podman.Client) Manager {
-	return Manager{dir: filepath.Join(stateDir, "dns"), n: n, p: p}
+// New returns a Manager reading projects and services from s and database
+// containers from p.
+func New(n net.Net, p *podman.Client, s state.Store) Manager {
+	return Manager{n: n, p: p, s: s, lanPath: vm.LanHostsPath}
 }
 
-// hostsLine renders one record. Hosts syntax: address first, then the
-// names it answers for.
-func hostsLine(host, ip string) string { return ip + " " + host }
+// Records composes the full record set, in a fixed order and sorted within
+// each group. services are the infra and extra-service records the caller
+// composes (it owns the service registry); vmIP is the VM's LAN address,
+// read live off the interface, or "" when it has none.
+func (m Manager) Records(ctx context.Context, services []Record, vmIP string) []Record {
+	// The runtime's line carries the bare `runtime` alias, so `ssh runtime`
+	// works on the VM — and through a ProxyJump from the laptop, where the
+	// VM's own libc resolves the target — without a search domain.
+	records := []Record{
+		{IP: m.n.Gateway(), Names: []string{m.n.Zone()}},
+		{IP: m.n.IP(net.HostRuntime), Names: []string{m.n.RuntimeFQDN(), "runtime"}},
+	}
+	// vm.<zone> answers with the VM's OWN address rather than a
+	// container's, so the host-side orchestrator can confirm it is talking
+	// to this VM's resolver and not another's. Skipped when the VM has no
+	// address yet (a DHCP sandbox mid-boot).
+	if vmIP != "" {
+		records = append(records, Record{IP: vmIP, Names: []string{m.n.VMServiceRecord()}})
+	}
 
-// EnsureDatabaseRecords rewrites the database records from live
-// containers and reports whether the file changed.
-//
-// Addresses come from podman rather than from databases.json: a stopped
-// container has no address, so its record must disappear — pointing a
-// name at a dead address is worse than not resolving it.
-func (m Manager) EnsureDatabaseRecords(ctx context.Context) (bool, error) {
-	lines := []string{"# mpd managed database DNS records"}
+	records = append(records, sorted(services)...)
+	records = append(records, sorted(m.projectRecords())...)
+	records = append(records, sorted(m.databaseRecords(ctx))...)
+	records = append(records, sorted(lanRecords(m.lanPath))...)
+	return records
+}
 
-	type record struct{ id, ip string }
-	var records []record
+func sorted(records []Record) []Record {
+	sortRecords(records)
+	return records
+}
+
+// projectRecords: every in-zone host of every registered project, at the
+// runtime's fixed address. A configured project is an addressable one
+// whether or not it is started — a dead page is the honest answer, and the
+// only one that works for types whose server the developer starts by hand.
+func (m Manager) projectRecords() []Record {
+	runtimeIP := m.n.IP(net.HostRuntime)
+	var records []Record
+	for _, pr := range m.s.Projects() {
+		for _, host := range project.Hosts(pr.URLs, m.n) {
+			records = append(records, Record{IP: runtimeIP, Names: []string{host}})
+		}
+	}
+	return records
+}
+
+// databaseRecords: one per database container, running or not, at the
+// address pinned in its label when it was created. A stopped database
+// keeps its name on purpose: the address is still its own, and
+// "connection refused" says more than NXDOMAIN would.
+func (m Manager) databaseRecords(ctx context.Context) []Record {
+	var records []Record
 	for _, item := range m.p.Ps(ctx, "label=mpd.type=db") {
 		id := item.Label("mpd.name")
-		if id == "" {
+		ip := item.Label("mpd.ip")
+		if id == "" || !m.n.Contains(ip) {
 			continue
 		}
-		container := item.Name()
-		if container == "" {
-			container = "mpd-db-" + id
-		}
-		ip := m.p.ContainerIP(ctx, container, "mpd-internal")
-		if ip == "" {
-			continue
-		}
-		records = append(records, record{id: id, ip: ip})
+		records = append(records, Record{IP: ip, Names: []string{m.n.DB(id)}})
 	}
-	sort.Slice(records, func(i, j int) bool { return records[i].id < records[j].id })
-	for _, r := range records {
-		lines = append(lines, hostsLine(m.n.DB(r.id), r.ip))
-	}
-
-	return m.writeIfChanged("databases", strings.Join(lines, "\n")+"\n")
+	return records
 }
 
-// ServiceRecord is one name mpd publishes for an infra service.
-type ServiceRecord struct {
-	Host string
-	IP   string
-}
-
-// EnsureServiceRecords rewrites the service records and reports whether
-// they changed.
-func (m Manager) EnsureServiceRecords(records []ServiceRecord, vmIP string) (bool, error) {
-	lines := []string{"# mpd managed service DNS records"}
-	for _, r := range records {
-		lines = append(lines, hostsLine(r.Host, r.IP))
-	}
-
-	// vm.<zone> answers with the VM's OWN address rather than a
-	// container's, so the host-side orchestrator can confirm it is
-	// talking to this VM's resolver and not another's. Skipped on sandbox
-	// VMs, which are on DHCP and have no address to publish.
-	if vmIP != "" {
-		lines = append(lines, hostsLine(m.n.VMServiceRecord(), vmIP))
-	}
-
-	return m.writeIfChanged("services", strings.Join(lines, "\n")+"\n")
-}
-
-// EnsureLANRecords publishes names for machines on the local network that
-// are not mpd VMs — `forge.mpd.test`, `proxmox.mpd.test` — and reports
-// whether they changed.
+// lanRecords publishes names for machines on the local network that are
+// not mpd VMs — `forge.mpd.test`, `proxmox.mpd.test` — from the hosts(5)
+// file the workstation's orchestrator pushes in (`mpd-virt server sync`).
+// Nothing in the VM knows what is on the LAN; the VM's job is to answer
+// for it so containers, which resolve through this VM, can reach those
+// hosts by name and verify their TLS against a CA they already trust.
 //
-// The source is a hosts(5) file the workstation's orchestrator pushes in
-// (`mpd-virt server sync`). It is copied through rather than derived,
-// because nothing in the VM knows what is on the LAN; the VM's job is to
-// answer for it so that containers, which resolve through this resolver
-// and have no /etc/hosts of their own, can reach those hosts by name and
-// verify their TLS against a CA they already trust.
+// Names outside the mpd tree are dropped: `local=/test/` makes an answer
+// from this resolver final, so a file that could publish anything would
+// make it authoritative for names it has no business answering.
 //
-// Names outside the mpd tree are dropped. A hosts file that could publish
-// anything would make this resolver authoritative for names it has no
-// business answering — and `local=/test/` means an answer here is final.
-func (m Manager) EnsureLANRecords(path string) (bool, error) {
-	lines := []string{"# mpd managed LAN service DNS records"}
-
-	// A missing file is not an error: it means no LAN servers are
-	// registered on the workstation. The record file is still written, so
-	// removing the last server retracts the names it used to publish.
-	if body, err := os.ReadFile(path); err == nil {
-		for _, raw := range strings.Split(string(body), "\n") {
-			line := strings.TrimSpace(raw)
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-			fields := strings.Fields(line)
-			if len(fields) < 2 {
-				continue
-			}
-			var hosts []string
-			for _, h := range fields[1:] {
-				if h == net.RootDomain || strings.HasSuffix(h, "."+net.RootDomain) {
-					hosts = append(hosts, h)
-				}
-			}
-			if len(hosts) == 0 {
-				continue
-			}
-			lines = append(lines, hostsLine(strings.Join(hosts, " "), fields[0]))
-		}
-	}
-
-	return m.writeIfChanged("lan", strings.Join(lines, "\n")+"\n")
-}
-
-// managedRecords are rewritten from scratch on every reconcile, so
-// PruneOutOfZone must leave them alone.
-//
-// "lan" belongs here for a reason that is easy to miss: every LAN name is
-// by definition outside this VM's zone, which is exactly the condition
-// PruneOutOfZone deletes a record file for. Without this entry the LAN
-// records would be published, work, and then vanish on the next
-// reconcile — most visibly at the following `mpd --vm-start`.
-var managedRecords = map[string]bool{"services": true, "databases": true, "lan": true}
-
-// PruneOutOfZone deletes record files serving names outside this VM's
-// zone, reporting whether anything went.
-//
-// Per-runtime and per-project records are written at create time and
-// never revisited. After a VM's ID changes they keep answering for the
-// old zone at addresses on the old subnet — names that resolve to
-// somewhere nothing listens. The entities they describe have to be
-// recreated to get correct records anyway, so a stale record has no
-// value and its half-working DNS is actively confusing.
-func (m Manager) PruneOutOfZone(out io.Writer) bool {
-	entries, err := os.ReadDir(m.dir)
+// A missing file is not an error — no LAN servers are registered.
+func lanRecords(path string) []Record {
+	body, err := os.ReadFile(path)
 	if err != nil {
-		return false
+		return nil
 	}
-	removed := false
-	for _, e := range entries {
-		name := e.Name()
-		base, ok := strings.CutSuffix(name, recordSuffix)
-		if !ok || managedRecords[base] {
-			continue
-		}
-		path := filepath.Join(m.dir, name)
-		body, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		hosts := recordHosts(string(body))
-		if len(hosts) == 0 || !anyOutOfZone(m.n, hosts) {
-			continue
-		}
-		if os.Remove(path) != nil {
-			continue
-		}
-		removed = true
-		fmt.Fprintf(out, "  Removed stale DNS record file %s (not in %s)\n", name, m.n.Zone())
-	}
-	return removed
-}
-
-// recordHosts extracts every name a hosts file answers for. A line is an
-// address followed by one or more names; comments and blanks carry none.
-func recordHosts(body string) []string {
-	var hosts []string
-	for _, raw := range strings.Split(body, "\n") {
+	var records []Record
+	for _, raw := range strings.Split(string(body), "\n") {
 		line := strings.TrimSpace(raw)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -226,56 +148,47 @@ func recordHosts(body string) []string {
 		if len(fields) < 2 {
 			continue
 		}
-		hosts = append(hosts, fields[1:]...)
-	}
-	return hosts
-}
-
-func anyOutOfZone(n net.Net, hosts []string) bool {
-	for _, h := range hosts {
-		if !n.IsInZone(h) {
-			return true
+		var names []string
+		for _, h := range fields[1:] {
+			if h == net.RootDomain || strings.HasSuffix(h, "."+net.RootDomain) {
+				names = append(names, h)
+			}
+		}
+		if len(names) > 0 {
+			records = append(records, Record{IP: fields[0], Names: names})
 		}
 	}
-	return false
+	return records
 }
 
-// writeIfChanged writes content only when it differs. Unchanged content
-// is not rewritten, so dnsmasq's directory watch does not fire and the
-// cache for those names is not flushed for nothing.
-func (m Manager) writeIfChanged(name, content string) (bool, error) {
-	path := filepath.Join(m.dir, name+recordSuffix)
-	if existing, err := os.ReadFile(path); err == nil && string(existing) == content {
-		return false, nil
-	}
-	if err := os.MkdirAll(m.dir, 0o755); err != nil {
-		return false, err
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return false, err
-	}
-	return true, nil
-}
+// Reconcile recomputes the record set, rewrites the block in /etc/hosts if
+// it differs, and reloads the resolver when it does. Unchanged content is
+// not written and nothing is signalled.
+//
+// verbose is off on the daily path, where "nothing moved" is the normal
+// answer and saying so on every `--vm-start` is noise.
+func (m Manager) Reconcile(ctx context.Context, out io.Writer,
+	services []Record, vmIP string, verbose bool) error {
 
-// RemoveRecord deletes a per-project or per-runtime record file.
-// Reports whether anything was removed.
-func (m Manager) RemoveRecord(name string) (bool, error) {
-	path := filepath.Join(m.dir, name+recordSuffix)
-	if _, err := os.Stat(path); err != nil {
-		return false, nil
+	existing, err := os.ReadFile(HostsPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("cannot read %s: %w", HostsPath, err)
 	}
-	if err := os.Remove(path); err != nil {
-		return false, err
+	body := Splice(string(existing), Render(m.n.Zone(), m.Records(ctx, services, vmIP)))
+	if body == string(existing) {
+		if verbose {
+			ui.OK(out, "DNS records already current in %s.", HostsPath)
+		}
+		return nil
 	}
-	return true, nil
+	if _, err := vm.WriteRootOwnedFile(ctx, HostsPath, body); err != nil {
+		return err
+	}
+	if err := vm.ReloadDnsmasq(ctx); err != nil {
+		return err
+	}
+	if verbose {
+		ui.OK(out, "DNS records published in %s.", HostsPath)
+	}
+	return nil
 }
-
-// WriteRecord writes a per-project or per-runtime record file, reporting
-// whether it changed.
-func (m Manager) WriteRecord(name, body string) (bool, error) {
-	return m.writeIfChanged(name, body)
-}
-
-// Line renders one record for a caller assembling a record body itself —
-// project records, which pair many names with one runtime address.
-func Line(host, ip string) string { return hostsLine(host, ip) }

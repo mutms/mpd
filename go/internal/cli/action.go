@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mutms/mpd/go/internal/dnsmasq"
 	"github.com/mutms/mpd/go/internal/exec"
 	"github.com/mutms/mpd/go/internal/hooks"
 	"github.com/mutms/mpd/go/internal/srv"
@@ -59,18 +58,16 @@ func Start(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) e
 	}
 
 	fmt.Fprintln(out, "\n\033[1m==> DNS resolution\033[0m")
-	// Republish the derived records: the vm.<zone> record carries the
-	// VM's LAN address, and a VM that rebooted on a different network
-	// (DHCP) must not keep answering with the old one. writeIfChanged
-	// makes this free when nothing moved.
-	if err := dnsmasq.Reconcile(ctx, out, d.Dnsmasq,
-		ServiceDNSRecords(d.Net, d.State), vm.PrimaryIP(), false); err != nil {
+	// Republish the record set: the vm.<zone> record carries the VM's LAN
+	// address, and a VM that rebooted on a different network (DHCP) must
+	// not keep answering with the old one. Free when nothing moved — the
+	// block is compared before it is written.
+	if err := PublishDNS(ctx, out, d.Dnsmasq, d.Net, d.State, false); err != nil {
 		return err
 	}
-	// After the containers, so the podman bridge exists: at boot the
-	// resolver starts before podman has created it, and an interface
-	// appearing in the wrong instant is missed permanently. This is where
-	// a rebooted VM lands, so it is where the repair belongs.
+	// The resolver may be `active` without answering if it lost the race
+	// with the bridge at boot. This is where a rebooted VM lands, so it is
+	// where the repair belongs.
 	if err := vm.EnsureDnsmasqResolving(ctx, out, d.Net.Gateway(), d.Net.Zone()); err != nil {
 		return err
 	}
@@ -103,11 +100,11 @@ func Start(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) e
 	return nil
 }
 
-// verifyDNS checks that the VM's own resolver answers for the two fixed
-// names every VM publishes: the zone apex (→ gateway) and the runtime
-// (→ its fixed address, published ahead of the container existing).
-// The apex proves the resolver answers at all; the runtime proves the
-// reconciled record set actually landed.
+// verifyDNS checks that the VM resolves the fixed names every VM
+// publishes — the zone apex (→ gateway) and the runtime (→ its fixed
+// address) — through its own NSS path, which is /etc/hosts. That proves
+// the block landed where glibc reads it; whether dnsmasq serves it is the
+// separate question EnsureDnsmasqResolving answers.
 // Reports rather than fails: a VM with broken DNS is still worth having
 // started, and the message says what to inspect.
 func verifyDNS(ctx context.Context, out io.Writer, n net.Net) {
@@ -138,15 +135,14 @@ func verifyDNS(ctx context.Context, out io.Writer, n net.Net) {
 		healthy = false
 		if got == "" {
 			fmt.Fprintf(out, "DNS check: no result — nothing answered for %s.\n", c.host)
-			// The overwhelmingly likely cause, and not an obvious one: the
-			// resolver binds the podman bridge, which podman does not create
-			// until a container attaches to the network.
-			fmt.Fprintf(out, "  If no container has ever started, the bridge does not exist yet\n"+
-				"  and the resolver has nothing to bind. Start one, or run: mpd --vm-setup\n")
+			fmt.Fprintf(out, "  The name should be in mpd's block in /etc/hosts. Inspect:\n"+
+				"    grep -A30 'BEGIN mpd' /etc/hosts\n"+
+				"  and repair with: mpd --vm-setup\n")
 		} else {
 			fmt.Fprintf(out, "DNS check: %s resolved to %s, expected %s\n", c.host, got, c.want)
+			fmt.Fprintf(out, "  Something else answers for the name before /etc/hosts. Inspect:\n"+
+				"    grep hosts /etc/nsswitch.conf; getent hosts %s\n", c.host)
 		}
-		fmt.Fprintf(out, "  Verify: resolvectl status; getent hosts %s\n", c.host)
 	}
 	if healthy {
 		parts := make([]string, len(checks))
@@ -157,8 +153,8 @@ func verifyDNS(ctx context.Context, out io.Writer, n net.Net) {
 	}
 
 	// Forwarding is a separate question from any of the above: every name
-	// checked so far is served from the local hostsdir, so they answer
-	// even when the resolver has no upstream at all.
+	// checked so far is served from /etc/hosts, so they answer even when
+	// the resolver has no upstream at all.
 	if vm.ForwardsUpstream(ctx, n.Gateway()) {
 		fmt.Fprintf(out, "\033[1;32m✓ DNS: %s forwarded upstream\033[0m\n", vm.UpstreamProbeName)
 		return
@@ -167,10 +163,10 @@ func verifyDNS(ctx context.Context, out io.Writer, n net.Net) {
 		n.Zone(), vm.UpstreamProbeName)
 	fmt.Fprintln(out, "  Names in the zone are served locally, so they work regardless — but")
 	fmt.Fprintln(out, "  containers resolve through this resolver, so apt inside the runtime")
-	fmt.Fprintln(out, "  will fail. dnsmasq forwards to the servers systemd-resolved lists,")
-	fmt.Fprintln(out, "  ignoring any that are its own address. Inspect:")
-	fmt.Fprintln(out, "    resolvectl status")
-	fmt.Fprintln(out, "    grep nameserver /run/systemd/resolve/resolv.conf")
+	fmt.Fprintln(out, "  will fail. dnsmasq forwards to the servers in the VM's own")
+	fmt.Fprintln(out, "  /etc/resolv.conf. Inspect:")
+	fmt.Fprintln(out, "    cat /etc/resolv.conf")
+	fmt.Fprintf(out, "    dig @%s %s\n", n.Gateway(), vm.UpstreamProbeName)
 	fmt.Fprintf(out, "    journalctl -u %s | tail\n", vm.DnsmasqUnit)
 }
 

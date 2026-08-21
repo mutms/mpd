@@ -59,8 +59,10 @@ Idempotent — safe to re-run any time. Walks you through:
   `https://<NNN>.mpd.test/` (project HTTPS terminates inside the
   runtime — see [NETWORKING.md](NETWORKING.md))
 - starting `mpd --web`, the portal backend
-- bringing up the infra units (dnsmasq, the portal) and reconciling any
-  enabled extra services (none by default — see
+- writing the DNS records into `/etc/hosts` (and, on a cloud-init image,
+  telling cloud-init to leave that file alone), bringing up the infra units
+  (dnsmasq, the portal) and reconciling any enabled extra services (none
+  by default — see
   [Extra services](#extra-services-mailpit-adminer-seleniumv1))
 - **creating and starting the runtime container** `mpd-<NNN>-runtime` —
   the one container every project runs in
@@ -321,15 +323,14 @@ a managed block `mpd --vm-setup` writes into the dev user's
 name, and skips host-key verification, which a container that gets
 rebuilt on demand would otherwise trip over on every rebuild.
 
-dnsmasq still publishes only fully-qualified names, but `--vm-setup` also
-gives systemd-resolved this VM's zone as a **search domain**, so a bare
-`runtime` resolves on the VM — `getent hosts runtime` answers
-`10.163.<NNN>.2`. That matters for SSH clients that offer a jump host but
-no `~/.ssh/config`: with ProxyJump the *jump host* resolves the target
-through libc, never through an ssh alias, so an app like Terminus can use
-jump = the VM, host = `runtime`. The ssh aliases remain a convenience for
-`ssh`/`scp`/`rsync`; neither they nor the search domain do anything in a
-browser, which needs the FQDN.
+The bare `runtime` resolves on the VM without any alias — `getent hosts
+runtime` answers `10.163.<NNN>.2` — because mpd publishes it as a hosts
+alias on the runtime's line in `/etc/hosts`. That matters for SSH clients
+that offer a jump host but no `~/.ssh/config`: with ProxyJump the *jump
+host* resolves the target through libc, never through an ssh alias, so an
+app like Terminus can use jump = the VM, host = `runtime`. The ssh aliases
+remain a convenience for `ssh`/`scp`/`rsync`; neither they nor the bare
+name do anything in a browser, which needs the FQDN.
 
 Anything you write *outside* the `# >>> mpd runtimes ... >>>` markers is
 preserved across re-runs; anything inside them is regenerated.
@@ -763,6 +764,13 @@ resolver's config only reach the VM through setup. Refuses if `/opt/mpd`
 has uncommitted changes (commit, stash or discard first). Idempotent —
 an up-to-date VM just gets a rebuild and a fresh setup pass. A checkout
 you have re-pointed at your own remote is left alone and reported.
+
+Neither `--vm-upgrade` nor `--vm-setup` migrates a VM across a change in
+mpd's own in-VM layout; they assume a VM that never had the old one. When
+such a change lands, the repo ships a one-shot script under `bin/` to run
+by hand on each existing VM — currently `migrate-vm-network.sh`, which
+moves a VM set up before DNS records lived in `/etc/hosts`. Everyone else
+creates new VMs.
 
 ## When you want to start over
 

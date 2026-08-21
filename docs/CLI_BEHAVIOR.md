@@ -15,7 +15,7 @@ CLI behavior assumes fixed paths:
   - `conf/` — CA + service cert (PRIVATE)
   - `env/mpd-virt.env` — the developer's own env overrides, shared across their VMs (mounted into the runtime)
   - `state/` — operational state: projects.json, services.json,
-    runtimes/ (the single runtime's entry), dns/, etc.
+    runtimes/ (the single runtime's entry), etc.
 
 Backups live inside the data volume at `/srv/backups/`, accessed from
 the laptop with scp off the VM — project bundles directly under it,
@@ -119,21 +119,22 @@ Setup/start/stop paths perform their own environment-specific checks where neede
 `--vm-setup` is mode-aware and takes no argument. It adopts the existing
 host environment rather than provisioning one:
 
-`mpd --vm-setup` validates the supported distro (Debian Trixie across every 
-platform), verifies `systemd-resolved` is active (a precondition the
-platform bootstrap is responsible for), and proceeds. Identity is
-derived from the hostname `mpd-<NNN>` (ids 100..254 — the same on
-managed and sandbox VMs; see [`ARCHITECTURE.md` §9](ARCHITECTURE.md#9-identity-the-hostname)).
+`mpd --vm-setup` validates the supported distro (Debian Trixie across every
+platform) and proceeds. Identity is derived from the hostname `mpd-<NNN>`
+(ids 100..254 — the same on managed and sandbox VMs; see
+[`ARCHITECTURE.md` §9](ARCHITECTURE.md#9-identity-the-hostname)).
 
 Among the per-user files it maintains, `--vm-setup` writes a marked block
 into the dev user's `~/.ssh/config` giving the runtime a short alias —
-`ssh mpd-<NNN>-runtime`, or bare `ssh runtime` — since dnsmasq carries
-only the fully-qualified `runtime.<NNN>.mpd.test`. It also gives
-systemd-resolved this VM's zone as a search domain, so the bare name
-resolves for programs that do not read `~/.ssh/config` (a jump-host-only
-SSH client, for one). The block is regenerated on every run; content
-outside the markers is preserved. See
-[`USAGE.md`](USAGE.md#ssh-into-the-runtime).
+`ssh mpd-<NNN>-runtime`. The bare `ssh runtime` needs no alias: `runtime`
+is published as a hosts alias on the runtime's line in `/etc/hosts`, so it
+resolves for every program on the VM, including a jump-host-only SSH
+client. The block is regenerated on every run; content outside the markers
+is preserved. See [`USAGE.md`](USAGE.md#ssh-into-the-runtime).
+
+It assumes a VM that never had an older mpd DNS layout. Existing VMs are
+moved over by hand with `bin/migrate-vm-network.sh`; `--vm-setup` and
+`--vm-upgrade` carry no migration logic.
 
 `--vm-setup` also converges the runtime container itself: created when
 missing, started when stopped, left alone when running. There is no
