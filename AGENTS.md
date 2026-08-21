@@ -244,8 +244,9 @@ across docs.
 - `docs/proposals/` — where a design doc for a parked / exploratory
   idea in *this* repo (mpd binary, in-VM behavior) goes. Create the
   directory when you write one; it is absent when there are none, and a
-  proposal is deleted once it ships — the code and the canonical docs
-  become the record, and git keeps the reasoning.
+  proposal is deleted once it ships. Before deleting it, move anything
+  still worth knowing into the canonical doc that owns the topic — git
+  will not keep it for you (see "History is not a source of truth").
 - *(Host-side design notes for the `mpd-virt` orchestrator live in
   that repo's own `docs/`.)*
 - `docs/USAGE.md` — day-to-day workflow (bootstrap → first project → SSH-into-runtime)
@@ -324,6 +325,21 @@ may invoke a script as root.
   `GOTOOLCHAIN=local` so this fails loudly instead; if you hit that
   failure, lower the directive or pick an older dependency version.
 - Avoid cross-file doc duplication; link to canonical owners.
+- **History is not a source of truth.** This repo's git history is
+  rewritten and discarded periodically, on purpose: an accumulated
+  history of superseded designs is the worst possible context for an
+  agent, because abandoned approaches and deleted files read exactly as
+  confidently as current ones. Do not mine `git log`, `git blame` or old
+  commit messages to work out why something is the way it is, and never
+  cite them as justification. The code and `docs/` are the memory; if an
+  answer is not in one of them, it is not recorded.
+- **Record a lesson in the same session you learn it.** A bug whose cause
+  was non-obvious — a silent failure, a misleading symptom, an ordering
+  trap — goes into the doc that owns it (usually
+  [`docs/DEBUGGING.md`](docs/DEBUGGING.md): symptom, the diagnostic that
+  confirms it, the fix) before the session ends. There is no history to
+  recover it from afterwards. Record only what still changes what someone
+  would do; the design turns that led here are not worth keeping.
 - For shell completion, edit `go/internal/cli/complete.go` — the shims
   under `assets/completions/` are stable forwarders and rarely need to
   change.
