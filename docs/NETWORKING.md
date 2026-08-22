@@ -301,11 +301,15 @@ turn it off — which makes cloud-init's `update_etc_hosts` module rewrite
 `manage_etc_hosts: false` under `/etc/cloud/` does not help: the instance
 user-data outranks it. What does work is cloud-init's own override for
 module lists, so `mpd --vm-setup` installs
-`/etc/cloud/cloud.cfg.d/99-mpd.cfg` (from `assets/vm/`), which restates
-`cloud_init_modules` without `update_etc_hosts`. Every other module keeps
-running — hostname, users, keys, whatever the hypervisor configures. A VM
-without cloud-init (a Debian installer VM) needs nothing: nothing there
-touches `/etc/hosts` after installation.
+`/etc/cloud/cloud.cfg.d/99-mpd.cfg` (from `assets/vm/`), which replaces
+every stage's module list with just `growpart` + `resizefs`. That also
+freezes the box's identity: Proxmox issues a new instance-id whenever its
+cloud-init tab is edited, and without the drop-in the next boot would
+re-run the hostname, user and `ssh` modules — the last one regenerates the
+host keys mpd-virt pinned. Fixing the IP in the hypervisor still applies
+(network config is not a module), and enlarging the disk still grows the
+filesystem. A VM without cloud-init (a Debian installer VM) needs nothing:
+nothing there touches `/etc/hosts` after installation.
 
 ### Binding the bridge
 

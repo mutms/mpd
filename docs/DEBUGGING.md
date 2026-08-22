@@ -218,8 +218,10 @@ cat /etc/cloud/cloud.cfg.d/99-mpd.cfg                               # missing, o
 ```
 
 **Fix.** `mpd --vm-setup` installs the drop-in (`assets/vm/cloud-init-99-mpd.cfg`
-→ `/etc/cloud/cloud.cfg.d/99-mpd.cfg`). After the next reboot the grep
-count stays put and the block survives. A VM from the Debian installer has
+→ `/etc/cloud/cloud.cfg.d/99-mpd.cfg`), which leaves cloud-init only the
+disk-grow modules. After the next reboot the grep count stays put and the
+block survives. The same drop-in is why an edit in Proxmox's cloud-init
+tab no longer renames the box or regenerates its SSH host keys. A VM from the Debian installer has
 no cloud-init and never shows this; if its `/etc/hosts` loses the block,
 look for whatever else edits the file (`grep -rl /etc/hosts /etc/dhcp
 /lib/dhcpcd /etc/NetworkManager`).

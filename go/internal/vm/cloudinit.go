@@ -9,22 +9,24 @@ import (
 	"github.com/mutms/mpd/go/internal/ui"
 )
 
-// cloud-init and /etc/hosts.
+// cloud-init on an adopted box.
 //
-// On a cloud-init image the seed's user-data usually says
-// `manage_etc_hosts: true` — Proxmox always writes it, and it cannot be
-// switched off in its UI. That makes cloud-init's update_etc_hosts module
-// rewrite /etc/hosts from a template on EVERY boot, which would wipe mpd's
-// records until the next reconcile.
+// Its first boot may run everything; after mpd is set up the box's
+// identity is fixed — hostname, dev user, the SSH host keys mpd-virt
+// pinned, and /etc/hosts, which holds mpd's DNS records. cloud-init
+// would keep touching all of it: update_etc_hosts rewrites /etc/hosts on
+// every boot (the seed says `manage_etc_hosts: true`, which Proxmox
+// always writes and user-data outranks anything under /etc/cloud/), and
+// Proxmox issues a new instance-id whenever its cloud-init tab is edited,
+// which re-runs every per-instance module on the next boot — hostname,
+// users, and ssh, which regenerates the host keys.
 //
-// The obvious fix does not work: `manage_etc_hosts: false` anywhere under
-// /etc/cloud/ is outranked by the instance user-data, which cloud-init
-// caches and reuses on every boot. What does work is cloud-init's own
-// override mechanism for module lists: a cloud.cfg.d drop-in that restates
-// cloud_init_modules replaces the list wholesale, and user-data never sets
-// one. The drop-in is a static asset — mpd supports one distro, so the
-// list is a known constant — with update_etc_hosts left out. Every other
-// module keeps running.
+// cloud-init's own override for module lists is the fix: a cloud.cfg.d
+// drop-in that restates a stage's list replaces it wholesale, and
+// user-data never sets one. The drop-in is a static asset — mpd supports
+// one distro — leaving only growpart + resizefs, so enlarging the disk in
+// the hypervisor still works; network config is not a module and keeps
+// applying, so fixing the IP there works too.
 const (
 	cloudInitDir        = "/etc/cloud"
 	cloudInitDropInPath = cloudInitDir + "/cloud.cfg.d/99-mpd.cfg"
