@@ -3,17 +3,20 @@
 // There is exactly one runtime per VM: a plain systemd container (no
 // pod) at net.HostRuntime, running /sbin/init so sshd, php-fpm, caddy
 // and friends are real services rather than PID 1 impersonators. TLS
-// for project URLs terminates inside it (mpd-caddy.service, installed
-// by build.sh).
+// for project URLs terminates inside it (mpd-caddy.service).
 //
-// Provisioning is two-phase, and the split is a privilege boundary, not
-// a convenience (AGENTS.md §"Mandatory privilege rule"):
+// The runtime is treated like a VM: created once from a pre-baked image
+// (Image), then upgraded in place — never rebuilt by mpd. The steps live
+// in assets/runtime/bootstrap/, numbered apart from the VM's own:
 //
-//	phase 1  bootstrap.sh  as root      — creates the dev user, lays out /srv
-//	phase 2  build.sh      as dev user  — installs the language stacks + caddy
+//	50-user.sh               as root      — creates the dev user (create only)
+//	60-install-software.sh   as dev user  — apt: dist-upgrade + every package
+//	70-configure-runtime.sh  as dev user  — php.ini/FPM, php dispatcher, caddy
 //
-// bootstrap.sh is the single sanctioned root-context script in mpd,
-// because the user it creates cannot exist before it runs.
+// 50 is the single sanctioned root-context script in mpd (AGENTS.md
+// §"Mandatory privilege rule"): the user it creates cannot exist before it
+// runs. 60 is also what the Containerfile bakes into Image, so on a
+// current image it is a fast no-op at create.
 package runtime
 
 import (
@@ -26,7 +29,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mutms/mpd/go/internal/assets"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
 )
@@ -35,9 +37,14 @@ import (
 // mpd.name/mpd.runtime labels, and the label in runtime.<zone>.
 const Name = "runtime"
 
-// BaseImage is the systemd-enabled Debian image the runtime is built
-// from.
-const BaseImage = "mpd-debian-trixie-systemd"
+// Image is the published, pre-baked runtime base (assets/runtime/
+// Containerfile). Bump the tag with the one in
+// assets/runtime/github-publish.sh.
+const Image = "ghcr.io/mutms/mpd-runtime:13.6.1"
+
+// bootstrapDir holds the runtime's provisioning steps, bind-mounted into
+// the container at the same path.
+const bootstrapDir = "/opt/mpd/assets/runtime/bootstrap"
 
 // PidsLimit caps the runtime container's pids cgroup. Podman's default
 // is 2048, which a modern IDE remote backend (JetBrains java + jetbrainsd
@@ -76,10 +83,10 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 
 	runtimeIP := o.Net.IP(net.HostRuntime)
 
-	if !p.ImageExists(ctx, BaseImage) {
-		fmt.Fprintf(out, "\n\033[1m==> Building base image '%s'\033[0m\n", BaseImage)
-		if code, err := p.BuildImage(ctx, BaseImage, assets.Dir+"/runtime", nil); err != nil || code != 0 {
-			return "", fmt.Errorf("Failed to build base image '%s'.", BaseImage)
+	if !p.ImageExists(ctx, Image) {
+		fmt.Fprintf(out, "\n\033[1m==> Pulling %s\033[0m\n", Image)
+		if code, err := p.Pull(ctx, Image); err != nil || code != 0 {
+			return "", fmt.Errorf("Failed to pull %s.", Image)
 		}
 	}
 
@@ -124,7 +131,7 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 		"--label", "mpd.runtime="+Name,
 		"--label", "mpd.ip="+runtimeIP,
 		"--label", "com.docker.compose.project=mpd-dev",
-		BaseImage, "/sbin/init",
+		Image, "/sbin/init",
 	)
 	if code, err := p.Run(ctx, args); err != nil || code != 0 {
 		// Roll back, or the next create refuses on a runtime that does
@@ -143,20 +150,18 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 		}
 	}
 
-	// Phase 1 — root. The one sanctioned root-context script: the dev
-	// user does not exist yet, so nothing else could create it.
-	fmt.Fprintln(out, "\n\033[1m==> Bootstrapping the runtime (phase 1, root)\033[0m")
+	// 50 — root. The one sanctioned root-context script: the dev user
+	// does not exist yet, so nothing else could create it.
+	fmt.Fprintln(out, "\n\033[1m==> Creating the dev user (50-user.sh, root)\033[0m")
 	if code, err := p.ExecWithOptions(ctx, o.Container, nil,
-		"bash", "/opt/mpd/assets/runtime/bootstrap.sh",
+		"bash", bootstrapDir+"/50-user.sh",
 		Name, o.DevUser, o.UID, o.Net.Zone()); err != nil || code != 0 {
-		return "", fmt.Errorf("Runtime bootstrap (phase 1) failed.")
+		return "", fmt.Errorf("Runtime step 50-user.sh failed.")
 	}
 
-	// Phase 2 — dev user. Everything from here runs unprivileged.
-	fmt.Fprintf(out, "\n\033[1m==> Building the runtime\033[0m\n")
-	if code, err := p.ExecAsUser(ctx, o.Container, o.DevUser,
-		"bash", "/opt/mpd/assets/"+assets.RuntimeDir+"/build.sh", Name); err != nil || code != 0 {
-		return "", fmt.Errorf("Runtime build failed.")
+	// 60 + 70 — dev user. Everything from here runs unprivileged.
+	if err := Upgrade(ctx, out, o.Container, o.DevUser, p); err != nil {
+		return "", err
 	}
 
 	installCA(ctx, out, o.Container, p)
@@ -167,6 +172,30 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 	}
 
 	return runtimeIP, nil
+}
+
+// Upgrade brings an existing runtime forward in place: 60 (apt) then 70
+// (configuration), both as the dev user. What `mpd --vm-upgrade` runs,
+// and the second half of Create.
+func Upgrade(ctx context.Context, out io.Writer, container, devUser string, p *podman.Client) error {
+	fmt.Fprintf(out, "\n\033[1m==> Installing software (60-install-software.sh)\033[0m\n")
+	if code, err := p.ExecAsUser(ctx, container, devUser,
+		"bash", bootstrapDir+"/60-install-software.sh"); err != nil || code != 0 {
+		return fmt.Errorf("Runtime step 60-install-software.sh failed.")
+	}
+	return Configure(ctx, out, container, devUser, p)
+}
+
+// Configure re-applies the runtime's configuration (70) without apt: what
+// `mpd --vm-setup` runs on an existing runtime so asset-level changes
+// (units, php.ini, the php dispatcher) reach it.
+func Configure(ctx context.Context, out io.Writer, container, devUser string, p *podman.Client) error {
+	fmt.Fprintf(out, "\n\033[1m==> Configuring the runtime (70-configure-runtime.sh)\033[0m\n")
+	if code, err := p.ExecAsUser(ctx, container, devUser,
+		"bash", bootstrapDir+"/70-configure-runtime.sh", Name); err != nil || code != 0 {
+		return fmt.Errorf("Runtime step 70-configure-runtime.sh failed.")
+	}
+	return nil
 }
 
 // installCA puts mpd's CA into the runtime's trust store so `curl

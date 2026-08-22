@@ -386,7 +386,7 @@ on the VM, output streams live and in colour, exit codes propagate into
 **Most of mpd works here.** Project verbs (`init`, `start`, `stop`,
 `reset`, `delete`, `status`, `help` — deletes included),
 database management (`--db-*`), extra services (`--service-*`),
-`--runtime-backup`, the read-only `--vm-status`,
+`--runtime-backup`, `--runtime-upgrade`, the read-only `--vm-status`,
 and `list` all forward to the VM. A short denylist stays in a VM
 terminal — the things that would terminate the runtime you're sitting in:
 the VM lifecycle (`--vm-setup`/`--vm-upgrade`/`--vm-start`/`--vm-stop`/`--vm-restart`),
@@ -729,8 +729,9 @@ mpd reset <project>              # destroy DB + data, keep the code (type the na
 mpd delete <project>             # remove the project entirely (type the name to confirm)
 mpd help <project>               # all verbs for this project type
 
+mpd --runtime-upgrade            # apt dist-upgrade + packages + re-configure, in place
 mpd --runtime-rebuild            # delete + re-provision the runtime (prompts unless --yes),
-                                 # restores running projects afterwards
+                                 # restores running projects afterwards — only for a broken one
 mpd --runtime-backup             # save runtime home-dir pieces to /srv/backups/runtime/
 mpd --runtime-restore            # replay the newest runtime backup
 
@@ -760,9 +761,11 @@ mpd --vm-upgrade
 
 Pulls the `/opt/mpd` checkout forward, rebuilds the binary, updates the
 mudev checkout and the `/srv/extra` catalogues, then re-runs
-`mpd --vm-setup` with the new binary — the step a bare `git pull && make
-install` would miss, since asset scripts, systemd units and the
-resolver's config only reach the VM through setup. Refuses if `/opt/mpd`
+`mpd --vm-setup` and `mpd --runtime-upgrade` with the new binary — the
+steps a bare `git pull && make install` would miss, since asset scripts,
+systemd units and the resolver's config only reach the VM through
+setup, and the runtime container is upgraded in place (apt + re-configure)
+rather than rebuilt. Refuses if `/opt/mpd`
 has uncommitted changes (commit, stash or discard first). Idempotent —
 an up-to-date VM just gets a rebuild and a fresh setup pass. A checkout
 you have re-pointed at your own remote is left alone and reported.

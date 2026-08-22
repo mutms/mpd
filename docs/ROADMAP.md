@@ -34,17 +34,6 @@ Concrete shape, a use case driving it.
 
 Real possibilities, not committed work.
 
-- **In-place runtime upgrades** — the runtime is cattle with a
-  carry-on bag now: `mpd --runtime-rebuild` recreates it from current
-  assets, and `mpd --runtime-backup` / `--runtime-restore` carry the
-  home directory (config, dotfiles, IDE settings, history — never caches
-  or binaries; tools are reinstalled fresh) across the rebuild via
-  `assets/runtime/backup.d/` + `restore.d/` scripts.
-  What remains parked is a *converging* upgrade that runs inside the
-  existing container without a rebuild — the same shape as
-  `mpd --vm-upgrade` for the VM — for asset drift too small to
-  justify a rebuild.
-
 - **Runtime SSH banner** — install a branded `/etc/motd` inside the
   runtime container so users see a welcome message and tool hints when
   they SSH into `runtime.<NNN>.mpd.test`. Content in

@@ -282,7 +282,8 @@ volume.
 `assets/` is the extension surface for runtime/type behavior.
 
 - The unified runtime's definition and provisioning: `assets/runtime/...`
-  (`Containerfile`, `bootstrap.sh`, `build.sh`, `mpd-defaults.env`,
+  (`Containerfile`, `bootstrap/50-user.sh` + `60-install-software.sh` +
+  `70-configure-runtime.sh`, `github-publish.sh`, `mpd-defaults.env`,
   `skel/`, `tools/`, `lib/`, `caddy/`, `backup.d/`, `restore.d/`)
 - Project-type behavior: `assets/runtime/project_types/<type>/...`
   (current types: `moodle`, `astro`, `mdl-demo`)
@@ -449,8 +450,8 @@ across the two tiers is documented below.
 (A third, lowest `assets/runtime-base/tools/` tier existed while the
 runtime was built from a separate base layer. There is exactly one
 runtime, so the layer earned nothing and was merged into
-`assets/runtime/`; the two-phase *privilege* split it also held —
-`bootstrap.sh` as root, `build.sh` as the dev user — is unchanged.)
+`assets/runtime/`; the *privilege* split it also held — `50-user.sh`
+as root, 60/70 as the dev user — is unchanged.)
 
 ### Lineage
 
@@ -541,7 +542,7 @@ are banned anywhere in mpd shell code, with no exceptions:
 
 1. Wrapping a whole script in `sudo` — `sudo bash <whatever>.sh`.
    If a script needs many privileged ops, it runs as the dev user
-   and `sudo`s each one. Only `bootstrap.sh` is invoked as root, by
+   and `sudo`s each one. Only `50-user.sh` is invoked as root, by
    the orchestrator, as the named bootstrap exception.
 2. Identity-switching to a non-root user — `sudo -u <user>`,
    `runuser -u <user>`, `runuser <user>`, `su - <user>`,
@@ -554,11 +555,11 @@ are banned anywhere in mpd shell code, with no exceptions:
 
 A single bootstrap exception applies: the dev user must exist before
 rule (1) can hold, so exactly one root-context script
-(`assets/runtime/bootstrap.sh`) runs as root to create the user, the
-sshd/sudoers setup and the `/srv` layout. The orchestrator is the only
-caller. After it returns, phase 2 (`assets/runtime/build.sh`)
-runs as the dev user via `podman exec -u`. Shapes (1) and (2) are
-enforced in review.
+(`assets/runtime/bootstrap/50-user.sh`) runs as root to create the
+user, the sshd/sudoers setup and the `/srv` layout. The orchestrator is
+the only caller. After it returns, `60-install-software.sh` and
+`70-configure-runtime.sh` run as the dev user via `podman exec -u`.
+Shapes (1) and (2) are enforced in review.
 
 ### How a tool learns about its project
 

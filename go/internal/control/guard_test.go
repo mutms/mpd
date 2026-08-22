@@ -152,6 +152,7 @@ func TestNewlyAllowedCommandsPass(t *testing.T) {
 func TestEveryGlobalFlagClassified(t *testing.T) {
 	allowedFromRuntime := map[string]bool{
 		"--runtime-backup":    true,
+		"--runtime-upgrade":   true, // apt + re-configure inside the caller's own runtime
 		"--service-enable":    true,
 		"--service-disable":   true,
 		"--service-uninstall": true,

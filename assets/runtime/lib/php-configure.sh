@@ -1,9 +1,10 @@
 #!/bin/bash
 # php-configure.sh — shared PHP-version install/config helpers.
 #
-# Sourced (never executed) by two callers, so the package list and the
-# per-version FPM/php.ini setup have exactly one definition:
-#   - assets/runtime/build.sh   — bakes the current PHP set into the image
+# Sourced (never executed) by three callers, so the version list, the
+# package list and the per-version FPM/php.ini setup have one definition:
+#   - assets/runtime/bootstrap/60-install-software.sh — installs the set
+#   - assets/runtime/bootstrap/70-configure-runtime.sh — configures it
 #   - assets/runtime/tools/php-install — adds a legacy version on demand
 #
 # Both run as the dev user with passwordless sudo (AGENTS.md §"Mandatory
@@ -11,6 +12,13 @@
 #
 # No `set -e` here — a sourced library must not change the caller's shell
 # options.
+
+# The PHP versions every runtime carries.
+MPD_PHP_VERSIONS="8.1 8.2 8.3 8.4 8.5"
+
+# Oldest supported PHP — what the `php` dispatcher falls back to outside a
+# project tree. Keep in sync with MPD_PHP_FALLBACK_VERSION in tools/php.
+MPD_PHP_FALLBACK_VERSION="8.2"
 
 # Extensions every Moodle-capable PHP needs. Kept together so build.sh and
 # php-install install the same set.

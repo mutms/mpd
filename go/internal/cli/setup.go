@@ -706,7 +706,10 @@ func setupRuntime(ctx context.Context, out io.Writer, p *podman.Client, s state.
 		return RuntimeStart(ctx, out, p, s, m, o, n, user.User, user.UID)
 	}
 	ui.OK(out, "runtime is running (%s).", container)
-	return nil
+	// Configuration only (no apt): asset-level changes — units, php.ini,
+	// the php dispatcher — reach an existing runtime on every setup.
+	// Packages move with `mpd --vm-upgrade`.
+	return runtime.Configure(ctx, out, container, user.User, p)
 }
 
 func readTrimmed(path string) string {

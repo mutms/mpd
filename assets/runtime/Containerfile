@@ -1,23 +1,26 @@
-FROM debian:trixie
-RUN apt-get update -qq && \
-    DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    systemd systemd-sysv \
-    curl wget ca-certificates gnupg2 lsb-release \
-    openssh-server git unzip && \
-    rm -rf /var/lib/apt/lists/*
+# mpd-runtime — the pre-baked base image of the runtime container.
+# Debian Trixie plus everything bootstrap/60-install-software.sh installs,
+# so creating a runtime is a pull plus configuration instead of an apt run.
+# mpd pulls the tag pinned in go/internal/runtime/runtime.go (runtime.Image).
+#
+# To build locally, tag it with that same pinned name, e.g.:
+#
+#   container build -t ghcr.io/mutms/mpd-runtime:13.6.1 assets/runtime
+FROM debian:13.6
 
-# Lift systemd's per-service task cap. DefaultTasksMax defaults to 15% of
-# the pids controller limit (307 when the container ships podman's default
-# pids-limit of 2048), and EVERY service inherits it — including
-# ssh.service, whose cgroup holds every SSH session and therefore the
-# whole IDE remote backend + AI agent + git that run under it. A modern
-# JetBrains backend alone approaches 300 threads, so git's parallel lstat
-# or a bare `bash` fork tips the service over 307 and dies with EAGAIN
-# ("unable to create threaded lstat", "fork: retry: Resource temporarily
-# unavailable"). The real ceiling is the container-wide pids-limit
-# (runtime.PidsLimit); this stops systemd from imposing a second, tiny,
-# surprise cap beneath it.
-RUN mkdir -p /etc/systemd/system.conf.d && \
-    printf '[Manager]\nDefaultTasksMax=infinity\n' \
-    > /etc/systemd/system.conf.d/mpd-tasksmax.conf
+ARG VERSION
+LABEL org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.source="https://github.com/mutms/mpd"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends sudo ca-certificates curl gnupg2 lsb-release \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY bootstrap/60-install-software.sh /tmp/mpd/bootstrap/
+COPY lib/php-configure.sh /tmp/mpd/lib/
+RUN bash /tmp/mpd/bootstrap/60-install-software.sh \
+    && rm -rf /tmp/mpd /var/lib/apt/lists/* \
+    && systemctl enable ssh
+
+STOPSIGNAL SIGRTMIN+3
+ENTRYPOINT ["/sbin/init"]

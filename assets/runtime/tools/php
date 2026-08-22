@@ -37,7 +37,7 @@
 # the alternatives link. Always exec the versioned /usr/bin/phpX.Y.
 
 # Pinned fallback (8.1 is also installed, for legacy branches). Keep in
-# sync with build.sh's PHP_FALLBACK_VERSION.
+# sync with MPD_PHP_FALLBACK_VERSION in lib/php-configure.sh.
 MPD_PHP_FALLBACK_VERSION=8.2
 
 # An explicit force override, checked first and independent of $PWD. Set by a

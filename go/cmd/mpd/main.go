@@ -102,6 +102,7 @@ type flags struct {
 	vmDiag    bool
 
 	runtimeRebuild bool
+	runtimeUpgrade bool
 	runtimeBackup  bool
 	runtimeRestore bool
 
@@ -198,6 +199,8 @@ func main() {
 
 	root.Flags().BoolVar(&f.runtimeRebuild, "runtime-rebuild", false,
 		"Delete and re-provision the runtime container (prompts unless --yes).")
+	root.Flags().BoolVar(&f.runtimeUpgrade, "runtime-upgrade", false,
+		"Upgrade the running runtime in place: apt dist-upgrade + package set, then re-configure.")
 	root.Flags().BoolVar(&f.runtimeBackup, "runtime-backup", false,
 		"Back up the runtime's home directory (config, dotfiles, IDE settings, history; not caches or binaries) to /srv/backups/runtime/.")
 	root.Flags().BoolVar(&f.runtimeRestore, "runtime-restore", false,
@@ -351,12 +354,15 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 				devUser(), devUID(), home, f.yes)
 		})
 	}
-	if f.runtimeBackup || f.runtimeRestore {
+	if f.runtimeBackup || f.runtimeRestore || f.runtimeUpgrade {
 		_, p, s, _, o, err := runtimeDeps()
 		if err != nil {
 			return err
 		}
 		return withLock(ctx, out, s, func() error {
+			if f.runtimeUpgrade {
+				return cli.RuntimeUpgrade(ctx, out, p, o, devUser())
+			}
 			if f.runtimeBackup {
 				return cli.RuntimeBackup(ctx, out, p, o, devUser())
 			}

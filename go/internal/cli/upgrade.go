@@ -57,6 +57,14 @@ func Upgrade(ctx context.Context, out io.Writer, s state.Store) error {
 			vm.BinaryPath)
 	}
 
+	// The runtime is upgraded in place, like the VM: apt + re-configure
+	// inside the existing container. Same new-binary rule as --vm-setup.
+	fmt.Fprintf(out, "\n\033[1m==> Applying: %s --runtime-upgrade\033[0m\n", vm.BinaryPath)
+	if code, err := exec.Run(ctx, exec.Cmd{Name: "mpd", Args: []string{"--runtime-upgrade"}}); err != nil || code != 0 {
+		return fmt.Errorf("`%s --runtime-upgrade` failed. The new binary is built; re-run it to see why.",
+			vm.BinaryPath)
+	}
+
 	recordUpgrade(ctx, out, s)
 
 	if !upgraded {

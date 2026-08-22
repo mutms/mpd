@@ -343,6 +343,21 @@ func RuntimeCreate(ctx context.Context, out io.Writer, p *podman.Client,
 	return nil
 }
 
+// RuntimeUpgrade brings the running runtime forward in place (steps 60 +
+// 70 inside it). The runtime is upgraded like a VM, never rebuilt for a
+// package change; RuntimeRebuild is for a runtime someone has broken.
+func RuntimeUpgrade(ctx context.Context, out io.Writer, p *podman.Client, o current.Observer, devUser string) error {
+	container := o.RuntimeContainer(runtime.Name)
+	if !p.Running(ctx, container) {
+		return fmt.Errorf("The runtime is not running. Run: mpd --vm-start")
+	}
+	if err := runtime.Upgrade(ctx, out, container, devUser, p); err != nil {
+		return err
+	}
+	Ok(out, "The runtime is up to date.")
+	return nil
+}
+
 // RuntimeRebuild deletes the runtime container and provisions a fresh
 // one, restoring running projects afterwards. The home directory inside
 // the container is lost — `mpd --runtime-backup` first preserves the

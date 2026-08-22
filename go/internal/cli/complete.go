@@ -51,6 +51,7 @@ var GlobalFlags = []string{
 	"--vm-stop",
 	"--vm-restart",
 	"--runtime-rebuild",
+	"--runtime-upgrade",
 	"--runtime-backup",
 	"--runtime-restore",
 	"--service-enable",

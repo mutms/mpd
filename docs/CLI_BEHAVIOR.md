@@ -77,9 +77,15 @@ Operational flags include:
 - runtime mutators — the runtime is created by `--vm-setup` and
   started/stopped by `--vm-start`/`--vm-stop`, so its daily lifecycle has
   no flags of its own; what remains is:
-  - `--runtime-rebuild` — delete + fresh provision from current assets
-    (prompts unless `--yes`, spelling out that the container's home
-    directory is lost); running projects are restored afterwards.
+  - `--runtime-upgrade` — bring the running runtime forward in place:
+    `assets/runtime/bootstrap/60-install-software.sh` (apt dist-upgrade +
+    the package set) then `70-configure-runtime.sh`, as the dev user.
+    `--vm-upgrade` runs it; `--vm-setup` runs only 70 on an existing
+    runtime. A runtime is upgraded like a VM, never rebuilt by mpd.
+  - `--runtime-rebuild` — delete + fresh provision from the pinned image
+    (`runtime.Image`) and current assets (prompts unless `--yes`,
+    spelling out that the container's home directory is lost); running
+    projects are restored afterwards. For a runtime someone has broken.
   - `--runtime-backup` — run every `assets/runtime/backup.d/*.sh` inside
     the runtime as the dev user, writing a timestamped directory plus
     `manifest.json` under `/srv/backups/runtime/`.
@@ -164,7 +170,7 @@ and the `run` verb (which would loop back into the runtime). The denylist
 is scanned across the whole argv, so a blocked flag cannot ride along on a
 project verb. Everything else forwards: project verbs (including `delete`),
 database management (`--db-*`, `--db-delete` included), extra services
-(`--service-*`, purge included), `--runtime-backup`, the read-only
+(`--service-*`, purge included), `--runtime-backup`, `--runtime-upgrade`, the read-only
 `--vm-status` and `--vm-diag`, and `list`. With a
 single runtime there is no cross-runtime ownership check any more — every
 registered project belongs to the caller — and a declared `--type` merely

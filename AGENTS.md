@@ -220,9 +220,11 @@ Runtime/project-type behavior + service container assets live under `assets/`:
   `mpd-virt.env`, the per-developer template seeded to
   `/var/lib/mpd/env/mpd-virt.env` (only when nothing is there — a
   managed VM normally receives the Mac's copy instead)
-- `assets/runtime/...` — the runtime definition, both build phases in
-  one place: `Containerfile`, `bootstrap.sh` (phase 1, root), `build.sh`
-  (phase 2, dev user), `mpd-defaults.env`, `skel/`, `tools/`, `lib/`,
+- `assets/runtime/...` — the runtime definition: `Containerfile` (the
+  published pre-baked image), `bootstrap/` (`50-user.sh` root,
+  `60-install-software.sh` apt, `70-configure-runtime.sh` config — see
+  `assets/runtime/README.md`), `github-publish.sh`,
+  `mpd-defaults.env`, `skel/`, `tools/`, `lib/`,
   `caddy/` (the in-runtime TLS frontdoor), `backup.d/`/`restore.d/`
   (`--runtime-backup`/`--runtime-restore` hooks),
   `project_types/{moodle,astro,mdl-demo}/`
@@ -289,7 +291,7 @@ shell code for a host with a dev user plus passwordless sudo.
    `sudo bash <whatever>.sh`. If a script needs many privileged ops,
    the script itself runs as the dev user and sudo's each one. The
    orchestrator never invokes a provisioning-shaped script as root
-   (only `bootstrap.sh` is, by exception — see below).
+   (only `50-user.sh` is, by exception — see below).
 4. **Never identity-switch to a non-root user.** All of the
    following are forbidden — anywhere in mpd shell code, no
    exceptions: `sudo -u <user>`, `runuser -u <user>`, `runuser
@@ -306,12 +308,14 @@ shell code for a host with a dev user plus passwordless sudo.
 
 **Single bootstrap exception.** The dev user must exist before
 rule (1) can hold. Exactly one root-context script,
-`assets/runtime/bootstrap.sh`, runs before the dev user exists
+`assets/runtime/bootstrap/50-user.sh`, runs before the dev user exists
 and creates it (along with sudoers, sshd, /etc/mpd identity, /srv
 layout). The orchestrator (the `go/internal/runtime` provisioning
-step) is the only caller. After it returns, phase 2 — `assets/runtime/build.sh`
-— runs as the dev user via `podman exec -u <user>`. Nothing else
-may invoke a script as root.
+step) is the only caller. After it returns, `60-install-software.sh`
+and `70-configure-runtime.sh` run as the dev user via
+`podman exec -u <user>`. Nothing else may invoke a script as root
+(the Containerfile runs 60 as root at image build, which is an image
+build, not a VM or container).
 
 ## Change discipline
 
