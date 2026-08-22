@@ -22,9 +22,16 @@
 # internet. Close it with `rdp-stop` when you are done.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck disable=SC1091
-. "${SCRIPT_DIR}/../bootstrap/00-common.sh"
+step() { printf '\n==> %s\n' "$*"; }
+ok()   { printf '    ok: %s\n' "$*"; }
+warn() { printf '    warn: %s\n' "$*"; }
+die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
+# apt-get waits for the dpkg lock (GNOME's packagekitd holds it after
+# login) and retries stalled downloads.
+apt_get() {
+    sudo env DEBIAN_FRONTEND=noninteractive \
+        apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 "$@"
+}
 
 usage() {
     cat <<'EOF'

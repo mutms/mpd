@@ -10,9 +10,10 @@
 # command to do it is printed at the end.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck disable=SC1091
-. "${SCRIPT_DIR}/../bootstrap/00-common.sh"
+step() { printf '\n==> %s\n' "$*"; }
+ok()   { printf '    ok: %s\n' "$*"; }
+warn() { printf '    warn: %s\n' "$*"; }
+die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
 usage() {
     cat <<'EOF'
