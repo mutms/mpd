@@ -2,6 +2,9 @@
 # Build the multi-arch mpd-runtime image on macOS (Apple container) and
 # publish it to ghcr.io. Bump TAG, commit, run. Tags are never re-pushed.
 #
+# Runs on the Mac only. An mpd VM never holds registry or GitHub
+# credentials; it pulls the published (public) tag anonymously.
+#
 # NOTE: it is necessary to `container registry login ghcr.io` first
 
 set -euo pipefail
