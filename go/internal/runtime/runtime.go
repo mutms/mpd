@@ -112,6 +112,11 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 		"--network", "mpd-internal:ip=" + runtimeIP,
 		"--systemd", "always",
 		"--pids-limit", PidsLimit,
+		// podman's default AppArmor profile denies userns_create, which
+		// systemd inside the runtime attempts for every service it
+		// sandboxes — a DENIED line on the VM console per service start.
+		// The runtime is a trusted box inside the VM boundary.
+		"--security-opt", "apparmor=unconfined",
 	}
 	args = append(args, podman.DNSOpts(o.Net.Gateway())...)
 	args = append(args, podman.OptMountRO...)

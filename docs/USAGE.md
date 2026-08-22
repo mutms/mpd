@@ -53,6 +53,8 @@ Idempotent — safe to re-run any time. Walks you through:
 
 - generating the local CA at `/var/lib/mpd/conf/caroot/`
 - installing the CA into the VM's system trust store + Firefox + NSS DB
+- quieting the kernel console to warnings and errors
+  (`/etc/sysctl.d/99-mpd-printk.conf`)
 - creating the Podman network and data volume
 - mounting the data volume on the VM at `/srv`
 - installing and configuring the VM's caddy, which serves the portal at

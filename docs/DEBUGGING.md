@@ -197,6 +197,27 @@ The two consistent pairs are `gnome-stop` + RDP (desktop reached
 remotely) and `gnome-start` + `rdp-stop` (desktop on the hypervisor
 console). Both owners at once is the broken state.
 
+## `apparmor="DENIED" operation="userns_create"` lines on the VM console
+
+**Symptoms.** Every runtime service start (sshd, journald, a shell) prints
+a kernel audit line `apparmor="DENIED" operation="userns_create"
+profile="containers-default-…"` on the VM console; nothing is broken.
+
+**Cause.** podman's default AppArmor profile confines the runtime
+container and refuses the user namespaces systemd inside it tries to
+create for its service sandboxing. The runtime created before mpd passed
+`--security-opt apparmor=unconfined` still runs under that profile —
+container flags apply at create only.
+
+**Diagnostic.** `sudo podman inspect mpd-<NNN>-runtime --format
+'{{.AppArmorProfile}}'` prints `containers-default-…` instead of
+`unconfined`.
+
+**Fix.** `mpd --runtime-backup && mpd --runtime-rebuild --yes &&
+mpd --runtime-restore`. The console noise from AppArmor profile loads at
+boot is separate and harmless; `mpd --vm-setup` sets `kernel.printk` so
+only warnings and errors reach the console.
+
 ## A `*.mpd.test` name stops resolving after a reboot
 
 **Symptoms.** Right after a reboot, `getent hosts <project>.<NNN>.mpd.test`

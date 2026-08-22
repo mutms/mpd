@@ -338,6 +338,9 @@ func preflight(ctx context.Context, out io.Writer) error {
 	if err := vm.EnsureProcSysWritable(ctx, out); err != nil {
 		return err
 	}
+	if err := vm.QuietConsole(ctx, out); err != nil {
+		return err
+	}
 	return vm.EnablePodmanRestart(ctx, out)
 }
 
