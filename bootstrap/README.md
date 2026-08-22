@@ -1,91 +1,99 @@
-# `bootstrap/` — bring a Debian Trixie VM to the state `mpd --vm-setup` expects
+# `bootstrap/` — bring a Debian Trixie box to the state `mpd --vm-setup` expects
 
-These scripts are the single source of truth for VM-side bring-up. The
-**template VM stays pure Debian** — bootstrap runs in full on every
-sandbox/managed VM that gets created.
+Three steps, each a single self-contained script you can run straight
+from GitHub:
 
-There is **no orchestrator** (no `run-all.sh`). Each step is independently
-invokable; callers list them explicitly.
+```bash
+bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/bootstrap/10-passwordless-sudo.sh)
+bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/bootstrap/15-secure-ssh.sh)
+bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/bootstrap/20-install-software.sh)
+bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/bootstrap/30-mpd-build.sh)
+```
 
-## Steps
+All are idempotent — re-running everything costs one `apt-get update`,
+a `dist-upgrade` that finds nothing and a `make install` that finds
+nothing. There is no orchestrator; callers list the steps.
 
-| File | Wgettable? | Interactive? | What it does |
-|---|---|---|---|
-| `10-passwordless-sudo.sh` | yes | yes (one root password prompt) | Validate hostname (`mpd-<NNN>`, or a `mpd-template[-<suffix>]` staging name) + Debian Trixie. If `sudo -n` already works, no-op. Otherwise write `/etc/sudoers.d/00-mpd-<user>` via `su -c`. |
-| `20-git-clone.sh` | yes | no | Assert `sudo -n` works; create `/opt/mpd` + `/var/lib/mpd` (owned by the dev user); apt-install `git` + `ca-certificates`; clone (or fast-forward) the mpd repo to `/opt/mpd`. No hostname gate — step 10 already did it. |
-| `40-install-software.sh` | no (local) | no | apt-install the full runtime + build + diagnostics package set; enable `podman-restart.service`. |
-| `50-build.sh` | no (local) | no | `make install` + prepend `~/.local/bin` and `/opt/mpd/bin` to PATH in the dev user's `~/.bashrc` (before the non-interactive guard so it applies to login, interactive, AND sshd-invoked non-interactive shells); pre-creates `~/.local/bin` so user-installed CLIs (`claude-install`) work without a re-login. Also exports PATH in the running shell. |
-| `99-update.sh` | no (local) | no | **Out-of-band**: not part of the initial 10..50 chain. Run by `mpd-virt update <NNN>` (or by hand) to refresh a running VM: pulls latest source, rebuilds `mpd`, re-runs `mpd --vm-setup`. Idempotent. **Caveat**: when a release changes 99-update.sh's own orchestration (adds a new step, reorders them), the running process is still the pre-pull copy — run update twice, or use the `exec` self-reexec pattern documented at the top of `99-update.sh`. |
+| File | Interactive? | What it does |
+|---|---|---|
+| `10-passwordless-sudo.sh` | once (root password) | Hostname gate (`mpd-<NNN>`, or a `mpd-template[-<suffix>]` / `mpd-sandbox[-<suffix>]` staging name), Debian Trixie gate, refuses root. No-op if `sudo -n` already works; otherwise `su -c` installs sudo if missing and writes `/etc/sudoers.d/00-mpd-<user>`. |
+| `15-secure-ssh.sh` | no | Hardens a default Debian install's sshd with one drop-in (`/etc/ssh/sshd_config.d/10-mpd.conf`): root over SSH off, password + keyboard-interactive auth off, keys only. Refuses while your `~/.ssh/authorized_keys` holds no key (`ssh-copy-id` first); no-op without openssh-server. |
+| `20-install-software.sh` | no | `apt-get update` + `dist-upgrade`, then **the one package list**: build deps, networking diagnostics, everything mpd needs at run time (podman, dnsmasq-base, caddy, WireGuard, nftables, …), agent tooling, and avahi + qemu-guest-agent (enabled; started where systemd runs and the hypervisor device exists). No hostname gate — it also runs inside an image build. |
+| `30-mpd-build.sh` | no | Creates `/opt/mpd` + `/var/lib/mpd` owned by the dev user; clones or fast-forwards the mpd repo; `make install`; puts `/opt/mpd/bin` and `~/.local/bin` on PATH via `~/.bashrc`. |
 
-Steps `10` and `20` are wgettable because they must run before the mpd
-repo exists on disk. They inline their own helpers and don't source
-`00-common.sh`. Everything from `40` on lives in the repo and sources
-`00-common.sh` for shared logging helpers. There is no networking step:
-hostname, static IP and the systemd-networkd/-resolved stack are the
-platform bootstrap's job (cloud-init on the automated platforms;
-`setup/mpd-sandbox-setup.sh` or `setup/mpd-prepare-adopt.sh` on a
+`mpd --vm-setup` installs nothing: its preflight verifies the binaries
+step 20 provides and names the missing packages plus the command to run
+(`go/internal/vm/host.go`). A new run-time dependency is added to step
+20 and to that verification table.
+
+There is no networking step: hostname, IP and the network stack are the
+platform's job (cloud-init on the automated platforms;
+`setup/mpd-sandbox-setup.sh` / `setup/mpd-prepare-adopt.sh` on a
 hand-installed box).
 
 ## Invocation flows
 
 ### Sandbox VM (user-driven, inside the VM)
 
-The user-facing wrapper at `setup/mpd-sandbox-setup.sh` is
-itself wgettable; it converts the network stack, chains 10 + 20 +
-40 + 50, and adds the sandbox-specific
-finalize (VS Code, GNOME launcher, `mpd --vm-setup`, pre-warm).
+`setup/mpd-sandbox-setup.sh` gates the hostname and sudo itself,
+converts the network stack, then runs 20 + 30 from GitHub, `mpd
+--vm-setup`, and the sandbox extras (pre-warm, GNOME launcher). It skips
+15 on purpose: a sandbox may have no SSH key at all.
 
-```bash
-bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-sandbox-setup.sh)
-```
+### Managed VM (`mpd-virt adopt` on macOS; `setup/linux/`, `setup/windows/`)
 
-### Managed VM (mpd-virt on macOS; `setup/linux/`, `setup/windows/`)
-
-Each orchestrator clones a **pure Debian template** (or builds from a
-cloud image), gets SSH access (`ssh-copy-id` or cloud-init-injected
-key), then runs the steps:
+The orchestrator reaches a box that has SSH key auth, then runs the
+steps over SSH, pushes the CA (needs `/var/lib/mpd` from step 30), and
+finishes with `mpd --vm-setup`:
 
 ```text
-ssh -t … bash <(wget -qO- …/bootstrap/10-passwordless-sudo.sh)   # one interactive root pw
-ssh    … bash <(wget -qO- …/bootstrap/20-git-clone.sh)
-ssh    … bash /opt/mpd/bootstrap/40-install-software.sh
-ssh    … bash /opt/mpd/bootstrap/50-build.sh
+ssh -t … bash <(wget -qO- …/bootstrap/10-passwordless-sudo.sh)   # no-op on cloud-init boxes
+ssh    … bash <(wget -qO- …/bootstrap/15-secure-ssh.sh)
+ssh    … bash <(wget -qO- …/bootstrap/20-install-software.sh)
+ssh    … bash <(wget -qO- …/bootstrap/30-mpd-build.sh)
 ssh    … mpd --vm-setup
 ```
 
-Cloud-init flows (KVM, Hyper-V, UTM) handle the sudo bit via their
-`user-data` natively, so step 10 is a silent no-op there — and they own
-hostname + netplan, so there is no networking step. A hand-installed
-box headed for `mpd-virt adopt` gets its hostname + network stack
-from `setup/mpd-prepare-adopt.sh` first.
+Cloud-init flows handle sudo in their `user-data`, so step 10 is a
+silent no-op there. `mpd-virt` fetches the scripts at a pinned commit
+(`bootstrapRef` in its `adopt.go`), not `main`.
 
-### Upgrade (any VM)
+### Template VM (pre-run 10 + 20)
+
+Give a staging VM the hostname `mpd-template` (or `mpd-template-<x>`),
+run 10, 15 and 20 in it, shut it down and clone from it. A clone renamed to
+`mpd-<NNN>` adopts in the time of step 30 + `mpd --vm-setup` alone, and —
+thanks to qemu-guest-agent and avahi — reports its IP to the hypervisor
+and over mDNS, so `mpd-virt adopt <NNN>` finds it without an address.
+Step 20 re-runs during adoption and converges a template that has gone
+stale.
+
+### Apple container image (mpd-virt)
+
+`container/Containerfile` in mpd-virt runs step 20 at image-build time
+(as root; the script's per-command `sudo` is then a no-op), so a box
+from the image is pre-baked like a template VM.
+
+### Update (any VM)
 
 ```bash
 mpd --vm-upgrade
 ```
 
-which pulls, rebuilds and re-runs `mpd --vm-setup`; `99-update.sh` is
-the script-shaped equivalent used by `mpd-virt update`. The manual
-chain is:
+pulls, rebuilds, updates mudev and the catalogues, and re-runs `mpd
+--vm-setup`. It does not touch apt; to bring the operating system and
+the package set forward, run step 20 first. `mpd-virt update <NNN>` does
+exactly that: step 20, then `mpd --vm-upgrade`.
 
-```bash
-cd /opt/mpd && git pull --ff-only
-bash bootstrap/40-install-software.sh
-bash bootstrap/50-build.sh
-```
-
-All steps are idempotent — re-running everything is fine, costs only
-the time of `dpkg -s` checks and a `make install` that detects no
-changes.
-
-## Environment variables (steps 10 + 20)
+## Environment variables
 
 | Var | Default | Used by | Meaning |
 |---|---|---|---|
-| `MPD_REPO` | `https://github.com/mutms/mpd.git` | `20-git-clone.sh` | full https URL of the mpd repo |
-| `MPD_BRANCH` | `main` | `20-git-clone.sh` | branch / ref to clone |
+| `MPD_REPO` | `https://github.com/mutms/mpd.git` | 30 | https URL of the mpd repo |
+| `MPD_BRANCH` | `main` | 30 | branch / ref to clone |
+| `MPD_APT_LOCK_TIMEOUT` | `300` | 20 | seconds to wait for the dpkg lock (GNOME's packagekitd holds it right after login) |
+| `MPD_APT_RETRIES` | `3` | 20 | retries for a stalled package download |
 
-The wget URL for the seed scripts encodes the branch in its path
+The wget URL encodes the branch in its path
 (`raw.githubusercontent.com/<owner>/mpd/<branch>/bootstrap/…`) — set
-`MPD_BRANCH` to match if you wget from a non-main branch.
+`MPD_BRANCH` to match when you fetch from a non-main branch.

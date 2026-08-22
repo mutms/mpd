@@ -42,7 +42,7 @@ Real possibilities, not committed work.
   `assets/runtime/backup.d/` + `restore.d/` scripts.
   What remains parked is a *converging* upgrade that runs inside the
   existing container without a rebuild — the same shape as
-  `bootstrap/99-update.sh` for the VM — for asset drift too small to
+  `mpd --vm-upgrade` for the VM — for asset drift too small to
   justify a rebuild.
 
 - **Runtime SSH banner** — install a branded `/etc/motd` inside the

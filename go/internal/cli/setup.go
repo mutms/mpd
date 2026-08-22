@@ -329,7 +329,7 @@ func preflight(ctx context.Context, out io.Writer) error {
 	if err := vm.RequireSupportedHost(); err != nil {
 		return err
 	}
-	if err := vm.EnsurePackages(ctx, out); err != nil {
+	if err := vm.RequirePackages(); err != nil {
 		return err
 	}
 	// Before podman is touched: an Apple container has /proc/sys read-only,

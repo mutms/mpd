@@ -76,7 +76,7 @@ Three different things take the dpkg lock out from under a bootstrap:
   bootstrapped. Disabling that autostart is what removes it; masking
   PackageKit is not.
 
-None of them breaks a bootstrap: `bootstrap/00-common.sh` wraps every
+None of them breaks a bootstrap: `bootstrap/20-install-software.sh` wraps every
 `apt-get` with `DPkg::Lock::Timeout=300` (override with
 `MPD_APT_LOCK_TIMEOUT`) plus `Acquire::Retries=3`, so a competing job
 stalls the run instead of failing it. Worth knowing that Debian's

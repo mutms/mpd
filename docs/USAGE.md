@@ -69,8 +69,10 @@ Idempotent — safe to re-run any time. Walks you through:
 - a final DNS sanity check
 
 (VM-side apt installs, the `mpd` build, and `/opt/mpd/bin/` on PATH all
-happen earlier in the `bootstrap/40..50` steps and don't re-run here;
-the network stack and hostname are the platform bootstrap's job. See
+happen earlier in the `bootstrap/20..30` steps and don't re-run here —
+setup only verifies the packages are present and names
+`bootstrap/20-install-software.sh` when one is missing; the network
+stack and hostname are the platform bootstrap's job. See
 `bootstrap/README.md`.)
 
 Host-side trust + networking setup lives in the separate `mpd-virt`
@@ -764,6 +766,15 @@ resolver's config only reach the VM through setup. Refuses if `/opt/mpd`
 has uncommitted changes (commit, stash or discard first). Idempotent —
 an up-to-date VM just gets a rebuild and a fresh setup pass. A checkout
 you have re-pointed at your own remote is left alone and reported.
+
+It does not touch apt. To bring the operating system and the package
+set forward too, run the bootstrap install step first — it is
+idempotent, and `mpd-virt update <NNN>` runs exactly this pair:
+
+```bash
+bash /opt/mpd/bootstrap/20-install-software.sh   # apt dist-upgrade + the package set
+mpd --vm-upgrade
+```
 
 Neither `--vm-upgrade` nor `--vm-setup` migrates a VM across a change in
 mpd's own in-VM layout; they assume a VM that never had the old one. When

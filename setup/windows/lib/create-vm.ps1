@@ -123,8 +123,8 @@ while (((Get-Date) - $start).TotalSeconds -lt 300) {
 }
 Write-Ok "Cloud-init complete"
 
-# ── 8. Bootstrap step 20: clone mpd repository ────────────────────────────────
-# (Cloud-init already handled the prep step's job: passwordless sudo, SSH
+# ── 8. Bootstrap steps 15 + 20 + 30: secure sshd, packages, clone + build mpd ─
+# (Cloud-init already handled step 10's job: passwordless sudo, SSH
 # key, hostname, static IP, IPv6 disable, on a systemd-networkd image — no
 # network-stack conversion needed. mpd derives its id from the hostname
 # mpd-<NNN>.)
@@ -132,10 +132,20 @@ Write-Ok "Cloud-init complete"
 $MpdBranch    = if ($env:MPD_BRANCH) { $env:MPD_BRANCH } else { "main" }
 $MpdRepoRaw   = "https://raw.githubusercontent.com/mutms/mpd/$MpdBranch"
 
-Write-Step "Bootstrap 20: install git + clone mpd repo"
+Write-Step "Bootstrap 15: sshd keys-only (root + password auth off)"
 Invoke-Ssh -User $VmUser -RemoteHost $VmIp `
-    -Command "MPD_BRANCH=$MpdBranch MPD_REPO=$MpdRepo bash <(wget -qO- $MpdRepoRaw/bootstrap/20-git-clone.sh)"
-Write-Ok "Repository cloned"
+    -Command "bash <(wget -qO- $MpdRepoRaw/bootstrap/15-secure-ssh.sh)"
+Write-Ok "sshd secured"
+
+Write-Step "Bootstrap 20: OS upgrade + package set"
+Invoke-Ssh -User $VmUser -RemoteHost $VmIp `
+    -Command "bash <(wget -qO- $MpdRepoRaw/bootstrap/20-install-software.sh)"
+Write-Ok "Packages installed"
+
+Write-Step "Bootstrap 30: clone + build mpd"
+Invoke-Ssh -User $VmUser -RemoteHost $VmIp `
+    -Command "MPD_BRANCH=$MpdBranch MPD_REPO=$MpdRepo bash <(wget -qO- $MpdRepoRaw/bootstrap/30-mpd-build.sh)"
+Write-Ok "mpd binary built"
 
 # ── 9. Issue this VM's signing CA, then upload CA material ──────────────────
 
@@ -201,7 +211,7 @@ Write-Info "Waiting for VM to restart..."
 Wait-ForSsh -User $VmUser -RemoteHost $VmIp -TimeoutSec 120
 Write-Ok "VM back online"
 
-# ── 12. Install packages and build mpd ───────────────────────────────────────
+# ── 12. Swap file ────────────────────────────────────────────────────────────
 
 Write-Step "Creating swap file (4 GB)"
 
@@ -216,21 +226,6 @@ if [ ! -f /swapfile ]; then
 fi
 "@
 Write-Ok "Swap ready"
-
-# Bootstrap steps 40 + 50: apt install set, mpd build.
-# Networking (hostname + netplan) is cloud-init's job on this flow, so
-# there is no separate networking step to run.
-
-Write-Step "Bootstrap 40: apt install package set"
-Invoke-Ssh -User $VmUser -RemoteHost $VmIp `
-    -Command "bash /opt/mpd/bootstrap/40-install-software.sh"
-Write-Ok "Packages installed"
-
-Write-Step "Bootstrap 50: build mpd binary"
-Invoke-Ssh -User $VmUser -RemoteHost $VmIp `
-    -Command "bash /opt/mpd/bootstrap/50-build.sh"
-Write-Ok "mpd binary built"
-Write-Ok "Bootstrap complete"
 
 # ── 13. Run mpd --vm-setup ───────────────────────────────────────────────────────
 

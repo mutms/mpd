@@ -345,8 +345,8 @@ else
     warn "could not verify root filesystem size."
 fi
 
-# --- Bootstrap step 20: clone mpd repo ---
-# (Cloud-init already handled the prep step's job: passwordless sudo, SSH
+# --- Bootstrap steps 15 + 20 + 30: secure sshd, packages, clone + build mpd ---
+# (Cloud-init already handled step 10's job: passwordless sudo, SSH
 # key, hostname, static IP, IPv6 disable, on a systemd-networkd image — so
 # no network-stack conversion is needed. mpd derives its id from the
 # hostname mpd-<NNN>.)
@@ -354,12 +354,24 @@ fi
 MPD_BRANCH="${MPD_BRANCH:-main}"
 MPD_REPO_RAW="https://raw.githubusercontent.com/mutms/mpd/${MPD_BRANCH}"
 
-step "Bootstrap 20: install git + clone mpd repo"
+step "Bootstrap 15: sshd keys-only (root + password auth off)"
+ssh_cmd "$VM_IP" "$VM_USER" \
+    "bash <(wget -qO- ${MPD_REPO_RAW}/bootstrap/15-secure-ssh.sh)" \
+    || die "bootstrap/15 failed (sshd hardening)."
+ok "sshd secured"
+
+step "Bootstrap 20: OS upgrade + package set"
+ssh_cmd "$VM_IP" "$VM_USER" \
+    "bash <(wget -qO- ${MPD_REPO_RAW}/bootstrap/20-install-software.sh)" \
+    || die "bootstrap/20 failed (apt install)."
+ok "Packages installed"
+
+step "Bootstrap 30: clone + build mpd"
 ssh_cmd "$VM_IP" "$VM_USER" \
     "MPD_BRANCH=$(printf '%q' "${MPD_BRANCH}") MPD_REPO=$(printf '%q' "${MPD_REPO}") \
-     bash <(wget -qO- ${MPD_REPO_RAW}/bootstrap/20-git-clone.sh)" \
-    || die "bootstrap/20 failed (git install + clone)."
-ok "Repository cloned"
+     bash <(wget -qO- ${MPD_REPO_RAW}/bootstrap/30-mpd-build.sh)" \
+    || die "bootstrap/30 failed (clone + make install)."
+ok "mpd binary built"
 
 # --- Detach cloud-init CD ---
 
@@ -405,23 +417,6 @@ if [ ! -f /swapfile ]; then
 fi
 EOF
 ok "Swap ready"
-
-# --- Bootstrap steps 40 + 50: apt install set, mpd build ---
-# Networking (hostname + netplan) is cloud-init's job on this flow, so
-# there is no separate networking step to run.
-
-step "Bootstrap 40: apt install package set"
-ssh_cmd "$VM_IP" "$VM_USER" \
-    "bash /opt/mpd/bootstrap/40-install-software.sh" \
-    || die "bootstrap/40 failed (apt install)."
-ok "Packages installed"
-
-step "Bootstrap 50: build mpd binary"
-ssh_cmd "$VM_IP" "$VM_USER" \
-    "bash /opt/mpd/bootstrap/50-build.sh" \
-    || die "bootstrap/50 failed (make install)."
-ok "mpd binary built"
-ok "Bootstrap complete"
 
 step "Issuing this VM's signing CA (constrained to ${VM_OCTET}.mpd.test)"
 VM_CA_DIR="${STATE_DIR}/${VM_OCTET}/ca"

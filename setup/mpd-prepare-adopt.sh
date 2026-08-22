@@ -16,7 +16,7 @@
 # (avahi is set up below) — plus the explicit-IP variant as a fallback.
 #
 # Wgettable / self-contained: it runs before the mpd repo is cloned, so
-# it inlines its own helpers rather than sourcing bootstrap/00-common.sh.
+# it inlines its own helpers.
 #
 #   bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-prepare-adopt.sh)
 #

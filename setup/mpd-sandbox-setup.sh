@@ -151,17 +151,15 @@ fi
 ok "systemd-resolved + systemd-networkd active, DNS resolves"
 
 # --- 4. Install mpd from source --------------------------------------
-# 20-git-clone clones the repo to /opt/mpd (and creates /var/lib/mpd);
-# 40/50 install deps + build the binary. Same steps adoption drives over
-# SSH — here they run locally.
-step "Install mpd (clone + build)"
-if [ ! -d /opt/mpd/.git ]; then
-    bash <(wget -qO- "${BOOTSTRAP_URL}/20-git-clone.sh")
-else
-    ok "already cloned at /opt/mpd"
-fi
-bash /opt/mpd/bootstrap/40-install-software.sh
-bash /opt/mpd/bootstrap/50-build.sh
+# The same bootstrap steps adoption drives over SSH, run locally:
+# 20 brings the OS current and installs every package mpd needs; 30
+# clones (or fast-forwards) /opt/mpd and builds the binary. Both are
+# idempotent. (Step 15, sshd keys-only, is deliberately not run: a
+# sandbox may have no SSH key at all, and its security is weakened on
+# purpose — see the warning at the top.)
+step "Install mpd (packages, clone, build)"
+bash <(wget -qO- "${BOOTSTRAP_URL}/20-install-software.sh")
+bash <(wget -qO- "${BOOTSTRAP_URL}/30-mpd-build.sh")
 export PATH="/opt/mpd/bin:${PATH}"
 ok "mpd built at /opt/mpd/bin/mpd"
 

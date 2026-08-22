@@ -188,7 +188,7 @@ Fixed source checkout path: `/opt/mpd`
 
 Directory ownership split:
 
-- `bin/` — the built binary (`bin/mpd`) plus committed VM tools (`claude-install`, `gnome-install`, `gnome-start`/`gnome-stop`, `rdp-start`/`rdp-stop`), on PATH via `bootstrap/50-build.sh`.
+- `bin/` — the built binary (`bin/mpd`) plus committed VM tools (`claude-install`, `gnome-install`, `gnome-start`/`gnome-stop`, `rdp-start`/`rdp-stop`), on PATH via `bootstrap/30-mpd-build.sh`.
 - `/var/lib/mpd/conf/` — persistent local trust/network material:
   - `caroot/` — the trust anchor (`rootCA.pem`; public only, on a
     `mpd-virt`-provisioned VM) plus the CA this VM signs leaves with
@@ -405,7 +405,7 @@ forwarded through `mpd run`. Dropped: `mpd run php …` is clear enough,
 and claiming a bare upstream name on the VM would turn a wrong-terminal
 mistake into a silent forward instead of an immediate `command not
 found`. The VM deliberately has no PHP and no Node
-(`bootstrap/40-install-software.sh` installs neither); that absence is a
+(`bootstrap/20-install-software.sh` installs neither); that absence is a
 useful signal and is worth keeping.
 
 ### Implementation: Go by default
@@ -971,7 +971,7 @@ See detailed docs:
   (`dnsmasq.Manager.Reconcile`, service records passed in by the cli
   layer); TLS
 - `assets/` — runtime/type/service scripts/config/templates + `runtime/skel/`
-- `bootstrap/` — VM bring-up steps 10–50 (passwordless sudo, repo clone, apt, build)
+- `bootstrap/` — VM bring-up steps 10–30 (passwordless sudo, OS upgrade + packages, clone + build)
 - `setup/` — host-side bootstrap: the sandbox + adoption-prep scripts, `linux/`, `windows/` (macOS lives in the `mpd-virt` repo)
 - `docs/` — behavioral and architecture contracts
 

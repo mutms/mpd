@@ -483,7 +483,10 @@ To keep the blast radius to RDP alone, `rdp-start` writes
 `/etc/ssh/sshd_config.d/20-mpd-no-ssh-password.conf`
 (`PasswordAuthentication no`) once it has confirmed a key is already
 installed, so the new password cannot be replayed against sshd. It warns
-instead of locking you out when there is no key yet.
+instead of locking you out when there is no key yet. (A managed or
+prepared VM normally already has `bootstrap/15-secure-ssh.sh`'s stricter
+`10-mpd.conf` in place — root over SSH off as well; the two drop-ins
+agree and coexist.)
 
 `rdp-stop` disables the service and the port. The password stays set for
 the next `rdp-start`; `sudo passwd -l <user>` clears it, on a headless VM

@@ -1,41 +1,40 @@
 #!/bin/bash
 # bootstrap/10-passwordless-sudo.sh
 #
-# Wgettable. Self-contained. The ONLY script in the bootstrap chain that
-# can be invoked interactively before the mpd repo is cloned, so it
-# inlines its own helpers and hostname/OS gates instead of sourcing
-# 00-common.sh.
+# Step 1 of 3. Wgettable, self-contained — it runs on a box that has
+# nothing of mpd on it yet, so it inlines its helpers and gates.
 #
-# Behavior:
-#   1. VM-name gate: hostname must be mpd-template, mpd-sandbox,
-#      mpd-template-<suffix>, mpd-sandbox-<suffix>, or mpd-NNN (3-digit).
-#      The -<suffix> forms exist so a developer can keep several
-#      pre-adoption templates and sandboxes side by side (e.g.
-#      mpd-template-trixie, mpd-sandbox-utm). The canonical mpd-NNN
-#      hostname is set directly (at install, by cloud-init, or by the
-#      developer) — mpd derives its identity from it. Refuses anything
-#      else — accidental run on a workstation is fatal.
-#   2. OS gate: Debian Trixie.
-#   3. If `sudo -n true` already works (cloud-init / pre-prepped VM):
-#      silent no-op.
-#   4. Otherwise prompt for the root password (`su -c …`) and write
-#      /etc/sudoers.d/00-mpd-<user> with NOPASSWD for the invoking user.
-#      `su -c` is the privilege-rule-approved root elevation shape
-#      (no identity switch to a non-root user).
+# What it does:
+#   1. Hostname gate: mpd-template, mpd-sandbox, mpd-template-<suffix>,
+#      mpd-sandbox-<suffix>, or mpd-NNN (3-digit). The -<suffix> forms
+#      let a developer keep several pre-adoption templates and sandboxes
+#      side by side (mpd-template-trixie, mpd-sandbox-utm). The canonical
+#      mpd-NNN hostname is set directly (at install, by cloud-init, or by
+#      the developer) — mpd derives its identity from it. Anything else
+#      is refused: an accidental run on a workstation is fatal.
+#   2. OS gate: Debian Trixie. Refuses root: the point is an unprivileged
+#      dev account that can escalate without a prompt.
+#   3. If `sudo -n true` already works (cloud-init / pre-prepped VM /
+#      template): silent no-op.
+#   4. Otherwise ask for the root password once (`su - -c`), install sudo
+#      when a minimal netinst lacks it, put the user in the sudo group and
+#      write /etc/sudoers.d/00-mpd-<user> with NOPASSWD. `su -c` is the
+#      privilege-rule-approved root elevation (no identity switch to a
+#      non-root user).
 #
-# Standalone invocation:
-#   bash <(wget -qO- https://raw.githubusercontent.com/<owner>/mpd/<branch>/bootstrap/10-passwordless-sudo.sh)
+# Idempotent: the fast path is one `sudo -n true`.
+#
+#   bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/bootstrap/10-passwordless-sudo.sh)
 
 set -euo pipefail
 
-# --- Inline helpers (can't source 00-common.sh; the repo may not exist yet) ---
 step() { printf '\n==> %s\n' "$*"; }
 ok()   { printf '    ok: %s\n' "$*"; }
 die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
-# --- VM-name gate ---
+# --- Hostname gate ---
 step "Hostname gate"
-CURRENT_HOSTNAME="$(hostname -s 2>/dev/null || cat /etc/hostname | tr -d '[:space:]' | cut -d. -f1)"
+CURRENT_HOSTNAME="$(hostname -s 2>/dev/null || cut -d. -f1 /etc/hostname | tr -d '[:space:]')"
 case "${CURRENT_HOSTNAME}" in
     mpd-template|mpd-sandbox)             ;;
     mpd-template-?*|mpd-sandbox-?*)       ;;
@@ -66,8 +65,11 @@ ok "Debian Trixie"
 
 # --- Passwordless sudo ---
 step "Passwordless sudo for $(id -un)"
+[ "$(id -u)" -ne 0 ] || die "run this as your dev user, not root."
 
-if sudo -n true 2>/dev/null; then
+# Guard the probe with `command -v`: a minimal server install has no sudo
+# at all, and calling it would just print "command not found".
+if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
     ok "already configured (sudo -n works)"
     exit 0
 fi
@@ -76,16 +78,24 @@ USER_NAME="$(id -un)"
 SUDOERS_PATH="/etc/sudoers.d/00-mpd-${USER_NAME}"
 
 echo "    No passwordless sudo for ${USER_NAME}. About to ask for the root password"
-echo "    (one-time setup). The prompt comes from \`su\`."
+echo "    (one-time setup — installs sudo if a minimal install lacks it)."
+echo "    The prompt comes from \`su\`."
 echo
 
 # `su - -c '<cmd>'` runs a single command as root in a login shell so
-# root's own PATH (with /usr/sbin) is used — visudo lives there and is
-# not on a regular user's PATH. visudo -cf validates the drop-in; if
-# invalid the file is removed so subsequent sudo calls don't get
-# bricked. Atomic via install -m 440.
+# root's own PATH (with /usr/sbin) is used — visudo and usermod live
+# there and are not on a regular user's PATH. visudo -cf validates the
+# drop-in; if invalid the file is removed so subsequent sudo calls don't
+# get bricked. Atomic via install -m 440.
 if ! su - -c "
     set -e
+    if ! command -v sudo >/dev/null 2>&1; then
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq
+        apt-get install -y -qq sudo
+    fi
+    install -d -m 0755 /etc/sudoers.d
+    usermod -aG sudo '${USER_NAME}'
     install -m 0440 -o root -g root /dev/null '${SUDOERS_PATH}'
     printf '%s ALL=(ALL) NOPASSWD:ALL\n' '${USER_NAME}' > '${SUDOERS_PATH}'
     if ! visudo -cf '${SUDOERS_PATH}' >/dev/null; then
@@ -94,7 +104,8 @@ if ! su - -c "
         exit 1
     fi
 "; then
-    die "Failed to write ${SUDOERS_PATH}. Wrong root password, or the user '${USER_NAME}' isn't permitted to become root via su."
+    die "Failed to configure sudo for '${USER_NAME}'. Wrong root password, the
+user isn't permitted to become root via su, or sudo couldn't be installed."
 fi
 
 sudo -n true 2>/dev/null \

@@ -70,76 +70,44 @@ func RequireSupportedHost() error {
 // requiredPackages is what mpd itself needs at run time, keyed by a
 // binary whose absence proves the package is missing.
 //
-// bootstrap/40 installs the other half: what is needed to configure and
-// diagnose networking and to build mpd (golang-go, git, iproute2,
-// bind9-dnsutils, jq, …). The split is by purpose — that script runs
-// once before mpd exists, this list converges on every `--vm-setup`, so
-// a new runtime dependency reaches an already-bootstrapped VM without
-// re-running bootstrap.
+// This is a verification table, not an installer: the one package list
+// is bootstrap/20-install-software.sh, which also carries the reason
+// for each package (dnsmasq-base not dnsmasq, no aardvark-dns, vim not
+// vim-tiny, …). mpd never runs apt — a box whose packages are missing
+// or stale is converged by re-running that script, and `--vm-setup`
+// refuses until it has been. A new run-time dependency is added there
+// and here.
 //
 // Package name and binary name are not the same thing — nft comes from
-// nftables, newuidmap from uidmap — so both are named rather than
-// derived.
+// nftables, newuidmap from uidmap, rg from ripgrep — so both are named
+// rather than derived. /usr/bin/vim is the proof of full vim: vim-tiny
+// provides only /usr/bin/vi.
 var requiredPackages = []struct{ Package, Binary string }{
-	// Container engine and the pieces podman needs but does not pull in
-	// under --no-install-recommends: catatonit is the pod pause binary,
-	// uidmap provides newuidmap/newgidmap.
-	//
-	// Deliberately not aardvark-dns: mpd's network is created with
-	// --disable-dns, so podman's own resolver is never started. It would
-	// bind port 53 on the gateway, which is where mpd's resolver listens.
 	{"podman", "/usr/bin/podman"},
 	{"catatonit", "/usr/bin/catatonit"},
 	{"uidmap", "/usr/bin/newuidmap"},
 	{"nftables", "/usr/sbin/nft"},
-	// WireGuard endpoint for the encrypted host↔VM overlay (mpd-virt/mpd-proxy):
-	// wg-quick brings up wg0, wg generates and inspects keys. wireguard-go is
-	// the userspace implementation wg-quick falls back to automatically when the
-	// kernel has no WireGuard module — Apple containers run a lightweight VM
-	// kernel that ships none, so wg0 there is userspace; the Parallels VMs use
-	// the in-kernel module and leave wireguard-go installed but unused.
 	{"wireguard-tools", "/usr/bin/wg"},
 	{"wireguard-go", "/usr/bin/wireguard-go"},
-	// The VM's resolver. dnsmasq-base is the binary alone; the `dnsmasq`
-	// package would additionally install a second unit reading
-	// /etc/dnsmasq.conf, which is the sysadmin's file and not mpd's.
 	{"dnsmasq-base", "/usr/sbin/dnsmasq"},
-	// Also in bootstrap/40, deliberately: the bootstrap scripts need it
-	// before mpd exists, and repeating it here keeps it converging on a
-	// VM bootstrapped earlier. mpd itself never shells out to jq — it
-	// parses JSON in Go, and jq is not on the internal/exec allow-list —
-	// but the in-runtime Moodle tools use it, and so does anyone reading
-	// /srv/meta by hand.
 	{"jq", "/usr/bin/jq"},
-	{"caddy", "/usr/bin/caddy"}, // TLS frontdoor for `mpd --web`
-	// Full vim, not vim-tiny: vim-tiny ships no defaults.vim, so it
-	// starts in compatible mode where arrow keys insert ABCD and
-	// backspace will not cross the insert point. /usr/bin/vim is the
-	// proof — vim-tiny provides only /usr/bin/vi.
+	{"caddy", "/usr/bin/caddy"},
 	{"vim", "/usr/bin/vim"},
-
-	// Extra tools for AI agents. An agent working on the VM is otherwise
-	// worse equipped than one inside a runtime, which already ships a
-	// developer toolbox — and project setup now happens VM-side.
-	// shellcheck/shfmt matter most: mpd is ~70 shell files with no
-	// linting, so this is the only thing that checks them.
-	//
-	// Deliberately not `gh`: it does nothing until `gh auth login`, and
-	// that stores a token on the VM. mpd keeps no credentials — git auth
-	// is the developer's SSH agent — and the CI side of this project is
-	// forgejo, not GitHub. Anyone who wants it: `sudo apt install gh`.
+	{"git", "/usr/bin/git"},
 	{"shellcheck", "/usr/bin/shellcheck"},
 	{"shfmt", "/usr/bin/shfmt"},
-	{"ripgrep", "/usr/bin/rg"}, // fast search over big project trees
+	{"ripgrep", "/usr/bin/rg"},
 	{"tree", "/usr/bin/tree"},
 }
 
-// EnsurePackages installs whatever is missing.
-//
-// No "you must run bootstrap first" branch: mpd runs on Debian and can
-// install its own dependencies. The distinction only ever existed when
-// mpd was meant to run on macOS too, where it could not.
-func EnsurePackages(ctx context.Context, out io.Writer) error {
+// bootstrapInstallScript is the one command that installs or converges
+// everything in requiredPackages. The checkout exists by the time
+// --vm-setup runs, so the local copy is named rather than a wget URL.
+const bootstrapInstallScript = MpdDir + "/bootstrap/20-install-software.sh"
+
+// RequirePackages refuses to continue while a run-time dependency is
+// missing, naming the packages and the script that installs them.
+func RequirePackages() error {
 	var missing []string
 	for _, p := range requiredPackages {
 		if info, err := os.Stat(p.Binary); err != nil || info.IsDir() {
@@ -149,36 +117,16 @@ func EnsurePackages(ctx context.Context, out io.Writer) error {
 	if len(missing) == 0 {
 		return nil
 	}
-
-	ui.Step(out, "Installing %s", strings.Join(missing, ", "))
-	// Refresh the index first: on a VM whose lists are empty or stale,
-	// install fails with "Unable to locate package", which reads like a
-	// missing package rather than a missing index.
-	if code, err := exec.Run(ctx, exec.Cmd{
-		Name: "apt-get", Args: []string{"update", "-qq"},
-		Env: []string{"DEBIAN_FRONTEND=noninteractive"}, Sudo: true,
-	}); err != nil || code != 0 {
-		return fmt.Errorf("apt-get update failed (exit %d).", code)
-	}
-	args := append([]string{"install", "-y", "--no-install-recommends"}, missing...)
-	if code, err := exec.Run(ctx, exec.Cmd{
-		Name: "apt-get", Args: args,
-		Env: []string{"DEBIAN_FRONTEND=noninteractive"}, Sudo: true,
-	}); err != nil || code != 0 {
-		return fmt.Errorf("Failed to install %s (apt-get exit %d).",
-			strings.Join(missing, ", "), code)
-	}
-	ui.OK(out, "installed %s", strings.Join(missing, ", "))
-	return nil
+	return fmt.Errorf("Missing packages: %s.\n"+
+		"mpd does not install packages itself. Run the bootstrap step that does, then re-run mpd --vm-setup:\n"+
+		"    bash %s", strings.Join(missing, ", "), bootstrapInstallScript)
 }
 
 // EnablePodmanRestart enables the unit that restarts containers marked
 // --restart=always after a host reboot.
 //
-// Lives here rather than in bootstrap/40 because the unit ships with the
-// podman package, which mpd installs itself — enabling it in a script
-// that runs before mpd exists fails with "Unit podman-restart.service
-// does not exist".
+// The unit ships with the podman package (bootstrap/20 installs it);
+// enabling it is mpd's job because mpd is what relies on it.
 //
 // Without it, --restart=always is silently ineffective across reboots:
 // containers come back only when something starts them by hand.
