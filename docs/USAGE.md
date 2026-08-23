@@ -303,24 +303,25 @@ has a real SSH endpoint. From your laptop, use the ProxyJump alias
 overlay or proxy running:
 
 ```bash
-ssh -A mpd-<NNN>
+ssh mpd-<NNN>
 ```
 
 Inside the VM the same alias works without the jump. Add `-A` only when
-the session genuinely needs your SSH agent — see [SECURITY.md](SECURITY.md).
+you need your SSH agent in that session, and never in a session where
+an AI agent works — see [SECURITY.md](SECURITY.md).
 
-You land in the runtime as your local user (UID matched), with
-passwordless sudo, agent-forwarded git auth, and the project tree at
-`/srv/projects/<project>/`. From there:
+You land in the runtime as the VM's dev user, with passwordless sudo
+and the project tree at `/srv/projects/<project>/`.
+From there:
 
 - **VS Code Remote-SSH** → connect to `runtime.<NNN>.mpd.test`, open
   `/srv/projects/<project>/`. Language server, debugger, terminals
   all run inside the runtime.
 - **PHPStorm Gateway** → same endpoint, same shape.
-- **Claude Code over SSH** → `ssh -A user@runtime.<NNN>.mpd.test` and
-  start a session inside the runtime. The agent reads/writes files,
-  runs composer / phpunit / behat, pushes to GitHub via your
-  forwarded agent key.
+- **Claude Code over SSH** → `ssh mpd-<NNN>` (no `-A`) and start a
+  session inside the runtime. The agent reads/writes files and runs
+  composer / phpunit / behat. It has no key, so it cannot push: commit
+  and push from the host (PhpStorm or a host terminal) yourself.
 
 If you're inside the VM (e.g. a GNOME terminal in a desktop-in-VM
 setup), use the VM-local SSH key instead of `-A`:
@@ -419,8 +420,11 @@ Two details worth knowing:
 
 ### Pushing to git from inside the runtime
 
-The runtime doesn't carry your private SSH key. Authenticate to
-GitHub/GitLab/private remotes via **SSH agent forwarding** (`ssh -A`):
+The runtime doesn't carry your private SSH key. The simple way is to
+not push from there at all: the IDE on the host (PhpStorm, VS Code)
+commits and pushes with the host's key, and an AI agent inside the
+runtime never gets one. For a session where you type yourself, **SSH
+agent forwarding** (`ssh -A`) works:
 
 ```bash
 ssh-add ~/.ssh/id_ed25519           # load the key into your laptop's agent
@@ -440,8 +444,7 @@ VSCode Remote-SSH forwards the agent silently
 also forwards by default but prompts on each key access — use
 per-access prompts when an AI agent is driving, per-session when you're
 typing. An AI agent launched inside an `-A` SSH session uses the same
-forwarded socket — `git push` from the agent authenticates against your
-GitHub account via your laptop's key.
+forwarded socket and can push as you — so do not start one there.
 
 The private key **never leaves the laptop**. The runtime can request
 signatures via the agent's API only while your SSH session is open —

@@ -87,19 +87,21 @@ Three things follow for mpd, because its runtime is long-lived and
 nothing resets it between projects:
 
 - **Assume persistent compromise.** A runtime that ran a malicious
-  postinstall keeps it. If you suspect one, `mpd --runtime-rebuild`
-  replaces the runtime. Think before running `--runtime-restore`
-  afterwards: the backup carries home-directory state from the suspect
-  runtime back in.
+  postinstall keeps it, and so does the VM around it. If you suspect
+  one, throw the whole VM away and create a new one. Do not back
+  anything up from it unless it is truly irreplaceable — a backup
+  carries the compromise with it.
 - **Keep credentials out of the VM.** This is why the root CA private
   key stays on the workstation and the VM gets only a zone-limited
   intermediate. It is also why you should not put API tokens in
   `mpd-virt.env` for convenience.
 - **`ssh -A` is the one live credential path in.** Agent forwarding lets
   anything running as the dev user in that container use your key for
-  the session — including a `git clone` you did not start. It is listed
-  under "Intentional compromises" for this reason. Forward it when you
-  need it, not by default.
+  the session — including a `git clone` you did not start. Do not
+  forward it into a session where an AI agent works. Let the agent
+  edit and test inside the VM without your key, and push from the host
+  (PhpStorm or a host terminal, with your key) instead. See
+  "Intentional compromises".
 
 **Moving the VM further from the workstation improves security**, even
 though it exposes the VM more. Proxmox puts the untrusted environment on
@@ -378,10 +380,9 @@ Two SSH endpoints, both pubkey-only:
 - **The VM** (`tcp/22` on its LAN IP) — management shell, the ProxyJump
   base for the runtime, and the SOCKS fallback. Root login disabled.
 - **The runtime container** (`runtime.<NNN>.mpd.test`) — full dev shell,
-  passwordless sudo, the developer's UID. The runtime creates a user
-  account matching the developer's username and UID, and copies the
-  public key from `~/.ssh/authorized_keys` into the container. Root
-  login disabled.
+  passwordless sudo. The runtime has the same dev user as the VM (name
+  and uid, so `/srv` has one owner on both sides), with the VM's
+  `~/.ssh/authorized_keys` copied in. Root login disabled.
 
 File transfer has no endpoint of its own. The data volume is mounted on
 the VM at `/srv`, so `/srv/backups/` is reached over the VM's own sshd,

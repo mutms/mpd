@@ -437,9 +437,8 @@ itself.
 ### Privilege model
 
 Tools run as the dev user — the only non-root user inside the runtime,
-created at provisioning time with the same UID as the developer's host
-account so files written through the runtime land with the right owner
-on the data volume. The dev user has **passwordless `sudo`** inside the
+created at provisioning time with the same name and UID as the VM's dev
+user, so files on the data volume have one owner on both sides. The dev user has **passwordless `sudo`** inside the
 runtime by design (see [`SECURITY.md`](SECURITY.md)).
 
 **Tools `sudo` internally; the dev/AI invokes them bare.** The right
