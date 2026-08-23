@@ -37,7 +37,8 @@ the user sits and where `mpd` runs:
 
 `mpd` itself is a single Linux binary that runs **inside the VM**. The
 host-side orchestrator (`mpd-virt`, macOS and Linux hosts) lives in a
-separate repository. Windows hosts are not supported and not planned.
+separate repository. Proprietary Windows hosts are not supported and
+not planned.
 
 **Implementation note:** a sandbox and a managed VM are the *same* thing
 at runtime — same code paths, same hostname-derived identity (mpd-<NNN>,
@@ -46,9 +47,8 @@ own self-signed CA in the VM, a managed VM gets a CA pushed by the
 host-side `mpd-virt`. A sandbox can be adopted as a managed VM later with
 no runtime change.
 
-`README.md` is deliberately terse; this file carries the depth. The
-background below is the long-form context that used to live there — keep it
-here, not in README.
+`README.md` is deliberately terse; this file carries the depth. Keep the
+long-form background here, not in README.
 
 ## Background and positioning
 
@@ -127,11 +127,10 @@ time, seconds on re-runs; VM resume from suspend, seconds.
 **Top-level repo layout:** `bin/` (built `bin/mpd` plus committed VM tools:
 `claude-install`, `gnome-install`, `gnome-start`/`gnome-stop`,
 `rdp-start`/`rdp-stop`, `libvirt-install` — make this VM a libvirt/KVM host
-for mpd-virt's libvirt backend, `migrate-vm-network.sh` — the manual migration of
-an existing VM to the `/etc/hosts` DNS layout; `--vm-setup` carries no
-migration logic), `go/` (control plane),
+for mpd-virt's libvirt backend), `go/` (control plane),
 `assets/` (runtime/service definitions and shell), `bootstrap/`
-(VM bring-up steps), `setup/` (per-platform host orchestration), `docs/`.
+(VM bring-up steps), `setup/` (the in-VM sandbox and adoption-prep
+scripts), `docs/`.
 Runtime state lives at `/var/lib/mpd/` (see Fixed in-VM paths below).
 
 ## Fixed in-VM paths
@@ -459,8 +458,7 @@ chosen by scope:
 
 Both are put on PATH by the skel `~/.bashrc` reading the assets tree
 directly at `/opt/mpd/assets/...`. Nothing is copied or symlinked into
-`/srv`. (There used to be a third, lower `runtime-base` tier; with one
-runtime it earned nothing and merged into `assets/runtime/`.)
+`/srv`.
 
 Skeleton (either location):
 

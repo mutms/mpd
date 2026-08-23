@@ -96,11 +96,9 @@ VMs `mpd-virt create` builds from a cloud image have no desktop, so
 - **Cloud-provider-specific tooling** (Hetzner Cloud images, AWS AMIs,
   GCP, Azure) — none planned at the moment. The sandbox path on a
   cloud Debian instance with GNOME is the closest current option.
-- **Windows hosts** — not planned, a dead end for this project. WSL2
-  is not the right shape (a partial Linux environment with surprising
-  filesystem and networking semantics; mpd VM expects a real, isolated
-  VM), and a Hyper-V bootstrap once lived here and was removed with the
-  Linux one when `mpd-virt` grew a Linux host side.
+- **Proprietary Windows hosts** — not planned. WSL2 is not a real VM,
+  and nobody is going to maintain a bootstrap for the proprietary
+  Hyper-V.
 - **Docker Desktop / OrbStack as alternative backends** — mpd uses
   rootful Podman inside a real VM. Other container backends aren't
   supported.

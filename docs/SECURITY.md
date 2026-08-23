@@ -113,12 +113,15 @@ asset that is designed to be thrown away.
 ## Trust boundaries
 
 ```
-Laptop (macOS)
-  │  reaches the VM two ways, both cryptographic:
-  │    • WireGuard overlay (udp/51820, via mpd-proxy) → the whole container /24
-  │    • SSH (tcp/22) → management, ProxyJump into the runtime, SOCKS fallback
+Laptop
+  │  always: SSH (tcp/22, key only) → management, ProxyJump into the runtime
+  │    • optional SOCKS5 proxy (ssh -D) uses this SSH connection: it opens
+  │      127.0.0.1:1080 on the laptop, nothing new on the VM
+  │  optional: WireGuard overlay (udp/51820, mpd-proxy) → the whole container /24
+  │  optional: RDP (tcp/3389, after rdp-start, password) → the VM's GNOME desktop
   │
-VM host (Debian Trixie)     exposes ONLY :22 (sshd) + :51820 (wg) on its LAN IP
+VM host (Debian Trixie)     exposes :22 (sshd) + :51820 (wg, silent until a
+  │                         peer is registered) on its LAN IP; :3389 only while RDP is on
   │
   │  mpdbr0 bridge  10.163.<NNN>.1/24 — internal; nothing binds the LAN IP
   │    dnsmasq :53  — resolver for .test (bound to .1 only)
@@ -138,42 +141,41 @@ DNS zone (<NNN>.mpd.test) — see docs/NETWORKING.md.
 ```
 
 **The container subnet is not reachable from the LAN or from the public
-side of the VM.** The developer's laptop reaches the whole /24: the
-WireGuard overlay carries it (`mpd-virt` sets the peer's AllowedIPs to
-the /24), and SOCKS/ProxyJump reach it through sshd. An in-VM nftables
+side of the VM.** The developer's laptop reaches the whole /24 through
+sshd (SOCKS or ProxyJump), or over the optional WireGuard overlay
+(`mpd-virt` sets the peer's AllowedIPs to the /24). An in-VM nftables
 firewall (`mpd-firewall.service`, installed by `mpd --vm-setup`) drops
 any new forwarded connection into `10.163.<NNN>.0/24` from any interface
 other than the bridge and `wg0`. Container→internet (masquerade) is not
 affected.
 
-So the VM exposes exactly **two ports, both cryptographically
-authenticated**:
+So the VM exposes **two ports, both cryptographically authenticated**:
 
-- **`udp/51820` — WireGuard.** mpd-proxy on the laptop is the only
-  authorised peer. wg silently drops everything else.
-- **`tcp/22` — SSH.** Pubkey-only, root login disabled.
+- **`tcp/22` — SSH.** Pubkey-only, root login disabled. Always open.
+  The SOCKS5 proxy and ProxyJump are SSH connections to this port.
+- **`udp/51820` — WireGuard.** Used only with mpd-proxy. The laptop's
+  mpd-proxy is the only authorised peer; wg silently drops everything
+  else, so without mpd-proxy the port answers nobody.
 
 Everything else — portal, project HTTPS, databases, extra services, the
-runtime — sits behind those two ports: over the overlay, over a SOCKS
-tunnel through sshd, or via ProxyJump through sshd for shells. Nothing
-is published on the VM's LAN address.
+runtime — sits behind those two ports. Nothing is published on the VM's
+LAN address.
 
-**The one opt-in third port: `tcp/3389` — RDP.** `rdp-start` installs
+**The optional third port: `tcp/3389` — RDP.** `rdp-start` installs
 and starts xrdp so the VM's GNOME desktop can be reached from a device
 that cannot hold an SSH tunnel or the WireGuard overlay, such as a
 tablet. It is off after every bootstrap, it is never enabled for you,
-and `rdp-stop` removes it from the boot path again. It breaks the rule
-above in one way: xrdp authenticates through PAM, so this port is
-protected by the dev user's **password**, not a key. `rdp-start` limits
-that where it can: it turns SSH password authentication off (once a key
-is installed), so the new password works for RDP only. Expose the port
-on a hypervisor's host-only network, or on a private network behind a
+and `rdp-stop` removes it again. It is the one port protected by the
+dev user's **password** (xrdp authenticates through PAM), not a key.
+`rdp-start` turns SSH password authentication off (once a key is
+installed), so the password works for RDP only. Expose the port on a
+hypervisor's host-only network, or on a private network behind a
 bastion or a zero-trust tunnel. Not on the open internet. See
 "Intentional compromises".
 
-**Topology no longer matters — that is the security win.** Because only
-wg and ssh are reachable over the network, a VM is safe to run anywhere
-the laptop can reach it by IP:
+**Topology does not matter.** Because only
+ssh and wg (and RDP, if you turned it on) are reachable over the
+network, a VM is safe to run anywhere the laptop can reach it by IP:
 
 - **Desktop hypervisor** (Parallels, UTM, Apple container, libvirt) — a
   NAT'd host-only network the laptop owns.
@@ -182,11 +184,6 @@ the laptop can reach it by IP:
   (silent) and ssh (pubkey-only). The container subnet is invisible to
   them. This is **preferred**: the untrusted environment leaves the
   workstation entirely, and the small exposed surface makes that safe.
-
-Under the earlier routed-subnet model, any host that added the route
-reached the portal and the DBs. That is no longer true: caddy no longer
-binds the LAN IP, and the firewall drops inbound routing into the
-subnet.
 
 **Who is trusted**: the developer. They have full access to everything:
 SSH into the runtime, read/write on all source code, admin access to all
@@ -532,10 +529,8 @@ one WireGuard `utun` on the laptop and adds each VM as a peer routing
 `10.163.<NNN>.0/24`, with one split-DNS resolver. Several VMs are
 reachable at once through one encrypted tunnel, with no per-VM route or
 `/etc/resolver` file, and it coexists with a corporate VPN. It is the
-daily driver for anyone running more than one VM. (It replaces the
-earlier *flat* host-only WireGuard tunnel, which allowed one active
-tunnel and so reached one VM. The LAN side stays sealed by the in-VM
-firewall, which exempts only the bridge and `wg0`.)
+daily driver for anyone running more than one VM. The LAN side stays
+sealed by the in-VM firewall, which exempts only the bridge and `wg0`.
 
 **Why SOCKS-over-SSH as the simple path?** mpd-proxy needs `sudo` (it
 creates a utun), which is more than an occasional user needs. `ssh -N

@@ -138,10 +138,6 @@ resolves for every program on the VM, including a jump-host-only SSH
 client. The block is regenerated on every run; content outside the markers
 is preserved. See [`USAGE.md`](USAGE.md#ssh-into-the-runtime).
 
-It assumes a VM that never had an older mpd DNS layout. Existing VMs are
-moved over by hand with `bin/migrate-vm-network.sh`; `--vm-setup` and
-`--vm-upgrade` carry no migration logic.
-
 `--vm-setup` also converges the runtime container itself: created when
 missing, started when stopped, left alone when running. There is no
 separate provisioning flag — setup is the provisioner, and
@@ -149,9 +145,9 @@ separate provisioning flag — setup is the provisioner, and
 
 It also installs `mpd-control.service` (`mpd --control`), the daemon that
 serves project commands sent from inside runtime containers. Restarted on
-every run, like `mpd-web.service`, and for a sharper reason: it carries
-the guard deciding what a runtime may ask for, so a daemon on the previous
-binary would enforce the previous rules.
+every run, like `mpd-web.service`, so the running daemon is always the
+current binary — it carries the guard deciding what a runtime may ask
+for.
 
 ### Running `mpd` inside a runtime
 
@@ -261,7 +257,7 @@ guards it.
 
 Project-focused universal verbs (recommended daily surface):
 - `init` is inert beyond scaffolding: accepts `--type`. It does not fetch any source — `/srv` is mounted on the VM, so cloning is ordinary shell (`git clone`, or `mudev clone <recipe>`) done before or after, with the developer's own credentials. Project-type `project-create.sh` seeds `/srv/projects/<project>/` from the type's `template/` directory — `mpd.env` for every type, plus whatever else it ships (Moodle adds `config.php` and `.phpstorm.meta.php/dml.php`) — and adds each to `.git/info/exclude`. Existing files are never overwritten, so scaffolding a directory that already holds a source tree is safe. `start` re-applies the same template, so a file added to it later reaches projects that already exist. No DB is provisioned here; the project is registered with status **not initialised**. Next step is `mpd start`.
-- `start` **configures, then starts** — the two used to be separate verbs (`configure` then `start`) and are now one, so a fresh `mpd init` is followed by a single `mpd start`. It always reconciles first, so an edit to `mpd.env` (by hand, or via the KEY=VALUE args below) is picked up on the next start with nothing else to run. It is **idempotent** (re-running always re-does the whole configure+start) and **fail-safe**: the project is recorded as **started** only after every step succeeds, and as **stopped** if any step fails — a half-start is never shown running.
+- `start` **configures, then starts** — there is no separate `configure` verb, so a fresh `mpd init` is followed by a single `mpd start`. It always reconciles first, so an edit to `mpd.env` (by hand, or via the KEY=VALUE args below) is picked up on the next start with nothing else to run. It is **idempotent** (re-running always re-does the whole configure+start) and **fail-safe**: the project is recorded as **started** only after every step succeeds, and as **stopped** if any step fails — a half-start is never shown running.
   - **Configure step.** Takes any number of positional `KEY=VALUE` pairs matching `^MPD_[A-Z0-9_]+=.*$` (`mpd start <project> MPD_DB=postgres:18`). The control plane sanitises (reserved keys like `MPD_DB` get strict validation; others get a generic safe-charset check), then writes the line into `/srv/projects/<project>/mpd.env` in place, keeping the key under its own comment block (empty value comments the line out, unsetting the key). Then runs the project-type `configure.sh` which sources the four-layer mpd.env (runtime defaults → type defaults → user-level → project) and emits `dbTag` / `urls` into `/srv/meta/<project>/{effective.json,urls.json}`. The control plane reads `dbTag`, re-sanitises, and provisions the DB container if non-empty (visible image-pull progress via `podman pull`, then `podman run -d`, then per-project DB creation). The full mpd.env model — file paths, sourcing order, sanitisation, reserved keys — is documented in [`ARCHITECTURE.md` §8 "Configuration model: mpd.env"](ARCHITECTURE.md#8-configuration-model-mpdenv). The configure step is also what makes the project **addressable**: it writes the vhost (`urls.json`, which the in-runtime caddy picks up), the TLS certificate, and the DNS record. Those survive a `stop`, so the URL keeps resolving and starts answering again as soon as something serves.
   - **Start step.** Carries the **server-side** lifecycle, and how much that is depends on the type — it runs its type's `project-setup.sh` (optional). For Moodle that is the real work: the database container is started if it is not running, and the per-project PHP-FPM pool is written and reloaded. For Astro the script only **prints** — the dev server is Astro's own (`npm run dev`, `astro dev --background`, `astro dev stop`), so mpd reports whether one is up and how to start it rather than running a competing one. A type opts out of the post-start URL wait with `"start": {"waitForURL": false}` in its `configuration.json`, which is what stops Astro spending 30s to warn about the expected state.
 - `stop` carries the **server-side** lifecycle only, running its type's `project-stop.sh` (optional, best-effort — a stop cannot be allowed to fail). Idempotent: it always runs and records the project **stopped**, even on an already-stopped project. It does **not** touch addressability: the vhost, certificate and DNS record are the configure step's, and they survive a `stop` so the URL keeps resolving.

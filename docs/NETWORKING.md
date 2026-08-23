@@ -162,9 +162,6 @@ This is what makes **several VMs reachable at the same time**. The host
 holds one route and one resolver entry per VM; the routes are to
 disjoint /24s, and the resolver entries cover disjoint domains (macOS
 `resolver(5)` matches longest suffix, so per-VM files never conflict).
-Under the previous flat model every VM served the same `10.163.0.0/24`,
-so the host could route to only one of them at a time — regardless of
-naming.
 
 The bare `mpd.test` apex does **not** resolve, deliberately: with two
 VMs up it could only mean one of them, and mpd prefers a name that fails
@@ -261,8 +258,8 @@ entries; everything mpd publishes comes from dnsmasq.
 just `mpd.test`: `.test` is RFC 6761 reserved and must never reach a public
 resolver. Unknown names under it return NXDOMAIN immediately, and AAAA
 queries on names with only A records return NoData. That is what avoids
-the multi-second `getaddrinfo` stalls that used to happen when AAAA queries
-leaked to public DNS for a `.test` name. A VM has exactly one resolver and
+the multi-second `getaddrinfo` stalls that happen when AAAA queries for
+a `.test` name leak to public DNS. A VM has exactly one resolver and
 no business answering for another VM's zone, so NXDOMAIN for a foreign
 zone is the correct in-VM answer.
 
@@ -283,14 +280,14 @@ After the block changes, mpd sends dnsmasq a SIGHUP (`systemctl reload
 mpd-dnsmasq`). dnsmasq re-reads `/etc/hosts` and `/etc/resolv.conf` and
 clears its cache; queries in flight are answered, not dropped.
 
-This matters more than it sounds. Records once lived as `address=/host/ip`
-fragments in a `conf-dir=`, which dnsmasq reads only at startup — not even
-SIGHUP re-reads a config file — so every record change restarted the
-resolver. The restart itself took 0.2s, but a client whose query was in
-flight paid glibc's full timeout: a measured **10.013 seconds** of
-`Temporary failure in name resolution` for every other project on the VM,
-per record change. Hosts lines also answer only the exact name written;
-`address=/x/ip` answered for every name beneath `x` too.
+Records are kept in `/etc/hosts` and not as `address=/host/ip` fragments
+in a `conf-dir=`, because dnsmasq reads config files only at startup —
+not even SIGHUP re-reads them — so every record change would restart the
+resolver. The restart takes 0.2s, but a client whose query is in flight
+pays glibc's full timeout: **10 seconds** of `Temporary failure in name
+resolution` for every other project on the VM, per record change. Hosts
+lines also answer only the exact name written; `address=/x/ip` answers
+for every name beneath `x` too.
 
 ### cloud-init and `/etc/hosts`
 

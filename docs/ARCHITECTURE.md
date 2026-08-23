@@ -337,11 +337,11 @@ the same PATH as one typed inside the runtime; anything else would make
 trap a forwarder exists to avoid. The working directory is passed
 verbatim, since `/srv` is one tree at one path on both sides.
 
-An earlier design added VM-side *shims* — a `php` on the VM's PATH that
-forwarded through `mpd run`. Dropped: `mpd run php …` is clear enough,
-and claiming a bare upstream name on the VM would turn a wrong-terminal
-mistake into a silent forward instead of an immediate `command not
-found`. The VM deliberately has no PHP and no Node
+There are no VM-side *shims* (a `php` on the VM's PATH that forwards
+through `mpd run`): `mpd run php …` is clear enough, and claiming a bare
+upstream name on the VM would turn a wrong-terminal mistake into a
+silent forward instead of an immediate `command not found`. The VM
+deliberately has no PHP and no Node
 (`bootstrap/20-install-software.sh` installs neither); that absence is a
 useful signal and is worth keeping.
 
@@ -357,11 +357,8 @@ APIs. `start` both configures and starts a project (there is no separate
 mechanism: project-type-specific operations live inside the runtime as
 **tools**, not as host-side verbs.
 
-Previous asset-shipped verbs (Moodle: `cache-purge`, `cron`, `upgrade`,
-`install`; Astro: `rebuild`, `upgrade`) all migrated to tools — they
-were essentially `podman exec <tool>` wrappers, redundant with the
-tool itself. The lesson generalised: if a host-side verb's body would
-be `podman exec <container> <tool>`, write only the tool.
+Rule: if a host-side verb's body would be `podman exec <container>
+<tool>`, write only the tool.
 
 Tools are **shell** under `assets/.../tools/`. They run inside the
 runtime as the dev user, so anything you'd naturally write in bash
@@ -858,9 +855,9 @@ written once, untouched as VMs come and go. With the **SOCKS** path there
 is no host resolver entry at all: the dedicated browser does remote DNS
 through the proxy. See [`NETWORKING.md`](NETWORKING.md).
 
-Windows hosts are out of scope: mpd's runtime needs a real VM and a
-host-side resolver/route/trust story, and neither WSL nor Hyper-V is
-planned.
+Proprietary Windows hosts are out of scope: mpd's runtime needs a real
+VM and a host-side resolver/route/trust story, and neither WSL nor the
+proprietary Hyper-V is planned.
 
 See detailed docs:
 

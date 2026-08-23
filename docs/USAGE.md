@@ -790,11 +790,7 @@ mpd --vm-upgrade
 ```
 
 Neither `--vm-upgrade` nor `--vm-setup` migrates a VM across a change in
-mpd's own in-VM layout; they assume a VM that never had the old one. When
-such a change lands, the repo ships a one-shot script under `bin/` to run
-by hand on each existing VM — currently `migrate-vm-network.sh`, which
-moves a VM set up before DNS records lived in `/etc/hosts`. Everyone else
-creates new VMs.
+mpd's own in-VM layout. After such a change, create new VMs.
 
 ## When you want to start over
 
