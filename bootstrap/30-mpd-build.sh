@@ -92,8 +92,11 @@ else
     sudo rm -rf /usr/local/go
     sudo tar -C /usr/local -xzf "${tmp}/${tarball}"
     rm -rf "${tmp}"
-    echo 'PATH="$PATH:/usr/local/go/bin"' | sudo tee /etc/profile.d/go.sh >/dev/null
-    export PATH="${PATH}:/usr/local/go/bin"
+    # Symlinks, not a profile.d PATH entry: /usr/local/bin is on PATH in
+    # every context — non-login ssh commands (mpd-virt), sudo, systemd —
+    # while /etc/profile.d reaches login shells only.
+    sudo ln -sfn /usr/local/go/bin/go /usr/local/bin/go
+    sudo ln -sfn /usr/local/go/bin/gofmt /usr/local/bin/gofmt
     ok "installed $(go version) → /usr/local/go"
 fi
 
