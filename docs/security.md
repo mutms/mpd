@@ -137,7 +137,7 @@ VM host (Debian Trixie)     exposes :22 (sshd) + :51820 (wg, silent until a
 
 <NNN> is the VM's id, from its hostname mpd-<NNN>. Each VM owns a
 distinct /24 and a distinct
-DNS zone (<NNN>.mpd.test) — see docs/NETWORKING.md.
+DNS zone (<NNN>.mpd.test) — see docs/networking.md.
 ```
 
 **The container subnet is not reachable from the LAN or from the public
@@ -209,7 +209,7 @@ container→internet masquerade. The firewall blocks forwarding *into* the
 subnet only. The two are independent: outbound NAT keeps working,
 inbound routing is denied. An mpd VM is therefore safe even on an
 untrusted network. Its only exposed ports are sshd and WireGuard, plus
-`tcp/3389` on a VM where you ran `rdp-start`. See `docs/NETWORKING.md`.
+`tcp/3389` on a VM where you ran `rdp-start`. See `docs/networking.md`.
 
 ## Portal security
 

@@ -11,7 +11,7 @@
 // VM itself is always .1, the runtime .2, databases .10–.99, extra
 // service containers .100–.199 — only the third octet moves, and it
 // always equals the VM id. That is what lets a workstation reach several
-// VMs at once. See docs/NETWORKING.md.
+// VMs at once. See docs/networking.md.
 //
 // # Why Net is a value, not a global
 //

@@ -24,7 +24,7 @@ import (
 //
 // Projects keep their Autostart flag: the user stopped the runtime, not
 // the projects, and that distinction is what lets RuntimeStart bring
-// them back. See docs/HOOKS.md §"Resource lifecycle model".
+// them back. See docs/hooks.md §"Resource lifecycle model".
 func RuntimeStop(ctx context.Context, out io.Writer, p *podman.Client,
 	s state.Store, dns dnsmasq.Manager, o current.Observer) error {
 

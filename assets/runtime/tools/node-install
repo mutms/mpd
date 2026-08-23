@@ -1,6 +1,6 @@
 #!/bin/bash
 # node-install — install nvm + Node.js into $HOME/.nvm (upstream-standard).
-# Idempotent: no-op if nvm is already installed (per ARCHITECTURE.md §7).
+# Idempotent: no-op if nvm is already installed (per architecture.md §7).
 # Default version is "lts"; pass an explicit version to override.
 # Runs as the dev user; no sudo required.
 #

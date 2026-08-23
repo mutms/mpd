@@ -6,8 +6,8 @@ the mpd flow is identical regardless of which path you took.
 
 The brand for the VM-mode product is **mpd VM**; this directory
 holds the scripts that get someone *into* an mpd VM. Day-to-day usage
-once inside lives in [`docs/USAGE.md`](../docs/USAGE.md); architecture
-detail in [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md).
+once inside lives in [`docs/usage.md`](../docs/usage.md); architecture
+detail in [`docs/architecture.md`](../docs/architecture.md).
 
 ## Pick the path that matches your situation
 

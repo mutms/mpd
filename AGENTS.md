@@ -69,7 +69,7 @@ with snapshot/revert as the safety net for letting an agent rip.
 - `https://<project>.<NNN>.mpd.test/` for every project — browser-trusted
   HTTPS via the name-constrained local CA, live the moment
   `mpd start <project>` returns. `<NNN>` is the VM's id, so several VMs
-  coexist without name collisions (see `docs/NETWORKING.md`).
+  coexist without name collisions (see `docs/networking.md`).
 - Per-project PHP version (`MPD_PHP_VERSION=8.4` on one project, `8.2` on the
   next, simultaneously) and per-project database (`MPD_DB=postgres:18` —
   `<engine>:<version>`, not a port; provisioned on demand, no shared DB
@@ -115,7 +115,7 @@ Chromium, nothing else — from `gnome-install`. `rdp-start` / `rdp-stop` then
 open and close an RDP port onto that desktop, for devices that can hold
 neither an SSH tunnel nor the WireGuard overlay (a tablet). RDP is the one
 mpd port authenticated by a password rather than a key; see
-`docs/SECURITY.md`.
+`docs/security.md`.
 
 **Timing expectations:** first-time VM bootstrap 5–15 min (image download,
 apt, Go toolchain, build); first `mpd --vm-setup` (includes the runtime
@@ -242,15 +242,15 @@ across docs.
 
 - `README.md` — project overview and entry point
 - `docs/README.md` — documentation index
-- `docs/CLI_BEHAVIOR.md` — CLI behavior contract (both modes)
-- `docs/ARCHITECTURE.md` — repo architecture, mode split, networking summary, **verb/tool contract (§7)**
-- `docs/HOOKS.md` — typed `Event` lifecycle hooks: events, audiences, asset-side `hooks/<event>.d/` scripts
+- `docs/cli-behavior.md` — CLI behavior contract (both modes)
+- `docs/architecture.md` — repo architecture, mode split, networking summary, **verb/tool contract (§7)**
+- `docs/hooks.md` — typed `Event` lifecycle hooks: events, audiences, asset-side `hooks/<event>.d/` scripts
 - *(Host-side design notes for the `mpd-virt` orchestrator live in
   that repo's own `docs/`.)*
-- `docs/USAGE.md` — day-to-day workflow (bootstrap → first project → SSH-into-runtime)
-- `docs/DEBUGGING.md` — symptom catalogue: real runtime/IDE failures, the diagnostic that confirms each, and the fix
-- `docs/NETWORKING.md` — networking model (WireGuard overlay / SOCKS via mpd-virt + mpd-proxy)
-- `docs/SECURITY.md` — security model
+- `docs/usage.md` — day-to-day workflow (bootstrap → first project → SSH-into-runtime)
+- `docs/debugging.md` — symptom catalogue: real runtime/IDE failures, the diagnostic that confirms each, and the fix
+- `docs/networking.md` — networking model (WireGuard overlay / SOCKS via mpd-virt + mpd-proxy)
+- `docs/security.md` — security model
 - Host-side automation (macOS: Parallels / UTM / Apple container; Linux: libvirt/KVM; either: Proxmox, generic) lives in the sibling `mpd-virt` repo: <https://github.com/mutms/mpd-virt>
 - `setup/mpd-sandbox-setup.sh` — graphical "live in the VM" Debian sandbox (wgettable single script)
 
@@ -260,7 +260,7 @@ across docs.
 operations, and `go/internal/exec` is the only package permitted to run a
 host command at all. Every other package (cli, runtime, project, service,
 vm) must not shell out directly — they ask one of those two. Full rule +
-review checklist in `docs/ARCHITECTURE.md` §"Mandatory Constraint".
+review checklist in `docs/architecture.md` §"Mandatory Constraint".
 
 ## Mandatory privilege rule
 
@@ -332,7 +332,7 @@ build, not a VM or container).
 - **Record a lesson in the same session you learn it.** A bug whose cause
   was non-obvious — a silent failure, a misleading symptom, an ordering
   trap — goes into the doc that owns it (usually
-  [`docs/DEBUGGING.md`](docs/DEBUGGING.md): symptom, the diagnostic that
+  [`docs/debugging.md`](docs/debugging.md): symptom, the diagnostic that
   confirms it, the fix) before the session ends. There is no history to
   recover it from afterwards. Record only what still changes what someone
   would do; the design turns that led here are not worth keeping.
@@ -390,7 +390,7 @@ Verbs (host-side, surfaced as `mpd <verb> <project>`) and tools
 (in-runtime, on PATH) are the extension surface for runtime + project-
 type functionality. The contract — what a verb is vs. a tool, naming
 conventions, PATH precedence, privilege model, idempotency — lives in
-[`docs/ARCHITECTURE.md` §7](docs/ARCHITECTURE.md). Read that first;
+[`docs/architecture.md` §7](docs/architecture.md). Read that first;
 this section is the "how to write one" follow-up.
 
 ### Decide: verb or tool?
@@ -433,8 +433,8 @@ To add a new verb:
   `go/cmd/mpd/main.go` so `mpd --help` does.
 - Add any flag suggestions to `verbArgs` in
   `go/internal/cli/complete.go`.
-- Update `docs/CLI_BEHAVIOR.md` and the `Day-to-day commands` section
-  in `docs/USAGE.md` if it belongs in the daily surface.
+- Update `docs/cli-behavior.md` and the `Day-to-day commands` section
+  in `docs/usage.md` if it belongs in the daily surface.
 
 Global flags (`mpd --foo`) are declared on the root command in
 `go/cmd/mpd/main.go` and acted on in its `dispatch` func. A flag that
@@ -465,7 +465,7 @@ Skeleton (either location):
 set -euo pipefail
 # Tool: <one-line description>.
 # Runs as the dev user inside the runtime. May use sudo freely
-# (see ARCHITECTURE.md §7 "Privilege model").
+# (see architecture.md §7 "Privilege model").
 
 # Walk up from $PWD to find the project root (presence of mpd.env).
 PROJECT_DIR="$PWD"
@@ -612,7 +612,7 @@ found." Internal sudo on specific operations is the right shape.
 
 - The tool itself (executable, `chmod +x`).
 - If the tool deserves dev-facing mention: add a one-line entry under
-  "Tools available inside the runtime" in `docs/USAGE.md`.
+  "Tools available inside the runtime" in `docs/usage.md`.
 - If it replaces an existing verb (verb→tool migration): delete the
   obsolete verb files and update any host-side callers that referenced
   the verb by name.

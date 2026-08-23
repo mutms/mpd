@@ -249,7 +249,7 @@ func trustingClient() (*http.Client, error) {
 // ProjectStop takes a project down.
 //
 // Note what it does NOT do: stop the runtime, or stop the database. mpd
-// is demand-driven (docs/HOOKS.md §"Resource lifecycle model") — devs
+// is demand-driven (docs/hooks.md §"Resource lifecycle model") — devs
 // poke at a database after the project is down, and cascading stops
 // would fight that. Reclaiming idle resources is `mpd --gc`'s job.
 func ProjectStop(ctx context.Context, out io.Writer, name string, d ProjectDeps) error {

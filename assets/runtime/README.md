@@ -56,7 +56,7 @@ upgraded in place. mpd never rebuilds it on its own;
 - **`project_types/moodle/`** — Moodle support: `phpunit`, `behat`,
   `mdl-cron`, `mdl-cache-purge`, `mdl-install`, `mdl-upgrade`, `grunt`,
   `mpci` / `mpci-install`, `mdl-data-backup` / `mdl-data-restore`. See
-  `docs/USAGE.md` for the full per-tool table.
+  `docs/usage.md` for the full per-tool table.
 - **`project_types/astro/`** — Astro dev-server support:
   `astro-rebuild`, `astro-upgrade`.
 - **`project_types/<type>/template/`** — files seeded into the project
@@ -67,7 +67,7 @@ upgraded in place. mpd never rebuilds it on its own;
 - **`project_types/<type>/generated/`** — the files the type's
   `scripts/configure.sh` renders itself (Moodle's `config-mpd.php`, whose
   `%%…%%` placeholders it substitutes). Not copied, but git-excluded in the
-  project alongside the `template/` files. See `docs/ARCHITECTURE.md` §6.
+  project alongside the `template/` files. See `docs/architecture.md` §6.
 
 PHP version is resolved per project from the layered MPD_PHP_VERSION
 (runtime default → type default → user → project) — see the `php`
@@ -78,5 +78,5 @@ need. Point PhpStorm at `/usr/bin/php` for the dispatcher, or at
 `/usr/bin/php8.3` (etc.) to pin one version.
 
 See [AGENTS.md](../../AGENTS.md) for the privilege rule and tool
-authoring contract; [docs/ARCHITECTURE.md §7](../../docs/ARCHITECTURE.md)
+authoring contract; [docs/architecture.md §7](../../docs/architecture.md)
 for the verb/tool model.

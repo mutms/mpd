@@ -18,7 +18,7 @@ Blocked request. This host ("<project>.<NNN>.mpd.test") is not allowed.
 ```
 
 because `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` is missing from the
-shell that started the dev server (see USAGE.md, "Tools available inside
+shell that started the dev server (see usage.md, "Tools available inside
 the runtime").
 
 **Cause.** Bash reads `~/.bashrc` once, at session start. Nothing

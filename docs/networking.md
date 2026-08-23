@@ -106,8 +106,8 @@ Remote Desktop client (iPadOS, Android, macOS, Windows) needs none of it.
 The cost is the one mpd door authenticated by a password rather than a
 key, so reach it over a private network, a bastion or a zero-trust
 tunnel — never the open internet — and close it with `rdp-stop`. See
-[`SECURITY.md`](SECURITY.md) and the day-to-day steps in
-[`USAGE.md`](USAGE.md#the-vms-desktop-and-reaching-it-from-a-tablet).
+[`security.md`](security.md) and the day-to-day steps in
+[`usage.md`](usage.md#the-vms-desktop-and-reaching-it-from-a-tablet).
 
 ### The container-subnet firewall
 
@@ -395,7 +395,7 @@ be reused here: in the VM `mpd-<NNN>` is that machine's own hostname.
 What is consistent instead is the *prompt* — the runtime's reads
 `mpd-<NNN>` and the VM's `mpd-<NNN>-vm`, matching the host-side aliases,
 without either hostname being changed. Details in
-[`USAGE.md`](USAGE.md#ssh-into-the-runtime).
+[`usage.md`](usage.md#ssh-into-the-runtime).
 
 The bare `runtime` is the one short name that is a real record: it is an
 alias on the runtime's line in the `/etc/hosts` block
@@ -411,4 +411,4 @@ mpd assumes your laptop user, VM user, and runtime user share the same
 name — that's what makes the bare jump-host form work without explicit
 `user@`. Set up the VM with the same account name as your laptop login.
 
-See also: [README.md](README.md), [SECURITY.md](SECURITY.md)
+See also: [README.md](README.md), [security.md](security.md)

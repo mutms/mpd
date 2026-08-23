@@ -47,7 +47,7 @@ const (
 func bridgeUnitBody(gatewayCIDR string) string {
 	return fmt.Sprintf(`[Unit]
 Description=mpd static container bridge (%[1]s)
-Documentation=file:///opt/mpd/docs/NETWORKING.md
+Documentation=file:///opt/mpd/docs/networking.md
 After=network-pre.target
 Before=network.target %[2]s
 

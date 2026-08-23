@@ -50,7 +50,7 @@ Idempotent — safe to re-run any time. Walks you through:
 - mounting the data volume on the VM at `/srv`
 - installing and configuring the VM's caddy, which serves the portal at
   `https://<NNN>.mpd.test/` (project HTTPS terminates inside the
-  runtime — see [NETWORKING.md](NETWORKING.md))
+  runtime — see [networking.md](networking.md))
 - starting `mpd --web`, the portal backend
 - writing the DNS records into `/etc/hosts` (and, on a cloud-init image,
   telling cloud-init to leave that file alone), bringing up the infra units
@@ -81,7 +81,7 @@ daily use, or the sudo-free **SOCKS-over-SSH** tunnel
 (`ssh -N mpd-<NNN>-socks` + a dedicated browser) as the simple starting
 point. Either way CA trust makes
 `*.mpd.test` HTTPS work. Concrete network recipes (for the curious or for
-recovery) live in [NETWORKING.md](NETWORKING.md).
+recovery) live in [networking.md](networking.md).
 
 The **sandbox platform has no laptop side** — mpd lives entirely
 inside the VM, so there's no host route, no host resolver drop-in, and
@@ -165,7 +165,7 @@ the App Store) connects to `<vm-ip>:3389` and works well:
 
 This is also the only way into an mpd VM from a tablet: iPadOS cannot do
 the SOCKS or CA-trust setup the other paths need. See
-[NETWORKING.md](NETWORKING.md#a-third-path-dont-reach-in-at-all).
+[networking.md](networking.md#a-third-path-dont-reach-in-at-all).
 
 Two things to know:
 
@@ -175,7 +175,7 @@ Two things to know:
 - **This is the one mpd port held by a password**, not a key. Reach it
   over a hypervisor's host-only network, or a private network fronted by
   a bastion or a zero-trust tunnel — and run `rdp-stop` when you are
-  done. [SECURITY.md](SECURITY.md) has the full reasoning.
+  done. [security.md](security.md) has the full reasoning.
 
 ## First project — Moodle
 
@@ -245,7 +245,7 @@ you edit the in-VM file directly.
 The full layered
 configuration model — file paths, sourcing order, reserved keys — is
 documented in
-[`ARCHITECTURE.md` §8](ARCHITECTURE.md#8-configuration-model-mpdenv).
+[`architecture.md` §8](architecture.md#8-configuration-model-mpdenv).
 
 ## Extra services (mailpit, adminer, seleniumv1)
 
@@ -308,7 +308,7 @@ ssh mpd-<NNN>
 
 Inside the VM the same alias works without the jump. Add `-A` only when
 you need your SSH agent in that session, and never in a session where
-an AI agent works — see [SECURITY.md](SECURITY.md).
+an AI agent works — see [security.md](security.md).
 
 You land in the runtime as the VM's dev user, with passwordless sudo
 and the project tree at `/srv/projects/<project>/`.
@@ -463,7 +463,7 @@ you can audit. Stricter shops also require PRs for `main`.
 Once you're SSHed into the runtime, the following tools are on PATH —
 project-aware (cwd-walk to find the current project) and ready for
 either a human or an AI agent to invoke directly. Full taxonomy in
-[`ARCHITECTURE.md` §7](ARCHITECTURE.md).
+[`architecture.md` §7](architecture.md).
 
 **Runtime tools (`assets/runtime/tools/`)** — available in any project.
 Stack-independent ones first:
@@ -836,5 +836,5 @@ rm -rf /var/lib/mpd                    # blow away state + identity in the VM
 
 - [README.md](README.md) — documentation index (audience-shaped)
 - [../README.md](../README.md) — top-level pitch + mode picker + first bootstrap
-- [NETWORKING.md](NETWORKING.md) — host ↔ VM ↔ container routing
-- [SECURITY.md](SECURITY.md) — trust boundaries
+- [networking.md](networking.md) — host ↔ VM ↔ container routing
+- [security.md](security.md) — trust boundaries

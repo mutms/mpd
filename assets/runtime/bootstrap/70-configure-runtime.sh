@@ -45,7 +45,7 @@ DEV_USER="$(id -un)"
 sudo tee /etc/systemd/system/mpd-caddy.service >/dev/null << UNITEOF
 [Unit]
 Description=mpd in-runtime TLS frontdoor (caddy)
-Documentation=file:///opt/mpd/docs/ARCHITECTURE.md
+Documentation=file:///opt/mpd/docs/architecture.md
 After=network.target
 
 [Service]

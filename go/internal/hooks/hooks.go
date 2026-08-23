@@ -1,7 +1,7 @@
 // Package hooks dispatches mpd's typed lifecycle events to bash scripts
 // in the asset tree.
 //
-// Three nouns, no overlap (docs/HOOKS.md):
+// Three nouns, no overlap (docs/hooks.md):
 //
 //   - **Event** — a typed moment in a lifecycle (project-pre-start).
 //     Declared in Go; the catalogue is closed.
@@ -205,7 +205,7 @@ type Script struct {
 //
 // Only `*.sh` is considered. Without that filter every file in the
 // directory gets handed to bash — an editor backup, a `.bak`, a stray
-// `.swp`, a README. See docs/HOOKS.md.
+// `.swp`, a README. See docs/hooks.md.
 func discover(ctx context.Context, p *podman.Client, ev Event, audience AudienceKind, container string) []Script {
 	var dirs []string
 
@@ -213,7 +213,7 @@ func discover(ctx context.Context, p *podman.Client, ev Event, audience Audience
 	case AudienceRuntime:
 		// The runtime layer only. There is deliberately NO project-type
 		// layer for runtime-audience events: adding one would fire hooks
-		// outside the v1 hook contract (docs/HOOKS.md). The former base
+		// outside the v1 hook contract (docs/hooks.md). The former base
 		// layer merged into this one with assets/runtime-base.
 		dirs = append(dirs,
 			filepath.Join(assetsDir, "runtime", "hooks", ev.Name+".d"))

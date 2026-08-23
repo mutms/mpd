@@ -59,9 +59,9 @@ Proxmox, or any Debian VM it can reach. To adopt a sandbox, run
 ## Documentation
 
 - [docs/README.md](docs/README.md) — index, audience-shaped
-- [docs/USAGE.md](docs/USAGE.md) — day-to-day handbook (projects, SSH into
+- [docs/usage.md](docs/usage.md) — day-to-day handbook (projects, SSH into
   the runtime, tools, updating)
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — under the hood
+- [docs/architecture.md](docs/architecture.md) — under the hood
 - [AGENTS.md](AGENTS.md) — background, layout, and conventions, for AI
   agents and humans alike
 

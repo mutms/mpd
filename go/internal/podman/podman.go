@@ -1,6 +1,6 @@
 // Package podman is the single shared gateway for container operations.
 //
-// **Mandatory architecture rule** (AGENTS.md, docs/ARCHITECTURE.md §3):
+// **Mandatory architecture rule** (AGENTS.md, docs/architecture.md §3):
 // every container/runtime operation in mpd goes through this package, and
 // the only package permitted to run host commands at all is
 // internal/exec. Layers above (cli, runtime, service, action) must not

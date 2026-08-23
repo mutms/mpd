@@ -15,7 +15,7 @@
 #   - enables and starts xrdp, listening on tcp/3389 on every address
 #
 # SECURITY. The mpd VM's model is "exactly two open ports, both
-# cryptographically authenticated" (docs/SECURITY.md). This adds a third
+# cryptographically authenticated" (docs/security.md). This adds a third
 # that is authenticated by a password, so treat it like one: expose it on
 # a hypervisor's host-only network, or on a private network you reach
 # through a bastion or a zero-trust tunnel — never straight at the

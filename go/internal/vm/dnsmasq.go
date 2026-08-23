@@ -94,7 +94,7 @@ bogus-priv
 func DnsmasqUnitBody(confPath string) string {
 	return `[Unit]
 Description=mpd DNS resolver (dnsmasq)
-Documentation=file:///opt/mpd/docs/NETWORKING.md
+Documentation=file:///opt/mpd/docs/networking.md
 After=network.target mpd-bridge.service
 
 [Service]

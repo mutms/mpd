@@ -59,7 +59,7 @@ that should autostart, then restores every project whose `Autostart` is
 set — including re-creating enabled service containers. Stopping mpd or
 rebooting the VM preserves this intent; `mpd --vm-start` (or the systemd
 `mpd.service` unit at boot) restores running state. See
-`docs/ARCHITECTURE.md` §5 for the full state model.
+`docs/architecture.md` §5 for the full state model.
 
 A database's `Autostart` makes an explicitly-started engine come back on
 its own after a reboot even when no project needs it. Beyond that, DB

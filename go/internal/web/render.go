@@ -48,7 +48,7 @@ type ProjectRow struct {
 	URL     string
 	// Connection details for the project's database. The portal is the
 	// only place these are written down: db.CreateFor derives all three
-	// from the project name (docs/SECURITY.md calls it a dev-only
+	// from the project name (docs/security.md calls it a dev-only
 	// choice), so nothing stores them and nothing else prints them.
 	DBHost string
 	DBUser string

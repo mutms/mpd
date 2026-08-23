@@ -269,7 +269,7 @@ func image(engine, version string) string {
 // the line is drawn at corruption: postgres runs with
 // synchronous_commit=off (lose the last moments of work on a crash) and
 // NOT full_page_writes=off (which risks an unrepairable torn page). See
-// docs/SECURITY.md §"Intentional compromises".
+// docs/security.md §"Intentional compromises".
 func runArgs(ref Ref, ip, gateway string) ([]string, error) {
 	dataDir := DataDir(ref.Engine, ref.Version)
 	img := image(ref.Engine, ref.Version)
@@ -385,7 +385,7 @@ func Ensure(ctx context.Context, ref Ref, p *podman.Client, n net.Net, uid strin
 // Drop removes a project's database and user from a running engine.
 //
 // Per-project credentials are all the project name (user = password =
-// database), a documented dev-only choice — see docs/SECURITY.md.
+// database), a documented dev-only choice — see docs/security.md.
 func Drop(ctx context.Context, out io.Writer, engine, container, dbName string, p *podman.Client) error {
 	fmt.Fprintf(out, "Dropping database and user '%s' from %s...\n", dbName, container)
 
@@ -419,7 +419,7 @@ func Drop(ctx context.Context, out io.Writer, engine, container, dbName string, 
 // Idempotent: re-running on an existing project is a no-op, because
 // `mpd start` runs it every time and must not fail on the second
 // call. User, password and database name are all the project name — a
-// documented dev-only choice (docs/SECURITY.md).
+// documented dev-only choice (docs/security.md).
 func CreateFor(ctx context.Context, out io.Writer, engine, container, dbName string, p *podman.Client) error {
 	fmt.Fprintf(out, "Creating user and database '%s' in %s...\n", dbName, container)
 

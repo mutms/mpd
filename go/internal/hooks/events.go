@@ -9,7 +9,7 @@ import (
 
 // The event catalogue. Closed by design: a hook author subscribes to
 // what exists, and events are added only when a real use case drives one
-// (docs/HOOKS.md §"Future trajectory").
+// (docs/hooks.md §"Future trajectory").
 //
 // Names are the kebab-case form the `<name>.d` directories use, and they
 // are a public contract: renaming one silently stops every subscribing

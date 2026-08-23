@@ -38,7 +38,7 @@ func TestNamesAndAddresses(t *testing.T) {
 }
 
 // Every service must live in the service octet range — the addressing
-// contract docs/NETWORKING.md documents.
+// contract docs/networking.md documents.
 func TestServicesLiveInTheServiceRange(t *testing.T) {
 	for _, s := range All() {
 		if s.HostOctet < net.ServiceHostFirst || s.HostOctet > net.ServiceHostLast {

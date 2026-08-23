@@ -26,7 +26,7 @@
 # no copy and no symlink farm: editing a tool on the VM changes it here
 # immediately.
 #
-# Precedence is base < runtime < project type (ARCHITECTURE.md §7), so a
+# Precedence is base < runtime < project type (architecture.md §7), so a
 # type tool shadows a runtime tool of the same name. Each entry prepends,
 # so the *last* one added wins — hence base first, runtime second, types
 # last.

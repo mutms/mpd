@@ -85,7 +85,7 @@ table inet %[1]s {
 func firewallUnitBody() string {
 	return fmt.Sprintf(`[Unit]
 Description=mpd container-subnet firewall
-Documentation=file:///opt/mpd/docs/NETWORKING.md
+Documentation=file:///opt/mpd/docs/networking.md
 After=network-pre.target
 Before=network.target
 

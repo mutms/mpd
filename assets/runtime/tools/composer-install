@@ -1,6 +1,6 @@
 #!/bin/bash
 # Tool: install Composer phar to /usr/local/bin/composer.
-# Idempotent: no-op if already installed (per ARCHITECTURE.md §7).
+# Idempotent: no-op if already installed (per architecture.md §7).
 # Runs as the dev user; uses `sudo` only for the final write into
 # /usr/local/bin/. The dev/AI invokes this as a bare `composer-install`,
 # never `sudo composer-install`.

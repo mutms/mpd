@@ -303,7 +303,7 @@ It only removes the second terminal. `internal/control` owns this; the
 rule below is unaffected, and the split between the two categories is
 untouched by it. Verb-vs-tool is about *who can do the work*, never about
 where the developer happens to be sitting. See
-[`SECURITY.md`](SECURITY.md#the-runtime-control-socket) for what a
+[`security.md`](security.md#the-runtime-control-socket) for what a
 runtime is allowed to ask for and why.
 
 **Tools** are run from inside the runtime container — by a developer
@@ -436,7 +436,7 @@ itself.
 Tools run as the dev user — the only non-root user inside the runtime,
 created at provisioning time with the same name and UID as the VM's dev
 user, so files on the data volume have one owner on both sides. The dev user has **passwordless `sudo`** inside the
-runtime by design (see [`SECURITY.md`](SECURITY.md)).
+runtime by design (see [`security.md`](security.md)).
 
 **Tools `sudo` internally; the dev/AI invokes them bare.** The right
 shape is:
@@ -801,7 +801,7 @@ deliberately distinct from the optional extra *services* below):
   system unit `mpd-dnsmasq.service`, listening on the bridge gateway.
   Authoritative for `.test`; records are mpd's block in `/etc/hosts`,
   re-read on `systemctl reload` (SIGHUP) after every change. See
-  docs/NETWORKING.md
+  docs/networking.md
 - the **portal** is not a container: `mpd --web` runs on the VM as the
   user unit `mpd-web.service`, listening on `127.0.0.1:8099`, with
   Debian's caddy in front of it on the bridge gateway terminating TLS for
@@ -853,7 +853,7 @@ With the **mpd-proxy** overlay the laptop has a single
 which fans `*.mpd.test` out to each VM's own dnsmasq through the tunnel —
 written once, untouched as VMs come and go. With the **SOCKS** path there
 is no host resolver entry at all: the dedicated browser does remote DNS
-through the proxy. See [`NETWORKING.md`](NETWORKING.md).
+through the proxy. See [`networking.md`](networking.md).
 
 Proprietary Windows hosts are out of scope: mpd's runtime needs a real
 VM and a host-side resolver/route/trust story, and neither WSL nor the
@@ -861,7 +861,7 @@ proprietary Hyper-V is planned.
 
 See detailed docs:
 
-- [`NETWORKING.md`](NETWORKING.md), [`SECURITY.md`](SECURITY.md)
+- [`networking.md`](networking.md), [`security.md`](security.md)
 
 ## 12) Repository Layer Map
 
@@ -892,7 +892,7 @@ See detailed docs:
 
 If you change:
 
-- CLI behavior: update `docs/CLI_BEHAVIOR.md`
+- CLI behavior: update `docs/cli-behavior.md`
 - Runtime/project behavior: update `assets/runtime/...` and matching docs
 - Networking/TLS/DNS behavior: update networking/security docs for affected mode
 - State shape or mutation behavior: update this file and relevant state docs/comments
@@ -905,6 +905,6 @@ If you change:
 ## 15) Related Docs
 
 - `docs/README.md` — documentation index
-- `docs/CLI_BEHAVIOR.md` — CLI behavioral reference
-- `docs/HOOKS.md` — typed lifecycle hooks
+- `docs/cli-behavior.md` — CLI behavioral reference
+- `docs/hooks.md` — typed lifecycle hooks
 - `AGENTS.md` — practical authoring guidance for verbs and tools (§"Authoring verbs and tools")
