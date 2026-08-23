@@ -1,16 +1,14 @@
 # mpd — Moodle plugin development environment
 
 The environment I use for my own daily Moodle work. Every dev tool — PHP,
-Composer, Postgres/MariaDB, Node, even the AI coding agent — lives in
-containers inside a Linux VM, not on your laptop. Each project gets its
-own `https://<project>.<NNN>.mpd.test/` URL with browser-trusted TLS, its
-own PHP version and database, and automatic Behat/Selenium wiring; Mailpit
-and Adminer are one command away. You edit in your usual IDE over SSH; the
-host stays clean, and everything an agent can touch is disposable.
+Composer, Postgres/MariaDB, Node, the AI coding agent — lives in a container
+inside a Linux VM, not on your laptop. Each project gets its own
+`https://<project>.<NNN>.mpd.test/` URL with trusted TLS, its own PHP
+version and database, and Behat/Selenium wiring. You edit in your IDE over
+SSH; the host stays clean.
 
-The details — design, motivation, comparisons with moodle-docker/DDEV, the
-IDE and agent workflow — live in [AGENTS.md](AGENTS.md) and
-[docs/](docs/README.md). They are written so you can also just point an AI
+Design, motivation and comparisons with moodle-docker/DDEV are in
+[AGENTS.md](AGENTS.md) and [docs/](docs/README.md) — or point an AI
 assistant at this repo and ask.
 
 ## The mpd family
@@ -18,33 +16,27 @@ assistant at this repo and ask.
 | Repo                                            | Runs                    | Does                                                                     |
 |-------------------------------------------------|-------------------------|--------------------------------------------------------------------------|
 | **mpd** (this repo)                             | inside the VM           | the runtime, projects, DNS, TLS — the control plane                      |
-| [mpd-virt](https://github.com/mutms/mpd-virt)   | on the Mac              | creates/adopts VMs, host reachability + CA trust                         |
-| [mpd-proxy](https://github.com/mutms/mpd-proxy) | on the Mac, as root     | optional: transparent `*.mpd.test` for every app via a WireGuard overlay |
+| [mpd-virt](https://github.com/mutms/mpd-virt)   | on the host             | creates/adopts VMs, host reachability + CA trust                         |
+| [mpd-proxy](https://github.com/mutms/mpd-proxy) | on the host, as root    | optional: transparent `*.mpd.test` for every app via a WireGuard overlay |
 | [mudev](https://github.com/mutms/mudev)         | on the VM + in runtimes | assembles Moodle trees from recipes; the plugin/recipe catalogues        |
 | [mdl-demo](https://github.com/mutms/mdl-demo)   | any container host      | throwaway all-in-one Moodle demos — pick a version in its web UI         |
 
 ## Try it: Sandbox VM
 
-A standalone local VM with a GNOME desktop for trying out mpd and
-[mudev](https://github.com/mutms/mudev) — one script, no host
-configuration. It is also a safe playground for Moodle development with an
-AI agent: everything the agent touches stays inside the VM, and a snapshot
-rolls it back. You can adopt the sandbox as a managed VM later without
-losing projects.
+A local VM with a GNOME desktop for trying mpd and
+[mudev](https://github.com/mutms/mudev): one script, no host configuration.
+Everything an AI agent touches stays inside the VM, and a snapshot rolls it
+back. You can adopt it as a managed VM later, projects intact.
 
-Install **Debian Trixie (13) with GNOME** in any hypervisor (UTM, Parallels,
-VMware, Hyper-V, virt-manager/KVM, VirtualBox…): 8 GB RAM / 4 CPUs
-comfortable, 100 GB disk. When the installer asks for a hostname, type
-**`mpd-<NNN>`** — a 3-digit id in 100..254, e.g. `mpd-137`; everything
-(zone, subnet, name) derives from it. Snapshot after first boot, then run in
-a terminal inside the VM:
+Install **Debian Trixie (13) with GNOME** in any hypervisor (8 GB RAM,
+4 CPUs, 100 GB disk). Set the hostname to **`mpd-<NNN>`** — a 3-digit id
+in 100..254, e.g. `mpd-137`. Snapshot, then run inside the VM:
 
 ```bash
 bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-sandbox-setup.sh)
 ```
 
-It converts the network stack (one reboot), installs mpd, and generates the
-CA. Then, for your first Moodle:
+It reboots once. Then, for your first Moodle:
 
 ```bash
 mkdir -p /srv/projects/m45 && cd $_
@@ -56,16 +48,13 @@ mdl-install                             # install Moodle
 
 ## Daily driver: mpd VM
 
-Same VM, headless, with your laptop's own browser resolving `*.mpd.test`
-directly and your IDE connected over remote SSH (PhpStorm Gateway, VS Code
-Remote-SSH — `ssh mpd-<NNN>` lands in the runtime). [mpd-virt](https://github.com/mutms/mpd-virt)
-creates or adopts the VM and wires the host side in one shot — from a
-macOS host (Parallels, UTM, Apple container) or a Linux host (libvirt/KVM),
-and from either for a Proxmox VM or any reachable Debian VM. A sandbox is
-adopted by running [setup/mpd-prepare-adopt.sh](setup/mpd-prepare-adopt.sh)
-in the VM (a sandbox deliberately has no SSH server until then; the prep
-script adds it plus mDNS discovery), then
-`mpd-virt adopt <NNN> --backend=<backend>` — projects survive.
+Same VM, headless: your own browser opens `*.mpd.test`, your IDE connects
+over SSH (`ssh mpd-<NNN>` lands in the runtime).
+[mpd-virt](https://github.com/mutms/mpd-virt) creates or adopts the VM from
+a macOS or Linux host — UTM, Parallels, Apple container, libvirt/KVM,
+Proxmox, or any Debian VM it can reach. To adopt a sandbox, run
+[setup/mpd-prepare-adopt.sh](setup/mpd-prepare-adopt.sh) inside it, then
+`mpd-virt adopt <NNN> --backend=<backend>`.
 
 ## Documentation
 
