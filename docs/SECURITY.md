@@ -261,10 +261,10 @@ mpd Root CA                        key: workstation only, never copied
 
 `cert.ResolveSigner` decides which case a given VM is in:
 
-| Provisioned by            | Anchor        | Signer                      | Root key in the VM? |
-|---------------------------|---------------|-----------------------------|---------------------|
-| `mpd-virt` (macOS or Linux host) | `rootCA.pem` | zone-constrained `vmCA.pem` | **No**          |
-| sandbox / no CA material  | self-signed, generated in the VM | the same certificate | Yes — it made it |
+| Provisioned by                   | Anchor                           | Signer                      | Root key in the VM? |
+|----------------------------------|----------------------------------|-----------------------------|---------------------|
+| `mpd-virt` (macOS or Linux host) | `rootCA.pem`                     | zone-constrained `vmCA.pem` | **No**              |
+| sandbox / no CA material         | self-signed, generated in the VM | the same certificate        | Yes — it made it    |
 
 Only the last row has a VM holding a CA key that can sign for the whole
 `mpd.test` tree, and there the VM generated that CA itself. There is no
@@ -274,19 +274,19 @@ in the handshake.
 
 ### CA properties
 
-| Property                  | Value                                                                     |
-|---------------------------|---------------------------------------------------------------------------|
-| Root CA (host)            | `~/.mpd-virt/conf/caroot/rootCA.pem` + `rootCA-key.pem` (on the host)      |
-| Per-VM CA (host)          | `~/.mpd-virt/<NNN>/ca/vmCA.pem` + `vmCA-key.pem`                           |
-| In-VM location            | `/var/lib/mpd/conf/caroot/` — anchor `rootCA.pem`, signer `vmCA.pem`/`-key.pem` |
-| Root CA private key       | Never leaves the workstation on the `mpd-virt` path (see table above)     |
-| Root CA validity          | 365 days via `mpd-virt`; 10 years when generated in-VM (sandbox)          |
-| Per-VM CA validity        | ≤ 397 days, capped by the root's remaining life                           |
-| Leaf cert validity        | ≤ 397 days (macOS requires < 398), capped by the signer's remaining life  |
-| Root name constraints     | `permitted;DNS:mpd.test`                                                  |
-| Per-VM name constraints   | `permitted;DNS:<NNN>.mpd.test`, `pathlen:0`                               |
-| Key permissions           | every private key mode `0600`                                             |
-| macOS trust               | System Keychain via `security add-trusted-cert -d -r trustRoot` — root only |
+| Property                | Value                                                                           |
+|-------------------------|---------------------------------------------------------------------------------|
+| Root CA (host)          | `~/.mpd-virt/conf/caroot/rootCA.pem` + `rootCA-key.pem` (on the host)           |
+| Per-VM CA (host)        | `~/.mpd-virt/<NNN>/ca/vmCA.pem` + `vmCA-key.pem`                                |
+| In-VM location          | `/var/lib/mpd/conf/caroot/` — anchor `rootCA.pem`, signer `vmCA.pem`/`-key.pem` |
+| Root CA private key     | Never leaves the workstation on the `mpd-virt` path (see table above)           |
+| Root CA validity        | 365 days via `mpd-virt`; 10 years when generated in-VM (sandbox)                |
+| Per-VM CA validity      | ≤ 397 days, capped by the root's remaining life                                 |
+| Leaf cert validity      | ≤ 397 days (macOS requires < 398), capped by the signer's remaining life        |
+| Root name constraints   | `permitted;DNS:mpd.test`                                                        |
+| Per-VM name constraints | `permitted;DNS:<NNN>.mpd.test`, `pathlen:0`                                     |
+| Key permissions         | every private key mode `0600`                                                   |
+| macOS trust             | System Keychain via `security add-trusted-cert -d -r trustRoot` — root only     |
 
 **Name constraints** limit the root to `*.mpd.test`, so even a
 compromised key cannot sign for a real domain (e.g. `google.com`). RFC
@@ -311,10 +311,10 @@ the VM at provisioning time.
 
 ### Certificate types
 
-| Certificate | SAN                                                            | Stored at                                    | Lifetime                                 |
-|-------------|----------------------------------------------------------------|----------------------------------------------|------------------------------------------|
-| Per-project | `<project>.<NNN>.mpd.test` (+ `behat.<project>.<NNN>.mpd.test` for moodle) | `/srv/meta/<project>/cert.pem` (data volume) | Survives runtime recreation              |
-| Service     | `<NNN>.mpd.test` (the zone apex — its single SAN)              | `/var/lib/mpd/conf/service/`                 | Regenerated by `--vm-setup` when CA changes |
+| Certificate | SAN                                                                        | Stored at                                    | Lifetime                                    |
+|-------------|----------------------------------------------------------------------------|----------------------------------------------|---------------------------------------------|
+| Per-project | `<project>.<NNN>.mpd.test` (+ `behat.<project>.<NNN>.mpd.test` for moodle) | `/srv/meta/<project>/cert.pem` (data volume) | Survives runtime recreation                 |
+| Service     | `<NNN>.mpd.test` (the zone apex — its single SAN)                          | `/var/lib/mpd/conf/service/`                 | Regenerated by `--vm-setup` when CA changes |
 
 The in-runtime caddy serves the per-project certs. Their keys are
 `0600` and dev-owned, which is why `mpd-caddy.service` runs as the dev
@@ -439,12 +439,12 @@ ports are exposed on the VM's LAN address.
 
 ## Key and credential storage
 
-| Secret                  | Location                                       | Permissions       |
-|-------------------------|------------------------------------------------|-------------------|
-| Root CA private key     | `~/.mpd-virt/conf/caroot/rootCA-key.pem` (host only) | `0600`      |
-| Per-VM CA private key   | `~/.mpd-virt/<NNN>/ca/vmCA-key.pem` (host) and `/var/lib/mpd/conf/caroot/vmCA-key.pem` (VM) | `0600` |
-| Per-project TLS keys    | `/srv/meta/<project>/key.pem`                  | Inside data volume|
-| SSH authorized keys     | `/home/<user>/.ssh/authorized_keys`            | Inside containers |
+| Secret                | Location                                                                                    | Permissions        |
+|-----------------------|---------------------------------------------------------------------------------------------|--------------------|
+| Root CA private key   | `~/.mpd-virt/conf/caroot/rootCA-key.pem` (host only)                                        | `0600`             |
+| Per-VM CA private key | `~/.mpd-virt/<NNN>/ca/vmCA-key.pem` (host) and `/var/lib/mpd/conf/caroot/vmCA-key.pem` (VM) | `0600`             |
+| Per-project TLS keys  | `/srv/meta/<project>/key.pem`                                                               | Inside data volume |
+| SSH authorized keys   | `/home/<user>/.ssh/authorized_keys`                                                         | Inside containers  |
 
 The per-VM CA key is the one piece of CA material that is *meant* to
 travel. It is constrained to that VM's zone, so its blast radius is the
@@ -497,17 +497,17 @@ These are deliberate tradeoffs: security relaxed in exchange for dev
 ergonomics. All are safe in a single-developer local environment and
 would be unacceptable in production.
 
-| Compromise                                                   | Rationale                                                                                                                                                                                                                                    |
-|--------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Passwordless `sudo` inside containers                        | Dev needs root for package installs, service restarts, config changes. No security boundary between the dev user and root inside a container.                                                                                                |
-| No web-server access control                                 | Every project is fully accessible through the in-runtime caddy: no auth, no IP restrictions. Access control is at the network level (the firewall seals the container subnet from the LAN; it is reached only over the developer's authenticated WireGuard/SSH), not at the web server. |
-| Extra services are plain HTTP                                | mailpit, adminer and seleniumv1 serve unencrypted HTTP at their own container addresses (`http://<name>.svc.<NNN>.mpd.test:<port>/`). They are reachable only across the sealed subnet, over the developer's WireGuard overlay or SOCKS tunnel (both encrypted), so the plaintext hop exists only inside the trust boundary. |
-| PostgreSQL `synchronous_commit=off`                           | Trades a little crash durability for speed: an unclean shutdown loses at most the last fraction of a second of commits. Bounded, and no corruption. `full_page_writes` stays ON on purpose: turning it off risks a torn page postgres cannot repair, and unclean shutdowns are routine here (an OOM'd VM never runs `mpd --vm-stop`, so the graceful-shutdown hooks never fire). Losing seconds of work is an acceptable dev tradeoff; losing the database is not. |
-| Behat uses a separate subdomain                              | Behat runs on `behat.<project>.<NNN>.mpd.test` (HTTPS, same cert). The seleniumv1 service is a stock upstream image without the mpd CA, so the generated behat config sets `acceptInsecureCerts` for its browser sessions.                          |
-| Shared data volume across containers                         | The runtime and the DB containers mount `mpd-data-volume` at `/srv/`. A process in one container can read/write data belonging to another. This is the single-volume design: simplicity over isolation.                             |
-| SSH agent forwarding                                         | `ssh -A` passes the developer's key into the container. Any process running as the dev user inside the container can use the forwarded key for the duration of the session. Standard SSH risk, same as forwarding into any remote server. |
-| RDP on `tcp/3389` (`rdp-start`)                              | A third open port, and the only one authenticated by a password instead of a key (xrdp has PAM and nothing else). Off unless you run `rdp-start`, removed again by `rdp-stop`. `rdp-start` sets the dev user's password, then turns SSH password authentication off, so that password works for RDP and nothing more. Expose it on a host-only network or behind a bastion / zero-trust tunnel. The desktop behind it has the same full access to `/srv/` as any shell in the VM. |
-| Dev database credentials                                     | User, password and database name all equal the project name. Superuser passwords are `postgres`/`root`. See "Database credentials" above.                                                                                                   |
+| Compromise                            | Rationale                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+|---------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Passwordless `sudo` inside containers | Dev needs root for package installs, service restarts, config changes. No security boundary between the dev user and root inside a container.                                                                                                                                                                                                                                                                                                                                     |
+| No web-server access control          | Every project is fully accessible through the in-runtime caddy: no auth, no IP restrictions. Access control is at the network level (the firewall seals the container subnet from the LAN; it is reached only over the developer's authenticated WireGuard/SSH), not at the web server.                                                                                                                                                                                           |
+| Extra services are plain HTTP         | mailpit, adminer and seleniumv1 serve unencrypted HTTP at their own container addresses (`http://<name>.svc.<NNN>.mpd.test:<port>/`). They are reachable only across the sealed subnet, over the developer's WireGuard overlay or SOCKS tunnel (both encrypted), so the plaintext hop exists only inside the trust boundary.                                                                                                                                                      |
+| PostgreSQL `synchronous_commit=off`   | Trades a little crash durability for speed: an unclean shutdown loses at most the last fraction of a second of commits. Bounded, and no corruption. `full_page_writes` stays ON on purpose: turning it off risks a torn page postgres cannot repair, and unclean shutdowns are routine here (an OOM'd VM never runs `mpd --vm-stop`, so the graceful-shutdown hooks never fire). Losing seconds of work is an acceptable dev tradeoff; losing the database is not.                |
+| Behat uses a separate subdomain       | Behat runs on `behat.<project>.<NNN>.mpd.test` (HTTPS, same cert). The seleniumv1 service is a stock upstream image without the mpd CA, so the generated behat config sets `acceptInsecureCerts` for its browser sessions.                                                                                                                                                                                                                                                        |
+| Shared data volume across containers  | The runtime and the DB containers mount `mpd-data-volume` at `/srv/`. A process in one container can read/write data belonging to another. This is the single-volume design: simplicity over isolation.                                                                                                                                                                                                                                                                           |
+| SSH agent forwarding                  | `ssh -A` passes the developer's key into the container. Any process running as the dev user inside the container can use the forwarded key for the duration of the session. Standard SSH risk, same as forwarding into any remote server.                                                                                                                                                                                                                                         |
+| RDP on `tcp/3389` (`rdp-start`)       | A third open port, and the only one authenticated by a password instead of a key (xrdp has PAM and nothing else). Off unless you run `rdp-start`, removed again by `rdp-stop`. `rdp-start` sets the dev user's password, then turns SSH password authentication off, so that password works for RDP and nothing more. Expose it on a host-only network or behind a bastion / zero-trust tunnel. The desktop behind it has the same full access to `/srv/` as any shell in the VM. |
+| Dev database credentials              | User, password and database name all equal the project name. Superuser passwords are `postgres`/`root`. See "Database credentials" above.                                                                                                                                                                                                                                                                                                                                         |
 
 ## Design decisions
 
@@ -518,9 +518,12 @@ reachable from the developer's own machine. The project name as
 user/pass/db makes setup trivial.
 
 **Why a private CA instead of self-signed certs?** One CA trust
-operation during setup, then every project and runtime gets a trusted
-certificate automatically. No browser warnings, no `--insecure` flags,
-no per-cert trust clicks. Name constraints limit the blast radius.
+operation, then every project and runtime gets a trusted certificate
+automatically. No browser warnings, no `--insecure` flags, no per-cert
+trust clicks. The same root also signs certificates for other machines
+on the LAN (`mpd-virt server add`): a Proxmox host, a Forgejo, anything
+else under `*.mpd.test`, so one trusted root covers the whole local
+setup. Name constraints keep it limited to `mpd.test`.
 
 **Why a WireGuard overlay (mpd-proxy) for daily use?** The laptop needs
 each VM's whole container subnet (project URLs are served at container
