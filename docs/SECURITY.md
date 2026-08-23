@@ -87,8 +87,7 @@ concluding that "the amount of sensitive information in this environment
 should be kept to a minimum".
 
 Three things follow for mpd, because its runtime is long lived —
-nothing resets it between projects, and mpd offers no scrubbing step
-(see `docs/ROADMAP.md`):
+nothing resets it between projects:
 
 - **Assume persistent compromise.** A runtime that executes a malicious
   postinstall keeps it. If you suspect one, `mpd --runtime-rebuild`

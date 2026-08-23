@@ -246,13 +246,6 @@ across docs.
 - `docs/CLI_BEHAVIOR.md` — CLI behavior contract (both modes)
 - `docs/ARCHITECTURE.md` — repo architecture, mode split, networking summary, **verb/tool contract (§7)**
 - `docs/HOOKS.md` — typed `Event` lifecycle hooks: events, audiences, asset-side `hooks/<event>.d/` scripts
-- `docs/ROADMAP.md` — committed near-term work
-- `docs/proposals/` — where a design doc for a parked / exploratory
-  idea in *this* repo (mpd binary, in-VM behavior) goes. Create the
-  directory when you write one; it is absent when there are none, and a
-  proposal is deleted once it ships. Before deleting it, move anything
-  still worth knowing into the canonical doc that owns the topic — git
-  will not keep it for you (see "History is not a source of truth").
 - *(Host-side design notes for the `mpd-virt` orchestrator live in
   that repo's own `docs/`.)*
 - `docs/USAGE.md` — day-to-day workflow (bootstrap → first project → SSH-into-runtime)

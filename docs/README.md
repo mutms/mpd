@@ -48,10 +48,6 @@ Or you're an AI agent helping out:
   audiences, asset-side `hooks/<event>.d/` scripts. Read when
   adding a hook trigger or authoring a hook script.
 
-## Direction
-
-- [`ROADMAP.md`](ROADMAP.md) — queued work + parked ideas.
-
 ## Shared in-VM directory model
 
 Quick reference; full contract in [`ARCHITECTURE.md`](ARCHITECTURE.md).
