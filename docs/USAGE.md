@@ -12,7 +12,7 @@ Pick the path that matches your host:
 
 - **macOS + Parallels / UTM / Proxmox / cloud (automated)** —
   [`mpd-virt`](https://github.com/mutms/mpd-virt) (separate repo).
-  `mpd-virt adopt <NNN> <IP>` adopts any reachable Debian Trixie box:
+  `mpd-virt adopt <NNN> <IP>` adopts any reachable Debian Trixie VM:
   it runs the bootstrap pipeline over SSH, installs `mpd`, and wires host
   reachability — the **mpd-proxy WireGuard overlay** for daily transparent
   access, or a **SOCKS-over-SSH** fallback (`ssh -N mpd-<NNN>-socks`) that

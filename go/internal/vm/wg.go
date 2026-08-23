@@ -10,7 +10,7 @@ import (
 )
 
 // wg0 is the VM's WireGuard endpoint: the developer's Mac (via mpd-proxy) peers
-// with it to reach this box's 10.163.<NNN>.x services over an encrypted tunnel.
+// with it to reach this VM's 10.163.<NNN>.x services over an encrypted tunnel.
 // vm-setup provisions the VM's half — the key, the interface, ip_forward — and
 // the peer (the Mac) is added by mpd-virt, which alone knows mpd-proxy's key,
 // and persisted with `wg-quick save`. wireguard-tools comes from bootstrap/20 (checked by RequirePackages).

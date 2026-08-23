@@ -303,7 +303,7 @@ user-data outranks it. What does work is cloud-init's own override for
 module lists, so `mpd --vm-setup` installs
 `/etc/cloud/cloud.cfg.d/99-mpd.cfg` (from `assets/vm/`), which replaces
 every stage's module list with just `growpart` + `resizefs`. That also
-freezes the box's identity: Proxmox issues a new instance-id whenever its
+freezes the VM's identity: Proxmox issues a new instance-id whenever its
 cloud-init tab is edited, and without the drop-in the next boot would
 re-run the hostname, user and `ssh` modules — the last one regenerates the
 host keys mpd-virt pinned. Fixing the IP in the hypervisor still applies

@@ -83,8 +83,7 @@ SSH_CONFIG="${HOME}/.ssh/config"
 
 # VM disks live in a system path so libvirtd can reach them without us
 # loosening $HOME's mode. The user's subdir is owned by $USER so qemu-img
-# and genisoimage can write without sudo; the parent is root-owned so
-# users on a multi-user box can't accidentally trample each other.
+# and genisoimage can write without sudo.
 # Both dirs are created by the preflight sudo recipe.
 LIBVIRT_POOL_NAME="mpd-${USER}"
 LIBVIRT_POOL_PARENT="/var/lib/mpd-virt/${USER}"

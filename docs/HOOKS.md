@@ -325,7 +325,7 @@ working.
 
 ## Systemd integration
 
-`mpd --vm-setup` (machine path, including sandbox) installs a user-level
+`mpd --vm-setup` installs a user-level
 `mpd.service` unit at `~/.config/systemd/user/mpd.service` that
 brackets the VM lifecycle:
 

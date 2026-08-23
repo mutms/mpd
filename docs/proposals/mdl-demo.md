@@ -20,7 +20,7 @@ and drives them, with the **control panel served on the host at a fixed
 
 - **Control plane at a fixed address; the workload may move.** The dead
   end is co-locating the panel with the thing whose address churns: Apple
-  `container` hands each box a *new* vmnet IP every start AND does **not**
+  `container` hands each VM a *new* vmnet IP every start AND does **not**
   register the name in the macOS system resolver (`ping mpd-<NNN>` fails on
   the host — the embedded DNS is container-to-container only). An
   in-container panel inherits both the moving IP and the fragile

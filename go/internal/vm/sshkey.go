@@ -34,7 +34,7 @@ import (
 // VM trusting its own key to log into itself, which nothing does. Leaving
 // it out also keeps the two files visibly different: the VM's lists the
 // workstation, the runtime's lists the workstation plus this VM, so the
-// file says which box you are on.
+// file says which VM you are on.
 //
 // No passphrase: the VM is the trust boundary, and the key only
 // authenticates VM→runtime hops.

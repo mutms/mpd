@@ -187,5 +187,5 @@ if [ "${systemd_running}" = 1 ] && [ -e /dev/virtio-ports/org.qemu.guest_agent.0
         warn "qemu-guest-agent did not start — inspect: systemctl status qemu-guest-agent"
     fi
 else
-    ok "qemu-guest-agent installed (idle — no hypervisor device on this box)"
+    ok "qemu-guest-agent installed (idle — no hypervisor device on this VM)"
 fi

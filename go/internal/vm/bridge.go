@@ -68,7 +68,7 @@ func EnsureBridge(ctx context.Context, out io.Writer, gatewayCIDR string) error 
 	ui.Step(out, "Static container bridge %s (systemd oneshot)", BridgeName)
 
 	// Drop the previous networkd units if present, so networkd does not also
-	// try to own mpdbr0 on boxes where it runs.
+	// try to own mpdbr0 on VMs where it runs.
 	_, _ = exec.Run(ctx, exec.Cmd{Name: "rm", Args: []string{"-f", legacyNetdevPath, legacyNetworkPath}, Sudo: true})
 
 	changed, err := WriteRootOwnedFile(ctx, bridgeUnitPath, bridgeUnitBody(gatewayCIDR))

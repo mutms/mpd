@@ -73,7 +73,7 @@ func RequireSupportedHost() error {
 // This is a verification table, not an installer: the one package list
 // is bootstrap/20-install-software.sh, which also carries the reason
 // for each package (dnsmasq-base not dnsmasq, no aardvark-dns, vim not
-// vim-tiny, …). mpd never runs apt — a box whose packages are missing
+// vim-tiny, …). mpd never runs apt — a VM whose packages are missing
 // or stale is converged by re-running that script, and `--vm-setup`
 // refuses until it has been. A new run-time dependency is added there
 // and here.

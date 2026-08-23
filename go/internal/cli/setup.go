@@ -347,7 +347,7 @@ func preflight(ctx context.Context, out io.Writer) error {
 // setupIdentity derives the VM's addressing from its hostname and reads
 // its LAN IP off the interface. Both come live from the running VM — the
 // hostname (mpd-<NNN>) is the single source of truth, and the IP is a
-// fact about the box. It returns the Net and the VM's own IP (empty on a
+// fact about the VM. It returns the Net and the VM's own IP (empty on a
 // DHCP-less box).
 func setupIdentity(ctx context.Context, out io.Writer) (net.Net, string, error) {
 	ui.Step(out, "Platform identity")

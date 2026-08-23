@@ -11,7 +11,7 @@ import (
 
 // cloud-init on an adopted box.
 //
-// Its first boot may run everything; after mpd is set up the box's
+// Its first boot may run everything; after mpd is set up the VM
 // identity is fixed — hostname, dev user, the SSH host keys mpd-virt
 // pinned, and /etc/hosts, which holds mpd's DNS records. cloud-init
 // would keep touching all of it: update_etc_hosts rewrites /etc/hosts on

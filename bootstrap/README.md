@@ -1,4 +1,4 @@
-# `bootstrap/` — bring a Debian Trixie box to the state `mpd --vm-setup` expects
+# `bootstrap/` — bring a Debian Trixie vm to the state `mpd --vm-setup` expects
 
 Three steps, each a single self-contained script you can run straight
 from GitHub:
@@ -29,7 +29,7 @@ step 20 provides and names the missing packages plus the command to run
 There is no networking step: hostname, IP and the network stack are the
 platform's job (cloud-init on the automated platforms;
 `setup/mpd-sandbox-setup.sh` / `setup/mpd-prepare-adopt.sh` on a
-hand-installed box).
+hand-installed vm).
 
 ## Invocation flows
 
@@ -42,12 +42,12 @@ converts the network stack, then runs 20 + 30 from GitHub, `mpd
 
 ### Managed VM (`mpd-virt adopt` on macOS; `setup/linux/`, `setup/windows/`)
 
-The orchestrator reaches a box that has SSH key auth, then runs the
+The orchestrator reaches a VM that has SSH key auth, then runs the
 steps over SSH, pushes the CA (needs `/var/lib/mpd` from step 30), and
 finishes with `mpd --vm-setup`:
 
 ```text
-ssh -t … bash <(wget -qO- …/bootstrap/10-passwordless-sudo.sh)   # no-op on cloud-init boxes
+ssh -t … bash <(wget -qO- …/bootstrap/10-passwordless-sudo.sh)   # no-op on cloud-init VMs
 ssh    … bash <(wget -qO- …/bootstrap/15-secure-ssh.sh)
 ssh    … bash <(wget -qO- …/bootstrap/20-install-software.sh)
 ssh    … bash <(wget -qO- …/bootstrap/30-mpd-build.sh)
@@ -71,7 +71,7 @@ stale.
 ### Apple container image (mpd-virt)
 
 `container/Containerfile` in mpd-virt runs step 20 at image-build time
-(as root; the script's per-command `sudo` is then a no-op), so a box
+(as root; the script's per-command `sudo` is then a no-op), so a VM
 from the image is pre-baked like a template VM.
 
 ### Update (any VM)

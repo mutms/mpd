@@ -61,7 +61,7 @@ step "Key for $(id -un)"
 if ! grep -qE '^[[:space:]]*(ssh-|ecdsa-|sk-)' "${HOME}/.ssh/authorized_keys" 2>/dev/null; then
     die "no public key in ${HOME}/.ssh/authorized_keys — disabling password auth now would lock you out.
 From your workstation, first run:
-    ssh-copy-id $(id -un)@<this box's IP>
+    ssh-copy-id $(id -un)@<this VM's IP>
 then re-run this script."
 fi
 ok "authorized key present"

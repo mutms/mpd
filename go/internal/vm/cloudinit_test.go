@@ -7,7 +7,7 @@ import (
 )
 
 // The drop-in leaves cloud-init only the disk modules: everything that
-// would touch the box's identity (hostname, users, host keys, /etc/hosts)
+// would touch the VM identity (hostname, users, host keys, /etc/hosts)
 // is gone, and the config and final stages are empty. Pinned here so an
 // edit that lets one of those back in fails in CI rather than on a VM at
 // boot.

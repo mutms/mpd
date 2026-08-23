@@ -46,7 +46,7 @@ esac
 nnn="${host#mpd-}"
 id10="$((10#${nnn}))"
 if [ "${id10}" -lt 100 ] || [ "${id10}" -gt 254 ]; then
-    die "id ${nnn} out of range. Managed/sandbox VMs are 100..254 (001..099 is the DHCP pool)."
+    die "id ${nnn} out of range. Managed/sandbox VMs are 100..254."
 fi
 ok "hostname '${host}' (id ${nnn})"
 

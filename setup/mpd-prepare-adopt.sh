@@ -126,7 +126,7 @@ fi
 
 # --- 3. Network stack: systemd-networkd + systemd-resolved -----------
 # mpd standardizes on systemd-networkd for the link and systemd-resolved
-# for the VM's own DNS, so every adopted box runs one known stack. (mpd's
+# for the VM's own DNS, so every adopted VM runs one known stack. (mpd's
 # *.mpd.test names do not depend on it: they live in /etc/hosts and
 # dnsmasq forwards through whatever /etc/resolv.conf says.) A desktop
 # ships NetworkManager, a server ships ifupdown; both are converted. We keep the DHCP address — the IP is never pinned
@@ -229,16 +229,16 @@ fi
 
 # --- Guest integration: mDNS advertisement + hypervisor agent ---------
 # avahi-daemon advertises <host>.local over mDNS — that is how
-# `mpd-virt adopt <NNN>` finds this box when you don't hand it an IP.
+# `mpd-virt adopt <NNN>` finds this VM when you don't hand it an IP.
 # qemu-guest-agent lets KVM-family hypervisors (UTM, Proxmox,
 # virt-manager) see the guest; on Debian it is udev-activated only where
 # the virtio device exists, so it sits idle everywhere else. Installed
 # here (not by `mpd --vm-setup`) so the packages arrive with the
 # platform prep, before adoption needs the mDNS name — and so mpd itself
 # never assumes it runs under a hypervisor.
-# openssh-server is here too: adoption drives the box over SSH, and a
+# openssh-server is here too: adoption drives the VM over SSH, and a
 # desktop install ships without sshd unless the "SSH server" task was
-# ticked — prep makes the box adoptable regardless.
+# ticked — prep makes the VM adoptable regardless.
 step "Guest integration (openssh-server, avahi-daemon, qemu-guest-agent)"
 need=()
 dpkg -s openssh-server   >/dev/null 2>&1 || need+=(openssh-server)
@@ -259,14 +259,14 @@ else
 fi
 # Gated on the device, never attempted-and-caught: the unit is BindsTo= +
 # After= its .device unit, and a device unit no udev event will activate
-# has no job timeout — so on a box without the device (Apple
+# has no job timeout — so on a VM without the device (Apple
 # virtualisation) `systemctl start` does not fail, it blocks forever.
 if [ -e /dev/virtio-ports/org.qemu.guest_agent.0 ]; then
     sudo systemctl start qemu-guest-agent >/dev/null 2>&1 \
         && ok "qemu-guest-agent running" \
         || warn "qemu-guest-agent did not start"
 else
-    ok "qemu-guest-agent installed (idle — no hypervisor device on this box)"
+    ok "qemu-guest-agent installed (idle — no hypervisor device on this VM)"
 fi
 
 vm_ip="$(ip -4 -o addr show "${iface}" | awk '{print $4}' | cut -d/ -f1 | head -1)"
@@ -274,12 +274,12 @@ echo
 echo "================================================================"
 echo "  ${host} is ready for adoption."
 echo
-echo "  On your Mac, run (--backend = where the box runs:"
+echo "  On your Mac, run (--backend = where the VM runs:"
 echo "  generic | parallels | container | utm | proxmox):"
 echo
 echo "      mpd-virt adopt ${nnn} --backend=<backend>"
 echo
-echo "  The box advertises itself over mDNS; if that doesn't reach"
+echo "  The VM advertises itself over mDNS; if that doesn't reach"
 echo "  your Mac, give the IP explicitly:"
 echo
 echo "      mpd-virt adopt ${nnn} ${vm_ip} --backend=<backend>"
