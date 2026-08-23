@@ -14,9 +14,7 @@ In rough order of when you'll want them:
 - The bootstrap doc for your chosen mode:
   - [`../setup/mpd-sandbox-setup.sh`](../setup/mpd-sandbox-setup.sh) — Sandbox VM (any
     hypervisor; run via the wget one-liner in the top-level README)
-  - [`mpd-virt`](https://github.com/mutms/mpd-virt) (separate repo) — mpd VM on macOS via Parallels / UTM
-  - [`../setup/linux/README.md`](../setup/linux/README.md) — mpd VM on Ubuntu via libvirt/KVM
-  - [`../setup/windows/README.txt`](../setup/windows/README.txt) — mpd VM on Windows via Hyper-V
+  - [`mpd-virt`](https://github.com/mutms/mpd-virt) (separate repo) — mpd VM from a macOS host (Parallels / UTM / Apple container) or a Linux host (libvirt/KVM), plus Proxmox and any reachable Debian VM
 - [`USAGE.md`](USAGE.md) — universal day-to-day handbook. Project
   lifecycle, extra services, SSH into the runtime, tools list, git auth
   via agent forwarding, backups. Applies to both modes once setup

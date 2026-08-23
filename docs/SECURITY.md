@@ -177,7 +177,7 @@ See "Intentional compromises".
 Because the only things reachable across the network are wg and ssh, a VM
 is safe to run anywhere the laptop can reach it by IP:
 
-- **Desktop hypervisor** (Parallels, UTM, Hyper-V) — a NAT'd host-only
+- **Desktop hypervisor** (Parallels, UTM, Apple container, libvirt) — a NAT'd host-only
   network the laptop owns.
 - **LAN- or datacentre-hosted** (Proxmox, a cloud VM) — a routable IP,
   even a public one. A LAN neighbour or an internet scanner sees only wg
@@ -268,8 +268,7 @@ which case a given VM is in:
 
 | Provisioned by            | Anchor        | Signer                      | Root key in the VM? |
 |---------------------------|---------------|-----------------------------|---------------------|
-| `mpd-virt` (macOS)        | `rootCA.pem`  | zone-constrained `vmCA.pem` | **No**              |
-| `setup/linux`, `setup/windows` | `rootCA.pem` | zone-constrained `vmCA.pem` | **No**         |
+| `mpd-virt` (macOS or Linux host) | `rootCA.pem` | zone-constrained `vmCA.pem` | **No**          |
 | sandbox / no CA material  | self-signed, generated in the VM | the same certificate | Yes — it made it |
 
 Only the last row still has a VM holding a CA key that can sign for the
@@ -282,7 +281,7 @@ in the handshake.
 
 | Property                  | Value                                                                     |
 |---------------------------|---------------------------------------------------------------------------|
-| Root CA (host)            | `~/.mpd-virt/conf/caroot/rootCA.pem` + `rootCA-key.pem` (on macOS)         |
+| Root CA (host)            | `~/.mpd-virt/conf/caroot/rootCA.pem` + `rootCA-key.pem` (on the host)      |
 | Per-VM CA (host)          | `~/.mpd-virt/<NNN>/ca/vmCA.pem` + `vmCA-key.pem`                           |
 | In-VM location            | `/var/lib/mpd/conf/caroot/` — anchor `rootCA.pem`, signer `vmCA.pem`/`-key.pem` |
 | Root CA private key       | Never leaves the workstation on the `mpd-virt` path (see table above)     |

@@ -10,8 +10,8 @@
 // provisioned by mpd-virt the signer is an intermediate constrained to
 // that VM's own zone, and the root's private key is never copied into the
 // VM at all — so a compromised VM can mint certificates for its own names
-// and for nothing else. On a VM set up by setup/linux or setup/windows
-// the two are one self-signed certificate. Signer resolves which case a
+// and for nothing else. On a sandbox VM, which has no orchestrator to
+// push a CA in, the two are one self-signed certificate. Signer resolves which case a
 // given VM is in; everything else here goes through it.
 package cert
 
@@ -96,9 +96,9 @@ func resolveSignerIn(dir string) (Signer, bool) {
 		return Signer{
 			CertPath: signerCert,
 			KeyPath:  signerKey,
-			// setup/linux and setup/windows write one self-signed
-			// certificate to both paths. Identical bytes mean the chain is
-			// one long and there is nothing to append.
+			// A sandbox VM writes one self-signed certificate to both
+			// paths. Identical bytes mean the chain is one long and there
+			// is nothing to append.
 			Chain: !sameFile(signerCert, anchorCert),
 		}, true
 	}

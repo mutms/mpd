@@ -67,9 +67,9 @@ const (
 	// A VM provisioned by mpd-virt gets an intermediate constrained to its
 	// own zone (`permitted;DNS:<NNN>.mpd.test`) and never sees the root's
 	// private key at all, so a compromised VM can mint certificates for its
-	// own names and nothing else. A VM set up by setup/linux or
-	// setup/windows generates a self-signed CA and writes it to both paths,
-	// making anchor and signer the same certificate and the chain one long.
+	// own names and nothing else. A sandbox VM (no orchestrator) generates
+	// a self-signed CA and writes it to both paths, making anchor and
+	// signer the same certificate and the chain one long.
 	//
 	// cert.Signer resolves which case a given VM is in.
 	SigningCertPath = CARootDir + "/vmCA.pem"

@@ -40,7 +40,7 @@ converts the network stack, then runs 20 + 30 from GitHub, `mpd
 --vm-setup`, and the sandbox extras (pre-warm, GNOME launcher). It skips
 15 on purpose: a sandbox may have no SSH key at all.
 
-### Managed VM (`mpd-virt adopt` on macOS; `setup/linux/`, `setup/windows/`)
+### Managed VM (`mpd-virt adopt` / `mpd-virt create`)
 
 The orchestrator reaches a VM that has SSH key auth, then runs the
 steps over SSH, pushes the CA (needs `/var/lib/mpd` from step 30), and

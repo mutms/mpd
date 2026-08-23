@@ -95,92 +95,28 @@ text in [`AGENTS.md` §"Mandatory privilege rule"](../AGENTS.md), with
 the in-depth tool-level explanation in §7 below. Enforced in review;
 `make lint-shell` (shellcheck) is the automated shell gate.
 
-### Sister rule: host-side fenced `sudo` (linux bootstrap)
+### Sister rule: no host-side shell in this repo
 
-Bootstrap-stage shell scripts under
-`setup/linux/lib/` run on the dev host
-(not in a container or VM) and need `sudo` for a fixed set of operations
-— route to the container subnet, DNS resolver pointing the VM's zone at
-the in-VM dnsmasq, system-trust import of the mpd CA, plus
-platform-specific extras (Firefox enterprise policy + cert under
-`/etc/firefox/policies/`, Chromium's NSS DB). The pattern these
-scripts follow:
+Nothing under `setup/` runs on the developer's host. The two scripts
+there — `mpd-sandbox-setup.sh` and `mpd-prepare-adopt.sh` — run *inside*
+the VM, so there is no host-side bootstrap to fence: the sandbox script
+enables passwordless sudo on the VM as part of taking it over (the
+hostname gate is the user's deliberate consent), then sudo's individual
+privileged commands per the in-VM rule above.
 
-1. **Detect first, no `sudo`.** Read current state with unprivileged
-   tools (`route get`, `cat /etc/resolver/...`,
-   `security find-certificate -a -Z`). Decide which operations are
-   actually needed.
-2. **Single fenced privileged block.** All `sudo` calls live in one
-   contiguous block, gated by a single `sudo -v` (with a one-line
-   explanation of *which* operations need it printed first), and
-   terminated by an explicit `sudo -k` to invalidate the cached
-   credential immediately.
-3. **No `sudo` outside the fence.** Discovery, reporting, and state
-   writes (`~/.mpd-virt/`, `~/.ssh/config`, `~/Desktop/`) all run
-   as the user with no cached creds — a later bug cannot accidentally
-   piggy-back on the elevated session.
-4. **EXIT trap as backstop.** `trap 'sudo -k' EXIT` ensures cached
-   creds are dropped even if the script errors before reaching the
-   explicit `sudo -k`.
-5. **Skip the fence entirely** when nothing needs to change. On a
-   re-run where route, resolver, and CA are already correct, the user
-   sees no password prompt at all.
-6. **Generate the CA on the host before VM creation, and only on
-   the host.** `prepare_host_ca` in `lib/common.sh` keeps the host
-   CA at `~/.mpd-virt/ca/` (platform-owned; always present after
-   the first `setup.sh` run).
+The host side — VM creation, power, the root CA at
+`~/.mpd-virt/conf/caroot/`, routes, resolver and trust — is the separate
+`mpd-virt` repo (Go, not shell), on macOS and Linux hosts alike. One
+discipline from it matters here because mpd's CA reuse check
+(`go/internal/cli/setup.go`) is the other end of it: **CAs flow host →
+VM only.** The host trust store only ever trusts certificates the host
+generated itself; nothing pulls a CA off a VM and imports it, which
+would invert the trust direction by accepting a certificate of unknown
+provenance from inside an SSH session. A VM with no CA pushed in (a
+sandbox) generates its own and trusts it only inside that VM.
 
-   On a wipe, the next `setup.sh` regenerates and re-imports
-   into the system trust store. Generation uses the bash twin of
-   `cert.GenerateCA` (`go/internal/cert/ca.go`);
-   the two generators must stay in sync. The CA is then uploaded into
-   the VM, where mpd's reuse check (`go/internal/cli/setup.go`)
-   picks it up. Route, resolver, **and** CA-trust collapse into a
-   single upfront fenced block, after which the long unattended
-   VM-creation phase runs holding no sudo creds.
-
-   **Boundary rule:** CAs flow host → VM only. The host trust store
-   only ever trusts certificates the host generated itself.
-   `configure-client.sh` will not pull a CA off a VM and import it
-   into the trust store — that would invert the trust direction by
-   accepting a cert of unknown provenance from inside an SSH session.
-   On a host with `~/.mpd-virt/ca/` empty (e.g. an imported VM
-   created elsewhere), `configure-client.sh` configures route + DNS
-   but skips CA import; the user has to bring a host CA across
-   themselves.
-7. **Optional dev override.** Before the fenced block opens,
-   `print_sudo_recipe` in `lib/common.sh` lists the exact runnable
-   commands and lets the dev choose to run them in another terminal
-   instead of providing a password to the script. The recipe ends
-   with a trailing `sudo -k` so the dev's terminal also drops cached
-   creds. Idempotent predicates let the script re-check after the
-   prompt and skip whatever the dev already did — the fenced block
-   then runs only what's actually still missing, possibly nothing.
-
-Reference implementations: `lib/setup.sh` (new-VM path: upfront fence,
-host-first CA), `lib/configure-client.sh` (existing-VM and `start.sh`
-warm path), and `lib/uninstall.sh` (teardown path).
-
-This rule applies to the automated `mpd VM` platform whose
-bootstrap runs shell as the dev user on the host: **linux**. The
-macOS host side lives in the `mpd-virt` repo (Go, not shell; it keeps
-its root CA at `~/.mpd-virt/conf/caroot/` and follows the same
-host-first CA discipline). The other platforms differ:
-
-- **windows** runs each entry script wholesale via UAC
-  elevation (the `.cmd` shim's `Start-Process -Verb RunAs` is the
-  privilege gate); the whole script body is the "fenced section" by
-  design, and there is no per-operation `sudo`. CA generation and
-  cloud-init seed ISO creation are delegated to WSL Debian bash
-  (`lib/common.sh`) via `wsl -d Debian -u root`; no `openssl` or
-  `genisoimage` runs in PowerShell.
-- **sandbox** runs entirely inside the VM, so there is no "host-side
-  bootstrap" to fence. `mpd-sandbox-setup.sh` enables passwordless sudo
-  on the VM as part of taking it over (the hostname gate is
-  the user's deliberate consent), then sudo's individual privileged
-  commands per the in-VM rule.
-- **Inside the VM and runtime containers**, the previous sister rule
-  applies (per-command `sudo`, no whole-script elevation).
+Inside the VM and runtime containers the privilege model above applies
+unchanged: per-command `sudo`, no whole-script elevation.
 
 ## 4) Repository Directory Contract
 
@@ -923,29 +859,9 @@ written once, untouched as VMs come and go. With the **SOCKS** path there
 is no host resolver entry at all: the dedicated browser does remote DNS
 through the proxy. See [`NETWORKING.md`](NETWORKING.md).
 
-Windows is the awkward case. The built-in NRPT mechanism
-(`Add-DnsClientNrptRule`) works for most queries but is bypassed by some
-clients (notably Chromium's async resolver) and interacts poorly with
-corporate VPN clients. The recommended fallback is to install a small
-local DNS forwarder on the laptop, point the system resolver at `127.0.0.1`,
-and let the forwarder split queries by domain (`*.<NNN>.mpd.test → 10.163.<NNN>.1`,
-everything else → system upstream).
-
-**Recommended tool: Acrylic DNS Proxy** — Windows-only, MSI installer with
-tray icon, one-file config. This is the established precedent on Windows:
-Laravel Valet for Windows (the `cretueusebiu/valet-windows` port and its
-descendants) ships Acrylic and configures it to resolve `*.test → 127.0.0.1`,
-mirroring what macOS Valet does with `/etc/resolver/`. So the split-DNS story
-is symmetric: macOS uses the OS-native `/etc/resolver/<domain>` mechanism,
-which Apple's own [`container`](https://github.com/apple/container) tool also
-uses. It takes any domain rather than only a TLD, which is what lets mpd give
-each VM its own file for `<NNN>.mpd.test` where Valet has one file covering
-all of `test`. Windows uses Acrylic because the OS has no native equivalent —
-both are the convention rather than a mpd-specific choice. Alternatives considered:
-`dnscrypt-proxy` (cross-platform, but its "encrypted DNS" framing confuses
-non-privacy users) and Deadwood from the MaraDNS suite (works, but obscure on
-Windows). We recommend Acrylic for the intended audience; the others are fine
-for users who already know them.
+Windows hosts are out of scope: mpd's runtime needs a real VM and a
+host-side resolver/route/trust story, and neither WSL nor Hyper-V is
+planned.
 
 See detailed docs:
 
@@ -973,7 +889,7 @@ See detailed docs:
   layer); TLS
 - `assets/` — runtime/type/service scripts/config/templates + `runtime/skel/`
 - `bootstrap/` — VM bring-up steps 10–30 (passwordless sudo, OS upgrade + packages, clone + build)
-- `setup/` — host-side bootstrap: the sandbox + adoption-prep scripts, `linux/`, `windows/` (macOS lives in the `mpd-virt` repo)
+- `setup/` — the two in-VM scripts: sandbox take-over and adoption prep (the host side lives in the `mpd-virt` repo)
 - `docs/` — behavioral and architecture contracts
 
 ## 13) Contributor Change Map

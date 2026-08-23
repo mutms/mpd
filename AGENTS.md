@@ -22,10 +22,10 @@ the user sits and where `mpd` runs:
   `setup/mpd-sandbox-setup.sh` inside the VM. A sandbox is a try-out, not
   a dead end: `mpd-virt adopt` later converts it into a managed mpd VM
   for the daily workflow, projects intact.
-- **mpd VM** — automated Debian Trixie VM driven by a matched-host
-  bootstrap (Parallels Desktop Pro / UTM on macOS via `mpd-virt` —
-  primary; libvirt/KVM on Ubuntu and Hyper-V on Windows are automated
-  in-repo but less exercised). Defaults to headless; GNOME is installed
+- **mpd VM** — automated Debian Trixie VM driven from the host by
+  `mpd-virt` (Parallels / UTM / Apple container on macOS, libvirt/KVM on
+  Linux, and Proxmox or any reachable Debian VM from either). Defaults
+  to headless; GNOME is installed
   and toggleable on demand via `gnome-start` / `gnome-stop` (persistent
   across reboots), and `gnome-install` adds a minimal desktop to a VM
   that never had one. User stays
@@ -36,8 +36,8 @@ the user sits and where `mpd` runs:
   `ssh mpd-<NNN>` lands in the runtime).
 
 `mpd` itself is a single Linux binary that runs **inside the VM**. The
-macOS-host orchestrator (`mpd-virt`) that drives Parallels lives in a
-separate repository.
+host-side orchestrator (`mpd-virt`, macOS and Linux hosts) lives in a
+separate repository. Windows hosts are not supported and not planned.
 
 **Implementation note:** a sandbox and a managed VM are the *same* thing
 at runtime — same code paths, same hostname-derived identity (mpd-<NNN>,
@@ -259,9 +259,7 @@ across docs.
 - `docs/DEBUGGING.md` — symptom catalogue: real runtime/IDE failures, the diagnostic that confirms each, and the fix
 - `docs/NETWORKING.md` — networking model (WireGuard overlay / SOCKS via mpd-virt + mpd-proxy)
 - `docs/SECURITY.md` — security model
-- macOS automation (Parallels / UTM) lives in the sibling `mpd-virt` repo: <https://github.com/mutms/mpd-virt>
-- `setup/linux/README.md` — Ubuntu host + libvirt/KVM automation
-- `setup/windows/README.txt` — Windows host + Hyper-V automation
+- Host-side automation (macOS: Parallels / UTM / Apple container; Linux: libvirt/KVM; either: Proxmox, generic) lives in the sibling `mpd-virt` repo: <https://github.com/mutms/mpd-virt>
 - `setup/mpd-sandbox-setup.sh` — graphical "live in the VM" Debian sandbox (wgettable single script)
 
 ## Mandatory architecture rule
@@ -351,14 +349,12 @@ build, not a VM or container).
 - For shell completion, edit `go/internal/cli/complete.go` — the shims
   under `assets/completions/` are stable forwarders and rarely need to
   change.
-- **Each `setup/<name>/` directory must stay
-  self-contained** — it's released as a small standalone bundle (a
-  handful of `.sh` / `.ps1` / `.cmd` plus a README) and dropped onto a
-  fresh host before the mpd repo is cloned. Scripts in there may only
-  reference files inside the same directory plus standard host tooling
-  and what they pull at runtime (`git clone`). Do **not** reach into a
-  sibling platform directory or anywhere else in the repo from
-  bootstrap-stage code; duplicate small helpers instead. See
+- **Each script under `setup/` must stay a self-contained single
+  file** — it is published as a raw URL for `wget | bash` and runs on a
+  fresh VM before the mpd repo is cloned. Bootstrap-stage code may only
+  use standard guest tooling and what it pulls at runtime (`git clone`);
+  do **not** reach into `assets/`, `bootstrap/` or anywhere else in the
+  repo from there, and add no shared `lib/`. See
   [`setup/README.md`](setup/README.md)
   for the full rule.
 

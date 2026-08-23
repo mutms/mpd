@@ -58,8 +58,8 @@ func TestResolveSigner(t *testing.T) {
 	})
 
 	t.Run("self-signed VM has anchor and signer as one cert", func(t *testing.T) {
-		// setup/linux and setup/windows write the same certificate to both
-		// paths. The chain is one long, so appending it to every leaf would
+		// A sandbox VM writes the same certificate to both paths. The
+		// chain is one long, so appending it to every leaf would
 		// ship the trust anchor to clients that already have it.
 		dir := t.TempDir()
 		write(t, dir, "rootCA.pem", anchorPEM)
@@ -183,10 +183,10 @@ func TestLeafDays(t *testing.T) {
 }
 
 // TestSelfSignedInstallPath covers what a VM with no CA material does —
-// a sandbox VM, and the setup/linux, setup/windows flows before anything
-// is pushed in.
+// a sandbox VM, or any VM that runs --vm-setup before anything is pushed
+// in.
 //
-// Those installs have no orchestrator to hand them an intermediate, so
+// Such a VM has no orchestrator to hand it an intermediate, so
 // --vm-setup generates one CA and uses it as both anchor and signer. The
 // property that matters is Chain == false: appending the signer to every
 // leaf would ship the trust anchor to clients that already have it, and a

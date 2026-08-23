@@ -11,12 +11,11 @@ import (
 
 // CAConfig is the openssl config the local CA is generated from.
 //
-// KEEP IN SYNC with the two host-side twins that may generate the same
-// CA before a VM exists: the mpd-virt repo's Go `ca` package
-// (go/internal/ca), and the `generate_mpd_ca` function in
-// setup/linux/lib/common.sh. All three must produce a certificate with an
-// identical DN, v3_ca extensions and name constraints, because a VM
-// reuses whichever one it finds.
+// KEEP IN SYNC with the host-side twin that may generate the same CA
+// before a VM exists: the mpd-virt repo's Go `ca` package
+// (go/internal/ca). Both must produce a certificate with an identical DN,
+// v3_ca extensions and name constraints, because a VM reuses whichever
+// one it finds.
 //
 // The name constraint is what makes this CA safe to trust on the
 // developer's own workstation: `permitted;DNS.0 = .mpd.test` means a

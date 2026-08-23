@@ -10,7 +10,9 @@ out where they matter.
 You need a Debian Trixie VM with `mpd` built and reachable over SSH.
 Pick the path that matches your host:
 
-- **macOS + Parallels / UTM / Proxmox / cloud (automated)** —
+- **macOS or Linux host (automated)** — Parallels / UTM / Apple
+  container on macOS, libvirt/KVM on Linux, Proxmox or any cloud/bare
+  Debian VM from either:
   [`mpd-virt`](https://github.com/mutms/mpd-virt) (separate repo).
   `mpd-virt adopt <NNN> <IP>` adopts any reachable Debian Trixie VM:
   it runs the bootstrap pipeline over SSH, installs `mpd`, and wires host
@@ -19,17 +21,6 @@ Pick the path that matches your host:
   needs no sudo. `mpd-virt remove` / `uninstall` un-adopt and tear the host side down; VM power
   (where the backend supports it) via `mpd-virt start|stop` or the
   hypervisor's GUI.
-- **Ubuntu 26.04 LTS + libvirt/KVM (automated)** —
-  [`setup/linux/`](../setup/linux/README.md).
-  `bash setup.sh` from a terminal: preflight (apt deps, libvirt group,
-  KVM, default network) → libvirt-driven VM creation against `virbr0`
-  → Linux host networking (route, systemd-resolved drop-in, system
-  trust, Firefox policies, NSS DB) → desktop launcher in GNOME
-  Activities. `start.sh` / `stop.sh` / `uninstall.sh` cover the lifecycle.
-- **Windows + Hyper-V (automated)** —
-  [`setup/windows/`](../setup/windows/README.txt).
-  `setup.cmd` does the same end-to-end and also configures Windows
-  networking (route, NRPT DNS, CA certificate import).
 - **Sandbox (graphical, any hypervisor)** —
   [`setup/mpd-sandbox-setup.sh`](../setup/mpd-sandbox-setup.sh).
   You install Debian Trixie with the GNOME desktop in your hypervisor
@@ -842,9 +833,9 @@ mpd start <project>              # per project still missing. Recreates the
 rm -rf /var/lib/mpd                    # blow away state + identity in the VM
 
 # Delete the VM itself: hypervisor's VM-delete operation (or, for sandbox,
-# revert to your pre-take-over snapshot), then re-bootstrap from any
-# setup/<name>/. On macOS hosts: `mpd-virt uninstall` (separate
-# orchestrator binary, own repo) handles the host side cleanly.
+# revert to your pre-take-over snapshot), then re-bootstrap. On the
+# host: `mpd-virt remove` / `mpd-virt uninstall` (separate orchestrator
+# binary, own repo) handle the host side cleanly.
 ```
 
 ## Reference

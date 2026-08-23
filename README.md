@@ -58,10 +58,10 @@ mdl-install                             # install Moodle
 
 Same VM, headless, with your laptop's own browser resolving `*.mpd.test`
 directly and your IDE connected over remote SSH (PhpStorm Gateway, VS Code
-Remote-SSH — `ssh mpd-<NNN>` lands in the runtime). On macOS, [mpd-virt](https://github.com/mutms/mpd-virt)
-creates or adopts the VM and wires the host side in one shot; on Linux and
-Windows the in-repo automation is [setup/linux/](setup/linux/README.md) and
-[setup/windows/](setup/windows/README.txt) (less exercised). A sandbox is
+Remote-SSH — `ssh mpd-<NNN>` lands in the runtime). [mpd-virt](https://github.com/mutms/mpd-virt)
+creates or adopts the VM and wires the host side in one shot — from a
+macOS host (Parallels, UTM, Apple container) or a Linux host (libvirt/KVM),
+and from either for a Proxmox VM or any reachable Debian VM. A sandbox is
 adopted by running [setup/mpd-prepare-adopt.sh](setup/mpd-prepare-adopt.sh)
 in the VM (a sandbox deliberately has no SSH server until then; the prep
 script adds it plus mDNS discovery), then
