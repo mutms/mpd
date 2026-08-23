@@ -188,7 +188,7 @@ Fixed source checkout path: `/opt/mpd`
 
 Directory ownership split:
 
-- `bin/` — the built binary (`bin/mpd`) plus committed VM tools (`claude-install`, `gnome-install`, `gnome-start`/`gnome-stop`, `rdp-start`/`rdp-stop`), on PATH via `bootstrap/30-mpd-build.sh`.
+- `bin/` — the built binary (`bin/mpd`) plus committed VM tools (`claude-install`, `gnome-install`, `gnome-start`/`gnome-stop`, `rdp-start`/`rdp-stop`, `libvirt-install`), on PATH via `bootstrap/30-mpd-build.sh`.
 - `/var/lib/mpd/conf/` — persistent local trust/network material:
   - `caroot/` — the trust anchor (`rootCA.pem`; public only, on a
     `mpd-virt`-provisioned VM) plus the CA this VM signs leaves with

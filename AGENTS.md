@@ -126,7 +126,8 @@ time, seconds on re-runs; VM resume from suspend, seconds.
 
 **Top-level repo layout:** `bin/` (built `bin/mpd` plus committed VM tools:
 `claude-install`, `gnome-install`, `gnome-start`/`gnome-stop`,
-`rdp-start`/`rdp-stop`, `migrate-vm-network.sh` — the manual migration of
+`rdp-start`/`rdp-stop`, `libvirt-install` — make this VM a libvirt/KVM host
+for mpd-virt's libvirt backend, `migrate-vm-network.sh` — the manual migration of
 an existing VM to the `/etc/hosts` DNS layout; `--vm-setup` carries no
 migration logic), `go/` (control plane),
 `assets/` (runtime/service definitions and shell), `bootstrap/`

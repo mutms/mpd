@@ -120,6 +120,25 @@ all you need. NetworkManager is deliberately left out (mpd runs the VM on
 systemd-networkd), so GNOME's network panel is empty. Nothing else
 notices.
 
+## Nested VMs: testing mpd-virt from inside an mpd VM
+
+```bash
+libvirt-install  # make this VM a libvirt/KVM host: qemu + libvirt,
+                 # the `default` NAT network, /var/lib/mpd-virt, KVM
+                 # nested=1; clones mpd-virt to ~/Developer/mpd-virt
+                 # and `make install`s it (~/.local/bin/mpd-virt), and
+                 # clones mpd-proxy to ~/Developer/mpd-proxy unbuilt.
+                 # Idempotent.
+mpd-virt create 150 --backend=libvirt   # a nested mpd VM at 192.168.122.150
+```
+
+Needs nested virtualisation from the outer hypervisor (Proxmox: CPU type
+`host`; Parallels/UTM: the nested-virtualisation switch) — the script
+checks for VMX/SVM and `/dev/kvm` and refuses without them. Log in again
+after the first run if it added you to the `libvirt` group. The rest of
+the libvirt backend (reaching the nested VM, its files, limits) is in
+mpd-virt's `docs/LIBVIRT.md`.
+
 **From an iPad or another device with no SSH tunnel:**
 
 ```bash
