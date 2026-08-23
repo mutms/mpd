@@ -417,11 +417,6 @@ Two details worth knowing:
   `$HOME` you land in when you SSH in — name the project explicitly;
   `/srv` is the only tree that means the same thing on both sides.
 
-To turn the whole thing off, set `MPD_RUNTIME_CONTROL=off` in
-`/var/lib/mpd/env/mpd-virt.env`; it applies to the next command, no restart.
-The trade-off it exists for is in
-[`SECURITY.md`](SECURITY.md#the-runtime-control-socket).
-
 ### Pushing to git from inside the runtime
 
 The runtime doesn't carry your private SSH key. Authenticate to

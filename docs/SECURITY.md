@@ -339,94 +339,35 @@ allows:
 
 ## The runtime control socket
 
-`mpd` works from inside a runtime container: it forwards commands to the
-VM over a Unix socket and the VM runs them. This widens what a runtime
-can reach on purpose, so the trade is recorded here.
+`mpd` works from inside the runtime container: it forwards commands to
+the VM over a Unix socket and the VM runs them. This is a convenience,
+not a security feature. The runtime already has passwordless sudo and
+the whole data volume, so the socket adds nothing an attacker in the
+runtime could not reach anyway. The VM is the boundary (see "Where the
+isolation actually comes from"); run a separate VM per customer or
+trust level.
 
-**What changes.** Before, a compromised or confused process inside the
-runtime (including an AI agent, which runs there with passwordless sudo)
-could write anything under `/srv` but could not touch the control plane:
-no podman socket, no `/var/lib/mpd/conf`, no `/var/lib/mpd/state`. It
-can now drive most of mpd through the socket: create, configure, start,
-stop, reset and delete **projects**, manage **databases** (`--db-*`) and
-**extra services** (`--service-*`), and take a **runtime backup**.
-Deleting a project destroys its database, dataroot and source tree, and
-`--db-delete` / `--service-purge` are destructive too. This is a real
-increase in blast radius. The trade is deliberate: a single runtime has
-one owner, so these are the developer's own resources, and reaching them
-without a second VM terminal is the point.
+What the socket refuses is there to block accidents, not attacks:
 
-**What does not change.** It cannot change the VM's lifecycle
-(`--vm-setup`/`--vm-upgrade`/`--vm-start`/`--vm-stop`/`--vm-restart`),
-tear down or restore the runtime it is calling from
-(`--runtime-rebuild`, `--runtime-restore`), or start a control-plane
-daemon (`--web`, `--control`). Those are refused. It cannot ask the VM to
-run an arbitrary command either (`run` would only loop back to where the
-caller already is). The rule is "do not terminate the runtime you are
-standing in". Read-only introspection (`--vm-status`) is forwarded.
+- The VM lifecycle (`--vm-setup`, `--vm-upgrade`, `--vm-start`,
+  `--vm-stop`, `--vm-restart`), rebuilding or restoring the runtime you
+  are standing in (`--runtime-rebuild`, `--runtime-restore`), starting
+  the `--web` / `--control` daemons, and `run`. All of these would pull
+  the floor out from under the caller, or loop back to where it already
+  is. `--vm-status` is read-only and is forwarded.
+- A working directory outside `/srv` is replaced by `/srv`: `/srv` is
+  the one tree at the same path on both sides, while `/home/<user>` is
+  a different directory on the VM. Relative paths are refused.
 
-Four properties carry that:
+Everything else — projects, databases (`--db-*`), extra services
+(`--service-*`), runtime backups — is forwarded as is. Deleting a
+project from inside the runtime deletes it for real.
 
-1. **Bounded denylist.** The daemon never runs a program named in a
-   request. It refuses a small, compiled-in set — the mutating `--vm-*`
-   lifecycle flags (all but the read-only `--vm-status`),
-   `--runtime-rebuild`/`--runtime-restore`, the `--web`/`--control`
-   daemons, and the `run` verb — and forwards everything else to the mpd
-   binary it spawns. That binary's path comes from `internal/exec`'s
-   absolute-path allow-list. A request selects a verb or flag; it cannot
-   select an executable. A pinning test checks the denylist against the
-   full flag set (`cli.GlobalFlags`), so adding a flag is a deliberate
-   decision about runtime exposure, not a silent grant.
-2. **Identity from the channel.** The runtime's socket is bind-mounted
-   read-only into that runtime alone. The caller's identity is the
-   socket that accepted the connection. The client never asserts it, so
-   it cannot be forged. `SO_PEERCRED` cannot carry identity here: the
-   runtime runs the same UID-matched dev user as the VM, so peer
-   credentials distinguish nothing. They still help as a second layer:
-   the socket is mode `0660` and dev-user-owned, and the kernel enforces
-   that across the container boundary.
-3. **Context validated, not believed.** Most verbs infer their target
-   project from the working directory, so a cwd taken on trust would be
-   a way to name someone else's project. A cwd is accepted only inside
-   `/srv`, the one tree at the same path on both sides. Anywhere else,
-   the command still runs but from `/srv`, because `/home/<user>` exists
-   on the VM too and is a *different* directory there. Relative or
-   non-clean paths are refused.
-4. **Bounded authority.** With a single runtime there is no
-   cross-runtime ownership to check. A runtime may drive projects,
-   databases and services (its own developer's world), but not the
-   machine that world runs on (the mutating `--vm-*` lifecycle), and not
-   the runtime lifecycle it depends on
-   (`--runtime-rebuild`/`--runtime-restore`). One check remains on
-   `init`: a declared `--type` must name a type the asset tree defines
-   (`moodle`, `astro`). An undeclared type is left for the child to
-   infer, same as on the VM.
-
-`run` is refused rather than scoped. It is arbitrary execution by
-design, and from inside the runtime it would only loop back to where the
-caller already is: runtime → VM → the same runtime.
-
-**Turning it off.** Set `MPD_RUNTIME_CONTROL=off` in
-`/var/lib/mpd/env/mpd-virt.env`. It is read per request, so it takes
-effect on the next command with no restart. Only an explicit
-`off`/`false`/`0`/`no` disables it, so a typo cannot silently break mpd
-inside the runtime.
-
-That file is normally written on the host and pushed into every VM, so
-setting the switch there sets it for all of them. It also means the
-workstation, not the VM, decides this VM's posture. That is the same
-direction the CA travels (host → VM, see "Host-only trust rule"), and it
-holds: nothing inside a VM can reach back and change what the host
-pushes. The runtime cannot edit the file either, because the env
-directory is mounted read-only into the container. To set it per VM,
-edit the in-VM copy, and accept that the next `mpd-virt start`/`update`
-overwrites it.
-
-The daemon (`mpd --control`, `mpd-control.service`) runs as a **systemd
-user unit with no privileges of its own**. A forwarded verb gets
-privilege the same way a VM terminal does: per-operation `sudo` inside
-the child. The child takes the state lock itself, so concurrent commands
-serialise whichever side they came from.
+The daemon (`mpd --control`, `mpd-control.service`) runs as a systemd
+user unit with no privileges of its own. A forwarded command gets
+privilege the same way a VM terminal does, with per-operation `sudo` in
+the child. The child takes the state lock itself, so commands from both
+sides serialise.
 
 ## Authentication
 

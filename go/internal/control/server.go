@@ -152,14 +152,6 @@ func handle(ctx context.Context, out io.Writer, conn *net.UnixConn, g Guard) {
 		return
 	}
 
-	// Checked per request, before the guard, so the switch takes effect on
-	// the next command rather than the next daemon restart.
-	if ok, why := Enabled(EnvFile); !ok {
-		fmt.Fprintf(out, "'%s' refused %v: disabled by %s\n", g.Runtime, req.Argv, EnabledKey)
-		reply(conn, response{Exit: 1, Error: why})
-		return
-	}
-
 	decision, err := g.Check(req)
 	if err != nil {
 		// Refused before anything ran. The message goes back over the

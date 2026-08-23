@@ -653,8 +653,8 @@ propagate inside the container immediately. No sync, no restart needed.
   (`MPD_MOODLE_BEHAT`). A knob earns its place only when mpd is the
   side that acts on it: astro's dev-server port is not one, because the
   server is Astro's own and reads `server.port` from `astro.config.mjs`.
-- `MPD_<KEY>` — everything else: runtime-wide knobs (`MPD_XDEBUG_MODE`)
-  and mpd infra (`MPD_RUNTIME_CONTROL`). Names carry no runtime segment;
+- `MPD_<KEY>` — everything else: runtime-wide knobs (`MPD_XDEBUG_MODE`).
+  Names carry no runtime segment;
   there is one runtime, so it never distinguished anything. The one
   apparent exception is the `MPD_PHP_*` family (`MPD_PHP_VERSION`,
   `MPD_PHP_FORCE_VERSION`, `MPD_PHP_FALLBACK_VERSION`) — there `PHP`

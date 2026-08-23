@@ -381,8 +381,7 @@ Two known tensions, both resolved toward the repo's own rules:
   duplicate** wins — point at the file that owns the value, as
   "Avoid cross-file doc duplication" already requires.
 - Plain language wants short files; a genuine safety explanation
-  (`MPD_RUNTIME_CONTROL`, `MPD_DB=""` on astro) stays. Cutting the
-  reason is not simplifying.
+  (`MPD_DB=""` on astro) stays. Cutting the reason is not simplifying.
 
 `docs/` and the Go sources are not covered — they address a different
 reader, and code comments carry reasoning that plain-language rules are
