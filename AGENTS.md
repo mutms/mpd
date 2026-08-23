@@ -315,13 +315,11 @@ build, not a VM or container).
 - Prefer additive asset changes for runtime/project-type behavior; reserve
   Go edits for control-plane, state, networking, and orchestration.
 - Prefer deterministic behavior over convenience fallbacks.
-- **Never raise the `go` directive in `go/go.mod` above the Go that
-  Debian Trixie packages** (`golang-go`, currently 1.24.x), and check a
-  new dependency's own `go.mod` for the same. Go's default
-  `GOTOOLCHAIN=auto` would otherwise silently download a 210 MB
-  toolchain on every VM at build time. The Makefile pins
-  `GOTOOLCHAIN=local` so this fails loudly instead; if you hit that
-  failure, lower the directive or pick an older dependency version.
+- **The `go` directive in `go/go.mod` picks the compiler.** Go comes
+  from upstream, not Debian: `bootstrap/30-mpd-build.sh` installs a
+  pinned release into `/usr/local/go` as the seed, and the go command
+  fetches whatever newer toolchain `go.mod` names (`GOTOOLCHAIN=auto`).
+  Raise the directive on purpose, for a feature you use.
 - Avoid cross-file doc duplication; link to canonical owners.
 - **History is not a source of truth.** This repo's git history is
   rewritten and discarded periodically, on purpose: an accumulated

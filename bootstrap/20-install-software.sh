@@ -87,12 +87,13 @@ ok "operating system current"
 # Base tooling, networking config + diagnostics, and what `make install`
 # needs. bind9-dnsutils is the real package for dig/host on Trixie
 # (dnsutils is virtual; dpkg -s against the virtual name always reports
-# not-installed). golang-go builds mpd; libnss3-tools provides certutil
-# for the Chromium NSS trust DB that `mpd --vm-setup` writes the CA into.
+# not-installed). Go is not here: 30-mpd-build.sh installs upstream Go.
+# libnss3-tools provides certutil for the Chromium NSS trust DB that
+# `mpd --vm-setup` writes the CA into.
 BASE_PKGS=(
     sudo openssl bash coreutils git wget curl ca-certificates systemd
     iproute2 iputils-ping bind9-dnsutils traceroute tcpdump lsof less psmisc
-    jq build-essential pkg-config make golang-go libnss3-tools
+    jq build-essential pkg-config make libnss3-tools
 )
 
 # What mpd itself needs at run time.

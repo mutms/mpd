@@ -8,8 +8,9 @@
 #   2. Creates /opt/mpd + /var/lib/mpd, owned by the dev user.
 #   3. Clones the mpd repo into /opt/mpd, or fast-forwards an existing
 #      checkout (refuses on a dirty tree — resolve by hand).
-#   4. `make install` → /opt/mpd/bin/mpd.
-#   5. Puts /opt/mpd/bin and ~/.local/bin on PATH via ~/.bashrc.
+#   4. Installs Go into /usr/local/go when the VM has none on PATH.
+#   5. `make install` → /opt/mpd/bin/mpd.
+#   6. Puts /opt/mpd/bin and ~/.local/bin on PATH via ~/.bashrc.
 #
 # Idempotent: a current checkout costs a fetch and a `make install` that
 # finds nothing to do.
@@ -63,6 +64,37 @@ else
     # existing dir is fine.
     git clone --branch "${BRANCH}" "${REPO_URL}" "${DEST}"
     ok "cloned"
+fi
+
+# --- Go -----------------------------------------------------------------
+# Upstream Go, not Debian's: the go.mod files name the version they need
+# and the go command fetches that toolchain itself (GOTOOLCHAIN=auto), so
+# this install only has to exist — any version works as the seed. Pinned
+# with its checksums; bump both together. Skipped when a go is already on
+# PATH (from this install, or anywhere else).
+GO_VERSION="1.27.0"
+case "$(dpkg --print-architecture)" in
+    amd64) GO_ARCH=amd64; GO_SHA256=675c26c449cbb18fc24b74650de1eabbae6e16f64326fd85a283fb3b58280685 ;;
+    arm64) GO_ARCH=arm64; GO_SHA256=51798d2c42d0e1c6ed7fd9f48728b4193abac9e8aad6dbac2fe96a81f5909bda ;;
+    *) die "unsupported architecture $(dpkg --print-architecture)" ;;
+esac
+
+step "Go"
+if command -v go >/dev/null 2>&1; then
+    ok "$(go version) on PATH"
+else
+    tarball="go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
+    tmp="$(mktemp -d)"
+    wget -qO "${tmp}/${tarball}" "https://go.dev/dl/${tarball}" \
+        || die "download of ${tarball} failed"
+    echo "${GO_SHA256}  ${tmp}/${tarball}" | sha256sum -c --quiet \
+        || die "${tarball}: checksum mismatch"
+    sudo rm -rf /usr/local/go
+    sudo tar -C /usr/local -xzf "${tmp}/${tarball}"
+    rm -rf "${tmp}"
+    echo 'PATH="$PATH:/usr/local/go/bin"' | sudo tee /etc/profile.d/go.sh >/dev/null
+    export PATH="${PATH}:/usr/local/go/bin"
+    ok "installed $(go version) → /usr/local/go"
 fi
 
 step "Building mpd"

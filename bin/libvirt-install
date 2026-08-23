@@ -105,18 +105,19 @@ fi
 
 # --- Package set --------------------------------------------------------
 # The list from mpd-virt's docs/LIBVIRT.md plus what the build needs.
-# git/make/golang-go are on every mpd VM already (bootstrap step 20) and
-# are named only so the script also works on a plainer Debian.
+# git/make are on every mpd VM already (bootstrap step 20) and are named
+# only so the script also works on a plainer Debian.
 #
 #   qemu-system-x86        the hypervisor binary (qemu-system-x86_64)
 #   libvirt-daemon-system  libvirtd + its default network definition
 #   libvirt-clients        virsh, which the backend drives everything with
 #   qemu-utils             qemu-img, to make the VM's disk from the cloud image
 #   genisoimage            the cloud-init NoCloud seed ISO
-#   git make golang-go     fetch and build mpd-virt
+#   git make               fetch and build mpd-virt (Go itself comes from
+#                          mpd's bootstrap step 30, already on every mpd VM)
 PKGS=(
     qemu-system-x86 libvirt-daemon-system libvirt-clients qemu-utils genisoimage
-    git make golang-go
+    git make
 )
 
 step "Packages"
