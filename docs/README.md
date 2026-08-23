@@ -71,5 +71,5 @@ Quick reference; full contract in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 Backups live in `/srv/backups/` on the data volume (`mpd
 --runtime-backup` writes `backups/runtime/<timestamp>/`) and are
-copied off the VM with scp before wiping. Full contract:
-[`ARCHITECTURE.md` §10](ARCHITECTURE.md#10-backup-persistence).
+expected to be copied off the VM manually with scp before wiping.
+Full contract: [`ARCHITECTURE.md` §10](ARCHITECTURE.md#10-backup-persistence).

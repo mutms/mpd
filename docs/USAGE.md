@@ -264,10 +264,10 @@ The three services and where they answer (HTTP only — their addresses
 are inside the trust boundary, reached via the WireGuard overlay or the
 SOCKS tunnel like everything else; no TLS, no proxying):
 
-| Service      | URL                                        | Notes                                                        |
-|--------------|--------------------------------------------|---------------------------------------------------------------|
-| `mailpit`    | `http://mailpit.svc.<NNN>.mpd.test:8025/`  | Shared mail catch-all; SMTP on `:1025`. Data volume survives uninstall. |
-| `adminer`    | `http://adminer.svc.<NNN>.mpd.test:8080/`  | DB web UI; the portal offers pre-filled per-project links.    |
+| Service      | URL                                          | Notes                                                                         |
+|--------------|----------------------------------------------|-------------------------------------------------------------------------------|
+| `mailpit`    | `http://mailpit.svc.<NNN>.mpd.test:8025/`    | Shared mail catch-all; SMTP on `:1025`. Data volume survives uninstall.       |
+| `adminer`    | `http://adminer.svc.<NNN>.mpd.test:8080/`    | DB web UI; the portal offers pre-filled per-project links.                    |
 | `seleniumv1` | `http://seleniumv1.svc.<NNN>.mpd.test:4444/` | Behat browser; auto-enabled by `mpd start` on a Behat-enabled Moodle project. |
 
 Enabled services survive reboots (`mpd --vm-start` reconciles them) and
@@ -488,17 +488,17 @@ Stack-independent ones first:
 
 **Project-type-level (Moodle — `assets/runtime/project_types/moodle/tools/`):**
 
-| Tool                                        | What it does                                                                                                                                                                                                                                                                                            |
-|---------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `mdl-install`                               | Run `admin/cli/install_database.php` for the current project, with composer install + sensible defaults from `mpd.env`. Refuses if the project is unconfigured or already installed — checked before composer runs.                                                                                      |
-| `mdl-cache-purge`                           | Run `admin/cli/purge_caches.php` for the current project.                                                                                                                                                                                                                                               |
-| `mdl-cron`                                  | Run `admin/cli/cron.php` (one cycle) for the current project.                                                                                                                                                                                                                                           |
-| `mdl-upgrade`                               | Run `admin/cli/upgrade.php --non-interactive` for the current project. Use after a git pull that updates code.                                                                                                                                                                                          |
-| `mdl-data-backup` / `mdl-data-restore`      | Save and restore the current project's database + dataroot as one `.tgz` in the shared `/srv/backups/projects/` pile (restorable into any project). `mdl-data-restore --list` shows what is there. See [Backups](#backups).                                                                                                                 |
-| `phpunit` / `phpunit-init` / `phpunit-util` | Run, initialize, and inspect Moodle's PHPUnit suite.                                                                                                                                                                                                                                                    |
-| `behat` / `behat-init` / `behat-util`       | Run, initialize, and inspect Moodle's Behat suite.                                                                                                                                                                                                                                                      |
-| `grunt`                                     | Wraps `npm install` + `grunt` for the current project's Moodle JS build.                                                                                                                                                                                                                                |
-| `mpci` / `mpci-install`                     | Moodle Plugin CI runner and installer. The phar lives at `/srv/extra/mpci/` — on the data volume, so it survives `mpd --runtime-rebuild`. `rm` it and re-run `mpci-install` to pick up a newer release.                                                                                                          |
+| Tool                                        | What it does                                                                                                                                                                                                                |
+|---------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `mdl-install`                               | Run `admin/cli/install_database.php` for the current project, with composer install + sensible defaults from `mpd.env`. Refuses if the project is unconfigured or already installed — checked before composer runs.         |
+| `mdl-cache-purge`                           | Run `admin/cli/purge_caches.php` for the current project.                                                                                                                                                                   |
+| `mdl-cron`                                  | Run `admin/cli/cron.php` (one cycle) for the current project.                                                                                                                                                               |
+| `mdl-upgrade`                               | Run `admin/cli/upgrade.php --non-interactive` for the current project. Use after a git pull that updates code.                                                                                                              |
+| `mdl-data-backup` / `mdl-data-restore`      | Save and restore the current project's database + dataroot as one `.tgz` in the shared `/srv/backups/projects/` pile (restorable into any project). `mdl-data-restore --list` shows what is there. See [Backups](#backups). |
+| `phpunit` / `phpunit-init` / `phpunit-util` | Run, initialize, and inspect Moodle's PHPUnit suite.                                                                                                                                                                        |
+| `behat` / `behat-init` / `behat-util`       | Run, initialize, and inspect Moodle's Behat suite.                                                                                                                                                                          |
+| `grunt`                                     | Wraps `npm install` + `grunt` for the current project's Moodle JS build.                                                                                                                                                    |
+| `mpci` / `mpci-install`                     | Moodle Plugin CI runner and installer. The phar lives at `/srv/extra/mpci/` — on the data volume, so it survives `mpd --runtime-rebuild`. `rm` it and re-run `mpci-install` to pick up a newer release.                     |
 
 The `mdl-` prefix marks Moodle-specific operations whose bare name
 would otherwise collide with system commands or be too generic
