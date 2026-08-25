@@ -489,20 +489,6 @@ func (c *Client) ImageExists(ctx context.Context, image string) bool {
 	return err == nil && res.Code == 0
 }
 
-// PullQuiet fetches an image without streaming layer progress.
-//
-// Only for pre-warming a pull whose result is not what the user is
-// waiting on (setup's base image). Anything the user is blocked on goes
-// through Pull: a silent multi-gigabyte fetch is indistinguishable from
-// a hang.
-func (c *Client) PullQuiet(ctx context.Context, image string) (int, error) {
-	res, err := c.run(ctx, []string{"pull", "-q", image})
-	if err != nil {
-		return -1, err
-	}
-	return res.Code, nil
-}
-
 // BuildImage builds an image from a context directory, stamping it with
 // the given labels.
 //

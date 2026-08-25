@@ -46,10 +46,6 @@ const (
 	NetworkInterface = "mpdbr0"
 )
 
-// BaseImagePull is fetched during setup so the first project create does
-// not also pay for a several-hundred-megabyte download.
-const BaseImagePull = "docker.io/library/postgres:17"
-
 // Setup brings a bootstrapped VM to a working mpd install.
 //
 // Idempotent from end to end, and that is the property to preserve when
@@ -265,8 +261,6 @@ func Setup(ctx context.Context, out io.Writer) error {
 	if enabled := s.Services(); len(enabled) == 0 {
 		ui.OK(out, "none enabled — mpd --service-enable=%s", strings.Join(service.Names(), "|"))
 	}
-
-	_, _ = p.PullQuiet(ctx, BaseImagePull)
 
 	ui.Step(out, "Status web server (mpd --web)")
 	if err := vm.InstallWebUnit(ctx); err != nil {
