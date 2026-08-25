@@ -219,8 +219,8 @@ volume.
 
 - The unified runtime's definition and provisioning: `assets/runtime/...`
   (`Containerfile`, `bootstrap/50-user.sh` + `60-install-software.sh` +
-  `70-configure-runtime.sh`, `github-publish.sh`, `mpd-defaults.env`,
-  `skel/`, `tools/`, `lib/`, `caddy/`, `backup.d/`, `restore.d/`)
+  `70-configure-runtime.sh`, `github-publish.sh`,
+  `skel/`, `bin/`, `lib/`, `caddy/`, `backup.d/`, `restore.d/`)
 - Project-type behavior: `assets/runtime/project_types/<type>/...`
   (current types: `moodle`, `astro`, `mdl-demo`)
 - Project-type files placed in the project directory: `template/` and
@@ -579,17 +579,27 @@ and tools".
 
 `mpd.env` files carry runtime configuration that the user is meant to edit:
 DB tag, PHP version, Moodle install defaults, headless-Behat toggle, etc.
-Five named files with distinct lifecycles. Four are *sourced* at every
-`start` invocation, whose configure step reads them (the layered
-hierarchy); the fifth is a *seed* used once at `init` time.
+Three parsed layers compose a project's config, plus a seed used once at
+`init`. All are `MPD_*`-only and go through the whitelist parser (they can
+carry values from a cloned project repo):
 
-| File             | Path                                                                                      | Owner                                                                                         | Purpose                                                              |
-|------------------|-------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|----------------------------------------------------------------------|
-| Runtime defaults | `assets/runtime/mpd-defaults.env`                                                         | runtime, in repo (read-only)                                                                  | "the default value" for runtime-wide keys; sourced 1st               |
-| Type defaults    | `assets/runtime/project_types/<type>/mpd-defaults.env`                                    | project type, in repo (read-only)                                                             | type-specific overrides of the runtime default; sourced 2nd          |
-| Developer-wide   | `/var/lib/mpd/env/mpd-virt.env` (VM; bind-mounted RO into the runtime container at the same path) | developer, on the Mac at `~/.mpd-virt/mpd-virt.env` — pushed into every VM by mpd-virt; hand-edited in-VM on a sandbox | cross-project, cross-VM preferences and secrets; sourced 3rd |
-| Per-project      | `/srv/projects/<n>/mpd.env`                                                               | seeded from the type's `template/`, mutated by `mpd start <project> KEY=VALUE` and manual edit | project-scoped truth; sourced 4th, wins                              |
-| Per-type seed    | `assets/runtime/project_types/<type>/template/mpd.env`                                    | project type, in repo (read-only)                                                             | NOT sourced — copied to `/srv/projects/<n>/mpd.env` by the template mechanism |
+| File               | Path                                                                                      | Owner                                                                                         | Purpose                                                              |
+|--------------------|-------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|----------------------------------------------------------------------|
+| Developer defaults | `/opt/mpd/assets/vm/mpd-defaults.env` (optional; overlaid from `~/.mpd-virt/assets/vm/mpd-defaults.env`) | developer, on the Mac | runtime-wide defaults, *if the developer wants any*; sourced 1st (normally absent) |
+| Type defaults      | `assets/runtime/project_types/<type>/mpd-defaults.env`                                    | project type, in repo (read-only)                                                             | type-specific defaults; sourced 2nd          |
+| Per-project        | `/srv/projects/<n>/mpd.env`                                                               | seeded from the type's `template/`, mutated by `mpd start <project> KEY=VALUE` and manual edit | project-scoped truth; sourced 3rd, wins |
+| Per-type seed      | `assets/runtime/project_types/<type>/template/mpd.env`                                    | project type, in repo (read-only)                                                             | NOT sourced — copied to `/srv/projects/<n>/mpd.env` by the template mechanism |
+
+**`vm.env` and `runtime.env` are NOT layers here.** They are the developer's
+own general-purpose environment files — `~/.mpd-virt/vm.env` sourced into the
+VM's own shells (from the dev user's `~/.bashrc`), `~/.mpd-virt/runtime.env`
+sourced into every runtime shell (from the runtime skel `~/.bashrc`). Both are
+plain-sourced (the developer's own trusted files, never from git) so they may
+export non-`MPD_` variables too. They set the *ambient* environment a shell
+starts with; the composition below then runs per project command and overrides
+the keys it manages. So a variable in `runtime.env` reaches, say, `mdl-install`
+as an ordinary environment variable (`MPD_MOODLE_ADMINPASS`), and survives
+unless one of the layers below reassigns that key.
 
 **Seeding**: `mpd.env` is one of the files a project type ships in its
 `template/` directory (see §6 "Project-type `template/` and `generated/`"), so
@@ -599,49 +609,50 @@ it's a starting point for the user's own per-project overrides, with commented
 hints for discoverability.
 
 **Sourcing order at runtime** (in
-`assets/runtime/lib/source-mpd-env.sh`):
+`assets/runtime/lib/source-mpd-env.sh`, all parsed):
 
-1. runtime defaults (`mpd-defaults.env`)
+1. developer defaults (optional `/opt/mpd/assets/vm/mpd-defaults.env`)
 2. type defaults (`mpd-defaults.env`)
-3. `/var/lib/mpd/env/mpd-virt.env`
-4. project `mpd.env`
+3. project `mpd.env`
 
 The project's type is read from `/srv/meta/<n>/project.json` (written
-by `project.WriteMeta`) using `jq`; the runtime layer is unconditional,
-there being one runtime. Bash "last assignment wins" gives
-the right semantics — each layer overrides earlier ones, and explicit
-`KEY=""` blocks fall-through:
+by `project.WriteMeta`) using `jq`. Bash "last assignment wins" gives
+the right semantics — each layer overrides earlier ones (and the ambient
+value `runtime.env` may have set), and explicit `KEY=""` blocks fall-through.
+There is no shipped runtime-wide defaults file: a key set in no layer keeps
+whatever the ambient environment had, and where a default still matters — the
+PHP version — it is `MPD_PHP_FALLBACK_VERSION` in `lib/php-configure.sh` (also
+the `php` dispatcher's fallback):
 
-| layer-1 (runtime)     | layer-2 (type)        | layer-3 (user)        | layer-4 (project)     | result                   |
-|-----------------------|-----------------------|-----------------------|-----------------------|--------------------------|
-| `MPD_PHP_VERSION=8.3` | (absent)              | (absent)              | (absent)              | `8.3`                    |
-| `MPD_PHP_VERSION=8.3` | `MPD_PHP_VERSION=8.2` | (absent)              | (absent)              | `8.2` (type override)    |
-| `MPD_PHP_VERSION=8.3` | `MPD_PHP_VERSION=8.2` | `MPD_PHP_VERSION=8.4` | (absent)              | `8.4` (user override)    |
-| `MPD_PHP_VERSION=8.3` | (absent)              | (absent)              | `MPD_PHP_VERSION=8.5` | `8.5` (project override) |
+| layer-1 (dev)         | layer-2 (type)        | layer-3 (project)     | result                        |
+|-----------------------|-----------------------|-----------------------|-------------------------------|
+| (absent)              | (absent)              | (absent)              | `8.3` (code fallback)         |
+| `MPD_PHP_VERSION=8.1` | (absent)              | (absent)              | `8.1` (developer default)     |
+| `MPD_PHP_VERSION=8.1` | (absent)              | `MPD_PHP_VERSION=8.5` | `8.5` (project wins)          |
 
-`MPD_DB` is the same: a project type that doesn't use a DB ships `MPD_DB=""`
-in its `template/mpd.env` (astro) so the seeded project file blocks
-any `MPD_DB=...` the developer set in mpd-virt.env; types that do ship a
-sensible default (`MPD_DB=postgres:latest` for moodle).
+`MPD_DB` follows the same last-wins rule: a project type that doesn't use a DB
+ships `MPD_DB=""` in its `template/mpd.env` (astro) so the seeded project file
+blocks any `MPD_DB=...` reaching it from the ambient environment; types that do
+ship a sensible default (`MPD_DB=postgres:latest` for moodle).
 
-**How `mpd-virt.env` reaches the VM:** it is the developer's own file,
-and the layer is scoped to the *developer*, not the VM — one runtime per
-VM makes "VM-wide" a distinction without a difference, while a developer
-routinely runs several VMs that should share one set of defaults. The
-authoritative copy therefore lives on the Mac at
-`~/.mpd-virt/mpd-virt.env`, and mpd-virt pushes it to
-`/var/lib/mpd/env/mpd-virt.env` on adopt, start and update. The Mac
-is the source of truth: an edit made inside the VM survives only until
-the next push. A VM with no mpd-virt behind it (a sandbox) gets the file
-seeded once from `assets/vm/mpd-virt.env` by `mpd --vm-setup` and owns it
-outright. `--vm-setup` never overwrites an existing copy, so a pushed
-file is safe from the `--vm-setup` that `mpd-virt update` runs.
+**Why the developer's files are scoped to the *developer*, not the VM:** one
+runtime per VM makes "VM-wide" a distinction without a difference, while a
+developer routinely runs several VMs that should share one set of values. So
+the authoritative copies live on the Mac (`~/.mpd-virt/vm.env`,
+`~/.mpd-virt/runtime.env`) and mpd-virt pushes them into every VM on adopt and
+update. The Mac is the source of truth: an edit inside the VM survives only
+until the next push. A VM with no mpd-virt behind it (a sandbox) simply
+hand-writes the files it wants; nothing is seeded, and `mpd --vm-setup` only
+ensures `/var/lib/mpd/env/` exists.
 
-**And how it reaches the runtime:** bind-mounted RO into the runtime
-container at the same absolute path (`podman.EnvMountRO` in
-`go/internal/podman/podman.go`). Directory mount, so vim/nano
-atomic-rename writes on the VM — and a fresh copy scp'd in from the Mac —
-propagate inside the container immediately. No sync, no restart needed.
+**How `runtime.env` reaches the runtime:** the `/var/lib/mpd/env` directory is
+bind-mounted RO into the runtime container (`podman.EnvMountRO`), and the
+runtime's skel `~/.bashrc` sources `runtime.env` from there into every runtime
+shell — interactive, `ssh runtime cmd`, and the `bash -lc` login shell `mpd
+run` uses. Directory mount, so an edit on the VM (or a fresh copy scp'd from
+the Mac) is seen by the next shell immediately; no restart. (`vm.env` lives in
+the same directory but is sourced only by the VM's own shells, never inside a
+runtime.)
 
 **Naming convention:**
 

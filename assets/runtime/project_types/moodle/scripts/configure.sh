@@ -8,7 +8,7 @@
 #   - Re-apply this type's template/ (seeds any file added to it since the
 #     project was created; existing files untouched) and refresh the git
 #     excludes for template/ + generated/
-#   - Source layered mpd.env (/var/lib/mpd/env/mpd-virt.env then project mpd.env)
+#   - Source layered mpd.env (dev defaults → type defaults → project mpd.env)
 #   - Resolve MPD_DB to dbTag/dbEngine/databaseId for downstream use
 #   - Fix ownership of /srv/projects/<project>
 #   - Ensure dataroot dirs (plus the behat faildump dir) exist with expected perms
@@ -47,14 +47,18 @@ apply_project_template "$PROJECT_NAME" "$TYPE_DIR"
 # plain mkdir works.
 mkdir -p "/srv/meta/${PROJECT_NAME}"
 
-# Layered config: /var/lib/mpd/env/mpd-virt.env (bind-mounted RO), then per-project
+# Layered config: dev defaults, type defaults, then per-project
 # /srv/projects/<n>/mpd.env. Project wins; explicit empty in project blocks
 # user-level fall-through; absent key in project falls through.
 # shellcheck source=/dev/null
 source /opt/mpd/assets/runtime/lib/source-mpd-env.sh
 
 # --- Resolve effective settings ---
-PHP_VER="${MPD_PHP_VERSION}"
+# Explicit setting wins; otherwise the runtime-wide default (php-configure.sh
+# holds it — the same one the `php` dispatcher falls back to).
+# shellcheck source=/dev/null
+. /opt/mpd/assets/runtime/lib/php-configure.sh
+PHP_VER="${MPD_PHP_VERSION:-$MPD_PHP_FALLBACK_VERSION}"
 BEHAT="${MPD_MOODLE_BEHAT}"
 
 # Install a legacy PHP version on demand — the current set is baked into the

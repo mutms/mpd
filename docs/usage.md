@@ -233,15 +233,20 @@ shared Mailpit inbox pre-filtered to this project.
 that auto-enables the `seleniumv1` service, points `wd_host` at it, and
 wires `https://behat.moodle51.<NNN>.mpd.test/` automatically.
 
-Your own defaults (Moodle admin password, Behat preferences, etc.) live
-in `/var/lib/mpd/env/mpd-virt.env` *inside the VM* and are bind-mounted
-RO into the runtime container — write them once and the next command run
-inside the runtime sees them. On a laptop-driven VM the file you actually
-edit is `~/.mpd-virt/mpd-virt.env` on the Mac, which mpd-virt pushes into
-every VM you run, so a preference set once follows you across all of
-them; the in-VM copy is a mirror and is replaced on the next
-`mpd-virt start`/`update`. A sandbox VM has no Mac behind it, so there
-you edit the in-VM file directly.
+Your own environment for every runtime — a Moodle admin password
+`mdl-install` reads, `MPD_MOODLE_AGREE_LICENSE`, an API token — lives in
+`/var/lib/mpd/env/runtime.env` *inside the VM*, bind-mounted RO into the
+runtime and sourced into every runtime shell: write it once and the next
+command run inside the runtime sees it. (This is ambient environment, not an
+`mpd.env` layer — for a key a project type already defaults, like
+`MPD_MOODLE_BEHAT`, override it per project in that project's `mpd.env`; see
+[`architecture.md` §8](architecture.md).) On a laptop-driven VM the file you
+actually edit is `~/.mpd-virt/runtime.env` on the Mac, which mpd-virt pushes
+into every VM you run, so a setting made once follows you across all of them;
+the in-VM copy is a mirror and is replaced on the next `mpd-virt adopt`/`update`.
+A sandbox VM has no Mac behind it, so there you edit the in-VM file directly.
+(Variables for the VM's own shells rather than the runtime go in the sibling
+`~/.mpd-virt/vm.env`.)
 The full layered
 configuration model — file paths, sourcing order, reserved keys — is
 documented in

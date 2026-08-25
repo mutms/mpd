@@ -20,6 +20,22 @@
 # below still apply either way.
 [ -f /etc/skel/.bashrc ] && . /etc/skel/.bashrc
 
+# --- the developer's own environment ---------------------------------------
+# runtime.env is the runtime-side twin of the VM's vm.env: general-purpose
+# variables the developer wants in every runtime shell and execution (a Moodle
+# admin password mdl-install reads, an API token, whatever). mpd-virt pushes
+# ~/.mpd-virt/runtime.env to /var/lib/mpd/env/runtime.env, bind-mounted RO
+# here; the block is inert until then. Plain-sourced, NOT whitelist-parsed
+# like a project mpd.env — it is the developer's own trusted file, never from
+# git, so it may export non-MPD_ variables too. This is ambient shell
+# environment, not part of mpd's mpd.env config layering (source-mpd-env.sh).
+if [ -f /var/lib/mpd/env/runtime.env ]; then
+    set -a
+    # shellcheck source=/dev/null
+    . /var/lib/mpd/env/runtime.env
+    set +a
+fi
+
 # --- mpd tool dirs on PATH -------------------------------------------------
 # Tools are read straight out of the assets tree, which is bind-mounted at
 # /opt/mpd in every container at the same path it has on the VM. There is

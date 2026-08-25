@@ -35,7 +35,7 @@ fi
 # runs as the dev uid). /srv/meta is dev-owned, so plain mkdir works.
 mkdir -p "/srv/meta/${PROJECT_NAME}"
 
-# Layered resolution: /var/lib/mpd/env/mpd-virt.env first, then per-project
+# Layered resolution: dev defaults, type defaults, then per-project
 # mpd.env (seeded from template/ above, and never overwritten once present).
 # shellcheck source=/dev/null
 source /opt/mpd/assets/runtime/lib/source-mpd-env.sh

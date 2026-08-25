@@ -46,7 +46,11 @@ fi
 # --- Resolve effective settings (configure.sh wrote effective.json) ---
 # shellcheck source=/dev/null
 source /opt/mpd/assets/runtime/lib/source-mpd-env.sh
-PHP_VER="${MPD_PHP_VERSION}"
+# Explicit setting wins; otherwise the runtime-wide default (php-configure.sh
+# holds it — the same one the `php` dispatcher falls back to).
+# shellcheck source=/dev/null
+. /opt/mpd/assets/runtime/lib/php-configure.sh
+PHP_VER="${MPD_PHP_VERSION:-$MPD_PHP_FALLBACK_VERSION}"
 
 # The current PHP versions are baked into the image; a legacy one this
 # project asks for is installed on demand. php-install is idempotent and

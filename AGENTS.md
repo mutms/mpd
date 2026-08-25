@@ -145,11 +145,13 @@ chowns), all enforced at runtime — do not propose alternates.
 - `/var/lib/mpd/conf/` — persistent identity. Trust anchor + this VM's
   own signing CA + service cert. PRIVATE — never bind-mounted into
   containers.
-- `/var/lib/mpd/env/` — the developer's own env overrides, shared across
-  every VM they run. Holds `mpd-virt.env` only, pushed in from the Mac's
-  `~/.mpd-virt/mpd-virt.env` by mpd-virt (hand-edited in-VM on a sandbox).
-  Bind-mounted RO into every runtime container at the same path
-  (directory mount, so vim/nano atomic-rename writes propagate).
+- `/var/lib/mpd/env/` — the developer's own general environment, shared across
+  every VM they run: `runtime.env` (sourced into every runtime shell by the
+  runtime skel `~/.bashrc` — bind-mounted RO into the container, directory
+  mount so atomic-rename writes propagate) and `vm.env` (sourced into the VM's
+  own shells only, never into a runtime). Ambient env, not part of the mpd.env
+  config layering. Both pushed in from the Mac's `~/.mpd-virt/{runtime,vm}.env`
+  by mpd-virt (hand-written in-VM on a sandbox).
 - `/var/lib/mpd/skel/` — user-managed dotfile overrides for the runtime
   container. Same idea as `/etc/skel/`: contents are copied into
   `/home/<user>/` at runtime create, layered on top of the shipped
@@ -217,10 +219,11 @@ Runtime/project-type behavior + service container assets live under `assets/`:
 - `assets/vm/` — VM-level assets deployed to the mpd VM itself: `bin/` (the
   VM tools, on the dev user's PATH via `~/.bashrc` — the sibling of
   `runtime/bin`), `motd` (→ `/etc/motd`), `prompt.bashrc` (→ a managed block
-  in the dev user's `~/.bashrc`), `vimrc` (→ `~/.vimrc`, seeded once, never
-  rewritten), and `mpd-virt.env`, the per-developer template seeded to
-  `/var/lib/mpd/env/mpd-virt.env` (only when nothing is there — a
-  managed VM normally receives the Mac's copy instead)
+  in the dev user's `~/.bashrc`), and `vimrc` (→ `~/.vimrc`, seeded once,
+  never rewritten). The developer's own env (`vm.env`, `runtime.env`) is
+  not seeded from here — it is pushed in by mpd-virt or hand-written on a
+  sandbox; an optional `mpd-defaults.env` the developer overlays here becomes
+  the mpd.env config's lowest layer (see §8)
 - `assets/runtime/...` — the runtime definition: `Containerfile` (the
   published pre-baked image), `bootstrap/` (`50-user.sh` root,
   `60-install-software.sh` apt, `70-configure-runtime.sh` config — see
@@ -232,9 +235,9 @@ Runtime/project-type behavior + service container assets live under `assets/`:
 - `assets/services/<n>/...` — built service images (adminer's
   Containerfile; the other extras pull upstream images)
 - `assets/completions/` — shell completion shims
-- *defaults*, as opposed to that template, live next to their owners:
-  `assets/runtime/mpd-defaults.env` and
-  `assets/runtime/project_types/<type>/mpd-defaults.env`
+- *defaults* live in the per-type `assets/runtime/project_types/<type>/mpd-defaults.env`
+  (there is no shipped runtime-wide defaults file; a developer who wants
+  runtime-wide defaults overlays an optional `assets/vm/mpd-defaults.env`)
 
 ## Canonical docs map
 
@@ -481,9 +484,10 @@ if [ ! -f "$PROJECT_DIR/mpd.env" ]; then
     exit 1
 fi
 
-# Load the four-layer MPD_* env (runtime defaults → type defaults →
-# /var/lib/mpd/env/mpd-virt.env → project mpd.env). source-mpd-env.sh uses a
-# whitelist parser, so a malicious project mpd.env cannot inject code.
+# Load the layered MPD_* config (dev defaults → type defaults → project
+# mpd.env), each parsed through a whitelist so a cloned project's mpd.env
+# cannot inject code. The developer's general env (runtime.env) is not a
+# layer — it is ambient, sourced into the shell by the runtime ~/.bashrc.
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
 . /opt/mpd/assets/runtime/lib/source-mpd-env.sh
 

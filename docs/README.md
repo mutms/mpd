@@ -56,9 +56,10 @@ Quick reference; full contract in [`architecture.md`](architecture.md).
   Owned by the dev user.
 - `/var/lib/mpd/conf/` — persistent identity: CA, service certs. PRIVATE — never bind-mounted
   into containers.
-- `/var/lib/mpd/env/mpd-virt.env` — the developer's own env overrides,
-  shared across their VMs (pushed in from the Mac by mpd-virt).
-  Bind-mounted RO into every runtime container.
+- `/var/lib/mpd/env/{vm.env,runtime.env}` — the developer's own env,
+  shared across their VMs (pushed in from the Mac by mpd-virt). `runtime.env`
+  is bind-mounted RO into every runtime container; `vm.env` is sourced into
+  the VM's own shells only.
 - `/var/lib/mpd/skel/` — optional user-managed dotfile defaults for
   the runtime container (`/etc/skel/`-style). Empty by default.
 - `/var/lib/mpd/state/` — mpd-managed operational state

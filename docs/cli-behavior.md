@@ -13,7 +13,7 @@ CLI behavior assumes fixed paths:
 - `/opt/mpd/` for the code checkout, assets, and built binary
 - `/var/lib/mpd/` for state/cache and configuration:
   - `conf/` — CA + service cert (PRIVATE)
-  - `env/mpd-virt.env` — the developer's own env overrides, shared across their VMs (mounted into the runtime)
+  - `env/{vm.env,runtime.env}` — the developer's own env, shared across their VMs (runtime.env mounted into the runtime; vm.env sourced into VM shells)
   - `state/` — operational state: projects.json, services.json,
     runtimes/ (the single runtime's entry), etc.
 

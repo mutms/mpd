@@ -16,9 +16,10 @@
 # The PHP versions every runtime carries.
 MPD_PHP_VERSIONS="8.1 8.2 8.3 8.4 8.5"
 
-# Oldest supported PHP — what the `php` dispatcher falls back to outside a
-# project tree. Keep in sync with MPD_PHP_FALLBACK_VERSION in bin/php.
-MPD_PHP_FALLBACK_VERSION="8.2"
+# The runtime-wide default PHP version — what the `php` dispatcher and the
+# project setup scripts use when no layer of mpd.env sets MPD_PHP_VERSION
+# (there is no shipped defaults file). Keep in sync with bin/php.
+MPD_PHP_FALLBACK_VERSION="8.3"
 
 # Extensions every Moodle-capable PHP needs. Kept together so build.sh and
 # php-install install the same set.

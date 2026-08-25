@@ -36,8 +36,8 @@ const (
 	// ConfDir holds the CA and the service cert. PRIVATE — never
 	// bind-mounted into a container.
 	ConfDir = VarLibDir + "/conf"
-	// EnvDir holds mpd-virt.env, the developer's own defaults — shared
-	// across their VMs, pushed in from the Mac by mpd-virt.
+	// EnvDir holds the developer's own env — vm.env (VM shells) and
+	// runtime.env (runtimes) — pushed in from the Mac by mpd-virt.
 	EnvDir = VarLibDir + "/env"
 	// SkelDir holds user-managed dotfiles overlaid onto new runtimes.
 	SkelDir = VarLibDir + "/skel"

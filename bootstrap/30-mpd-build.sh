@@ -140,6 +140,28 @@ else
     ok "prepended the mpd PATH line to ${BASHRC}"
 fi
 
+# vm.env: export the developer's own variables into every VM shell. mpd-virt
+# pushes ~/.mpd-virt/vm.env to /var/lib/mpd/env/vm.env; the line is inert
+# until then. Prepended like PATH — before the interactive-shell guard — so it
+# reaches login, interactive and `ssh user@vm cmd` shells alike. Plain-sourced,
+# not whitelist-parsed like a project mpd.env: it is the developer's own
+# trusted file, never from git, so it may export non-MPD_ variables too.
+step "vm.env source line (~/.bashrc)"
+VMENV='if [ -f /var/lib/mpd/env/vm.env ]; then set -a; . /var/lib/mpd/env/vm.env; set +a; fi  # mpd vm.env'
+if grep -qxF "${VMENV}" "${BASHRC}" 2>/dev/null; then
+    ok "${BASHRC} already sources vm.env"
+else
+    tmp=$(mktemp)
+    {
+        printf '%s\n' "${VMENV}"
+        # Drop any older '# mpd vm.env'-tagged line on the way.
+        grep -vF '# mpd vm.env' "${BASHRC}" 2>/dev/null || true
+    } > "${tmp}"
+    [ -f "${BASHRC}" ] && chmod --reference="${BASHRC}" "${tmp}"
+    mv "${tmp}" "${BASHRC}"
+    ok "prepended the vm.env source line to ${BASHRC}"
+fi
+
 # Also export PATH in this shell so whatever runs next in the same
 # session sees /opt/mpd/bin without a new login.
 case ":${PATH}:" in

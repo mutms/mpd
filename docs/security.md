@@ -94,7 +94,7 @@ nothing resets it between projects:
 - **Keep credentials out of the VM.** This is why the root CA private
   key stays on the workstation and the VM gets only a zone-limited
   intermediate. It is also why you should not put API tokens in
-  `mpd-virt.env` for convenience.
+  `runtime.env` for convenience.
 - **`ssh -A` is the one live credential path in.** Agent forwarding lets
   anything running as the dev user in that container use your key for
   the session — including a `git clone` you did not start. Do not

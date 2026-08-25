@@ -36,9 +36,10 @@
 # NEVER exec /usr/bin/php from here — it points back at this script through
 # the alternatives link. Always exec the versioned /usr/bin/phpX.Y.
 
-# Pinned fallback (8.1 is also installed, for legacy branches). Keep in
-# sync with MPD_PHP_FALLBACK_VERSION in lib/php-configure.sh.
-MPD_PHP_FALLBACK_VERSION=8.2
+# The runtime-wide default PHP version — used when no layer of mpd.env sets
+# MPD_PHP_VERSION (there is no shipped defaults file; the developer may set a
+# default in ~/.mpd-virt/runtime.env). Keep in sync with lib/php-configure.sh.
+MPD_PHP_FALLBACK_VERSION=8.3
 
 # An explicit force override, checked first and independent of $PWD. Set by a
 # tool that already resolved the version it wants but runs php from outside a
