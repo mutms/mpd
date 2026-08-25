@@ -62,7 +62,7 @@ BEHAT="${MPD_MOODLE_BEHAT}"
 # configure time too (not just start) so CLI tools like mdl-install run on the
 # project's real version instead of the php wrapper's fallback. Idempotent and
 # instant when the version is already present.
-/opt/mpd/assets/runtime/tools/php-install "$PHP_VER"
+/opt/mpd/assets/runtime/bin/php-install "$PHP_VER"
 
 # MPD_DB (docker tag form): "postgres", "postgres:17", "postgres:latest", or
 # "" (empty = no DB). Bare engine expands to engine:latest. mpd re-validates

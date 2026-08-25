@@ -1,5 +1,0 @@
-#!/bin/bash
-# Host-side wrapper around the canonical script. Available on the
-# mpd VM after `mpd --vm-setup` adds `bin/` to PATH.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec bash "$SCRIPT_DIR/../assets/runtime/tools/claude-install" "$@"

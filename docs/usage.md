@@ -465,7 +465,7 @@ project-aware (cwd-walk to find the current project) and ready for
 either a human or an AI agent to invoke directly. Full taxonomy in
 [`architecture.md` §7](architecture.md).
 
-**Runtime tools (`assets/runtime/tools/`)** — available in any project.
+**Runtime tools (`assets/runtime/bin/`)** — available in any project.
 Stack-independent ones first:
 
 | Tool             | What it does                                                                                                                                                                                                                 |
@@ -484,7 +484,7 @@ Stack-independent ones first:
 | `composer-upgrade` | Force-reinstalls Composer (bypass idempotency). Use instead of `composer self-update` — the phar is root-owned and self-update can't write to it. |
 | `mudev`            | Assembles a Moodle tree from a recipe. Built on the VM by `mpd --vm-setup` at `/opt/mudev`, bind-mounted read-only into the runtime, so the same binary answers on both sides. Its catalogues live in `/srv/extra/`. |
 
-**Project-type-level (Moodle — `assets/runtime/project_types/moodle/tools/`):**
+**Project-type-level (Moodle — `assets/runtime/project_types/moodle/bin/`):**
 
 | Tool                                        | What it does                                                                                                                                                                                                                |
 |---------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -581,7 +581,7 @@ which the host-only vmnet keeps private. One test container per VM —
 `make run` replaces the previous one.
 
 For trying mdl-demo's macOS launcher (or any other script written for
-Apple `container`) on the VM, `/opt/mpd/bin/container` is a podman-backed
+Apple `container`) on the VM, `/opt/mpd/assets/vm/bin/container` is a podman-backed
 stand-in covering the everyday verbs (`run`, `start`, `stop`, `rm`,
 `inspect`, `exec`, `logs`, `ls`).
 

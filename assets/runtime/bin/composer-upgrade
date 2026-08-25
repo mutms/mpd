@@ -19,4 +19,4 @@ fi
 # Remove the existing phar so composer-install proceeds with a fresh
 # checksum-verified install.
 sudo rm -f "$TARGET"
-exec /opt/mpd/assets/runtime/tools/composer-install
+exec /opt/mpd/assets/runtime/bin/composer-install

@@ -38,8 +38,8 @@ upgraded in place. mpd never rebuilds it on its own;
   create (`/etc/skel/`-style). Ships a `.bashrc` with PATH, prompt and
   nvm defaults and a `.ssh/known_hosts` pre-populated for common forges.
   User overrides go in `/var/lib/mpd/skel/` on the VM host.
-- **`tools/`** — executables on the dev user's PATH as
-  `/opt/mpd/assets/runtime/tools/<name>`, read straight out of the assets
+- **`bin/`** — executables on the dev user's PATH as
+  `/opt/mpd/assets/runtime/bin/<name>`, read straight out of the assets
   tree; nothing is copied or symlinked. `claude-install`, `node-install`,
   `composer-install`, `composer-upgrade`, and the `php`
   wrapper. Adding one = drop a file here; it is live at once.

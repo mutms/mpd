@@ -13,7 +13,7 @@
 # /usr/local/bin/php, which shadowed /usr/bin/php on PATH and left the two
 # paths reporting different versions.
 #
-# Lives at /opt/mpd/assets/runtime/tools/php (bind-mounted live, so edits
+# Lives at /opt/mpd/assets/runtime/bin/php (bind-mounted live, so edits
 # on the VM take effect inside every runtime immediately).
 #
 # Version resolution:

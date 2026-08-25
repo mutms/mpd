@@ -38,8 +38,8 @@
 # rule").
 _mpd_assets=/opt/mpd/assets
 
-[ -d "${_mpd_assets}/runtime/tools" ] && PATH="${_mpd_assets}/runtime/tools:$PATH"
-for _d in "${_mpd_assets}/runtime"/project_types/*/tools; do
+[ -d "${_mpd_assets}/runtime/bin" ] && PATH="${_mpd_assets}/runtime/bin:$PATH"
+for _d in "${_mpd_assets}/runtime"/project_types/*/bin; do
     [ -d "$_d" ] && PATH="${_d}:$PATH"
 done
 

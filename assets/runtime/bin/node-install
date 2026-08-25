@@ -5,7 +5,7 @@
 # Runs as the dev user; no sudo required.
 #
 # Available in any runtime: the skel-shipped ~/.bashrc puts this
-# directory (/opt/mpd/assets/runtime/tools) on the dev user's PATH
+# directory (/opt/mpd/assets/runtime/bin) on the dev user's PATH
 # for every login shell. The runtime's build.sh also invokes it directly
 # during provisioning to seed the LTS Node version.
 #

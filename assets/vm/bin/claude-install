@@ -1,0 +1,22 @@
+#!/bin/bash
+# claude-install — install Claude Code (Anthropic's CLI) via the native
+# curl|bash installer. Lands the binary at ~/.local/bin/claude under the
+# invoking user. Idempotent: no-op if already installed.
+
+set -euo pipefail
+
+if command -v claude >/dev/null 2>&1; then
+    echo "Claude Code already installed at $(command -v claude)"
+    exit 0
+fi
+
+# Native installer writes to ~/.local/bin and does not need root.
+curl -fsSL https://claude.ai/install.sh | bash
+
+if [ ! -x "$HOME/.local/bin/claude" ]; then
+    echo "claude-install: installer ran but ~/.local/bin/claude is missing." >&2
+    exit 1
+fi
+
+echo "Claude Code installed at $HOME/.local/bin/claude"
+echo "Open a new shell (or 'hash -r') if 'claude' isn't on PATH yet."

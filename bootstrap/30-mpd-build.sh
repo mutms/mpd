@@ -10,7 +10,7 @@
 #      checkout (refuses on a dirty tree — resolve by hand).
 #   4. Installs Go into /usr/local/go when the VM has none on PATH.
 #   5. `make install` → /opt/mpd/bin/mpd.
-#   6. Puts /opt/mpd/bin and ~/.local/bin on PATH via ~/.bashrc.
+#   6. Puts /opt/mpd/bin, assets/vm/bin and ~/.local/bin on PATH via ~/.bashrc.
 #
 # Idempotent: a current checkout costs a fetch and a `make install` that
 # finds nothing to do.
@@ -105,13 +105,18 @@ step "Building mpd"
 make -C "${DEST}" install
 ok "built ${DEST}/bin/mpd"
 
-# --- /opt/mpd/bin + ~/.local/bin on PATH (via ~/.bashrc) --------------
+# --- /opt/mpd/bin + assets/vm/bin + ~/.local/bin on PATH (~/.bashrc) ---
 # ~/.bashrc covers every shell shape this VM's single dev user uses:
 # login shells (Debian's ~/.bash_profile → ~/.bashrc), interactive
 # non-login, and sshd-invoked non-interactive (bash sources ~/.bashrc
 # when stdin is a network socket). Prepending at the very top — before
 # the standard "if not interactive, return" guard — lets all three pick
 # it up. /etc/profile.d/ would miss `ssh user@vm cmd` (non-login).
+#
+# /opt/mpd/assets/vm/bin holds the VM tools (container, gnome-*, rdp-*,
+# libvirt-install, claude-install) — mpd's own vm/bin, the sibling of the
+# runtime/bin the runtime shells put on PATH — so the dev user reaches them
+# by bare name, exactly like the runtime tools inside a container.
 #
 # ~/.local/bin rides along: Debian only adds it via ~/.profile (login
 # shells, and only if the dir exists at login), so a CLI installed
@@ -120,7 +125,7 @@ ok "built ${DEST}/bin/mpd"
 step "PATH (~/.bashrc)"
 install -d "${HOME}/.local/bin"
 BASHRC="${HOME}/.bashrc"
-SNIPPET='PATH="$HOME/.local/bin:/opt/mpd/bin:$PATH"  # mpd PATH'
+SNIPPET='PATH="$HOME/.local/bin:/opt/mpd/bin:/opt/mpd/assets/vm/bin:$PATH"  # mpd PATH'
 if grep -qxF "${SNIPPET}" "${BASHRC}" 2>/dev/null; then
     ok "${BASHRC} already has the mpd PATH line"
 else

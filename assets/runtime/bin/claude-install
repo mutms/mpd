@@ -2,13 +2,7 @@
 # claude-install — install Claude Code (Anthropic's CLI) via the native
 # curl|bash installer. Lands the binary at ~/.local/bin/claude under the
 # invoking user. Idempotent: no-op if already installed.
-#
-# Available in any runtime: the skel-shipped ~/.bashrc puts this
-# directory (/opt/mpd/assets/runtime/tools) on the dev user's PATH
-# for every login shell.
-#
-# Usage:
-#   claude-install
+
 set -euo pipefail
 
 if command -v claude >/dev/null 2>&1; then

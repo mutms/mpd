@@ -7,7 +7,7 @@ depends on a third party being up is not a status page.
 
 Pinned and checksummed like the other third-party artefacts mpd ships —
 see `assets/services/adminer/Containerfile` (`ADMINER_VERSION`) and
-`assets/runtimes/php/tools/composer-install`.
+`assets/runtime/bin/composer-install`.
 
 | File          | Version | Source                                                        | License |
 |---------------|---------|---------------------------------------------------------------|---------|

@@ -124,11 +124,11 @@ subsequent `mpd start <project>` a few seconds; assembling a fresh Moodle
 tree with `mudev clone <recipe>` then `mpd start` a few minutes the first
 time, seconds on re-runs; VM resume from suspend, seconds.
 
-**Top-level repo layout:** `bin/` (built `bin/mpd` plus committed VM tools:
-`claude-install`, `gnome-install`, `gnome-start`/`gnome-stop`,
-`rdp-start`/`rdp-stop`, `libvirt-install` — make this VM a libvirt/KVM host
-for mpd-virt's libvirt backend), `go/` (control plane),
-`assets/` (runtime/service definitions and shell), `bootstrap/`
+**Top-level repo layout:** `bin/` (just the built `bin/mpd`), `go/`
+(control plane), `assets/` (runtime/service definitions and shell, plus the
+VM tools under `assets/vm/bin/`: `claude-install`, `gnome-install`,
+`gnome-start`/`gnome-stop`, `rdp-start`/`rdp-stop`, `libvirt-install` — make
+this VM a libvirt/KVM host for mpd-virt's libvirt backend), `bootstrap/`
 (VM bring-up steps), `setup/` (the in-VM sandbox and adoption-prep
 scripts), `docs/`.
 Runtime state lives at `/var/lib/mpd/` (see Fixed in-VM paths below).
@@ -214,17 +214,18 @@ The binary is Go, built from `go/` into `bin/mpd` by `make install`:
 - `go/internal/ui/` — the step/ok/warn output shapes
 
 Runtime/project-type behavior + service container assets live under `assets/`:
-- `assets/vm/` — VM-level assets deployed to the mpd VM itself: `motd`
-  (→ `/etc/motd`), `prompt.bashrc` (→ a managed block in the dev user's
-  `~/.bashrc`), `vimrc` (→ `~/.vimrc`, seeded once, never rewritten), and
-  `mpd-virt.env`, the per-developer template seeded to
+- `assets/vm/` — VM-level assets deployed to the mpd VM itself: `bin/` (the
+  VM tools, on the dev user's PATH via `~/.bashrc` — the sibling of
+  `runtime/bin`), `motd` (→ `/etc/motd`), `prompt.bashrc` (→ a managed block
+  in the dev user's `~/.bashrc`), `vimrc` (→ `~/.vimrc`, seeded once, never
+  rewritten), and `mpd-virt.env`, the per-developer template seeded to
   `/var/lib/mpd/env/mpd-virt.env` (only when nothing is there — a
   managed VM normally receives the Mac's copy instead)
 - `assets/runtime/...` — the runtime definition: `Containerfile` (the
   published pre-baked image), `bootstrap/` (`50-user.sh` root,
   `60-install-software.sh` apt, `70-configure-runtime.sh` config — see
   `assets/runtime/README.md`), `github-publish.sh`,
-  `mpd-defaults.env`, `skel/`, `tools/`, `lib/`,
+  `mpd-defaults.env`, `skel/`, `bin/`, `lib/`,
   `caddy/` (the in-runtime TLS frontdoor), `backup.d/`/`restore.d/`
   (`--runtime-backup`/`--runtime-restore` hooks),
   `project_types/{moodle,astro,mdl-demo}/`
@@ -447,12 +448,15 @@ same name. Add it to `globalFlags` in `go/internal/cli/complete.go` too.
 A tool is a single executable script under one of two locations,
 chosen by scope:
 
-- `assets/runtime/tools/` — runtime-wide, independent of project type.
+- `assets/runtime/bin/` — runtime-wide, independent of project type.
   Examples: `claude-install`, `node-install`, `composer-install`, the
   `php` wrapper.
-- `assets/runtime/project_types/<type>/tools/` — the project types,
+- `assets/runtime/project_types/<type>/bin/` — the project types,
   highest on PATH, so a type tool wins over a runtime tool of the same
   name.
+
+(A VM-level tool — one that runs on the VM, not inside a runtime — goes in
+`assets/vm/bin/` instead; it is on the dev user's PATH via `~/.bashrc`.)
 
 Both are put on PATH by the skel `~/.bashrc` reading the assets tree
 directly at `/opt/mpd/assets/...`. Nothing is copied or symlinked into
@@ -556,7 +560,7 @@ if mysql -u root -e "USE phpu_${PROJECT}_db" 2>/dev/null; then exit 0; fi
 #### Wrapper tools — avoid PATH recursion
 
 Tools whose bare name overrides a system binary (e.g.
-`assets/runtime/tools/php` shadowing `/usr/bin/php`) must `exec` the
+`assets/runtime/bin/php` shadowing `/usr/bin/php`) must `exec` the
 upstream binary by absolute path. Otherwise the wrapper recurses into itself:
 
 ```bash

@@ -18,7 +18,7 @@ for VER in $MPD_PHP_VERSIONS; do
     mpd_php_configure_version "$VER"
 done
 
-# /usr/bin/php -> the dispatcher in tools/, registered as the Debian
+# /usr/bin/php -> the dispatcher in bin/, registered as the Debian
 # alternative at priority 1000 and pinned, so IDE interpreter probes and
 # `update-alternatives --config php` both see one consistent `php`.
 echo "==> php alternative"
@@ -29,12 +29,12 @@ if [ -f "/usr/share/man/man1/php${MPD_PHP_FALLBACK_VERSION}.1.gz" ]; then
         "/usr/share/man/man1/php${MPD_PHP_FALLBACK_VERSION}.1.gz")
 fi
 sudo update-alternatives --install /usr/bin/php php \
-    /opt/mpd/assets/runtime/tools/php 1000 "${PHP_ALT_SLAVES[@]}"
-sudo update-alternatives --set php /opt/mpd/assets/runtime/tools/php
+    /opt/mpd/assets/runtime/bin/php 1000 "${PHP_ALT_SLAVES[@]}"
+sudo update-alternatives --set php /opt/mpd/assets/runtime/bin/php
 
 echo "==> Composer, Node"
-bash /opt/mpd/assets/runtime/tools/composer-install
-bash /opt/mpd/assets/runtime/tools/node-install lts
+bash /opt/mpd/assets/runtime/bin/composer-install
+bash /opt/mpd/assets/runtime/bin/node-install lts
 
 # caddy runs AS the dev user: project keys under /srv/meta are 0600 to
 # that user, which the packaged caddy.service (User=caddy) could not read.

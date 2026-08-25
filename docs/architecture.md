@@ -360,7 +360,7 @@ mechanism: project-type-specific operations live inside the runtime as
 Rule: if a host-side verb's body would be `podman exec <container>
 <tool>`, write only the tool.
 
-Tools are **shell** under `assets/.../tools/`. They run inside the
+Tools are **shell** under `assets/.../bin/`. They run inside the
 runtime as the dev user, so anything you'd naturally write in bash
 (with optional `sudo` — see "Privilege model" below) is the right
 shape.
@@ -370,8 +370,8 @@ shape.
 Tools ship as scripts under `assets/`, in two tiers chosen by scope:
 
 ```
-assets/runtime/tools/                  # runtime-wide: any project
-assets/runtime/project_types/<type>/tools/
+assets/runtime/bin/                    # runtime-wide: any project
+assets/runtime/project_types/<type>/bin/
                                        # type-only: for projects of that type
 ```
 
@@ -380,7 +380,7 @@ bind-mounted at `/opt/mpd` in every container at the same path it has on
 the VM. Nothing is copied and nothing is symlinked. PATH precedence
 across the two tiers is documented below.
 
-(A third, lowest `assets/runtime-base/tools/` tier existed while the
+(A third, lowest `assets/runtime-base/bin/` tier existed while the
 runtime was built from a separate base layer. There is exactly one
 runtime, so the layer earned nothing and was merged into
 `assets/runtime/`; the *privilege* split it also held — `50-user.sh`
@@ -404,15 +404,15 @@ Inside the runtime, PATH is set so type tools win over runtime tools win
 over system binaries:
 
 ```
-/opt/mpd/assets/runtime/project_types/*/tools/   ← type tools first
-/opt/mpd/assets/runtime/tools/                   ← runtime tools second
+/opt/mpd/assets/runtime/project_types/*/bin/     ← type tools first
+/opt/mpd/assets/runtime/bin/                     ← runtime tools second
 [normal system PATH]                             ← system fallback
 ```
 
 PATH is set by the dev user's `~/.bashrc` (shipped via skel —
-`assets/runtime/skel/.bashrc`), which prepends `runtime/tools/` and then
+`assets/runtime/skel/.bashrc`), which prepends `runtime/bin/` and then
 each project type's. Each prepends, so the last added ranks highest. The
-type tier is self-extending — a new project type with a `tools/`
+type tier is self-extending — a new project type with a `bin/`
 directory is picked up with no `.bashrc` edit.
 
 The tree is read in place — nothing is copied and nothing is symlinked
@@ -721,7 +721,7 @@ Read/write contract:
 
 - **Project backup tools write here.** `mdl-data-backup` /
   `mdl-data-restore` (under
-  `assets/runtime/project_types/moodle/tools/`) tar the dataroot plus a
+  `assets/runtime/project_types/moodle/bin/`) tar the dataroot plus a
   DB dump into `/srv/backups/projects/<name>.tgz` from inside the
   runtime. Every project's backups share that one directory, so a bundle
   can be restored into any project (the manifest records where it came

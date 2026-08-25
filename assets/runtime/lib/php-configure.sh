@@ -5,7 +5,7 @@
 # package list and the per-version FPM/php.ini setup have one definition:
 #   - assets/runtime/bootstrap/60-install-software.sh — installs the set
 #   - assets/runtime/bootstrap/70-configure-runtime.sh — configures it
-#   - assets/runtime/tools/php-install — adds a legacy version on demand
+#   - assets/runtime/bin/php-install — adds a legacy version on demand
 #
 # Both run as the dev user with passwordless sudo (AGENTS.md §"Mandatory
 # privilege rule"): the functions sudo the individual privileged ops.
@@ -17,7 +17,7 @@
 MPD_PHP_VERSIONS="8.1 8.2 8.3 8.4 8.5"
 
 # Oldest supported PHP — what the `php` dispatcher falls back to outside a
-# project tree. Keep in sync with MPD_PHP_FALLBACK_VERSION in tools/php.
+# project tree. Keep in sync with MPD_PHP_FALLBACK_VERSION in bin/php.
 MPD_PHP_FALLBACK_VERSION="8.2"
 
 # Extensions every Moodle-capable PHP needs. Kept together so build.sh and
