@@ -61,6 +61,7 @@ mpd_php_configure_version() {
         ini_dir="/etc/php/${ver}/${sapi}/conf.d"
         if [ -d "$ini_dir" ]; then
             sudo tee "${ini_dir}/99-moodle.ini" >/dev/null << 'INIEOF'
+memory_limit = 256M
 max_input_vars = 10000
 upload_max_filesize = 200M
 post_max_size = 206M
