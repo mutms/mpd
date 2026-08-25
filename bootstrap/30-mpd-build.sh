@@ -53,12 +53,20 @@ ok "ready"
 
 step "Clone or update ${REPO_URL} @ ${BRANCH} → ${DEST}"
 if [ -d "${DEST}/.git" ]; then
-    git -C "${DEST}" remote set-url origin "${REPO_URL}"
-    git -C "${DEST}" fetch --quiet origin "${BRANCH}"
+    # Update straight from REPO_URL, WITHOUT touching origin. The default
+    # REPO_URL is public https, so the fetch needs no SSH key — that was the
+    # whole reason origin used to be force-set to https here. But a developer
+    # may have pointed origin at a git@ push URL (mutms-mpd-dev-setup does,
+    # for push access), and clobbering that back to https on every adopt would
+    # break their push and is plain rude. Fetching from the URL rather than
+    # `origin` gets the keyless pull without disturbing their remote. (An
+    # explicit MPD_REPO override is honoured the same way — it is simply the
+    # URL fetched from.)
+    git -C "${DEST}" fetch --quiet "${REPO_URL}" "${BRANCH}"
     git -C "${DEST}" checkout --quiet "${BRANCH}"
-    git -C "${DEST}" pull --ff-only --quiet origin "${BRANCH}" \
-        || die "git pull --ff-only failed in ${DEST}. Resolve manually and re-run."
-    ok "fast-forwarded to origin/${BRANCH}"
+    git -C "${DEST}" merge --ff-only --quiet FETCH_HEAD \
+        || die "fast-forward from ${REPO_URL} (${BRANCH}) failed in ${DEST}. Resolve manually and re-run."
+    ok "fast-forwarded to ${BRANCH}"
 else
     # install -d above made an empty dir; git clone into an empty
     # existing dir is fine.
