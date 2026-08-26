@@ -2,18 +2,18 @@
 #
 # This is NOT copied into the runtime. It lives in the assets tree, which is
 # bind-mounted read-only at /opt/mpd on every runtime, and is sourced live by
-# the skel ~/.bashrc:
+# the runtime's ~/.bashrc:
 #
 #     [ -f /opt/mpd/assets/runtime/lib/bashrc-include.sh ] \
 #         && . /opt/mpd/assets/runtime/lib/bashrc-include.sh
 #
-# That indirection is the whole point. The skel ~/.bashrc is *copied* into a
+# That indirection is the whole point. The runtime's ~/.bashrc is *copied* into a
 # runtime's home at create time and then frozen for that runtime's life — so
 # every edit to it reaches only future runtimes, and a mistake bakes itself
 # into homes already out there. This file is read fresh on each shell start
 # from the shared mount, so editing it (then `mpd --vm-upgrade`, which git-pulls
 # the assets tree) takes effect in the very next shell of every existing
-# runtime, with no rebuild. Keep the skel ~/.bashrc a stub; put changes here.
+# runtime, with no rebuild. Keep that ~/.bashrc a stub; put changes here.
 #
 # Bash sources ~/.bashrc — and therefore this — for interactive shells AND for
 # SSH command execution when stdin is a socket (sshd-shaped). So

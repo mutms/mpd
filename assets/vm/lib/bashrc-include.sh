@@ -9,7 +9,7 @@
 # `mpd --vm-upgrade`) and so reaches the next shell with no ~/.bashrc edit.
 #
 # Unlike the runtime, the VM's dev account already exists at adoption, so there
-# is no skel to ship a stub through — hence the one injected source line.
+# is no fresh home to seed a stub into — hence the one injected source line.
 #
 # Sourced near the TOP of ~/.bashrc, before Debian's `*) return;;`
 # non-interactive guard, on purpose: bash sources ~/.bashrc for SSH command

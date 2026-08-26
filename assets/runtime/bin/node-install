@@ -4,12 +4,12 @@
 # Default version is "lts"; pass an explicit version to override.
 # Runs as the dev user; no sudo required.
 #
-# Available in any runtime: the skel-shipped ~/.bashrc puts this
+# Available in any runtime: the ~/.bashrc shipped in the runtime home puts this
 # directory (/opt/mpd/assets/runtime/bin) on the dev user's PATH
 # for every login shell. The runtime's build.sh also invokes it directly
 # during provisioning to seed the LTS Node version.
 #
-# Shell hookup: skel/.bashrc already sources $HOME/.nvm/nvm.sh when
+# Shell hookup: the runtime home ~/.bashrc already sources $HOME/.nvm/nvm.sh when
 # present, so opening a new login shell after install picks up nvm/node
 # without any extra config step. Root deliberately has no nvm on PATH
 # (privilege model: tools run as the dev user only).

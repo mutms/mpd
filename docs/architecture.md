@@ -223,7 +223,7 @@ volume.
 - The unified runtime's definition and provisioning: `assets/runtime/...`
   (`Containerfile`, `bootstrap/50-user.sh` + `60-install-software.sh` +
   `70-configure-runtime.sh`, `github-publish.sh`,
-  `skel/`, `bin/`, `lib/`, `caddy/`, `backup.d/`, `restore.d/`)
+  `home/`, `bin/`, `lib/`, `caddy/`, `backup.d/`, `restore.d/`)
 - Project-type behavior: `assets/runtime/project_types/<type>/...`
   (current types: `moodle`, `astro`, `mdl-demo`)
 - Project-type files placed in the project directory: `template/` and
@@ -413,13 +413,13 @@ over system binaries:
 ```
 
 PATH is set by `assets/runtime/lib/bashrc-include.sh`, sourced from the
-dev user's `~/.bashrc` (a thin stub shipped via skel —
-`assets/runtime/skel/.bashrc`). It prepends `runtime/bin/` and then each
+dev user's `~/.bashrc` (a thin stub shipped via the runtime home —
+`assets/runtime/home/.bashrc`). It prepends `runtime/bin/` and then each
 project type's. Each prepends, so the last added ranks highest. The type
 tier is self-extending — a new project type with a `bin/` directory is
 picked up with no edit. `bashrc-include.sh` is read live from the shared
 mount, so a change to it reaches every existing runtime's next shell
-without a rebuild; the frozen skel stub never needs to change.
+without a rebuild; the frozen home stub never needs to change.
 
 The tree is read in place — nothing is copied and nothing is symlinked
 into `/srv` — and `/opt/mpd` is the same tree on the VM and in the
@@ -599,7 +599,7 @@ carry values from a cloned project repo):
 **`vm.env` and `runtime.env` are NOT layers here.** They are the developer's
 own general-purpose environment files — `~/.mpd-virt/vm.env` sourced into the
 VM's own shells (from the dev user's `~/.bashrc`), `~/.mpd-virt/runtime.env`
-sourced into every runtime shell (from the runtime skel `~/.bashrc`). Both are
+sourced into every runtime shell (from the runtime's `~/.bashrc`). Both are
 plain-sourced (the developer's own trusted files, never from git) so they may
 export non-`MPD_` variables too. They set the *ambient* environment a shell
 starts with; the composition below then runs per project command and overrides
@@ -653,7 +653,7 @@ ensures `/var/lib/mpd/env/` exists.
 
 **How `runtime.env` reaches the runtime:** the `/var/lib/mpd/env` directory is
 bind-mounted RO into the runtime container (`podman.EnvMountRO`), and the
-runtime's skel `~/.bashrc` sources `runtime.env` from there into every runtime
+runtime's `~/.bashrc` sources `runtime.env` from there into every runtime
 shell — interactive, `ssh runtime cmd`, and the `bash -lc` login shell `mpd
 run` uses. Directory mount, so an edit on the VM (or a fresh copy scp'd from
 the Mac) is seen by the next shell immediately; no restart. (`vm.env` lives in
@@ -903,7 +903,7 @@ See detailed docs:
   addressing; the DNS record block in `/etc/hosts` and its reconciliation
   (`dnsmasq.Manager.Reconcile`, service records passed in by the cli
   layer); TLS
-- `assets/` — runtime/type/service scripts/config/templates + `runtime/skel/`
+- `assets/` — runtime/type/service scripts/config/templates + `runtime/home/`
 - `bootstrap/` — VM bring-up steps 10–30 (passwordless sudo, OS upgrade + packages, clone + build)
 - `setup/` — the two in-VM scripts: sandbox take-over and adoption prep (the host side lives in the `mpd-virt` repo)
 - `docs/` — behavioral and architecture contracts

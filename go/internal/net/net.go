@@ -218,7 +218,7 @@ func (n Net) RuntimeFQDN() string { return n.Host("runtime") }
 // worth keeping, not a dependency.
 //
 // The prompt inside the runtime does NOT echo this string: the host-side
-// alias mpd-virt writes is the bare `mpd-130`, and the shipped skel
+// alias mpd-virt writes is the bare `mpd-130`, and the shipped home
 // .bashrc rewrites `\h` to match it. The hostname stays as composed here
 // — only the prompt is cosmetic.
 func (n Net) RuntimeAlias() string { return "mpd-" + n.label + "-runtime" }

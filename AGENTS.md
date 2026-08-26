@@ -149,17 +149,19 @@ chowns), all enforced at runtime — do not propose alternates.
   containers.
 - `/var/lib/mpd/env/` — the developer's own general environment, shared across
   every VM they run: `runtime.env` (sourced into every runtime shell by the
-  runtime skel `~/.bashrc` — bind-mounted RO into the container, directory
+  runtime's `~/.bashrc` — bind-mounted RO into the container, directory
   mount so atomic-rename writes propagate) and `vm.env` (sourced into the VM's
   own shells only, never into a runtime). Ambient env, not part of the mpd.env
   config layering. Both pushed in from the Mac's `~/.mpd-virt/{runtime,vm}.env`
   by mpd-virt (hand-written in-VM on a sandbox).
-- `/var/lib/mpd/skel/` — user-managed dotfile overrides for the runtime
-  container. Same idea as `/etc/skel/`: contents are copied into
-  `/home/<user>/` at runtime create, layered on top of the shipped
-  `assets/runtime/skel/`. Empty by default; user populates as
+- `/var/lib/mpd/home/` — user-managed dotfile overrides for the runtime
+  container. Like `/etc/skel/` but for an existing account: contents are copied
+  into `/home/<user>/` at runtime create, layered on top of the shipped
+  `assets/runtime/home/`. Empty by default; user populates as
   needed (`.gitconfig`, `.ssh/known_hosts` additions, `.ssh/config`,
-  etc.). Last-write-wins: VM-host skel overrides shipped skel.
+  etc.). Last-write-wins: VM-host home overrides shipped home files. (The VM's
+  own dev home is seeded the analogous way — from `assets/vm/home/`, via
+  `mpd --vm-setup`; see EnsureHome.)
 - `/var/lib/mpd/state/` — mpd-managed operational state. `projects.json`,
   `databases.json`, `services.json`, `current-state.json`,
   `hooks-state.json`, `runtimes/runtime/` (the single runtime's entry).
@@ -223,16 +225,19 @@ Runtime/project-type behavior + service container assets live under `assets/`:
   part of the dev user's shell — PATH, the developer's `vm.env`, and the
   prompt — sourced by one managed line bootstrap injects near the top of
   `~/.bashrc`; read live from `/opt/mpd`, so mpd never re-edits the user's
-  file after adoption), `motd` (→ `/etc/motd`), and `vimrc` (→ `~/.vimrc`,
-  seeded once, never rewritten). The developer's own env (`vm.env`,
-  `runtime.env`) is not seeded from here — it is pushed in by mpd-virt or
-  hand-written on a sandbox; an optional `mpd-defaults.env` the developer
-  overlays here becomes the mpd.env config's lowest layer (see §8)
+  file after adoption), and `motd` (→ `/etc/motd`). A `home/` subtree, if
+  present, is seeded into the dev user's home by `mpd --vm-setup` (EnsureHome,
+  seed-once) — mpd ships nothing there, so it is where a developer overlays
+  their own dotfiles (`.vimrc`, forge `.ssh/known_hosts`) through mpd-virt.
+  The developer's own env (`vm.env`, `runtime.env`) is not seeded from here —
+  it is pushed in by mpd-virt or hand-written on a sandbox; an optional
+  `mpd-defaults.env` the developer overlays here becomes the mpd.env config's
+  lowest layer (see §8)
 - `assets/runtime/...` — the runtime definition: `Containerfile` (the
   published pre-baked image), `bootstrap/` (`50-user.sh` root,
   `60-install-software.sh` apt, `70-configure-runtime.sh` config — see
   `assets/runtime/README.md`), `github-publish.sh`,
-  `mpd-defaults.env`, `skel/`, `bin/`, `lib/`,
+  `mpd-defaults.env`, `home/`, `bin/`, `lib/`,
   `caddy/` (the in-runtime TLS frontdoor), `backup.d/`/`restore.d/`
   (`--runtime-backup`/`--runtime-restore` hooks),
   `project_types/{moodle,astro,mdl-demo}/`
@@ -466,10 +471,10 @@ chosen by scope:
 `assets/vm/bin/` instead; it is on the dev user's PATH via `~/.bashrc`.)
 
 Both are put on PATH by `runtime/lib/bashrc-include.sh` (sourced from the
-skel `~/.bashrc`) reading the assets tree directly at `/opt/mpd/assets/...`.
+runtime's `~/.bashrc`) reading the assets tree directly at `/opt/mpd/assets/...`.
 Nothing is copied or symlinked into `/srv`.
 
-Skeleton (either location):
+Template (either location):
 
 ```bash
 #!/bin/bash
@@ -500,7 +505,7 @@ PROJECT_NAME="$(basename "$PROJECT_DIR")"
 ```
 
 Tools are bind-mounted at `/opt/mpd/assets/...` and put on
-PATH from there by the skel `~/.bashrc`. Edits on the VM are immediately
+PATH from there by the runtime's `~/.bashrc`. Edits on the VM are immediately
 visible inside the runtime — no rebuild, nothing to re-link.
 
 #### Ask mpd, don't read its files

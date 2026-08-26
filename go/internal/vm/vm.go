@@ -39,8 +39,9 @@ const (
 	// EnvDir holds the developer's own env — vm.env (VM shells) and
 	// runtime.env (runtimes) — pushed in from the Mac by mpd-virt.
 	EnvDir = VarLibDir + "/env"
-	// SkelDir holds user-managed dotfiles overlaid onto new runtimes.
-	SkelDir = VarLibDir + "/skel"
+	// HomeOverrideDir holds user-managed dotfiles overlaid onto new runtimes'
+	// home, on top of the shipped assets/runtime/home defaults.
+	HomeOverrideDir = VarLibDir + "/home"
 	// StateDir holds mpd-managed operational state.
 	StateDir = VarLibDir + "/state"
 

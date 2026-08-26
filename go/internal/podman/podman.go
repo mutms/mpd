@@ -546,8 +546,8 @@ var (
 	// propagate into running containers — a file mount would pin the old
 	// inode.
 	EnvMountRO = []string{"-v", "/var/lib/mpd/env:/var/lib/mpd/env:ro"}
-	// SkelMountRO carries user-managed dotfile defaults for new runtimes.
-	SkelMountRO = []string{"-v", "/var/lib/mpd/skel:/var/lib/mpd/skel:ro"}
+	// HomeOverrideMountRO carries user-managed dotfile defaults for new runtimes.
+	HomeOverrideMountRO = []string{"-v", "/var/lib/mpd/home:/var/lib/mpd/home:ro"}
 )
 
 // ControlRunDir mirrors control.RunDir. Duplicated rather than imported,

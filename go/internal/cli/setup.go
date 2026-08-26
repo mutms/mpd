@@ -109,8 +109,8 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 
-	ui.Step(out, "VM vim defaults")
-	if err := vm.EnsureVimrc(out); err != nil {
+	ui.Step(out, "Developer home files")
+	if err := vm.EnsureHome(out); err != nil {
 		return err
 	}
 
@@ -559,11 +559,11 @@ func setupStateDirectories(ctx context.Context, out io.Writer) error {
 	// for every runtime, so it must exist, and its presence tells the
 	// user where dotfile overrides go. bootstrap.sh skips the overlay
 	// while it stays empty.
-	ui.Step(out, "Skel override directory (%s/)", vm.SkelDir)
-	if err := os.MkdirAll(vm.SkelDir, 0o755); err != nil {
+	ui.Step(out, "Runtime home override directory (%s/)", vm.HomeOverrideDir)
+	if err := os.MkdirAll(vm.HomeOverrideDir, 0o755); err != nil {
 		return err
 	}
-	ui.OK(out, "%s/ ready.", vm.SkelDir)
+	ui.OK(out, "%s/ ready.", vm.HomeOverrideDir)
 
 	ui.Step(out, "mpd data directories")
 	if err := os.MkdirAll(filepath.Join(state.Dir, "runtimes"), 0o755); err != nil {

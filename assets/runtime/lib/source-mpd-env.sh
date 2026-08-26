@@ -4,7 +4,7 @@
 #
 # This composes mpd's *config* keys only. The developer's general
 # environment (~/.mpd-virt/runtime.env → /var/lib/mpd/env/runtime.env) is NOT
-# a layer here — it is sourced into every runtime shell by the skel ~/.bashrc,
+# a layer here — it is sourced into every runtime shell by the runtime's ~/.bashrc,
 # ambient before any of this runs. A value it sets survives unless a layer
 # below reassigns it.
 #

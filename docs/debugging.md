@@ -47,7 +47,7 @@ drop before reconnecting — the IDE terminal's environment comes from the
 IDE's session, not from the tab.
 
 No `mpd --runtime-rebuild` is needed. A rebuild replaces `~/.bashrc` with
-the shipped skel, which carries the same hook, but it also recreates the
+the shipped home stub, which carries the same hook, but it also recreates the
 container — `~/.nvm` lives in that overlay and would need
 re-provisioning. Reconnecting is the cheap fix.
 

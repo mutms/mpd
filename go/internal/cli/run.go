@@ -119,7 +119,7 @@ func projectFromCwd(s state.Store, what string) (state.Project, string, error) {
 //
 // `podman exec` starts no shell, so it inherits only the container's bare
 // PATH — /usr/bin and friends. Every mpd tool (mdl-install, phpunit,
-// composer-install, the php wrapper) is on PATH courtesy of the skel
+// composer-install, the php wrapper) is on PATH courtesy of the home
 // ~/.bashrc, which reads them out of the assets tree. Without a login
 // shell `mpd run mdl-install` fails with "executable file not found",
 // while `mpd run php` happens to work only because build.sh also

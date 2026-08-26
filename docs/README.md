@@ -60,7 +60,7 @@ Quick reference; full contract in [`architecture.md`](architecture.md).
   shared across their VMs (pushed in from the Mac by mpd-virt). `runtime.env`
   is bind-mounted RO into every runtime container; `vm.env` is sourced into
   the VM's own shells only.
-- `/var/lib/mpd/skel/` — optional user-managed dotfile defaults for
+- `/var/lib/mpd/home/` — optional user-managed dotfile defaults for
   the runtime container (`/etc/skel/`-style). Empty by default.
 - `/var/lib/mpd/state/` — mpd-managed operational state
   (projects.json, services.json, runtimes/ — the single runtime's

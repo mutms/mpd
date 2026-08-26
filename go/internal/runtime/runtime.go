@@ -104,7 +104,7 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 	}
 
 	// Container hostname matches its name. The prompt the developer sees
-	// is not this string: the skel .bashrc rewrites `\h` to `mpd-<NNN>`,
+	// is not this string: the home .bashrc rewrites `\h` to `mpd-<NNN>`,
 	// the host-side alias that reaches this container.
 	args := []string{"-d",
 		"--name", o.Container,
@@ -121,7 +121,7 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 	args = append(args, podman.DNSOpts(o.Net.Gateway())...)
 	args = append(args, podman.OptMountRO...)
 	args = append(args, podman.EnvMountRO...)
-	args = append(args, podman.SkelMountRO...)
+	args = append(args, podman.HomeOverrideMountRO...)
 	args = append(args, podman.ControlMountRO(Name)...)
 	if podman.MudevPresent() {
 		args = append(args, podman.MudevMountRO...)

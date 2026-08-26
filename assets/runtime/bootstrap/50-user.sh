@@ -40,11 +40,11 @@ chmod 440 "/etc/sudoers.d/${EXTUSER}"
 
 USER_HOME="/home/${EXTUSER}"
 
-# Home from skel: shipped defaults, then the VM's /var/lib/mpd/skel
+# Home files: shipped defaults (assets/runtime/home), then /var/lib/mpd/home
 # overrides (mounted read-only). cp -aT merges contents, dotfiles included.
-cp -aT /opt/mpd/assets/runtime/skel "${USER_HOME}"
-if [ -d /var/lib/mpd/skel ]; then
-    cp -aT /var/lib/mpd/skel "${USER_HOME}"
+cp -aT /opt/mpd/assets/runtime/home "${USER_HOME}"
+if [ -d /var/lib/mpd/home ]; then
+    cp -aT /var/lib/mpd/home "${USER_HOME}"
 fi
 mkdir -p "${USER_HOME}/.local/bin"
 chown -R "${EXTUSER}:${EXTUSER}" "${USER_HOME}"

@@ -20,8 +20,8 @@ upgraded in place. mpd never rebuilds it on its own;
   - `50-user.sh` — root, runtime create only. The single allowed
     root entry point (see [AGENTS.md §"Mandatory privilege rule"](../../AGENTS.md)):
     dev user with the VM's uid, sudoers, sshd keys-only, `/etc/mpd`
-    identity, `/srv/{projects,data,dbs,extra}`, `$HOME` from `skel/` and
-    `/var/lib/mpd/skel/`.
+    identity, `/srv/{projects,data,dbs,extra}`, `$HOME` from `home/` and
+    `/var/lib/mpd/home/`.
   - `60-install-software.sh` — apt, as the dev user: dist-upgrade, Sury +
     PGDG repos, every PHP version in `lib/php-configure.sh`, DB clients,
     caddy, tools. The one package list; the Containerfile runs the same
@@ -34,13 +34,14 @@ upgraded in place. mpd never rebuilds it on its own;
   Create runs 50 → 60 → 70. `mpd --vm-setup` runs 70 on an existing
   runtime; `mpd --vm-upgrade` (or `mpd --runtime-upgrade`) runs 60 → 70.
   All idempotent.
-- **`skel/`** — files copied into the dev user's `$HOME` at runtime
-  create (`/etc/skel/`-style). Ships a stub `.bashrc` that sources
-  `../lib/bashrc-include.sh` (PATH, the developer's `runtime.env`, prompt,
-  nvm) live from the shared mount — so the frozen copy stays a stub and
-  the real logic updates without a rebuild — and a `.ssh/known_hosts`
-  pre-populated for common forges. User overrides go in
-  `/var/lib/mpd/skel/` on the VM host.
+- **`home/`** — files copied into the dev user's `$HOME` at runtime
+  create (`/etc/skel/`-style, though the account isn't fresh). Ships only a
+  stub `.bashrc` that sources `../lib/bashrc-include.sh` (PATH, the
+  developer's `runtime.env`, prompt, nvm) live from the shared mount — so the
+  frozen copy stays a stub and the real logic updates without a rebuild.
+  Opinionated dotfiles (a `.gitconfig`, forge `.ssh/known_hosts`) are the
+  developer's own: drop them in `/var/lib/mpd/home/` on the VM host, or overlay
+  them through mpd-virt's `assets/runtime/home/`.
 - **`bin/`** — executables on the dev user's PATH as
   `/opt/mpd/assets/runtime/bin/<name>`, read straight out of the assets
   tree; nothing is copied or symlinked. `claude-install`, `node-install`,
