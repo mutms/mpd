@@ -83,7 +83,7 @@ with snapshot/revert as the safety net for letting an agent rip.
   (`http://mailpit.svc.<NNN>.mpd.test:8025/` — one shared inbox, each project
   publishing a pre-filtered link), Adminer, Selenium.
   Behat is auto-wired when a project asks: `MPD_MOODLE_BEHAT=1` makes
-  `mpd start` enable the seleniumv1 service and publish
+  `mpd start` enable the selenium service and publish
   `https://behat.<project>.<NNN>.mpd.test/`.
 - No host pollution: no Homebrew PHP, no system Apache, no `brew upgrade`
   breakage.
@@ -191,7 +191,7 @@ The binary is Go, built from `go/` into `bin/mpd` by `make install`:
 - `go/internal/runtime/` — runtime provisioning and its state cache
 - `go/internal/project/` — project scaffolding, env mutation, certs, rescan
 - `go/internal/service/` — optional extra service containers (mailpit,
-  adminer, seleniumv1): registry + lifecycle
+  adminer, selenium): registry + lifecycle
 - `go/internal/web/` — the status page `mpd --web` serves, behind the
   VM's caddy
 - `go/internal/db/` — DB containers: tags, images, allocation, lifecycle

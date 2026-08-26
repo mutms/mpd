@@ -30,7 +30,7 @@ VM (Debian Trixie)   hostname mpd-<NNN>;  LAN IP exposes ONLY sshd + wg
     │                            terminates project HTTPS; SSH ProxyJump)
     +-- DB containers           10.163.<NNN>.10–.99
     +-- extra service containers 10.163.<NNN>.100–.199  (plain HTTP:
-                                 mailpit .100, adminer .102, seleniumv1 .103)
+                                 mailpit .100, adminer .102, selenium .103)
 ```
 
 The bridge is named `mpdbr0` rather than taking podman's
@@ -134,7 +134,7 @@ as the last octet of the VM's static IP). It is the discriminator in
 the addressing: the third octet of the container subnet, and the first
 label of the DNS zone. Nothing else varies: the runtime is always `.2`,
 databases take `.10–.99`, extra service containers `.100–.199` (each
-service pins its own octet: mailpit `.100`, adminer `.102`, seleniumv1
+service pins its own octet: mailpit `.100`, adminer `.102`, selenium
 `.103`), and both the resolver and the status page answer on the
 gateway `.1` because they run on the VM rather than in a container.
 
@@ -189,7 +189,7 @@ Every name mpd publishes is a line in one managed block in the VM's
 10.163.200.1 200.mpd.test
 10.163.200.2 runtime.200.mpd.test runtime
 10.1.10.200 vm.200.mpd.test
-10.163.200.103 seleniumv1.svc.200.mpd.test
+10.163.200.103 selenium.svc.200.mpd.test
 10.163.200.2 docs.200.mpd.test
 10.163.200.2 m45.200.mpd.test
 10.163.200.11 postgres-18.db.200.mpd.test

@@ -624,7 +624,7 @@ func reconcileProject(ctx context.Context, out io.Writer, name string, args []st
 
 	// Services the project declares it needs: MPD_REQUIRE_SERVICES in its
 	// mpd.env, which configure.sh resolves and emits into effective.json
-	// (behat contributes seleniumv1 on its behalf, so its ~2 GB image is
+	// (behat contributes selenium on its behalf, so its ~2 GB image is
 	// pulled here rather than failing the first `behat` run). Each is started
 	// on demand, the way the project's database is ensured — without setting
 	// the sticky autostart intent. The config configure.sh already rendered
@@ -753,7 +753,7 @@ func effectivePort(effective map[string]any) (int, bool) {
 
 // requiredServices returns the service names a project declared via
 // MPD_REQUIRE_SERVICES, which configure.sh resolves and emits into
-// effective.json as a JSON array (behat contributes seleniumv1). A missing
+// effective.json as a JSON array (behat contributes selenium). A missing
 // or malformed field yields nil.
 func requiredServices(effective map[string]any) []string {
 	raw, ok := effective["requireServices"].([]any)

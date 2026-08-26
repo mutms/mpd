@@ -56,7 +56,7 @@ Idempotent — safe to re-run any time. Walks you through:
   telling cloud-init to leave that file alone), bringing up the infra units
   (dnsmasq, the portal) and reconciling any enabled extra services (none
   by default — see
-  [Extra services](#extra-services-mailpit-adminer-seleniumv1))
+  [Extra services](#extra-services-mailpit-adminer-selenium))
 - **creating and starting the runtime container** `mpd-<NNN>-runtime` —
   the one container every project runs in
 - a final DNS sanity check
@@ -218,7 +218,7 @@ by the local CA), no warnings.
 
 **Outbound mail** is off by default — the generated config carries
 `$CFG->noemailever = true` until this project declares it needs
-[Mailpit](#extra-services-mailpit-adminer-seleniumv1) in its `mpd.env`:
+[Mailpit](#extra-services-mailpit-adminer-selenium) in its `mpd.env`:
 
 ```bash
 mpd start moodle51 MPD_REQUIRE_SERVICES=mailpit
@@ -233,7 +233,7 @@ project that has not opted in. The project also publishes an informational
 the shared Mailpit inbox pre-filtered to this project.
 
 **Behat**: set `MPD_MOODLE_BEHAT=1` and re-run `mpd start` — that adds
-`seleniumv1` to the project's required services (starting it on your behalf),
+`selenium` to the project's required services (starting it on your behalf),
 points `wd_host` at it, and wires `https://behat.moodle51.<NNN>.mpd.test/`
 automatically.
 
@@ -256,7 +256,7 @@ configuration model — file paths, sourcing order, reserved keys — is
 documented in
 [`architecture.md` §8](architecture.md#8-configuration-model-mpdenv).
 
-## Extra services (mailpit, adminer, seleniumv1)
+## Extra services (mailpit, adminer, selenium)
 
 Nothing beyond the runtime is installed by default. The usual way a service
 comes up is a project declaring it in `MPD_REQUIRE_SERVICES` (above): mpd then
@@ -286,7 +286,7 @@ SOCKS tunnel like everything else; no TLS, no proxying):
 |--------------|----------------------------------------------|-------------------------------------------------------------------------------|
 | `mailpit`    | `http://mailpit.svc.<NNN>.mpd.test:8025/`    | Shared mail catch-all; SMTP on `:1025`. Data volume survives uninstall.       |
 | `adminer`    | `http://adminer.svc.<NNN>.mpd.test:8080/`    | DB web UI; the portal offers pre-filled per-project links.                    |
-| `seleniumv1` | `http://seleniumv1.svc.<NNN>.mpd.test:4444/` | Behat browser; started by `mpd start` on a Behat-enabled Moodle project. |
+| `selenium` | `http://selenium.svc.<NNN>.mpd.test:4444/` | Behat browser; started by `mpd start` on a Behat-enabled Moodle project. |
 
 Autostart services survive reboots (`mpd --vm-start` reconciles them);
 required services come back when their project starts. Because a project's
@@ -745,7 +745,7 @@ mpd --vm-stop                       # graceful DB shutdown via EventMpdPreStop, 
 mpd --vm-restart                    # graceful stop, then sudo systemctl reboot; mpd auto-starts on boot
 
 mpd list                         # list all projects (default)
-mpd list services                # the optional extra services (mailpit, adminer, seleniumv1)
+mpd list services                # the optional extra services (mailpit, adminer, selenium)
 mpd list infra                   # infra: the runtime container, dnsmasq + the portal (systemd units)
 mpd list dbs                     # list DB containers
 mpd list network                 # this VM's addressing: id, zone, subnet, gateway

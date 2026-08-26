@@ -1,5 +1,11 @@
-// Package service is the registry and lifecycle of mpd's OPTIONAL extra
-// service containers — mailpit, adminer, seleniumv1.
+// Package service is the registry and lifecycle framework the individual
+// services plug into: the Service descriptor, the registry, the address/label
+// helpers, and the container lifecycle (Start/Stop/Uninstall/Purge). The
+// services themselves live in internal/services and self-register — one file
+// each, registering from an init() via Register — so adding a service is a new
+// file there, never an edit to a central list here. Consumers blank-import
+// internal/services once (from the cli layer) to pull the registrations in,
+// exactly as internal/backend is fed by internal/backends.
 //
 // "Service" means exactly this: an opt-in container a project pulls in via
 // MPD_REQUIRE_SERVICES (started on demand, like its database) or the developer
@@ -16,7 +22,7 @@ package service
 
 import (
 	"fmt"
-	"net/url"
+	"sort"
 
 	"github.com/mutms/mpd/go/internal/net"
 )
@@ -52,11 +58,12 @@ type Service struct {
 	Port int
 	// RunArgs are extra `podman run` arguments (env vars, --shm-size…).
 	RunArgs []string
-	// projectLinks, when set, contributes per-project dashboard links
-	// (see ProjectLinks). This is the pluggable half of the portal
-	// integration: the portal ranges over services and asks, instead of
-	// hardcoding any service's URL scheme.
-	projectLinks func(s Service, n net.Net, info ProjectInfo) []Link
+	// LinkFn, when set, contributes per-project dashboard links (see
+	// ProjectLinks). This is the pluggable half of the portal integration:
+	// the portal ranges over services and asks, instead of hardcoding any
+	// service's URL scheme. Exported so a service in internal/services can
+	// set it when it registers.
+	LinkFn func(s Service, n net.Net, info ProjectInfo) []Link
 }
 
 // ProjectInfo is what a ProjectLinks hook may build links from.
@@ -76,60 +83,44 @@ type Link struct{ Label, URL string }
 // on the database being up — a link to a connection error is worse than
 // no link.
 func (s Service) ProjectLinks(n net.Net, info ProjectInfo) []Link {
-	if s.projectLinks == nil {
+	if s.LinkFn == nil {
 		return nil
 	}
-	return s.projectLinks(s, n, info)
+	return s.LinkFn(s, n, info)
 }
 
-// All returns every known extra service, in registry order.
-func All() []Service {
-	return []Service{
-		{
-			// SMTP catch-all for every project. Mail is stored on a
-			// volume so the inbox survives an uninstall/enable cycle.
-			Name:       "mailpit",
-			HostOctet:  100,
-			Image:      "docker.io/axllent/mailpit:latest",
-			Revision:   "1",
-			Volume:     "mpd-svc-mailpit",
-			VolumePath: "/data",
-			Port:       8025,
-			RunArgs:    []string{"-e", "MP_DATABASE=/data/mailpit.db"},
-		},
-		{
-			// DB administration UI. Built from Debian rather than pulled:
-			// the docker.io/library/adminer image is Alpine-based, and
-			// libpq on musl fails to resolve multi-label hostnames like
-			// `postgres-latest.db.<zone>` — which is every database name
-			// mpd publishes. The symptom is an opaque
-			// `SQLSTATE[08006] could not translate host name`.
-			Name:         "adminer",
-			HostOctet:    102,
-			Image:        "localhost/mpd-adminer:latest",
-			BuildContext: "adminer",
-			Revision:     "8",
-			Port:         8080,
-			projectLinks: adminerProjectLinks,
-		},
-		{
-			// Behat's WebDriver endpoint. Versioned name ("v1") so future
-			// Moodle releases can require a different selenium alongside
-			// this one. ~2 GB image — enabling announces the pull.
-			Name:      "seleniumv1",
-			HostOctet: 103,
-			Image:     "docker.io/selenium/standalone-chromium:latest",
-			Revision:  "1",
-			Port:      4444,
-			RunArgs: []string{
-				"--shm-size=2g",
-				"-e", "SE_NODE_MAX_SESSIONS=10",
-				"-e", "SE_NODE_OVERRIDE_MAX_SESSIONS=true",
-				"-e", "SE_SCREEN_WIDTH=1400",
-				"-e", "SE_SCREEN_HEIGHT=800",
-			},
-		},
+// registry holds every service that registered itself from an init(). Each
+// service lives in its own file and calls Register there, so the set grows by
+// adding a file — never by editing a list here.
+var registry []Service
+
+// Register records one service, called from a service file's init(). A
+// duplicate name or an octet outside the service range is a programming error
+// in a service file, so it panics at startup rather than shipping a broken
+// registry.
+func Register(s Service) {
+	if s.HostOctet < net.ServiceHostFirst || s.HostOctet > net.ServiceHostLast {
+		panic(fmt.Sprintf("service %q octet %d is outside the service range %d–%d",
+			s.Name, s.HostOctet, net.ServiceHostFirst, net.ServiceHostLast))
 	}
+	for _, existing := range registry {
+		if existing.Name == s.Name {
+			panic(fmt.Sprintf("service %q registered twice", s.Name))
+		}
+		if existing.HostOctet == s.HostOctet {
+			panic(fmt.Sprintf("services %q and %q share octet %d",
+				existing.Name, s.Name, s.HostOctet))
+		}
+	}
+	registry = append(registry, s)
+}
+
+// All returns every registered service, ordered by address (HostOctet) so the
+// order is stable regardless of the file-init order the compiler picks.
+func All() []Service {
+	out := append([]Service(nil), registry...)
+	sort.Slice(out, func(i, j int) bool { return out[i].HostOctet < out[j].HostOctet })
+	return out
 }
 
 // Find returns the service with the given name.
@@ -164,33 +155,6 @@ func (s Service) DNS(n net.Net) string { return n.Service(s.Name) }
 // HTTP at the service's own name and port — services have no TLS.
 func (s Service) AccessHint(n net.Net) string {
 	return fmt.Sprintf("http://%s:%d/", s.DNS(n), s.Port)
-}
-
-// adminerProjectLinks builds a prefilled Adminer link for a project's
-// database.
-//
-// Adminer takes the driver as the parameter NAME, not a value: postgres
-// is `?pgsql=<host>`, while MySQL and MariaDB are `?server=<host>`. Get
-// that wrong and Adminer shows its own login form with nothing filled
-// in, which looks like the link is broken rather than mistyped.
-func adminerProjectLinks(s Service, n net.Net, info ProjectInfo) []Link {
-	if info.DBHost == "" {
-		return nil
-	}
-	driver := "server"
-	if info.DBEngine == "postgres" {
-		driver = "pgsql"
-	}
-	q := url.Values{}
-	q.Set(driver, info.DBHost)
-	q.Set("username", info.DBUser)
-	if info.DBName != "" {
-		q.Set("db", info.DBName)
-	}
-	return []Link{{
-		Label: "Adminer",
-		URL:   fmt.Sprintf("http://%s:%d/?%s", s.DNS(n), s.Port, q.Encode()),
-	}}
 }
 
 // commonLabels are on every service container: mpd.managed marks it as

@@ -212,7 +212,7 @@ func main() {
 	root.Flags().StringVar(&f.dbDelete, "db-delete", "", "Remove a DB container `name` (prompts unless --yes).")
 
 	root.Flags().StringVar(&f.serviceStart, "service-start", "",
-		"Start an extra service `name` (mailpit, adminer, seleniumv1) and keep it autostarting. A project's MPD_REQUIRE_SERVICES starts what it needs on its own.")
+		"Start an extra service `name` (mailpit, adminer, selenium) and keep it autostarting. A project's MPD_REQUIRE_SERVICES starts what it needs on its own.")
 	root.Flags().StringVar(&f.serviceStop, "service-stop", "",
 		"Stop an extra service `name` and clear its autostart intent; a project that requires it starts it again on `mpd start`.")
 	root.Flags().StringVar(&f.serviceUninstall, "service-uninstall", "",

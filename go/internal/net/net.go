@@ -61,7 +61,7 @@ const (
 	DBHostLast  = 99
 )
 
-// Extra service containers (mailpit, adminer, seleniumv1, …) live in this
+// Extra service containers (mailpit, adminer, selenium, …) live in this
 // range; each service descriptor pins its own octet.
 const (
 	ServiceHostFirst = 100

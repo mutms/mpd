@@ -69,9 +69,9 @@ func TestListServices(t *testing.T) {
 	if !strings.HasPrefix(lines[0], "SERVICE") {
 		t.Errorf("header = %q", lines[0])
 	}
-	// Registry order: mailpit, adminer, seleniumv1 — infra (dnsmasq,
+	// Registry order: mailpit, adminer, selenium — infra (dnsmasq,
 	// portal) deliberately absent, that is `mpd list infra`.
-	for i, want := range []string{"mailpit", "adminer", "seleniumv1"} {
+	for i, want := range []string{"mailpit", "adminer", "selenium"} {
 		if !strings.HasPrefix(lines[i+2], want) {
 			t.Errorf("row %d = %q, want it to start with %q", i, lines[i+2], want)
 		}

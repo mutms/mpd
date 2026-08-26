@@ -137,7 +137,7 @@ func ensureImage(ctx context.Context, out io.Writer, s Service, p *podman.Client
 		if p.ImageExists(ctx, s.Image) {
 			return nil
 		}
-		fmt.Fprintf(out, "  Pulling %s (this can be large — seleniumv1 is ~2 GB)…\n", s.Image)
+		fmt.Fprintf(out, "  Pulling %s (this can be large — selenium is ~2 GB)…\n", s.Image)
 		if code, err := p.Pull(ctx, s.Image); err != nil || code != 0 {
 			return fmt.Errorf("Failed to pull %s.", s.Image)
 		}

@@ -114,11 +114,11 @@ chmod 0666 "${DATAROOT}/php_error.log"
 # makes mail routing a property of the project (tracked in git), and keeps
 # noemailever the safe default for any project that has not opted in.
 REQUIRE_SERVICES="${MPD_REQUIRE_SERVICES:-}"
-# Behat needs seleniumv1: turning behat on IS the request, so add it to the
+# Behat needs selenium: turning behat on IS the request, so add it to the
 # required set here rather than making mpd special-case behat. mpd ensures the
 # container (its ~2 GB image) on the project's behalf when it reads this back.
 if [ "$BEHAT" = "1" ]; then
-    REQUIRE_SERVICES="${REQUIRE_SERVICES:+${REQUIRE_SERVICES},}seleniumv1"
+    REQUIRE_SERVICES="${REQUIRE_SERVICES:+${REQUIRE_SERVICES},}selenium"
 fi
 _service_required() {
     case ",${REQUIRE_SERVICES// /}," in
@@ -147,7 +147,7 @@ if [ -n "$DATABASE_ID" ] && \
         -e "s|%%DBHOST%%|${DATABASE_ID}.db.${MPD_ZONE}|g" \
         -e "s|%%ZONE%%|${MPD_ZONE}|g" \
         -e "s|%%MAIL_CONFIG%%|${MAIL_CONFIG}|" \
-        -e "s|%%SELENIUM_WD_HOST%%|http://seleniumv1.svc.${MPD_ZONE}:4444/wd/hub|" \
+        -e "s|%%SELENIUM_WD_HOST%%|http://selenium.svc.${MPD_ZONE}:4444/wd/hub|" \
         "${TYPE_DIR}/generated/config-mpd.php" \
         > "${PROJECT_DIR}/config-mpd.php"
     echo "config-mpd.php generated."

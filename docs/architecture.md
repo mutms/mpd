@@ -851,7 +851,7 @@ SOCKS, never proxied by any caddy):
   (`?q=<project>.<zone>`). Mail data lives on the `mpd-svc-mailpit`
   volume, which survives uninstall.
 - `adminer` — `.102`, `http://adminer.svc.<NNN>.mpd.test:8080/`.
-- `seleniumv1` — `.103`, `http://seleniumv1.svc.<NNN>.mpd.test:4444/`
+- `selenium` — `.103`, `http://selenium.svc.<NNN>.mpd.test:4444/`
   ("v1" so a future Moodle release can require another selenium
   alongside). Started by `mpd start` when a project sets
   `MPD_MOODLE_BEHAT=1` (which adds it to that project's required services).
@@ -894,7 +894,7 @@ See detailed docs:
 - `go/internal/runtime/`, `go/internal/project/`, `go/internal/db/` —
   orchestration and records
 - `go/internal/service/` — the optional extra service containers
-  (mailpit, adminer, seleniumv1): registry and lifecycle
+  (mailpit, adminer, selenium): registry and lifecycle
 - `go/internal/hooks/` — typed `Event` lifecycle hooks
 - `go/internal/state/`, `go/internal/current/` — persisted intent and
   observed state
