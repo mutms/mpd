@@ -68,4 +68,12 @@ sudo systemctl restart mpd-caddy.service || true
 # project-setup.sh creates subdirs here; setgid + world-writable.
 chmod 02777 /srv/data
 
+# Forced home files: mpd owns these, refreshed from the Mac on every converge
+# (this step runs on --vm-setup / --runtime-upgrade). Overwrite, never delete —
+# a file removed from the source is left in place, so this can never lose data.
+# default/ home files are seeded once at create (50-user.sh), not here.
+if [ -d /opt/mpd/assets/runtime/home/forced ]; then
+    cp -aT /opt/mpd/assets/runtime/home/forced "${HOME}"
+fi
+
 echo "Runtime '${CONTAINER_NAME}' configured: PHP ${MPD_PHP_VERSIONS}, php dispatcher, Composer, Node, caddy."

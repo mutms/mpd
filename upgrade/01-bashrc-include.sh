@@ -46,7 +46,7 @@ REMOTE
 echo "==> runtime: overwrite the frozen ~/.bashrc with the new stub (read from the /opt/mpd mount)"
 ssh "mpd-${NNN}" bash -s <<'REMOTE'
 set -euo pipefail
-cp /opt/mpd/assets/runtime/home/.bashrc "$HOME/.bashrc"
+cp /opt/mpd/assets/runtime/home/default/.bashrc "$HOME/.bashrc"
 REMOTE
 
 echo "==> done — open a fresh shell on mpd-${NNN} and mpd-${NNN}-vm to verify"

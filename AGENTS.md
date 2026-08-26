@@ -226,10 +226,16 @@ Runtime/project-type behavior + service container assets live under `assets/`:
   prompt — sourced by one managed line bootstrap injects near the top of
   `~/.bashrc`; read live from `/opt/mpd`, so mpd never re-edits the user's
   file after adoption), and `motd` (→ `/etc/motd`). A `home/` subtree, if
-  present, is seeded into the dev user's home by `mpd --vm-setup` (EnsureHome,
-  seed-once) — mpd ships nothing there, so it is where a developer overlays
-  their own dotfiles (`.vimrc`, forge `.ssh/known_hosts`) through mpd-virt.
-  The developer's own env (`vm.env`, `runtime.env`) is not seeded from here —
+  present, is applied to the dev user's home by `mpd --vm-setup` (EnsureHome):
+  `home/default/` is seeded (copied only when absent — the dev's to edit
+  after), `home/forced/` is overwritten from the Mac every run (mpd's, kept in
+  step). Neither ever deletes — a file removed from the source stays in the
+  home, so it can't lose data. mpd ships nothing here; it is where a developer
+  overlays their own dotfiles (`.vimrc`, `.gitconfig`, forge
+  `.ssh/known_hosts`) through mpd-virt. The runtime home works the same way
+  (`assets/runtime/home/{default,forced}`, applied at create and by
+  `70-configure-runtime.sh`). The developer's own env (`vm.env`, `runtime.env`)
+  is not seeded from here —
   it is pushed in by mpd-virt or hand-written on a sandbox; an optional
   `mpd-defaults.env` the developer overlays here becomes the mpd.env config's
   lowest layer (see §8)

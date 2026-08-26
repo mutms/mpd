@@ -9,32 +9,59 @@ import (
 	"github.com/mutms/mpd/go/internal/ui"
 )
 
-// EnsureHome seeds the dev user's home from assets/vm/home — dotfiles the
-// developer overlays through mpd-virt's asset tree (a ~/.vimrc, a
-// ~/.ssh/known_hosts, whatever). It is not a fresh-account seed: the VM's dev
-// account already exists at adoption, so this overlays onto the live home
-// rather than populating a new one — which is why the VM cannot reuse the
-// runtime's copy-at-create path and needs this step instead.
+// EnsureHome applies the developer's home overlay onto the VM dev user's home.
+// The files come from mpd-virt's asset tree (assets/vm/home), in two flavours:
 //
-// Seed-once, per file: a file that already exists is left untouched — it is
-// the developer's once present, like the old ~/.vimrc seed. So an edit made in
-// the VM survives, and re-overlaying an updated file on the Mac does not
-// clobber the in-VM copy (delete the in-VM file to re-seed). Parent
-// directories are created as needed; an existing one (e.g. ~/.ssh) keeps its
-// mode.
+//   - assets/vm/home/default/ — SEEDED: copied only when the file does not yet
+//     exist. It is the developer's once present, so an edit made in the VM
+//     survives and re-overlaying does not clobber it. For dotfiles you tweak
+//     (a ~/.vimrc, a ~/.ssh/known_hosts you append to).
 //
-// mpd ships nothing here — assets/vm/home exists only once a developer overlays
-// into it — so an absent directory is the normal "no overlay" case and a
-// silent success. Best-effort: a per-file failure warns and continues.
+//   - assets/vm/home/forced/ — OVERWRITTEN from the Mac on every run, so a Mac
+//     edit propagates. mpd owns these; edit them on the Mac, not in the VM. For
+//     settings you want kept in step (a ~/.gitconfig, forced tool configs).
+//
+// It NEVER deletes: a file removed from forced/ on the Mac is left in place in
+// the home, so this can never lose data — the deliberate trade for the
+// overwrite behaviour.
+//
+// This is not a fresh-account seed: the VM's dev account already exists at
+// adoption, so this overlays onto the live home (the reason the VM can't reuse
+// the runtime's copy-at-create path). mpd ships nothing here — the directories
+// exist only once a developer overlays into them — so an absent tree is the
+// normal "no overlay" case. Best-effort: a per-file failure warns and continues.
 func EnsureHome(out io.Writer) error {
-	root := AssetsDir + "/vm/home"
-	if info, err := os.Stat(root); err != nil || !info.IsDir() {
-		ui.OK(out, "No developer home overlay (assets/vm/home absent).")
-		return nil
+	base := AssetsDir + "/vm/home"
+	home := Home()
+
+	seeded, err := applyHomeDir(out, base+"/default", home, false)
+	if err != nil {
+		return err
+	}
+	forced, err := applyHomeDir(out, base+"/forced", home, true)
+	if err != nil {
+		return err
 	}
 
-	home := Home()
-	seeded := 0
+	switch {
+	case seeded == 0 && forced == 0:
+		ui.OK(out, "No developer home overlay (assets/vm/home).")
+	default:
+		ui.OK(out, "Developer home: %d seeded, %d forced.", seeded, forced)
+	}
+	return nil
+}
+
+// applyHomeDir copies every file under root into home, preserving the relative
+// path. overwrite=false seeds (an existing destination is left untouched);
+// overwrite=true refreshes (an existing destination is replaced). It NEVER
+// removes anything — a file gone from root stays in the home. An absent root is
+// a no-op. Returns the number of files written. Best-effort per file.
+func applyHomeDir(out io.Writer, root, home string, overwrite bool) (int, error) {
+	if info, err := os.Stat(root); err != nil || !info.IsDir() {
+		return 0, nil
+	}
+	written := 0
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil || d.IsDir() {
 			return nil
@@ -44,26 +71,19 @@ func EnsureHome(out io.Writer) error {
 			return nil
 		}
 		dest := filepath.Join(home, rel)
-		if _, err := os.Stat(dest); err == nil {
-			return nil // seed-once: the file is the developer's once present
+		if !overwrite {
+			if _, err := os.Stat(dest); err == nil {
+				return nil // seed-once: the file is the developer's once present
+			}
 		}
 		if err := seedFile(path, dest); err != nil {
 			ui.Warn(out, "home file %s: %v", rel, err)
 			return nil
 		}
-		seeded++
+		written++
 		return nil
 	})
-	if err != nil {
-		return err
-	}
-
-	if seeded == 0 {
-		ui.OK(out, "Developer home files already in place.")
-	} else {
-		ui.OK(out, "Seeded %d developer home file(s) from assets/vm/home.", seeded)
-	}
-	return nil
+	return written, err
 }
 
 // seedFile copies src to dest, creating parent directories, preserving the

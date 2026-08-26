@@ -40,9 +40,14 @@ chmod 440 "/etc/sudoers.d/${EXTUSER}"
 
 USER_HOME="/home/${EXTUSER}"
 
-# Home files: shipped defaults (assets/runtime/home), then /var/lib/mpd/home
-# overrides (mounted read-only). cp -aT merges contents, dotfiles included.
-cp -aT /opt/mpd/assets/runtime/home "${USER_HOME}"
+# Home files. The account is fresh here, so both flavours are just copied in:
+# default/ (the dev's to edit after) and forced/ (mpd's, re-applied on every
+# --vm-setup by 70-configure-runtime.sh). Then the VM-host /var/lib/mpd/home
+# override. cp -aT merges contents, dotfiles included.
+for d in default forced; do
+    [ -d "/opt/mpd/assets/runtime/home/${d}" ] && \
+        cp -aT "/opt/mpd/assets/runtime/home/${d}" "${USER_HOME}"
+done
 if [ -d /var/lib/mpd/home ]; then
     cp -aT /var/lib/mpd/home "${USER_HOME}"
 fi
