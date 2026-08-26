@@ -92,12 +92,15 @@ Operational flags include:
   - `--runtime-restore` — replay the newest backup via
     `assets/runtime/restore.d/*.sh`.
 - service mutators (`<name>` is one of the extras: mailpit, adminer,
-  seleniumv1; intent persists in `/var/lib/mpd/state/services.json` and
-  the enabled-set is published to `/srv/meta/services.json`):
-  - `--service-enable=<name>` — install + start + auto-start (restart
-    policy plus a reconcile in `--vm-start`/`--vm-setup`).
-  - `--service-disable=<name>` — stop; stays off across reboots until
-    re-enabled.
+  seleniumv1; the sticky autostart intent persists in
+  `/var/lib/mpd/state/services.json`). A project usually brings a service up by
+  listing it in `MPD_REQUIRE_SERVICES` — mpd then ensures it on `mpd start`,
+  like the project's database, without setting the sticky flag. These flags
+  drive a service directly:
+  - `--service-start=<name>` — start + make it autostart (restart policy
+    plus a reconcile in `--vm-start`/`--vm-setup`).
+  - `--service-stop=<name>` — stop + clear autostart; a project that
+    requires it starts it again on its next `mpd start`.
   - `--service-uninstall=<name>` — remove the container, **keep** its
     data volume.
   - `--service-purge=<name>` — remove the container and the volume.

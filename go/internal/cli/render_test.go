@@ -84,8 +84,8 @@ func TestListServices(t *testing.T) {
 	if !strings.Contains(lines[2], "not installed") {
 		t.Errorf("mailpit row = %q, want not installed", lines[2])
 	}
-	if !strings.Contains(lines[2], "--service-enable=mailpit") {
-		t.Errorf("mailpit row = %q, want the enable hint", lines[2])
+	if !strings.Contains(lines[2], "--service-start=mailpit") {
+		t.Errorf("mailpit row = %q, want the start hint", lines[2])
 	}
 }
 

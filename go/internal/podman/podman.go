@@ -206,7 +206,7 @@ func (c *Client) Restart(ctx context.Context, name string) (int, error) {
 }
 
 // UpdateRestartPolicy changes an existing container's restart policy
-// ("always", "no"). This is what makes --service-disable stick across
+// ("always", "no"). This is what makes --service-stop stick across
 // reboots: podman-restart.service resurrects anything left on "always".
 func (c *Client) UpdateRestartPolicy(ctx context.Context, name, policy string) error {
 	res, err := c.run(ctx, []string{"update", "--restart", policy, name})

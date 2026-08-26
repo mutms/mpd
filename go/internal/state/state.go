@@ -128,11 +128,15 @@ type Runtime struct {
 }
 
 // Service is one extra service container's persisted intent, as stored
-// in services.json. Presence means installed; Enabled decides whether
-// it runs (and auto-starts). Absent from the file = uninstalled.
+// in services.json. Presence means installed; Autostart is the sticky
+// "run it on boot" intent set by `--service-start`/`--service-stop` — the
+// same lifecycle a database has. A service a project needs is started
+// on demand (MPD_REQUIRE_SERVICES) without setting Autostart, so this flag
+// tracks only what the developer wants up independent of any project.
+// Absent from the file = uninstalled.
 type Service struct {
-	Name    string `json:"name"`
-	Enabled bool   `json:"enabled"`
+	Name      string `json:"name"`
+	Autostart bool   `json:"autostart"`
 }
 
 // Projects returns every registered project, sorted by name.

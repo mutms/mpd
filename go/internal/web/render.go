@@ -251,13 +251,11 @@ func liveServices(ctx context.Context, d Deps) map[string]string {
 	return live
 }
 
-// serviceRows lists the OPTIONAL extra services with their intent
-// (services.json) joined against what podman actually has.
+// serviceRows lists the OPTIONAL extra services with their recorded
+// presence joined against what podman actually has.
 func serviceRows(ctx context.Context, d Deps, live map[string]string) []ServiceRow {
-	intent := map[string]bool{}
 	installed := map[string]bool{}
 	for _, entry := range d.State.Services() {
-		intent[entry.Name] = entry.Enabled
 		installed[entry.Name] = true
 	}
 
@@ -274,13 +272,11 @@ func serviceRows(ctx context.Context, d Deps, live map[string]string) []ServiceR
 		case live[svc.Name] == "running":
 			row.Running = true
 			row.Status = "running"
-		case installed[svc.Name] && !intent[svc.Name]:
-			row.Status = "disabled"
 		case installed[svc.Name]:
 			row.Status = "stopped"
 		}
 		if !installed[svc.Name] {
-			row.Access = "mpd --service-enable=" + svc.Name
+			row.Access = "mpd --service-start=" + svc.Name
 		}
 		rows = append(rows, row)
 	}

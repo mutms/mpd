@@ -47,13 +47,10 @@ func Start(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) e
 		return err
 	}
 
-	// Enabled extra services: --restart always + podman-restart.service
+	// Autostart extra services: --restart always + podman-restart.service
 	// normally brings them back at boot; this reconcile is the belt to
 	// that braces, and it also repairs a revision drift.
 	if err := ReconcileServices(ctx, out, d.Podman, d.State, d.Net); err != nil {
-		return err
-	}
-	if err := WriteServicesMeta(d.State); err != nil {
 		return err
 	}
 

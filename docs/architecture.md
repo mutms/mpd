@@ -193,10 +193,13 @@ forward across rebuilds, since it is the one thing podman cannot report.
 The runtime and extra services keep their own intent fields:
 `state.Runtime.Requested` (the single runtime, at
 `/var/lib/mpd/state/runtimes/runtime/meta.json`) and
-`state.Service.Enabled` (`/var/lib/mpd/state/services.json` — presence
-means installed, `Enabled` decides whether it runs and auto-starts;
-absence means uninstalled). The enabled set is also published to
-`/srv/meta/services.json` for in-runtime consumers (`configure.sh`).
+`state.Service.Autostart` (`/var/lib/mpd/state/services.json` — presence
+means installed, `Autostart` is the sticky boot intent set by
+`--service-start`/`--service-stop`; absence means uninstalled). A service a
+project merely needs is started on demand from that project's
+`MPD_REQUIRE_SERVICES` without setting the flag, exactly as its database is
+ensured — so the config a project renders from that declaration (Moodle's
+mailpit `smtphosts`) is decided per project, not from VM-wide state.
 
 Reconciliation: `mpd --vm-start` starts the runtime, then the databases
 that should autostart (those a `--db-start` marked sticky, plus those an
@@ -850,15 +853,18 @@ SOCKS, never proxied by any caddy):
 - `adminer` — `.102`, `http://adminer.svc.<NNN>.mpd.test:8080/`.
 - `seleniumv1` — `.103`, `http://seleniumv1.svc.<NNN>.mpd.test:4444/`
   ("v1" so a future Moodle release can require another selenium
-  alongside). Auto-enabled by `mpd start` when a project sets
-  `MPD_MOODLE_BEHAT=1`.
+  alongside). Started by `mpd start` when a project sets
+  `MPD_MOODLE_BEHAT=1` (which adds it to that project's required services).
 
-Lifecycle: `--service-enable` installs, starts and makes it auto-start
-(`--restart always` + a reconcile in `--vm-start`/`--vm-setup`);
-`--service-disable` stops it and sticks across reboots;
-`--service-uninstall` removes the container but keeps its data volume;
-`--service-purge` removes the volume too. Intent persists in
-`/var/lib/mpd/state/services.json` (see §5).
+Lifecycle mirrors databases. A project declares the services it needs in
+`MPD_REQUIRE_SERVICES`; on `mpd start` mpd ensures each is running (on demand,
+no sticky flag), the way it ensures the project's database. Independently,
+`--service-start` starts a service and makes it autostart (`--restart always`
++ a reconcile in `--vm-start`/`--vm-setup`); `--service-stop` stops it and
+clears the autostart intent (a project that requires it starts it again on its
+next `mpd start`); `--service-uninstall` removes the container but keeps its
+data volume; `--service-purge` removes the volume too. The sticky autostart
+intent persists in `/var/lib/mpd/state/services.json` (see §5).
 
 ### Laptop-side split DNS
 

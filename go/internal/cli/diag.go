@@ -674,20 +674,20 @@ func diagData(ctx context.Context, r *diagRun, d DiagDeps) {
 	}
 
 	for _, entry := range d.State.Services() {
-		if !entry.Enabled {
+		if !entry.Autostart {
 			continue
 		}
 		// Ask the registry for the container name — composing it here
 		// would be a second copy of the naming rule.
 		svc, known := service.Find(entry.Name)
 		if !known {
-			r.warn("service %q is enabled but is not a known service", entry.Name)
+			r.warn("service %q is marked autostart but is not a known service", entry.Name)
 			continue
 		}
 		if d.Podman.Running(ctx, svc.Container()) {
 			r.ok("service %s running", entry.Name)
 		} else {
-			r.fail("service %s is enabled but %s is not running", entry.Name, svc.Container())
+			r.fail("service %s is marked autostart but %s is not running", entry.Name, svc.Container())
 		}
 	}
 }

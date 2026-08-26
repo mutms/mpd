@@ -2,56 +2,93 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"path/filepath"
 
 	"github.com/mutms/mpd/go/internal/dnsmasq"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/service"
-	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
 	"github.com/mutms/mpd/go/internal/vm"
 )
 
-// ServiceEnable installs and starts an extra service, records the
-// intent, and republishes everything derived from it (DNS record,
-// /srv/meta/services.json for configure.sh).
-func ServiceEnable(ctx context.Context, out io.Writer, name string,
+// ServiceStart installs and runs a service and records it as autostart —
+// the sticky, boot-persistent intent that ReconcileServices honours. This is
+// the explicit half of the DB-like lifecycle: a service a project merely
+// needs is brought up by EnsureService instead, without this flag.
+func ServiceStart(ctx context.Context, out io.Writer, name string,
 	p *podman.Client, s state.Store, dns dnsmasq.Manager, n net.Net, vmIP string) error {
 
 	svc, ok := service.Find(name)
 	if !ok {
 		return unknownService(name)
 	}
-	if err := service.Enable(ctx, out, svc, n, p); err != nil {
+	if err := service.Start(ctx, out, svc, n, p); err != nil {
 		return err
 	}
-	if err := s.UpsertService(state.Service{Name: name, Enabled: true}); err != nil {
+	if err := s.UpsertService(state.Service{Name: name, Autostart: true}); err != nil {
 		return err
 	}
-	return publishServiceState(ctx, out, p, s, dns, n, vmIP)
+	return PublishDNS(ctx, out, dns, n, s, false)
 }
 
-// ServiceDisable stops a service and turns its auto-start off. The
-// container, its volume and its DNS record stay — the octet is static,
-// so the record cannot mislead, and keeping it saves resolver churn.
-func ServiceDisable(ctx context.Context, out io.Writer, name string,
+// ServiceStop stops a service and clears its autostart intent. The container,
+// its volume and its DNS record stay — the octet is static, so the record
+// cannot mislead, and keeping it saves resolver churn. A project that requires
+// the service will start it again on its next `mpd start`, exactly as a
+// stopped database comes back when a project needs it.
+func ServiceStop(ctx context.Context, out io.Writer, name string,
 	p *podman.Client, s state.Store, dns dnsmasq.Manager, n net.Net, vmIP string) error {
 
 	svc, ok := service.Find(name)
 	if !ok {
 		return unknownService(name)
 	}
-	if err := service.Disable(ctx, out, svc, p); err != nil {
+	if err := service.Stop(ctx, out, svc, p); err != nil {
 		return err
 	}
-	if err := s.UpsertService(state.Service{Name: name, Enabled: false}); err != nil {
+	if err := s.UpsertService(state.Service{Name: name, Autostart: false}); err != nil {
 		return err
 	}
-	return publishServiceState(ctx, out, p, s, dns, n, vmIP)
+	return PublishDNS(ctx, out, dns, n, s, false)
+}
+
+// EnsureService starts a service on demand — a project declared it in
+// MPD_REQUIRE_SERVICES — the way `mpd start` ensures a project's database.
+// It does NOT set the sticky autostart intent: the service runs because a
+// project needs it now, and whether it should also come up on its own at boot
+// stays the developer's call (`--service-start`). Idempotent; a no-op when the
+// service is already running (bar a revision rebuild).
+func EnsureService(ctx context.Context, out io.Writer, name string,
+	p *podman.Client, s state.Store, dns dnsmasq.Manager, n net.Net, vmIP string) error {
+
+	svc, ok := service.Find(name)
+	if !ok {
+		return unknownService(name)
+	}
+	if err := service.Start(ctx, out, svc, n, p); err != nil {
+		return err
+	}
+	// Record its presence for DNS + `list`, but leave any existing autostart
+	// intent untouched — an on-demand start must not silently promote a
+	// service to boot-persistent.
+	if !serviceRecorded(s, name) {
+		if err := s.UpsertService(state.Service{Name: name, Autostart: false}); err != nil {
+			return err
+		}
+	}
+	return PublishDNS(ctx, out, dns, n, s, false)
+}
+
+// serviceRecorded reports whether the service already has a state entry.
+func serviceRecorded(s state.Store, name string) bool {
+	for _, entry := range s.Services() {
+		if entry.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // ServiceUninstall removes the container but keeps the data volume.
@@ -68,7 +105,7 @@ func ServiceUninstall(ctx context.Context, out io.Writer, name string,
 	if err := s.DeleteService(name); err != nil {
 		return err
 	}
-	return publishServiceState(ctx, out, p, s, dns, n, vmIP)
+	return PublishDNS(ctx, out, dns, n, s, false)
 }
 
 // ServicePurge removes the container AND its data volume.
@@ -85,26 +122,28 @@ func ServicePurge(ctx context.Context, out io.Writer, name string,
 	if err := s.DeleteService(name); err != nil {
 		return err
 	}
-	return publishServiceState(ctx, out, p, s, dns, n, vmIP)
+	return PublishDNS(ctx, out, dns, n, s, false)
 }
 
 // ReconcileServices converges installed services with their recorded
-// intent: enabled ones running (recreated if their revision moved),
-// disabled ones left alone. The boot path (`mpd --vm-start`) and setup
-// both run this, so a rebooted VM comes back with what was enabled.
+// intent: autostart ones running (recreated if their revision moved), the
+// rest left alone. The boot path (`mpd --vm-start`) and setup both run this,
+// so a rebooted VM comes back with what the developer marked autostart. A
+// service that only some project needs is not started here — it comes up when
+// that project's `mpd start` ensures it, like the project's database.
 func ReconcileServices(ctx context.Context, out io.Writer,
 	p *podman.Client, s state.Store, n net.Net) error {
 
 	for _, entry := range s.Services() {
-		if !entry.Enabled {
+		if !entry.Autostart {
 			continue
 		}
 		svc, ok := service.Find(entry.Name)
 		if !ok {
-			fmt.Fprintf(out, "Warning: enabled service '%s' is not in the registry — ignoring.\n", entry.Name)
+			fmt.Fprintf(out, "Warning: autostart service '%s' is not in the registry — ignoring.\n", entry.Name)
 			continue
 		}
-		if err := service.Enable(ctx, out, svc, n, p); err != nil {
+		if err := service.Start(ctx, out, svc, n, p); err != nil {
 			fmt.Fprintf(out, "Warning: %v\n", err)
 		}
 	}
@@ -134,41 +173,6 @@ func ServiceDNSRecords(n net.Net, s state.Store) []dnsmasq.Record {
 func PublishDNS(ctx context.Context, out io.Writer, dns dnsmasq.Manager,
 	n net.Net, s state.Store, verbose bool) error {
 	return dns.Reconcile(ctx, out, ServiceDNSRecords(n, s), vm.PrimaryIP(), verbose)
-}
-
-// publishServiceState pushes the two derived views of service state:
-// the DNS records, and /srv/meta/services.json — the channel a project
-// type's configure.sh reads to learn which services are enabled.
-func publishServiceState(ctx context.Context, out io.Writer,
-	p *podman.Client, s state.Store, dns dnsmasq.Manager, n net.Net, vmIP string) error {
-
-	if err := PublishDNS(ctx, out, dns, n, s, false); err != nil {
-		return err
-	}
-	return WriteServicesMeta(s)
-}
-
-// WriteServicesMeta publishes the enabled-service set to
-// /srv/meta/services.json, where configure.sh (running inside the
-// runtime) reads it with jq. Absent file or absent name both mean "not
-// enabled" — correct-by-default for fresh volumes.
-func WriteServicesMeta(s state.Store) error {
-	var enabled []string
-	for _, entry := range s.Services() {
-		if entry.Enabled {
-			enabled = append(enabled, entry.Name)
-		}
-	}
-	if enabled == nil {
-		enabled = []string{}
-	}
-	data, err := json.MarshalIndent(struct {
-		Enabled []string `json:"enabled"`
-	}{enabled}, "", "  ")
-	if err != nil {
-		return err
-	}
-	return srv.Write(filepath.Join(srv.Meta, "services.json"), append(data, '\n'), 0o644)
 }
 
 func unknownService(name string) error {

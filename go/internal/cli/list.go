@@ -29,10 +29,8 @@ func ListServices(ctx context.Context, out io.Writer, n net.Net, p *podman.Clien
 			live[name] = item.State
 		}
 	}
-	intent := map[string]bool{}
 	installed := map[string]bool{}
 	for _, entry := range s.Services() {
-		intent[entry.Name] = entry.Enabled
 		installed[entry.Name] = true
 	}
 
@@ -41,13 +39,10 @@ func ListServices(ctx context.Context, out io.Writer, n net.Net, p *podman.Clien
 
 	for _, d := range service.All() {
 		status := "not installed"
-		access := "mpd --service-enable=" + d.Name
+		access := "mpd --service-start=" + d.Name
 		switch {
 		case live[d.Name] == "running":
 			status = StatusRunning
-			access = d.AccessHint(n)
-		case installed[d.Name] && !intent[d.Name]:
-			status = "disabled"
 			access = d.AccessHint(n)
 		case installed[d.Name]:
 			status = StatusStopped

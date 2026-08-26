@@ -105,20 +105,35 @@ done
 touch "${DATAROOT}/php_error.log"
 chmod 0666 "${DATAROOT}/php_error.log"
 
-# --- Enabled extra services (written by mpd on every service change) ---
-# Absent file or absent name both mean "not enabled" — a fresh volume
-# behaves correctly with no services.json at all.
-_service_enabled() {
-    jq -e --arg s "$1" '.enabled | index($s) != null' /srv/meta/services.json >/dev/null 2>&1
+# --- Services this project declares it needs -------------------------------
+# MPD_REQUIRE_SERVICES (comma-separated, from the project's mpd.env) is the
+# source of truth for which service containers this project depends on. It
+# drives the per-project config below (mail) directly, and mpd reads it back
+# from effective.json to auto-enable the containers on `mpd start`. Keying the
+# config off the project's own declaration — not the VM-wide enabled set —
+# makes mail routing a property of the project (tracked in git), and keeps
+# noemailever the safe default for any project that has not opted in.
+REQUIRE_SERVICES="${MPD_REQUIRE_SERVICES:-}"
+# Behat needs seleniumv1: turning behat on IS the request, so add it to the
+# required set here rather than making mpd special-case behat. mpd ensures the
+# container (its ~2 GB image) on the project's behalf when it reads this back.
+if [ "$BEHAT" = "1" ]; then
+    REQUIRE_SERVICES="${REQUIRE_SERVICES:+${REQUIRE_SERVICES},}seleniumv1"
+fi
+_service_required() {
+    case ",${REQUIRE_SERVICES// /}," in
+        *",$1,"*) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
-# Mail: with mailpit enabled Moodle sends freely into the black hole;
-# without it, noemailever guarantees no real mail can ever leave a dev
-# project. One line either way, so the sed below stays single-line.
-if _service_enabled mailpit; then
+# Mail: a project that requires mailpit sends freely into the black hole;
+# otherwise noemailever guarantees no real mail can ever leave a dev project.
+# One line either way, so the sed below stays single-line.
+if _service_required mailpit; then
     MAIL_CONFIG="\$CFG->smtphosts = 'mailpit.svc.${MPD_ZONE}:1025';"
 else
-    MAIL_CONFIG="\$CFG->noemailever = true; // no mailpit service enabled"
+    MAIL_CONFIG="\$CFG->noemailever = true; // mailpit not in MPD_REQUIRE_SERVICES"
 fi
 
 # --- Render config-mpd.php (only when Moodle source + DB are both present) ---
@@ -219,7 +234,7 @@ fi
 # pre-filtered to mail referencing this project's wwwroot, which Moodle
 # embeds in every message. Clearing the search reveals the full shared
 # inbox, making the scope visible in the address bar.
-if _service_enabled mailpit; then
+if _service_required mailpit; then
     URLS="${URLS}"',
   {
     "label": "mail",
@@ -231,12 +246,17 @@ URLS="${URLS}"'
 ]'
 echo "$URLS" > "/srv/meta/${PROJECT_NAME}/urls.json"
 
+# requireServices as a JSON array, so mpd can auto-start what the project
+# needs. jq -R splits the comma list and drops empties; empty input → [].
+REQUIRE_JSON=$(printf '%s' "${REQUIRE_SERVICES// /}" | jq -Rc 'split(",") | map(select(length > 0))')
+
 # --- effective.json — mpd reads dbTag/dbEngine to provision the container ---
 cat > "${EFFECTIVE_FILE}" <<EOF
 {
   "phpVersion": "${PHP_VER}",
   "phpFpmPort": ${FPM_PORT},
   "behat": ${BEHAT},
+  "requireServices": ${REQUIRE_JSON},
   "dbTag": "${DB_TAG}",
   "dbEngine": "${DB_ENGINE}",
   "dbVersion": "${DB_VERSION}",

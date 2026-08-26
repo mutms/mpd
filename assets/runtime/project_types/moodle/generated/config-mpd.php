@@ -36,13 +36,13 @@ $CFG->admin = 'admin';
 $CFG->noreplyaddress = 'noreply@example.com';
 $CFG->site_is_public = false;
 
-// Mail: filled in by configure.sh from the enabled-service set
-// (/srv/meta/services.json). With the mailpit service enabled this is
-// $CFG->smtphosts pointing at it — mailpit is a black hole: messages
-// surface in its web UI and are never forwarded, so Moodle may send
-// freely. Without mailpit it is $CFG->noemailever = true, so a project
-// on a fresh VM can never send real mail by accident. Re-run
-// `mpd start <project>` after enabling/disabling mailpit.
+// Mail: filled in by configure.sh from this project's own
+// MPD_REQUIRE_SERVICES (in its mpd.env). List `mailpit` there and this is
+// $CFG->smtphosts pointing at it — mailpit is a black hole: messages surface
+// in its web UI and are never forwarded, so Moodle may send freely, and mpd
+// starts the mailpit container on `mpd start`. Otherwise it is
+// $CFG->noemailever = true, so a project can never send real mail by accident.
+// Edit mpd.env and re-run `mpd start <project>` to change it.
 %%MAIL_CONFIG%%
 
 $CFG->debug = (E_ALL | 2048); // DEBUG_DEVELOPER - note that since Moodle 5.0 it is just E_ALL, but higher value here is ok.

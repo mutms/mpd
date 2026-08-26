@@ -264,4 +264,4 @@ mpd name in there is the snapshot.
 
 **Fix.** Recreate the container: `mpd --runtime-rebuild` for the runtime,
 `mpd --db-delete` + `mpd start <project>` for a database, `mpd
---service-uninstall` + `--service-enable` for a service.
+--service-uninstall` + `--service-start` for a service.

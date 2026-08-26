@@ -23,6 +23,7 @@ import (
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/project"
 	"github.com/mutms/mpd/go/internal/runtime"
+	"github.com/mutms/mpd/go/internal/service"
 	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
 	"github.com/mutms/mpd/go/internal/vm"
@@ -621,13 +622,20 @@ func reconcileProject(ctx context.Context, out io.Writer, name string, args []st
 
 	warnPortClash(out, name, effective, d.State)
 
-	// Behat needs the seleniumv1 service. Turning behat on IS the
-	// explicit request, so the service is enabled on its behalf rather
-	// than failing the first `behat` run with a connection error. The
-	// image is ~2 GB on first enable; the pull streams its progress.
-	if behatEnabled(effective) && !serviceEnabled(d.State, "seleniumv1") {
-		fmt.Fprintln(out, "\n\033[1m==> Auto-enabling seleniumv1 (behat requested)\033[0m")
-		if err := ServiceEnable(ctx, out, "seleniumv1", d.Podman, d.State,
+	// Services the project declares it needs: MPD_REQUIRE_SERVICES in its
+	// mpd.env, which configure.sh resolves and emits into effective.json
+	// (behat contributes seleniumv1 on its behalf, so its ~2 GB image is
+	// pulled here rather than failing the first `behat` run). Each is started
+	// on demand, the way the project's database is ensured — without setting
+	// the sticky autostart intent. The config configure.sh already rendered
+	// from the same declaration (mailpit's smtphosts) then has a live service
+	// to reach.
+	for _, svcName := range requiredServices(effective) {
+		if _, ok := service.Find(svcName); !ok {
+			fmt.Fprintf(out, "  Warning: MPD_REQUIRE_SERVICES lists unknown service '%s' — skipping.\n", svcName)
+			continue
+		}
+		if err := EnsureService(ctx, out, svcName, d.Podman, d.State,
 			d.Dnsmasq, d.Net, vm.PrimaryIP()); err != nil {
 			return err
 		}
@@ -743,28 +751,22 @@ func effectivePort(effective map[string]any) (int, bool) {
 	return 0, false
 }
 
-// behatEnabled reads the behat flag from effective.json, which emits it
-// as a bare number (configure.sh interpolates 0 or 1).
-func behatEnabled(effective map[string]any) bool {
-	switch v := effective["behat"].(type) {
-	case float64:
-		return v == 1
-	case string:
-		return v == "1"
-	case bool:
-		return v
+// requiredServices returns the service names a project declared via
+// MPD_REQUIRE_SERVICES, which configure.sh resolves and emits into
+// effective.json as a JSON array (behat contributes seleniumv1). A missing
+// or malformed field yields nil.
+func requiredServices(effective map[string]any) []string {
+	raw, ok := effective["requireServices"].([]any)
+	if !ok {
+		return nil
 	}
-	return false
-}
-
-// serviceEnabled reports whether an extra service is recorded as enabled.
-func serviceEnabled(s state.Store, name string) bool {
-	for _, entry := range s.Services() {
-		if entry.Name == name {
-			return entry.Enabled
+	var names []string
+	for _, v := range raw {
+		if str, ok := v.(string); ok && str != "" {
+			names = append(names, str)
 		}
 	}
-	return false
+	return names
 }
 
 // sameURLs reports whether two URL lists are identical, so a refresh that

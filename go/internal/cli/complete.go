@@ -54,8 +54,8 @@ var GlobalFlags = []string{
 	"--runtime-upgrade",
 	"--runtime-backup",
 	"--runtime-restore",
-	"--service-enable",
-	"--service-disable",
+	"--service-start",
+	"--service-stop",
 	"--service-uninstall",
 	"--service-purge",
 	"--db-create",
@@ -141,7 +141,7 @@ func optionValues(flag string, s state.Store, a assets.Tree) []string {
 		// The DB layer accepts a bare engine (version defaulted) as well
 		// as engine:version, so offer both shapes.
 		return []string{"postgres", "postgres:17", "mariadb", "mariadb:10.11", "mysql", "mysql:8.4"}
-	case "--service-enable", "--service-disable", "--service-uninstall", "--service-purge":
+	case "--service-start", "--service-stop", "--service-uninstall", "--service-purge":
 		return service.Names()
 	default:
 		return nil

@@ -244,17 +244,14 @@ func Setup(ctx context.Context, out io.Writer) error {
 	}
 
 	// Extra services: nothing is installed by default — this converges
-	// whatever the developer has enabled (repairing revision drift), and
-	// republishes the enabled-set meta for configure.sh.
+	// whatever the developer has marked autostart (repairing revision drift).
+	// A service a project needs is started on demand by that project, not here.
 	ui.Step(out, "Extra services")
 	if err := ReconcileServices(ctx, out, p, s, n); err != nil {
 		ui.Warn(out, "%v", err)
 	}
-	if err := WriteServicesMeta(s); err != nil {
-		return err
-	}
-	if enabled := s.Services(); len(enabled) == 0 {
-		ui.OK(out, "none enabled — mpd --service-enable=%s", strings.Join(service.Names(), "|"))
+	if installed := s.Services(); len(installed) == 0 {
+		ui.OK(out, "none installed — a project's MPD_REQUIRE_SERVICES starts what it needs, or mpd --service-start=%s", strings.Join(service.Names(), "|"))
 	}
 
 	ui.Step(out, "Status web server (mpd --web)")

@@ -77,9 +77,11 @@ with snapshot/revert as the safety net for letting an agent rip.
 - One-verb reset: `mpd reset <project>` drops the DB, wipes the dataroots and
   clears the generated state — keeps the source tree, `mpd.env` and
   `config.php`. Works from a VM terminal or from inside the runtime.
-- Optional per-VM services (`mpd --service-enable=<name>`; nothing installed
-  by default): Mailpit (`http://mailpit.svc.<NNN>.mpd.test:8025/` — one shared
-  inbox, each project publishing a pre-filtered link), Adminer, Selenium.
+- Optional per-VM services (a project lists them in `MPD_REQUIRE_SERVICES` and
+  mpd starts them on demand, like its database; `mpd --service-start=<name>`
+  drives one directly; nothing installed by default): Mailpit
+  (`http://mailpit.svc.<NNN>.mpd.test:8025/` — one shared inbox, each project
+  publishing a pre-filtered link), Adminer, Selenium.
   Behat is auto-wired when a project asks: `MPD_MOODLE_BEHAT=1` makes
   `mpd start` enable the seleniumv1 service and publish
   `https://behat.<project>.<NNN>.mpd.test/`.

@@ -217,21 +217,25 @@ From your laptop, open `https://moodle51.<NNN>.mpd.test/`. Real cert (signed
 by the local CA), no warnings.
 
 **Outbound mail** is off by default — the generated config carries
-`$CFG->noemailever = true` until you opt in to Mailpit, which is an
-[extra service](#extra-services-mailpit-adminer-seleniumv1):
+`$CFG->noemailever = true` until this project declares it needs
+[Mailpit](#extra-services-mailpit-adminer-seleniumv1) in its `mpd.env`:
 
 ```bash
-mpd --service-enable=mailpit
-mpd start moodle51        # regenerate config-mpd.php → $CFG->smtphosts
+mpd start moodle51 MPD_REQUIRE_SERVICES=mailpit
 ```
 
-The project then publishes an informational "mail" link —
-`http://mailpit.svc.<NNN>.mpd.test:8025/?q=moodle51.<NNN>.mpd.test`, the
-shared Mailpit inbox pre-filtered to this project.
+That one command records the requirement, starts the Mailpit container the way
+a database is ensured, and regenerates `config-mpd.php` with
+`$CFG->smtphosts` pointing at it. Mail routing is thus a property of the
+project (tracked in git), and `noemailever` stays the safe default for any
+project that has not opted in. The project also publishes an informational
+"mail" link — `http://mailpit.svc.<NNN>.mpd.test:8025/?q=moodle51.<NNN>.mpd.test`,
+the shared Mailpit inbox pre-filtered to this project.
 
-**Behat**: set `MPD_MOODLE_BEHAT=1` and re-run `mpd start` —
-that auto-enables the `seleniumv1` service, points `wd_host` at it, and
-wires `https://behat.moodle51.<NNN>.mpd.test/` automatically.
+**Behat**: set `MPD_MOODLE_BEHAT=1` and re-run `mpd start` — that adds
+`seleniumv1` to the project's required services (starting it on your behalf),
+points `wd_host` at it, and wires `https://behat.moodle51.<NNN>.mpd.test/`
+automatically.
 
 Your own environment for every runtime — a Moodle admin password
 `mdl-install` reads, `MPD_MOODLE_AGREE_LICENSE`, an API token — lives in
@@ -254,16 +258,25 @@ documented in
 
 ## Extra services (mailpit, adminer, seleniumv1)
 
-Nothing beyond the runtime is installed by default. Optional extras are
-containers you enable by name:
+Nothing beyond the runtime is installed by default. The usual way a service
+comes up is a project declaring it in `MPD_REQUIRE_SERVICES` (above): mpd then
+starts it on demand, the way it ensures a project's database. The flags below
+are for driving a service directly — one you want up on its own, independent of
+any project:
 
 ```bash
-mpd --service-enable=mailpit      # install + start + auto-start on boot
-mpd --service-disable=mailpit     # stop; stays off across reboots
+mpd --service-start=mailpit       # start it + keep it autostarting on boot
+mpd --service-stop=mailpit        # stop it + clear autostart (a project that needs it restarts it)
 mpd --service-uninstall=mailpit   # remove the container, KEEP its data volume
 mpd --service-purge=mailpit       # remove the container AND the volume
 mpd list services                 # the three extras with their status
 ```
+
+Lifecycle mirrors databases: a service a project requires is started when that
+project starts (no sticky flag), while `--service-start`/`--service-stop` set a
+sticky autostart intent that `mpd --vm-start` reconciles at boot. A
+`--service-stop` cannot hold down a service a running project requires — the
+next `mpd start` ensures it again, just like a stopped database.
 
 The three services and where they answer (HTTP only — their addresses
 are inside the trust boundary, reached via the WireGuard overlay or the
@@ -273,12 +286,12 @@ SOCKS tunnel like everything else; no TLS, no proxying):
 |--------------|----------------------------------------------|-------------------------------------------------------------------------------|
 | `mailpit`    | `http://mailpit.svc.<NNN>.mpd.test:8025/`    | Shared mail catch-all; SMTP on `:1025`. Data volume survives uninstall.       |
 | `adminer`    | `http://adminer.svc.<NNN>.mpd.test:8080/`    | DB web UI; the portal offers pre-filled per-project links.                    |
-| `seleniumv1` | `http://seleniumv1.svc.<NNN>.mpd.test:4444/` | Behat browser; auto-enabled by `mpd start` on a Behat-enabled Moodle project. |
+| `seleniumv1` | `http://seleniumv1.svc.<NNN>.mpd.test:4444/` | Behat browser; started by `mpd start` on a Behat-enabled Moodle project. |
 
-Enabled services survive reboots (`mpd --vm-start` reconciles them) and
-their enabled-set is visible to project `configure` scripts — which is
-why toggling mailpit calls for a `mpd start <project>` re-run on
-mail-aware projects.
+Autostart services survive reboots (`mpd --vm-start` reconciles them);
+required services come back when their project starts. Because a project's
+config is rendered from its own `MPD_REQUIRE_SERVICES`, changing that list
+takes effect on the next `mpd start <project>`.
 
 ## Running runtime commands from the VM
 
@@ -751,8 +764,8 @@ mpd --runtime-rebuild            # delete + re-provision the runtime (prompts un
 mpd --runtime-backup             # save runtime home-dir pieces to /srv/backups/runtime/
 mpd --runtime-restore            # replay the newest runtime backup
 
-mpd --service-enable=<name>      # install + start an extra service; auto-starts on boot
-mpd --service-disable=<name>     # stop it; stays off until re-enabled
+mpd --service-start=<name>       # start an extra service + keep it autostarting on boot
+mpd --service-stop=<name>        # stop it + clear autostart (a project that needs it restarts it)
 mpd --service-uninstall=<name>   # remove the container, keep its data volume
 mpd --service-purge=<name>       # remove the container AND the volume
 

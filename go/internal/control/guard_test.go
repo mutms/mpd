@@ -133,7 +133,7 @@ func TestNewlyAllowedCommandsPass(t *testing.T) {
 	for _, argv := range [][]string{
 		{"--db-create", "postgres:18"},
 		{"--db-delete=mariadb-11-8"},
-		{"--service-enable", "mailpit"},
+		{"--service-start", "mailpit"},
 		{"--service-purge=mailpit"},
 		{"--runtime-backup"},
 		{"--vm-status"}, // read-only, allowed
@@ -153,8 +153,8 @@ func TestEveryGlobalFlagClassified(t *testing.T) {
 	allowedFromRuntime := map[string]bool{
 		"--runtime-backup":    true,
 		"--runtime-upgrade":   true, // apt + re-configure inside the caller's own runtime
-		"--service-enable":    true,
-		"--service-disable":   true,
+		"--service-start":     true,
+		"--service-stop":      true,
 		"--service-uninstall": true,
 		"--service-purge":     true,
 		"--db-create":         true,

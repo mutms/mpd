@@ -111,8 +111,8 @@ type flags struct {
 	dbStop   string
 	dbDelete string
 
-	serviceEnable    string
-	serviceDisable   string
+	serviceStart     string
+	serviceStop      string
 	serviceUninstall string
 	servicePurge     string
 
@@ -211,10 +211,10 @@ func main() {
 	root.Flags().StringVar(&f.dbStop, "db-stop", "", "Stop a running DB container `name`.")
 	root.Flags().StringVar(&f.dbDelete, "db-delete", "", "Remove a DB container `name` (prompts unless --yes).")
 
-	root.Flags().StringVar(&f.serviceEnable, "service-enable", "",
-		"Install and start an extra service `name` (mailpit, adminer, seleniumv1); auto-starts after reboot.")
-	root.Flags().StringVar(&f.serviceDisable, "service-disable", "",
-		"Stop an extra service `name`; it will not auto-start until re-enabled.")
+	root.Flags().StringVar(&f.serviceStart, "service-start", "",
+		"Start an extra service `name` (mailpit, adminer, seleniumv1) and keep it autostarting. A project's MPD_REQUIRE_SERVICES starts what it needs on its own.")
+	root.Flags().StringVar(&f.serviceStop, "service-stop", "",
+		"Stop an extra service `name` and clear its autostart intent; a project that requires it starts it again on `mpd start`.")
 	root.Flags().StringVar(&f.serviceUninstall, "service-uninstall", "",
 		"Remove an extra service `name`'s container, keeping its data volume.")
 	root.Flags().StringVar(&f.servicePurge, "service-purge", "",
@@ -372,7 +372,7 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 	if name := firstNonEmpty(f.dbCreate, f.dbStart, f.dbStop, f.dbDelete); name != "" {
 		return dbAction(ctx, out, c, f, name)
 	}
-	if name := firstNonEmpty(f.serviceEnable, f.serviceDisable,
+	if name := firstNonEmpty(f.serviceStart, f.serviceStop,
 		f.serviceUninstall, f.servicePurge); name != "" {
 		return serviceAction(ctx, out, f, name)
 	}
@@ -445,10 +445,10 @@ func serviceAction(ctx context.Context, out interface{ Write([]byte) (int, error
 	vmIP := vm.PrimaryIP()
 	return withLock(ctx, out, s, func() error {
 		switch {
-		case f.serviceEnable != "":
-			return cli.ServiceEnable(ctx, out, name, p, s, dns, n, vmIP)
-		case f.serviceDisable != "":
-			return cli.ServiceDisable(ctx, out, name, p, s, dns, n, vmIP)
+		case f.serviceStart != "":
+			return cli.ServiceStart(ctx, out, name, p, s, dns, n, vmIP)
+		case f.serviceStop != "":
+			return cli.ServiceStop(ctx, out, name, p, s, dns, n, vmIP)
 		case f.serviceUninstall != "":
 			return cli.ServiceUninstall(ctx, out, name, p, s, dns, n, vmIP)
 		default:

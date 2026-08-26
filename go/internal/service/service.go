@@ -1,8 +1,9 @@
 // Package service is the registry and lifecycle of mpd's OPTIONAL extra
 // service containers — mailpit, adminer, seleniumv1.
 //
-// "Service" means exactly this: an opt-in container the developer
-// enables with `mpd --service-enable=<name>`. The VM-integral pieces
+// "Service" means exactly this: an opt-in container a project pulls in via
+// MPD_REQUIRE_SERVICES (started on demand, like its database) or the developer
+// drives directly with `mpd --service-start=<name>`. The VM-integral pieces
 // (dnsmasq, the portal) are infra, not services — they live in
 // internal/vm (vm.InfraServices).
 //
@@ -29,7 +30,7 @@ const RevisionLabel = "mpd.service.revision"
 
 // Service describes one optional extra service container.
 type Service struct {
-	// Name is the service name ("mailpit") — the enable/disable handle,
+	// Name is the service name ("mailpit") — the start/stop handle,
 	// the DNS label, and the mpd.name container label.
 	Name string
 	// HostOctet is its fixed address inside the VM's /24, from the

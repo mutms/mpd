@@ -11,15 +11,18 @@ import (
 	"github.com/mutms/mpd/go/internal/vm"
 )
 
-// Enable installs (image, container) and starts a service, leaving it
-// auto-starting: the container carries --restart always, which
+// Start installs (image, container) and runs a service, leaving it
+// auto-restarting: the container carries --restart always, which
 // podman-restart.service honours at boot, and the reconcile in
 // `mpd --vm-start` is the belt to that braces.
 //
-// Idempotent: an enabled-and-running service is reported, not rebuilt —
-// except when its Revision moved, which is exactly when a rebuild is
-// the point.
-func Enable(ctx context.Context, out io.Writer, s Service, n net.Net, p *podman.Client) error {
+// The container-level primitive, used both by the explicit `--service-start`
+// (which also records the sticky autostart intent) and by an on-demand
+// EnsureService when a project declares the service in MPD_REQUIRE_SERVICES.
+//
+// Idempotent: a running service is reported, not rebuilt — except when its
+// Revision moved, which is exactly when a rebuild is the point.
+func Start(ctx context.Context, out io.Writer, s Service, n net.Net, p *podman.Client) error {
 	ui.Step(out, "Service: %s", s.Name)
 
 	if err := ensureImage(ctx, out, s, p); err != nil {
@@ -51,7 +54,7 @@ func Enable(ctx context.Context, out io.Writer, s Service, n net.Net, p *podman.
 		}
 		ui.OK(out, "%s running — %s", s.Name, s.AccessHint(n))
 	case !p.Running(ctx, container):
-		// Re-enable of a disabled service: bring the restart policy back
+		// Restart of a stopped service: bring the restart policy back
 		// before starting, or the next reboot leaves it down again.
 		_ = p.UpdateRestartPolicy(ctx, container, "always")
 		if code, err := p.Start(ctx, container); err != nil || code != 0 {
@@ -65,10 +68,10 @@ func Enable(ctx context.Context, out io.Writer, s Service, n net.Net, p *podman.
 	return nil
 }
 
-// Disable stops a service and flips its restart policy off — without
-// that, podman-restart.service would resurrect it at the next boot.
-// The container and its volume stay for a later re-enable.
-func Disable(ctx context.Context, out io.Writer, s Service, p *podman.Client) error {
+// Stop stops a service and flips its restart policy off — without that,
+// podman-restart.service would resurrect it at the next boot. The container
+// and its volume stay for a later start.
+func Stop(ctx context.Context, out io.Writer, s Service, p *podman.Client) error {
 	ui.Step(out, "Service: %s", s.Name)
 	container := s.Container()
 	if !p.Exists(ctx, container) {
@@ -86,7 +89,7 @@ func Disable(ctx context.Context, out io.Writer, s Service, p *podman.Client) er
 }
 
 // Uninstall removes the container but keeps the volume — the data
-// survives for a later enable; --service-purge is the destructive step.
+// survives for a later start; --service-purge is the destructive step.
 func Uninstall(ctx context.Context, out io.Writer, s Service, p *podman.Client) error {
 	ui.Step(out, "Service: %s", s.Name)
 	container := s.Container()

@@ -52,7 +52,7 @@ understanding *when* events fire:
 | Runtime  | `Requested`, written by the internals of `--vm-setup`/`--vm-start`/`--vm-stop` and `--runtime-rebuild` (no lifecycle flags of its own) | Computed from podman every query      |
 | Project  | `Autostart` bool — true after `mpd start`, false after `mpd stop`                           | Derived from runtime + project record |
 | Database | `Autostart` bool — set by `mpd --db-start` / `--db-stop` (sticky across reboot)             | Computed from podman                  |
-| Service  | `Enabled`, `services.json` (installed + enabled), written by the `--service-*` flags        | Computed from podman                  |
+| Service  | `Autostart` bool — sticky boot intent set by `mpd --service-start` / `--service-stop`; a project's `MPD_REQUIRE_SERVICES` starts one on demand without it | Computed from podman |
 
 Reconciliation: `mpd --vm-start` starts the runtime, then the databases
 that should autostart, then restores every project whose `Autostart` is
