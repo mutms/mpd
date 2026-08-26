@@ -217,13 +217,15 @@ The binary is Go, built from `go/` into `bin/mpd` by `make install`:
 
 Runtime/project-type behavior + service container assets live under `assets/`:
 - `assets/vm/` — VM-level assets deployed to the mpd VM itself: `bin/` (the
-  VM tools, on the dev user's PATH via `~/.bashrc` — the sibling of
-  `runtime/bin`), `motd` (→ `/etc/motd`), `prompt.bashrc` (→ a managed block
-  in the dev user's `~/.bashrc`), and `vimrc` (→ `~/.vimrc`, seeded once,
-  never rewritten). The developer's own env (`vm.env`, `runtime.env`) is
-  not seeded from here — it is pushed in by mpd-virt or hand-written on a
-  sandbox; an optional `mpd-defaults.env` the developer overlays here becomes
-  the mpd.env config's lowest layer (see §8)
+  VM tools, the sibling of `runtime/bin`), `lib/bashrc-include.sh` (the mpd
+  part of the dev user's shell — PATH, the developer's `vm.env`, and the
+  prompt — sourced by one managed line bootstrap injects near the top of
+  `~/.bashrc`; read live from `/opt/mpd`, so mpd never re-edits the user's
+  file after adoption), `motd` (→ `/etc/motd`), and `vimrc` (→ `~/.vimrc`,
+  seeded once, never rewritten). The developer's own env (`vm.env`,
+  `runtime.env`) is not seeded from here — it is pushed in by mpd-virt or
+  hand-written on a sandbox; an optional `mpd-defaults.env` the developer
+  overlays here becomes the mpd.env config's lowest layer (see §8)
 - `assets/runtime/...` — the runtime definition: `Containerfile` (the
   published pre-baked image), `bootstrap/` (`50-user.sh` root,
   `60-install-software.sh` apt, `70-configure-runtime.sh` config — see
@@ -461,9 +463,9 @@ chosen by scope:
 (A VM-level tool — one that runs on the VM, not inside a runtime — goes in
 `assets/vm/bin/` instead; it is on the dev user's PATH via `~/.bashrc`.)
 
-Both are put on PATH by the skel `~/.bashrc` reading the assets tree
-directly at `/opt/mpd/assets/...`. Nothing is copied or symlinked into
-`/srv`.
+Both are put on PATH by `runtime/lib/bashrc-include.sh` (sourced from the
+skel `~/.bashrc`) reading the assets tree directly at `/opt/mpd/assets/...`.
+Nothing is copied or symlinked into `/srv`.
 
 Skeleton (either location):
 

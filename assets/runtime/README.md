@@ -35,9 +35,12 @@ upgraded in place. mpd never rebuilds it on its own;
   runtime; `mpd --vm-upgrade` (or `mpd --runtime-upgrade`) runs 60 → 70.
   All idempotent.
 - **`skel/`** — files copied into the dev user's `$HOME` at runtime
-  create (`/etc/skel/`-style). Ships a `.bashrc` with PATH, prompt and
-  nvm defaults and a `.ssh/known_hosts` pre-populated for common forges.
-  User overrides go in `/var/lib/mpd/skel/` on the VM host.
+  create (`/etc/skel/`-style). Ships a stub `.bashrc` that sources
+  `../lib/bashrc-include.sh` (PATH, the developer's `runtime.env`, prompt,
+  nvm) live from the shared mount — so the frozen copy stays a stub and
+  the real logic updates without a rebuild — and a `.ssh/known_hosts`
+  pre-populated for common forges. User overrides go in
+  `/var/lib/mpd/skel/` on the VM host.
 - **`bin/`** — executables on the dev user's PATH as
   `/opt/mpd/assets/runtime/bin/<name>`, read straight out of the assets
   tree; nothing is copied or symlinked. `claude-install`, `node-install`,

@@ -113,61 +113,38 @@ step "Building mpd"
 make -C "${DEST}" install
 ok "built ${DEST}/bin/mpd"
 
-# --- /opt/mpd/bin + assets/vm/bin + ~/.local/bin on PATH (~/.bashrc) ---
-# ~/.bashrc covers every shell shape this VM's single dev user uses:
-# login shells (Debian's ~/.bash_profile → ~/.bashrc), interactive
-# non-login, and sshd-invoked non-interactive (bash sources ~/.bashrc
-# when stdin is a network socket). Prepending at the very top — before
-# the standard "if not interactive, return" guard — lets all three pick
-# it up. /etc/profile.d/ would miss `ssh user@vm cmd` (non-login).
+# --- mpd shell include (~/.bashrc) -------------------------------------
+# One managed line, sourcing assets/vm/lib/bashrc-include.sh — which sets
+# PATH (/opt/mpd/bin, assets/vm/bin, ~/.local/bin), sources the developer's
+# vm.env, and adjusts the prompt. Everything mpd wants in the dev user's
+# shell lives in that file, read live from /opt/mpd; ~/.bashrc carries only
+# this one stable line, so mpd never re-edits the user's file after adoption.
 #
-# /opt/mpd/assets/vm/bin holds the VM tools (container, gnome-*, rdp-*,
-# libvirt-install, claude-install) — mpd's own vm/bin, the sibling of the
-# runtime/bin the runtime shells put on PATH — so the dev user reaches them
-# by bare name, exactly like the runtime tools inside a container.
+# Prepended at the very top — before Debian's "if not interactive, return"
+# guard — so it reaches every shell shape this VM's single dev user uses:
+# login (Debian's ~/.bash_profile → ~/.bashrc), interactive non-login, and
+# sshd-invoked non-interactive (bash sources ~/.bashrc when stdin is a
+# socket — the shell mpd-virt drives the VM over, which must have
+# /opt/mpd/bin on PATH). /etc/profile.d/ would miss `ssh user@vm cmd`.
 #
-# ~/.local/bin rides along: Debian only adds it via ~/.profile (login
-# shells, and only if the dir exists at login), so a CLI installed
-# mid-session (claude-install) would otherwise need a re-login. Pre-create
-# the dir and prepend unconditionally instead.
-step "PATH (~/.bashrc)"
+# ~/.local/bin is pre-created here because Debian only adds it via ~/.profile
+# at login (and only if it exists then), so a CLI installed mid-session
+# (claude-install) would otherwise need a re-login.
+step "mpd shell include (~/.bashrc)"
 install -d "${HOME}/.local/bin"
 BASHRC="${HOME}/.bashrc"
-SNIPPET='PATH="$HOME/.local/bin:/opt/mpd/bin:/opt/mpd/assets/vm/bin:$PATH"  # mpd PATH'
-if grep -qxF "${SNIPPET}" "${BASHRC}" 2>/dev/null; then
-    ok "${BASHRC} already has the mpd PATH line"
+INCLUDE='[ -f /opt/mpd/assets/vm/lib/bashrc-include.sh ] && . /opt/mpd/assets/vm/lib/bashrc-include.sh  # mpd shell'
+if grep -qxF "${INCLUDE}" "${BASHRC}" 2>/dev/null; then
+    ok "${BASHRC} already sources the mpd shell include"
 else
     tmp=$(mktemp)
     {
-        printf '%s\n' "${SNIPPET}"
-        # Drop any older '# mpd PATH'-tagged line on the way.
-        grep -vF '# mpd PATH' "${BASHRC}" 2>/dev/null || true
+        printf '%s\n' "${INCLUDE}"
+        cat "${BASHRC}" 2>/dev/null || true
     } > "${tmp}"
     [ -f "${BASHRC}" ] && chmod --reference="${BASHRC}" "${tmp}"
     mv "${tmp}" "${BASHRC}"
-    ok "prepended the mpd PATH line to ${BASHRC}"
-fi
-
-# vm.env: export the developer's own variables into every VM shell. mpd-virt
-# pushes ~/.mpd-virt/vm.env to /var/lib/mpd/env/vm.env; the line is inert
-# until then. Prepended like PATH — before the interactive-shell guard — so it
-# reaches login, interactive and `ssh user@vm cmd` shells alike. Plain-sourced,
-# not whitelist-parsed like a project mpd.env: it is the developer's own
-# trusted file, never from git, so it may export non-MPD_ variables too.
-step "vm.env source line (~/.bashrc)"
-VMENV='if [ -f /var/lib/mpd/env/vm.env ]; then set -a; . /var/lib/mpd/env/vm.env; set +a; fi  # mpd vm.env'
-if grep -qxF "${VMENV}" "${BASHRC}" 2>/dev/null; then
-    ok "${BASHRC} already sources vm.env"
-else
-    tmp=$(mktemp)
-    {
-        printf '%s\n' "${VMENV}"
-        # Drop any older '# mpd vm.env'-tagged line on the way.
-        grep -vF '# mpd vm.env' "${BASHRC}" 2>/dev/null || true
-    } > "${tmp}"
-    [ -f "${BASHRC}" ] && chmod --reference="${BASHRC}" "${tmp}"
-    mv "${tmp}" "${BASHRC}"
-    ok "prepended the vm.env source line to ${BASHRC}"
+    ok "prepended the mpd shell include to ${BASHRC}"
 fi
 
 # Also export PATH in this shell so whatever runs next in the same

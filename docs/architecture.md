@@ -409,11 +409,14 @@ over system binaries:
 [normal system PATH]                             ← system fallback
 ```
 
-PATH is set by the dev user's `~/.bashrc` (shipped via skel —
-`assets/runtime/skel/.bashrc`), which prepends `runtime/bin/` and then
-each project type's. Each prepends, so the last added ranks highest. The
-type tier is self-extending — a new project type with a `bin/`
-directory is picked up with no `.bashrc` edit.
+PATH is set by `assets/runtime/lib/bashrc-include.sh`, sourced from the
+dev user's `~/.bashrc` (a thin stub shipped via skel —
+`assets/runtime/skel/.bashrc`). It prepends `runtime/bin/` and then each
+project type's. Each prepends, so the last added ranks highest. The type
+tier is self-extending — a new project type with a `bin/` directory is
+picked up with no edit. `bashrc-include.sh` is read live from the shared
+mount, so a change to it reaches every existing runtime's next shell
+without a rebuild; the frozen skel stub never needs to change.
 
 The tree is read in place — nothing is copied and nothing is symlinked
 into `/srv` — and `/opt/mpd` is the same tree on the VM and in the

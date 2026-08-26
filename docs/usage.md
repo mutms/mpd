@@ -356,9 +356,10 @@ Anything you write *outside* the `# >>> mpd runtimes ... >>>` markers is
 preserved across re-runs; anything inside them is regenerated.
 
 `mpd-<NNN>-runtime` is also the runtime container's own hostname, but it
-is not what the prompt shows: the shipped skel `.bashrc` rewrites bash's
-`\h` to `mpd-<NNN>`, the alias the workstation uses to reach it, and the
-VM's own prompt reads `mpd-<NNN>-vm` for the same reason. So a prompt
+is not what the prompt shows: the runtime's `bashrc-include.sh` rewrites
+bash's `\h` to `mpd-<NNN>`, the alias the workstation uses to reach it, and
+the VM's own `bashrc-include.sh` rewrites it to `mpd-<NNN>-vm` for the same
+reason. So a prompt
 always tells you which of the two boxes you are on, in the same words
 `ssh` takes on the laptop. Cosmetic only — `hostname`, `podman ps` and
 DNS all still report the real names.
