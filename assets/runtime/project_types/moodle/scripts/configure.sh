@@ -179,7 +179,9 @@ fi
 if [ -z "$FPM_PORT" ]; then
     USED_PORTS=$(for f in /srv/meta/*/effective.json; do
         [ -f "$f" ] || continue
-        jq -r '.phpFpmPort // empty' "$f" 2>/dev/null
+        # || true: a single malformed/foreign effective.json must not abort
+        # the whole scan (pipefail would propagate jq's parse-error exit).
+        jq -r '.phpFpmPort // empty' "$f" 2>/dev/null || true
     done | sort -un)
     for p in $(seq "$FPM_POOL_START" "$FPM_POOL_END"); do
         if ! echo "$USED_PORTS" | grep -qx "$p"; then
@@ -247,8 +249,9 @@ URLS="${URLS}"'
 echo "$URLS" > "/srv/meta/${PROJECT_NAME}/urls.json"
 
 # requireServices as a JSON array, so mpd can auto-start what the project
-# needs. jq -R splits the comma list and drops empties; empty input → [].
-REQUIRE_JSON=$(printf '%s' "${REQUIRE_SERVICES// /}" | jq -Rc 'split(",") | map(select(length > 0))')
+# needs. --arg + -n splits the comma list and drops empties; empty input → [].
+# (piping into `jq -R` would emit nothing on empty input, breaking the JSON.)
+REQUIRE_JSON=$(jq -cn --arg s "${REQUIRE_SERVICES// /}" '$s | split(",") | map(select(length > 0))')
 
 # --- effective.json — mpd reads dbTag/dbEngine to provision the container ---
 cat > "${EFFECTIVE_FILE}" <<EOF
