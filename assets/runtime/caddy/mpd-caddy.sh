@@ -37,10 +37,8 @@ inotifywait -m -r -e close_write,delete,moved_to,moved_from "$META_DIR" 2>/dev/n
         # Coalesce bursts: a project create touches several files.
         sleep 0.5
         if regenerate; then
-            # --force matters: a certificate rotation rewrites cert.pem but
-            # not the Caddyfile, so `--watch` sees no change and caddy keeps
-            # serving the superseded cert from memory. On a real config
-            # change this is only a second, graceful reload.
+            # --force is required after cert rotation; see
+            # docs/debugging.md "HTTPS serves a superseded certificate".
             caddy reload --config "${CADDYFILE}" --adapter caddyfile --force \
                 >/dev/null 2>&1 || true
         fi

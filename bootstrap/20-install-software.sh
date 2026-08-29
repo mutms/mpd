@@ -133,11 +133,8 @@ else
     warn "avahi-daemon could not be enabled — mDNS discovery unavailable"
 fi
 
-# qemu-guest-agent has no [Install] on Debian; udev starts it when the
-# virtio-serial device exists. Gate on the device, never
-# attempt-and-catch: without the device, the unit's BindsTo= .device
-# dependency has no job timeout, so `systemctl start` blocks forever
-# instead of failing.
+# Gate on the device: starting without it blocks forever; see
+# docs/debugging.md "systemctl start qemu-guest-agent blocks forever".
 if [ "${systemd_running}" = 1 ] && [ -e /dev/virtio-ports/org.qemu.guest_agent.0 ]; then
     if sudo systemctl start qemu-guest-agent >/dev/null 2>&1; then
         ok "qemu-guest-agent running"

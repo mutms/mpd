@@ -296,3 +296,55 @@ sudo -n bash -c 'cat /var/lib/mpd/state/runtime-ssh/ssh_host_*_key.pub'
 
 Same over ssh, where the remote login shell does the expanding. Where the
 file names are already known, name them instead of globbing.
+
+## HTTPS serves a superseded certificate after rotation
+
+**Symptoms.** After a certificate rotation (CA change, `mpd start`
+re-issuing a leaf), the browser or `curl -v` still gets the old
+certificate from a project URL. The files on disk are correct:
+`openssl x509 -in <certdir>/cert.pem -noout -dates` shows the new cert.
+
+**Cause.** Caddy loads certificates into memory at config load and never
+re-reads the files on its own. Rotation rewrites `cert.pem` but not the
+Caddyfile, so a plain `caddy reload` (and the `--watch` mode) compares
+configs, sees no change, and keeps serving the superseded cert from
+memory.
+
+**Diagnostic.** Compare what is served with what is on disk:
+
+```bash
+openssl s_client -connect <name>:443 -servername <name> </dev/null 2>/dev/null \
+    | openssl x509 -noout -serial
+openssl x509 -in <certdir>/cert.pem -noout -serial
+```
+
+Different serials with a correct file is the confirmation.
+
+**Fix.** Reload with `--force`, which skips the config comparison. The
+runtime's caddy watcher (`assets/runtime/caddy/mpd-caddy.sh`) already
+does this on every regeneration — do not "optimize" the flag away. For a
+one-off recovery: `caddy reload --config <Caddyfile> --adapter caddyfile
+--force`.
+
+## `systemctl start qemu-guest-agent` blocks forever
+
+**Symptoms.** A bootstrap or adoption script hangs at the guest-agent
+step. `systemctl start qemu-guest-agent` never returns and never fails.
+
+**Cause.** Debian's qemu-guest-agent unit has no `[Install]` section;
+udev starts it when the virtio-serial device appears. The unit carries
+`BindsTo=` on that `.device` unit, and device units have no job timeout —
+on a VM without the device (VirtualBox, bare metal, some hypervisor
+configs) the start job waits for it indefinitely instead of failing.
+
+**Diagnostic.** `ls /dev/virtio-ports/org.qemu.guest_agent.0` — absent
+means any `systemctl start qemu-guest-agent` will hang.
+
+**Fix.** Gate the start on the device, never attempt-and-catch:
+
+```bash
+[ -e /dev/virtio-ports/org.qemu.guest_agent.0 ] && sudo systemctl start qemu-guest-agent
+```
+
+`bootstrap/20-install-software.sh` does exactly this. A hung job is
+cleared with `sudo systemctl cancel` (or list it: `systemctl list-jobs`).
