@@ -19,10 +19,36 @@ mkdir -p /etc/systemd/system.conf.d
 printf '[Manager]\nDefaultTasksMax=infinity\n' > /etc/systemd/system.conf.d/mpd-tasksmax.conf
 systemctl daemon-reexec
 
+# sshd host keys: this runtime's own, kept across rebuilds.
+#
+# A host key is a secret, so it is made here and never shipped: the image
+# carries none (see the Containerfile), each runtime generates its own on
+# first create, and the keys are kept on the VM at the path below —
+# mounted into this container and no other — so `mpd --runtime-rebuild`
+# comes back as the same host instead of tripping a host-key warning on
+# the developer's workstation.
+#
+# Both branches clear /etc/ssh first, so a key left behind by a partial
+# run cannot outlive it.
+SSH_KEEP=/var/lib/mpd/state/runtime-ssh
+if compgen -G "${SSH_KEEP}/ssh_host_*_key" > /dev/null; then
+    rm -f /etc/ssh/ssh_host_*
+    cp -a "${SSH_KEEP}"/ssh_host_* /etc/ssh/
+else
+    rm -f /etc/ssh/ssh_host_*
+    ssh-keygen -A
+    mkdir -p "${SSH_KEEP}"
+    cp -a /etc/ssh/ssh_host_* "${SSH_KEEP}"/
+fi
+chmod 600 /etc/ssh/ssh_host_*_key
+chmod 644 /etc/ssh/ssh_host_*_key.pub
+
 # sshd: keys only, no root.
 printf '%s\n' 'PermitRootLogin no' 'PasswordAuthentication no' 'KbdInteractiveAuthentication no' \
     > /etc/ssh/sshd_config.d/10-mpd.conf
 systemctl enable ssh
+# Restart, not reload: sshd is already up with the image's keys by the time
+# this runs, and it reads host keys at start.
 systemctl restart ssh
 
 # Identity.

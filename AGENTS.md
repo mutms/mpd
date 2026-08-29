@@ -166,7 +166,10 @@ chowns), all enforced at runtime — do not propose alternates.
   `mpd --vm-setup`; see EnsureHome.)
 - `/var/lib/mpd/state/` — mpd-managed operational state. `projects.json`,
   `databases.json`, `services.json`, `current-state.json`,
-  `hooks-state.json`, `runtimes/runtime/` (the single runtime's entry).
+  `hooks-state.json`, `runtimes/runtime/` (the single runtime's entry),
+  `runtime-ssh/` (the runtime container's own sshd host keys — the one
+  thing here bind-mounted into a container, read-write, into the runtime
+  and nothing else; see `docs/security.md`).
   Wipe to reset. DNS records are not here: they are a managed block in
   the VM's `/etc/hosts`, recomputed from this state on every change.
 - `/srv/` — the Podman data volume, bind-mounted onto the VM at `/srv` by

@@ -40,7 +40,7 @@ const Name = "runtime"
 // Image is the published, pre-baked runtime base (assets/runtime/
 // Containerfile). Bump the tag with the one in
 // assets/runtime/github-publish.sh.
-const Image = "ghcr.io/mutms/mpd-runtime:13.6.1"
+const Image = "ghcr.io/mutms/mpd-runtime:13.6.2"
 
 // bootstrapDir holds the runtime's provisioning steps, bind-mounted into
 // the container at the same path.
@@ -103,6 +103,11 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 		return "", fmt.Errorf("Failed to create %s: %w", controlDir, err)
 	}
 
+	// Same reason. 0700: private host keys land here.
+	if err := os.MkdirAll(podman.RuntimeSSHDir, 0o700); err != nil {
+		return "", fmt.Errorf("Failed to create %s: %w", podman.RuntimeSSHDir, err)
+	}
+
 	// Container hostname matches its name. The prompt the developer sees
 	// is not this string: the home .bashrc rewrites `\h` to `mpd-<NNN>`,
 	// the host-side alias that reaches this container.
@@ -123,6 +128,7 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 	args = append(args, podman.EnvMountRO...)
 	args = append(args, podman.HomeOverrideMountRO...)
 	args = append(args, podman.ControlMountRO(Name)...)
+	args = append(args, podman.RuntimeSSHMount...)
 	if podman.MudevPresent() {
 		args = append(args, podman.MudevMountRO...)
 	}

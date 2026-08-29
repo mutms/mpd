@@ -239,9 +239,8 @@ func Setup(ctx context.Context, out io.Writer) error {
 	// leaves the VM fully usable. Everything it needs exists by now —
 	// the CA (certificates step), /srv (volume mount), DNS (just
 	// verified) — and reconcileCaches has just adopted any existing entry.
-	// createdRuntime: RuntimeCreate has already fired the runtime side of
-	// mpd-post-setup into the new container, so the fire at the end of
-	// this function narrows itself to the VM.
+	// createdRuntime: RuntimeCreate already fired mpd-post-setup into the
+	// new container, so the fire below narrows to the VM.
 	createdRuntime, err := setupRuntime(ctx, out, p, s, m, n, user)
 	if err != nil {
 		return err
@@ -297,10 +296,7 @@ func Setup(ctx context.Context, out io.Writer) error {
 	}
 	ui.OK(out, "~/.config/systemd/user/mpd.service installed and enabled.")
 
-	// Last, because the contract of this event is "the VM is ready": a
-	// hook may install onto the VM or into the runtime, and both must be
-	// fully configured before it runs. Failures are reported, never
-	// fatal — see hooks.MpdPostSetup.
+	// Last: the event means "the VM is ready".
 	ui.Step(out, "Setup hooks (mpd-post-setup)")
 	postSetup := hooks.MpdPostSetup(ctx,
 		current.NewObserver(n.VMID(), p).RuntimeContainer(runtime.Name), user.User, p)
@@ -671,8 +667,7 @@ func reconcileCaches(ctx context.Context, out io.Writer, p *podman.Client, s sta
 // the pod era — legacy per-language runtime pods are reported loudly
 // rather than migrated.
 // setupRuntime ensures the runtime exists and is configured, reporting
-// whether it had to CREATE one — which tells the caller that
-// RuntimeCreate has already fired mpd-post-setup into it.
+// whether it had to create one.
 func setupRuntime(ctx context.Context, out io.Writer, p *podman.Client, s state.Store,
 	m dnsmasq.Manager, n net.Net, user vm.Identity) (bool, error) {
 

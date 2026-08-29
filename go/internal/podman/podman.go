@@ -550,6 +550,14 @@ var (
 	HomeOverrideMountRO = []string{"-v", "/var/lib/mpd/home:/var/lib/mpd/home:ro"}
 )
 
+// RuntimeSSHDir keeps the runtime's sshd host keys, so a rebuilt
+// container answers with the key known_hosts already trusts.
+const RuntimeSSHDir = "/var/lib/mpd/state/runtime-ssh"
+
+// RuntimeSSHMount gives that directory to the runtime alone. Read-write:
+// 50-user.sh saves the keys it generates back out through it.
+var RuntimeSSHMount = []string{"-v", RuntimeSSHDir + ":" + RuntimeSSHDir}
+
 // ControlRunDir mirrors control.RunDir. Duplicated rather than imported,
 // for the same reason as vmMudevDir above: internal/control sits above this
 // package and importing it would invert the dependency direction.

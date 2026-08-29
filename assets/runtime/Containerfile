@@ -5,7 +5,7 @@
 #
 # To build locally, tag it with that same pinned name, e.g.:
 #
-#   container build -t ghcr.io/mutms/mpd-runtime:13.6.1 assets/runtime
+#   container build -t ghcr.io/mutms/mpd-runtime:13.6.2 assets/runtime
 FROM debian:13.6
 
 ARG VERSION
@@ -20,7 +20,12 @@ COPY bootstrap/60-install-software.sh /tmp/mpd/bootstrap/
 COPY lib/php-configure.sh /tmp/mpd/lib/
 RUN bash /tmp/mpd/bootstrap/60-install-software.sh \
     && rm -rf /tmp/mpd /var/lib/apt/lists/* \
-    && systemctl enable ssh
+    && systemctl enable ssh \
+    # An image must ship no sshd host keys. Installing openssh-server
+    # generates a set as a side effect, and anything left here would be
+    # the same secret in every runtime everyone pulls this tag into.
+    # 50-user.sh makes each runtime its own at create.
+    && rm -f /etc/ssh/ssh_host_*
 
 STOPSIGNAL SIGRTMIN+3
 ENTRYPOINT ["/sbin/init"]

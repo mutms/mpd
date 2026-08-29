@@ -221,10 +221,8 @@ func TestGracefulStopSortsLast(t *testing.T) {
 	}
 }
 
-// The VM audience reads its own layer and only its own. assets/vm is the
-// VM's side of the tree, so a runtime hook must not leak into a VM firing
-// (and the reverse) — the two run on opposite sides of the container
-// boundary, with different tools on PATH.
+// The VM audience reads its own layer and only its own: the two run on
+// opposite sides of the container boundary.
 func TestVMAudienceReadsTheVMLayer(t *testing.T) {
 	withAssets(t, map[string]string{
 		"vm/hooks/mpd-post-setup.d/50-vm.sh":           "",
@@ -242,9 +240,7 @@ func TestVMAudienceReadsTheVMLayer(t *testing.T) {
 	}
 }
 
-// There is exactly one VM, so the dispatcher does not ask the event which
-// one to fire into: whatever Containers says, the VM audience resolves to
-// the single fixed target. An event author cannot get this wrong.
+// Whatever Containers says, the VM audience resolves to the fixed target.
 func TestVMTargetIgnoresTheEventsContainers(t *testing.T) {
 	ev := Event{
 		Name:       EventMpdPostSetup,
@@ -259,10 +255,7 @@ func TestVMTargetIgnoresTheEventsContainers(t *testing.T) {
 	}
 }
 
-// A runtime hook must run as the dev user: that is where the home, the
-// tools and the privilege rule live. Database hooks must not — those
-// containers are stock images with no such user, and their hooks signal
-// PID 1.
+// A runtime hook runs as the dev user; a database hook must not.
 func TestUserAppliesToRuntimeOnly(t *testing.T) {
 	ev := Event{Name: EventMpdPostSetup, User: "dev"}
 	if got := execOptions(ev, AudienceRuntime, nil); !containsPair(got, "--user", "dev") {
@@ -285,8 +278,8 @@ func containsPair(list []string, flag, value string) bool {
 	return false
 }
 
-// End-to-end for the VM audience: no podman involved, the script really
-// runs on this host, and it must see the standard MPD_HOOK_* contract.
+// End-to-end for the VM audience: the script really runs, and sees the
+// standard MPD_HOOK_* contract.
 func TestVMHookRunsAndSeesItsEnvironment(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "seen")
 	withAssets(t, map[string]string{
@@ -311,8 +304,7 @@ func TestVMHookRunsAndSeesItsEnvironment(t *testing.T) {
 	}
 }
 
-// A failing VM hook is reported to the caller of Fire under Abort, and
-// swallowed under Continue — same contract as a container hook.
+// A failing VM hook follows the same failure modes as a container one.
 func TestVMHookFailureFollowsTheFailureMode(t *testing.T) {
 	withAssets(t, map[string]string{
 		"vm/hooks/mpd-post-setup.d/50-fail.sh": "exit 3\n",

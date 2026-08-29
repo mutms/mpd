@@ -51,10 +51,7 @@ const DefaultTimeout = 30 * time.Second
 // legitimately takes longer than a normal hook.
 const StopTimeout = 120 * time.Second
 
-// SetupTimeout bounds mpd-post-setup. Setup hooks install things — the
-// shipped ones unpack multi-gigabyte IDE tarballs — and a limit that cuts
-// one off mid-unpack would be worse than no limit, because the hook keeps
-// running inside its container regardless (see DefaultTimeout's caveat).
+// SetupTimeout bounds mpd-post-setup, whose hooks install things.
 const SetupTimeout = 10 * time.Minute
 
 // AudienceKind selects which containers an event fires into.
@@ -67,17 +64,11 @@ const (
 	AudienceDatabase
 	// AudienceService: a named always-on service container.
 	AudienceService
-	// AudienceVM: the VM itself, not a container. Its hooks run as the
-	// dev user on the VM host, from assets/vm/hooks/<event>.d/. The one
-	// audience that is not a container, because some work has no
-	// container to do it in — installing something onto the VM, touching
-	// a systemd unit, reading a path containers never see.
+	// AudienceVM: the VM host itself, for work no container can do.
 	AudienceVM
 )
 
-// VMTarget is the name printed for AudienceVM in hook output, where the
-// other audiences print a container name. Not a container: nothing looks
-// it up, and the dispatcher never passes it to podman.
+// VMTarget labels AudienceVM output where others print a container name.
 const VMTarget = "vm"
 
 // FailureMode decides what a failing hook does to the firing verb.
@@ -114,15 +105,8 @@ type Event struct {
 	Containers func(AudienceKind) []string
 	// ServiceName scopes AudienceService to one service's assets.
 	ServiceName string
-	// User is the identity runtime hooks run as. Empty means the
-	// container's default, which is root.
-	//
-	// Applied to AudienceRuntime only, and that is the whole point: a
-	// runtime is a host with a dev user and passwordless sudo, where
-	// AGENTS.md's privilege rule says every asset script runs as that
-	// user and sudo's the individual privileged commands. Database and
-	// service containers are stock images with no such user — their
-	// hooks signal PID 1 and must stay root.
+	// User is who runtime hooks run as; empty means root. AudienceRuntime
+	// only — DB and service containers have no dev user.
 	User string
 }
 
@@ -154,10 +138,8 @@ func Fire(ctx context.Context, out io.Writer, ev Event, verb string, p *podman.C
 	return aborted
 }
 
-// targets resolves an audience to the things to fire into. Containers
-// for every audience but AudienceVM, which is always the one VM this mpd
-// runs on — asking the event for that would let an event author get it
-// wrong, and there is only one right answer.
+// targets resolves an audience. AudienceVM is always the one VM, so the
+// event is not asked.
 func (ev Event) targets(a AudienceKind) []string {
 	if a == AudienceVM {
 		return []string{VMTarget}
@@ -193,9 +175,6 @@ func fireOne(ctx context.Context, out io.Writer, ev Event, audience AudienceKind
 		var code int
 		var err error
 		if audience == AudienceVM {
-			// Same shape as the podman path: bash runs the script, the
-			// MPD_HOOK_* values are the environment, output streams to
-			// the terminal. Only the executor differs.
 			code, err = exec.Run(runCtx, exec.Cmd{
 				Name: "bash", Args: []string{script.Path}, Env: envList,
 			})
@@ -221,8 +200,8 @@ func fireOne(ctx context.Context, out io.Writer, ev Event, audience AudienceKind
 	return nil
 }
 
-// hookEnv is the MPD_HOOK_* environment one firing hands its scripts:
-// the standard three plus the event's own values, prefixed.
+// hookEnv is the MPD_HOOK_* environment: the standard three plus the
+// event's own values, prefixed.
 func hookEnv(ev Event, verb string) map[string]string {
 	env := map[string]string{
 		"MPD_HOOK_EVENT":    ev.Name,
@@ -235,8 +214,7 @@ func hookEnv(ev Event, verb string) map[string]string {
 	return env
 }
 
-// hookEnvList renders that environment as KEY=VALUE, for the VM audience,
-// which runs bash directly rather than through podman.
+// hookEnvList renders that as KEY=VALUE, for the VM audience.
 func hookEnvList(ev Event, verb string) []string {
 	env := hookEnv(ev, verb)
 	var list []string
@@ -246,12 +224,8 @@ func hookEnvList(ev Event, verb string) []string {
 	return list
 }
 
-// execOptions renders the podman exec flags for one firing: the
-// environment, plus the identity for a runtime audience.
-//
-// Sorted so the podman command line is deterministic — otherwise two
-// identical fires produce different argv, which makes debugging and
-// output comparison needlessly hard.
+// execOptions renders the podman exec flags: the environment, plus the
+// identity for a runtime audience. Sorted, so argv is deterministic.
 func execOptions(ev Event, audience AudienceKind, env map[string]string) []string {
 	if env == nil {
 		env = hookEnv(ev, "")
@@ -260,9 +234,7 @@ func execOptions(ev Event, audience AudienceKind, env map[string]string) []strin
 	for _, k := range sortedKeys(env) {
 		opts = append(opts, "--env", k+"="+env[k])
 	}
-	// The dev user owns the home a runtime hook works in, and the
-	// privilege rule puts asset scripts there. Without this a hook lands
-	// in /root and quietly does the wrong thing.
+	// Without this a runtime hook lands in /root, not the dev's home.
 	if audience == AudienceRuntime && ev.User != "" {
 		opts = append(opts, "--user", ev.User)
 	}
@@ -281,9 +253,8 @@ func sortedKeys(m map[string]string) []string {
 // Script is one discovered hook.
 type Script struct {
 	Basename string
-	// Path is where the script lives. The same string on both sides for a
-	// container audience — /opt/mpd/assets is bind-mounted at the same
-	// path — and a plain VM path for AudienceVM.
+	// Path is where the script lives — the same string inside a container
+	// and on the VM, since /opt/mpd is mounted at the same path.
 	Path string
 }
 
@@ -320,9 +291,6 @@ func discover(ctx context.Context, p *podman.Client, ev Event, audience Audience
 			dirs = append(dirs, filepath.Join(assetsDir, "services", ev.ServiceName, "hooks", ev.Name+".d"))
 		}
 	case AudienceVM:
-		// The VM layer, sibling of the runtime one: assets/vm holds what
-		// belongs to the VM host (its tools, its shell include), so its
-		// hooks live there too.
 		dirs = append(dirs,
 			filepath.Join(assetsDir, "vm", "hooks", ev.Name+".d"))
 	}

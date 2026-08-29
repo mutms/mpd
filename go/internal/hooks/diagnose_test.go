@@ -100,8 +100,7 @@ func TestDiagnoseSurvivesMissingAssetTree(t *testing.T) {
 	}
 }
 
-// The VM layer is diagnosed like any other: a hook there for an event
-// that does not fire on the VM is silently dead, so it must be reported.
+// The VM layer is diagnosed like any other.
 func TestVMLayerIsDiagnosed(t *testing.T) {
 	withAssets(t, map[string]string{
 		"vm/hooks/project-post-start.d/10-x.sh": "",

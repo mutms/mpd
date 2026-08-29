@@ -78,19 +78,9 @@ func ProjectPostStart(ctx context.Context, pr Project, p *podman.Client) Event {
 		[]AudienceKind{AudienceRuntime}, Continue)
 }
 
-// MpdPostSetup fires at the end of `mpd --vm-setup`, once the VM and its
-// runtime are fully configured. It is the point where "this VM is ready"
-// becomes true, so a hook can install onto a VM that is finally able to
-// hold the thing being installed.
-//
-// Audiences are the VM and its runtime, in that order — the same event on
-// both sides of the boundary, because the developer's setup work lands on
-// both (an IDE on the VM, an IDE backend in the runtime).
-//
-// Failure never aborts: setup has already done its work by the time this
-// fires, and a developer's install script failing is not a reason to
-// report the VM as unconfigured. The timeout is minutes, not seconds —
-// see SetupTimeout.
+// MpdPostSetup fires at the end of `mpd --vm-setup`, on the VM and its
+// runtime — the point where both are configured. Failure never aborts:
+// setup is already done.
 func MpdPostSetup(ctx context.Context, runtimeContainer, devUser string, p *podman.Client) Event {
 	return Event{
 		Name:      EventMpdPostSetup,
@@ -109,11 +99,8 @@ func MpdPostSetup(ctx context.Context, runtimeContainer, devUser string, p *podm
 	}
 }
 
-// Only narrows an event to a subset of its declared audiences, for a
-// caller that has already covered the rest. mpd-post-setup uses it in
-// both directions: a freshly created runtime is fired into by
-// RuntimeCreate, so the `--vm-setup` that created it fires the VM side
-// only, and each new runtime sees the event exactly once.
+// Only narrows an event to some of its audiences, for a caller that has
+// already covered the rest.
 func (ev Event) Only(audiences ...AudienceKind) Event {
 	ev.Audiences = audiences
 	return ev

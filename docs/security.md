@@ -390,6 +390,24 @@ single alias mpd-virt writes (`mpd-<NNN>`). The jump lands on the VM's
 sshd, which reaches the runtime over the internal bridge, so it needs no
 overlay. No published ports on the VM's LAN address.
 
+**The runtime's own host key is generated per runtime, never shipped.** A
+host key is a secret, so it cannot come from an image every VM pulls: the
+published image contains none (the Containerfile removes the set
+`openssh-server` generates at install), and `50-user.sh` makes this
+runtime its own at container create. The keys are kept on the VM at
+`/var/lib/mpd/state/runtime-ssh/` — root-owned 0600, bind-mounted
+read-write into the runtime and into no other container — so
+`mpd --runtime-rebuild` gives the same host identity back and a
+workstation that trusts `mpd-<NNN>-runtime` keeps trusting it. Wiping
+`/var/lib/mpd/state/` forfeits that, and the next connection is a
+changed-key warning.
+
+A rebuild deliberately will not replace the key — restoring the kept one
+is the whole point — so to retire a key, delete
+`/var/lib/mpd/state/runtime-ssh/` and rebuild the runtime. Your
+workstation then refuses the next connection until its old
+`mpd-<NNN>-runtime` entry is cleared with `ssh-keygen -R`.
+
 SSH agent forwarding (`ssh -A`) is optional, for sessions that need
 host-agent-backed git/auth inside the container. It passes the
 developer's key into the container for the session. The private key
