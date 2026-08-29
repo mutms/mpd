@@ -129,7 +129,9 @@ time, seconds on re-runs; VM resume from suspend, seconds.
 **Top-level repo layout:** `bin/` (just the built `bin/mpd`), `go/`
 (control plane), `assets/` (runtime/service definitions and shell, plus the
 VM tools under `assets/vm/bin/`: `claude-install`, `gnome-install`,
-`gnome-start`/`gnome-stop`, `rdp-start`/`rdp-stop`, `libvirt-install` — make
+`gnome-start`/`gnome-stop`, `rdp-start`/`rdp-stop`,
+`goland-archive-app`/`goland-install-app` — seed a Toolbox GoLand into new
+VMs as a tarball instead of re-downloading it, `libvirt-install` — make
 this VM a libvirt/KVM host for mpd-virt's libvirt backend), `bootstrap/`
 (VM bring-up steps), `setup/` (the in-VM sandbox and adoption-prep
 scripts), `docs/`.

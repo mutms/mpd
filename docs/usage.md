@@ -780,7 +780,16 @@ gnome-install                    # minimal GNOME + Chromium, on a VM with no des
 gnome-start / gnome-stop         # desktop on / off, persistent across reboots
 rdp-start / rdp-stop             # open / close RDP on tcp/3389 (opt-in, password-authenticated)
 claude-install                   # Claude Code on the VM itself (same script the runtime ships)
+goland-archive-app               # pack this VM's Toolbox GoLand into ~/install/goland.tgz
+goland-install-app               # unpack that tarball on a new VM instead of downloading GoLand
 ```
+
+`goland-archive-app` / `goland-install-app` are the fast path for the
+in-VM IDE. Archive once on a VM that has GoLand, copy the tarball to
+`~/.mpd-virt/assets/vm/home/default/install/` on your workstation, and
+every VM mpd-virt adopts or creates from then on carries it in
+`~/install/` — `goland-install-app` unpacks it in seconds. Both no-op
+when there is nothing to do.
 
 ## Updating mpd
 

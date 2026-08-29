@@ -1,0 +1,91 @@
+#!/bin/bash
+# goland-archive-app — pack this VM's Toolbox-installed GoLand into a
+# single tarball at ~/install/goland.tgz.
+#
+# The point is provisioning speed. Downloading GoLand through JetBrains
+# Toolbox on every new VM costs minutes and a gigabyte of traffic; a
+# tarball sitting in the host-side overlay costs a copy. Once you have
+# it, put the file in your own
+#
+#     ~/.mpd-virt/assets/vm/home/default/install/goland.tgz
+#
+# and every VM mpd-virt adopts or creates from then on gets it seeded
+# into ~/install/, where `goland-install-app` finds and unpacks it.
+#
+# Re-runs replace the archive: the newest install on this VM wins.
+set -euo pipefail
+
+APPS_DIR="$HOME/.local/share/JetBrains/Toolbox/apps"
+APP_NAME="goland"
+SRC="${APPS_DIR}/${APP_NAME}"
+DEST_DIR="$HOME/install"
+DEST="${DEST_DIR}/${APP_NAME}.tgz"
+
+die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
+
+usage() {
+    cat <<'EOF'
+Usage: goland-archive-app
+
+Pack ~/.local/share/JetBrains/Toolbox/apps/goland into ~/install/goland.tgz.
+Unpack it on another VM with `goland-install-app`.
+EOF
+}
+
+case "${1:-}" in
+    -h | --help)
+        usage
+        exit 0
+        ;;
+    "") ;;
+    *) die "Unknown argument: $1 (takes none)" ;;
+esac
+
+[ -d "${SRC}" ] || die "No GoLand install at ${SRC} — install it through JetBrains Toolbox first."
+[ -x "${SRC}/bin/${APP_NAME}" ] || die "${SRC} has no bin/${APP_NAME} — the install looks incomplete."
+
+BUILD="unknown build"
+if [ -f "${SRC}/build.txt" ]; then
+    BUILD="$(cat "${SRC}/build.txt")"
+fi
+
+mkdir -p "${DEST_DIR}"
+
+# Write to a temporary file in the same directory and rename over the
+# destination, so an interrupted run never leaves a half-written archive
+# that `goland-install-app` would happily unpack.
+TMP="$(mktemp "${DEST}.XXXXXX")"
+trap 'rm -f "${TMP}"' EXIT
+
+echo "Archiving ${SRC} (${BUILD})"
+echo "This takes a few minutes — gzip over a couple of gigabytes."
+
+# -C the apps dir so the archive holds a single top-level `goland/`.
+# Toolbox may be running and touching files under it; that is a warning,
+# not a failure, so exclude only the reason tar would otherwise exit 1.
+tar --warning=no-file-changed -czf "${TMP}" -C "${APPS_DIR}" "${APP_NAME}"
+
+mv -f "${TMP}" "${DEST}"
+trap - EXIT
+chmod 644 "${DEST}"
+
+echo
+echo "Wrote ${DEST} ($(du -h "${DEST}" | cut -f1), ${BUILD})"
+
+# This machine's host-side ssh alias is its hostname plus -vm; the bare
+# mpd-<NNN> reaches the runtime container instead.
+# SC2088: the tilde is meant to stay literal — this string is printed for
+# the developer to run on their workstation, not expanded here.
+# shellcheck disable=SC2088
+OVERLAY="~/.mpd-virt/assets/vm/home/default/install"
+cat <<EOF
+
+To seed it into every future VM, run this on your workstation:
+
+    mkdir -p ${OVERLAY}
+    scp $(hostname)-vm:${DEST/#"${HOME}"/\~} ${OVERLAY}/
+
+mpd-virt pushes that overlay on adopt and create; new VMs then run
+
+    goland-install-app
+EOF

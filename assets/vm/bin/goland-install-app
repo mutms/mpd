@@ -1,0 +1,97 @@
+#!/bin/bash
+# goland-install-app — unpack ~/install/goland.tgz into the JetBrains
+# Toolbox apps directory, so a new VM gets GoLand without downloading it.
+#
+# The archive is made by `goland-archive-app` on a VM that already has
+# GoLand, and reaches new VMs through your own mpd-virt overlay
+# (~/.mpd-virt/assets/vm/home/default/install/goland.tgz).
+#
+# Idempotent, and safe to call blindly during provisioning:
+#   - GoLand already installed -> no-op.
+#   - no archive to unpack     -> says so and exits 0.
+set -euo pipefail
+
+APPS_DIR="$HOME/.local/share/JetBrains/Toolbox/apps"
+APP_NAME="goland"
+TARGET="${APPS_DIR}/${APP_NAME}"
+ARCHIVE="$HOME/install/${APP_NAME}.tgz"
+
+die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
+
+usage() {
+    cat <<'EOF'
+Usage: goland-install-app
+
+Unpack ~/install/goland.tgz into ~/.local/share/JetBrains/Toolbox/apps/.
+No-op if GoLand is already installed or the archive is not there.
+Make the archive with `goland-archive-app`.
+EOF
+}
+
+case "${1:-}" in
+    -h | --help)
+        usage
+        exit 0
+        ;;
+    "") ;;
+    *) die "Unknown argument: $1 (takes none)" ;;
+esac
+
+if [ -x "${TARGET}/bin/${APP_NAME}" ]; then
+    echo "GoLand already installed at ${TARGET}"
+    exit 0
+fi
+
+if [ ! -f "${ARCHIVE}" ]; then
+    cat <<EOF
+No ${ARCHIVE} — nothing to unpack.
+
+Make one on a VM that has GoLand:
+
+    goland-archive-app
+
+then copy it on your workstation to
+~/.mpd-virt/assets/vm/home/default/install/goland.tgz so mpd-virt seeds
+it into every VM it adopts or creates.
+EOF
+    exit 0
+fi
+
+# A leftover directory without bin/goland is a failed earlier unpack, not
+# an install. Clear it so tar starts from clean ground.
+if [ -e "${TARGET}" ]; then
+    echo "Removing incomplete ${TARGET}"
+    rm -rf "${TARGET}"
+fi
+
+mkdir -p "${APPS_DIR}"
+
+echo "Unpacking ${ARCHIVE}"
+STAGE="$(mktemp -d "${APPS_DIR}/.${APP_NAME}.XXXXXX")"
+trap 'rm -rf "${STAGE}"' EXIT
+
+# Unpack beside the target and move into place, so an interrupted run
+# leaves no half-extracted app for the next run to mistake for one.
+tar -xzf "${ARCHIVE}" -C "${STAGE}"
+[ -x "${STAGE}/${APP_NAME}/bin/${APP_NAME}" ] || die "${ARCHIVE} has no ${APP_NAME}/bin/${APP_NAME} — re-make it with goland-archive-app."
+
+mv "${STAGE}/${APP_NAME}" "${TARGET}"
+rm -rf "${STAGE}"
+trap - EXIT
+
+BUILD="unknown build"
+if [ -f "${TARGET}/build.txt" ]; then
+    BUILD="$(cat "${TARGET}/build.txt")"
+fi
+
+echo
+echo "GoLand installed at ${TARGET} (${BUILD})"
+cat <<EOF
+
+Start it with:
+
+    ${TARGET}/bin/${APP_NAME}
+
+It needs a desktop — run 'gnome-start' first on a headless VM. JetBrains
+Toolbox, if you install it later, picks this copy up as an existing app.
+EOF
