@@ -47,8 +47,11 @@ chmod 644 /etc/ssh/ssh_host_*_key.pub
 printf '%s\n' 'PermitRootLogin no' 'PasswordAuthentication no' 'KbdInteractiveAuthentication no' \
     > /etc/ssh/sshd_config.d/10-mpd.conf
 systemctl enable ssh
-# Restart, not reload: sshd is already up with the image's keys by the time
-# this runs, and it reads host keys at start.
+# The image ships no host key, so sshd has been failing and retrying since
+# boot and may have hit systemd's start limit — which makes the restart
+# below fail even though the keys now exist. Clear that first.
+systemctl reset-failed ssh 2>/dev/null || true
+# Restart, not reload: sshd reads host keys at start.
 systemctl restart ssh
 
 # Identity.
