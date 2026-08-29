@@ -1,23 +1,6 @@
-// Package net is the single source of truth for mpd's addressing: the
-// container subnet and the DNS zone, both derived from the VM's id.
-//
-// # Model
-//
-// Each VM owns one /24 and one DNS zone, both keyed on the VM's id (read
-// from its hostname, mpd-<NNN>): VM 150
-// serves 10.163.150.0/24 and the zone 150.mpd.test. Ids run 100–254 —
-// always exactly three digits, so the id reads the same everywhere it
-// appears. The host part of an address never varies — the
-// VM itself is always .1, the runtime .2, databases .10–.99, extra
-// service containers .100–.199 — only the third octet moves, and it
-// always equals the VM id. That is what lets a workstation reach several
-// VMs at once. See docs/networking.md.
-//
-// # Why Net is a value, not a global
-//
-// Identity is a value, not process-wide cached state: tests construct Net
-// directly, and only the command layer calls Current to read the running
-// VM's hostname.
+// Package net is the single source of truth for mpd's addressing.
+// Each VM owns one /24 and one DNS zone, both keyed on the VM's id from
+// its hostname (mpd-<NNN>). See docs/networking.md.
 package net
 
 import (
@@ -27,11 +10,8 @@ import (
 	"strings"
 )
 
-// RootDomain is the DNS root mpd owns, shared by every VM. It is what the
-// CA is name-constrained to, which is why one CA covers every VM's zone
-// without change. Use it only for CA-level and resolver-level concerns
-// that are deliberately VM-independent; anything naming a host on *this*
-// VM belongs under Zone.
+// RootDomain is the DNS root mpd owns, shared by every VM. Use it only
+// for VM-independent concerns; names on this VM belong under Zone.
 const RootDomain = "mpd.test"
 
 // SubnetPrefix is the first two octets of the container address space.
@@ -40,17 +20,11 @@ const SubnetPrefix = "10.163"
 
 // Host octets with a fixed meaning inside every VM's /24.
 const (
-	// HostGateway is the podman bridge: the VM itself. Everything mpd
-	// serves from the VM rather than from a container answers here — the
-	// resolver, caddy, and `mpd --web` behind it.
+	// HostGateway is the podman bridge: the VM itself. The resolver,
+	// caddy and `mpd --web` answer here.
 	HostGateway = 1
-	// HostRuntime is the unified runtime container.
-	// 3–6 are unassigned. Each was a container that no longer exists:
-	// 3 was dnsmasq, now a systemd unit on the VM listening on the
-	// gateway; 4 was the portal, now `mpd --web` behind caddy on the
-	// gateway; 5 was fileaccess, deleted outright once /srv was mounted
-	// on the VM; 6 was the always-on adminer, now an optional extra
-	// service container in the service range.
+	// HostRuntime is the unified runtime container. Octets 3-6 are
+	// unassigned.
 	HostRuntime = 2
 )
 
@@ -74,10 +48,8 @@ type Net struct {
 	label string
 }
 
-// New builds a Net for a VM id. Valid ids are 100–254: always three digits,
-// and the value doubles as the third octet of the VM's /24 (255 is the
-// broadcast address; starting at 100 removes any padded/unpadded duality and
-// matches Proxmox's own VMID floor).
+// New builds a Net for a VM id. Valid ids are 100–254; the value doubles
+// as the third octet of the VM's /24 (see docs/networking.md).
 func New(octet int) (Net, error) {
 	if octet < 100 || octet > 254 {
 		return Net{}, fmt.Errorf("VM id %d is not in the managed range 100–254", octet)
@@ -85,15 +57,9 @@ func New(octet int) (Net, error) {
 	return Net{octet: octet, label: strconv.Itoa(octet)}, nil
 }
 
-// Current builds the Net for this VM by deriving its id from the
-// hostname (mpd-<NNN>) — the single source of truth for identity. The
-// hostname is what the hypervisor-side prep set, what the user sees in
-// their prompt, and what a re-imaged VM changes.
-//
-// A hostname that is not of the form mpd-<NNN> is an error rather than a
-// default: every address and name mpd composes depends on the id, so
-// guessing means building the wrong subnet or answering for another VM's
-// zone. The message names the fix.
+// Current builds the Net for this VM from its hostname (mpd-<NNN>).
+// A malformed hostname is an error, never a default: every address mpd
+// composes depends on the id.
 func Current() (Net, error) {
 	id := VMIDFromHostname(readHostname())
 	if id == "" {
@@ -205,22 +171,10 @@ func (n Net) Service(name string) string { return n.Host(name + ".svc") }
 // reason.)
 func (n Net) RuntimeFQDN() string { return n.Host("runtime") }
 
-// RuntimeAlias is the short SSH alias for the runtime:
-// "mpd-130-runtime" on VM 130.
-//
-// Not a DNS name — nothing resolves it. It is the alias
-// vm.EnsureSSHConfig writes into ~/.ssh/config, and it lives here
-// because it is composed from the VM id and so belongs with every other
-// name keyed on it.
-//
-// It is also, not by coincidence, the runtime container's own name and
-// hostname. The two are composed independently; this is a convention
-// worth keeping, not a dependency.
-//
-// The prompt inside the runtime does NOT echo this string: the host-side
-// alias mpd-virt writes is the bare `mpd-130`, and the shipped home
-// .bashrc rewrites `\h` to match it. The hostname stays as composed here
-// — only the prompt is cosmetic.
+// RuntimeAlias is the short SSH alias for the runtime, e.g.
+// "mpd-130-runtime". Not a DNS name; vm.EnsureSSHConfig writes it into
+// ~/.ssh/config. It matches the runtime container's name by convention,
+// not by dependency.
 func (n Net) RuntimeAlias() string { return "mpd-" + n.label + "-runtime" }
 
 // DB names a database container: DB("pg17") → "pg17.db.<zone>".

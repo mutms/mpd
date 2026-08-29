@@ -9,24 +9,10 @@ import (
 	"github.com/mutms/mpd/go/internal/ui"
 )
 
-// The container subnet 10.163.<NNN>.0/24 must never be reachable from the
-// LAN/public side of the VM (eth0). The developer's Mac, however, reaches the
-// *whole* subnet — project URLs served at runtime-container IPs, databases,
-// service containers — through the WireGuard overlay (wg0, fed by mpd-proxy),
-// or through SOCKS-over-SSH / ProxyJump, which terminate at sshd on the VM and
-// therefore never traverse the forward chain at all.
-//
-// This installs an independent nftables table that drops NEW forwarded
-// connections into the subnet from any interface but the bridge itself and
-// wg0, while leaving the container→internet masquerade (netavark's rules, a
-// separate table) and all established/return traffic untouched. An nft `drop`
-// verdict is terminal across base chains at the same hook, so this wins
-// regardless of netavark's accepts, and living in its own table means netavark
-// never flushes it.
-//
-// mpd-virt sets the WireGuard peer's AllowedIPs to the full 10.163.<NNN>.0/24,
-// so the tunnel carries container-subnet traffic by design — only non-tunnel,
-// non-bridge ingress (the LAN) is sealed out here.
+// The firewall seals the container subnet from the LAN while the bridge
+// and wg0 may route in; see docs/networking.md ("The container-subnet
+// firewall"). It lives in its own table so netavark never flushes it,
+// and an nft drop verdict wins across base chains at the same hook.
 const (
 	firewallTable    = "mpd_firewall"
 	firewallUnit     = "mpd-firewall.service"
@@ -35,17 +21,11 @@ const (
 	nftBin           = "/usr/sbin/nft"
 )
 
-// FirewallLoaded reports whether the container-subnet firewall table is
-// present in the running ruleset. Read-only — for diagnostics; the table
-// is installed by EnsureFirewall.
-//
-// Lives here rather than in the caller so the private table name stays
-// private: a probe that spells the table out itself is a second copy of
-// the schema, in a place nothing checks.
+// FirewallLoaded reports whether the firewall table is in the running
+// ruleset. It lives here so the table name stays private.
 func FirewallLoaded(ctx context.Context) bool {
-	// "nft", not nftBin: exec.Cmd.Name is a bare allow-listed name, which
-	// the exec package resolves to the absolute path itself. Passing the
-	// path here would miss the allow-list and always report "not loaded".
+	// "nft", not nftBin: exec resolves allow-listed bare names itself. A
+	// path would miss the allow-list and always report "not loaded".
 	res, err := exec.Capture(ctx, exec.Cmd{
 		Name: "nft",
 		Args: []string{"list", "table", "inet", firewallTable},
@@ -54,9 +34,8 @@ func FirewallLoaded(ctx context.Context) bool {
 	return err == nil && !res.Failed()
 }
 
-// firewallRuleBody renders the idempotent nft program. The add/delete/add
-// preamble gives our table a clean slate on every apply without touching any
-// other table (netavark's included).
+// firewallRuleBody renders the nft program. The add/delete/add preamble
+// resets only this table, never netavark's.
 func firewallRuleBody(subnet string) string {
 	return fmt.Sprintf(`#!%[4]s -f
 # Managed by mpd vm-setup. Seals the container subnet %[2]s from the LAN/public
@@ -80,8 +59,6 @@ table inet %[1]s {
 `, firewallTable, subnet, BridgeName, nftBin)
 }
 
-// firewallUnitBody renders the oneshot that (re)applies the ruleset at boot, so
-// the block survives reboots independently of when netavark builds its rules.
 func firewallUnitBody() string {
 	return fmt.Sprintf(`[Unit]
 Description=mpd container-subnet firewall
@@ -99,10 +76,8 @@ WantedBy=multi-user.target
 `, nftBin, firewallRulePath)
 }
 
-// EnsureFirewall installs the container-subnet firewall: it writes the nft
-// ruleset and a boot-time oneshot that applies it, then applies it now.
-// Idempotent — the ruleset self-replaces and the unit is reloaded only when it
-// changes.
+// EnsureFirewall writes the nft ruleset and a boot-time oneshot that
+// applies it, then applies it now. Idempotent.
 func EnsureFirewall(ctx context.Context, out io.Writer, subnet string) error {
 	ui.Step(out, "Container-subnet firewall (nftables — seal %s from the LAN; wg0 allowed)", subnet)
 
@@ -121,8 +96,8 @@ func EnsureFirewall(ctx context.Context, out io.Writer, subnet string) error {
 	if code, err := exec.Run(ctx, exec.Cmd{Name: "systemctl", Args: []string{"enable", firewallUnit}, Sudo: true}); err != nil || code != 0 {
 		return fmt.Errorf("systemctl enable %s failed", firewallUnit)
 	}
-	// restart, not start: re-applies the (idempotent) ruleset on a re-run and
-	// starts it when stopped.
+	// restart, not start: re-applies the ruleset on a re-run and starts it
+	// when stopped.
 	if code, err := exec.Run(ctx, exec.Cmd{Name: "systemctl", Args: []string{"restart", firewallUnit}, Sudo: true}); err != nil || code != 0 {
 		return fmt.Errorf("systemctl restart %s failed — check `journalctl -u %s`", firewallUnit, firewallUnit)
 	}

@@ -64,8 +64,7 @@ func TestNaming(t *testing.T) {
 		n.RuntimeFQDN():      "runtime.150.mpd.test",
 		n.DB("pg17"):         "pg17.db.150.mpd.test",
 		n.VMServiceRecord():  "vm.150.mpd.test",
-		// Zero-padded like every other id-keyed name, and deliberately
-		// NOT in the zone — it is an ssh alias, not a DNS name.
+		// Not in the zone: an ssh alias, not a DNS name.
 		n.RuntimeAlias(): "mpd-150-runtime",
 	}
 	for got, want := range tests {
@@ -75,8 +74,8 @@ func TestNaming(t *testing.T) {
 	}
 }
 
-// The zone apex resolves to the portal; the bare root domain must not
-// resolve at all, because with two VMs up it could only mean one of them.
+// The bare root domain must not be in any zone: with two VMs up it
+// could only mean one of them.
 func TestIsInZone(t *testing.T) {
 	n := mustNew(t, 150)
 	in := []string{
@@ -97,8 +96,7 @@ func TestIsInZone(t *testing.T) {
 		"180.mpd.test",
 		"example.com",
 		"",
-		// Suffix matching must not be fooled by a name that merely ends
-		// in the same characters without the dot boundary.
+		// Suffix matching must respect the dot boundary.
 		"evil150.mpd.test",
 	}
 	for _, name := range out {
@@ -143,8 +141,7 @@ func TestVMIDFromHostname(t *testing.T) {
 	}
 }
 
-// setHostname points Current() at a fixture /etc/hostname via the test
-// override, and returns nothing — the file is the source of truth.
+// setHostname points Current() at a fixture hostname file.
 func setHostname(t *testing.T, body string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "hostname")
@@ -165,8 +162,7 @@ func TestCurrent(t *testing.T) {
 	}
 }
 
-// Guessing an identity is worse than refusing to start: it means either
-// building the wrong subnet or answering for another VM's zone.
+// Guessing an identity is worse than refusing to start.
 func TestCurrentRefusesRatherThanDefaulting(t *testing.T) {
 	cases := map[string]string{
 		"not an mpd host": "debian\n",

@@ -12,17 +12,15 @@ type Record struct {
 	Names []string
 }
 
-// The managed block's fences. Exact lines — the splice matches them after
-// trimming whitespace and nothing else, so a human editing /etc/hosts can
-// see precisely where mpd's territory starts and stops.
+// The managed block's fences. The splice matches these exact lines
+// after trimming whitespace.
 const (
 	BlockStart = "# BEGIN mpd"
 	BlockEnd   = "# END mpd"
 )
 
-// Render produces the managed block, fences included. Records are written
-// in the order given; sorting is the caller's choice (Reconcile sorts
-// within each group so the block reads the same on every VM).
+// Render produces the managed block, fences included. Records are
+// written in the order given; sorting is the caller's choice.
 func Render(zone string, records []Record) string {
 	var b strings.Builder
 	b.WriteString(BlockStart + "\n")
@@ -37,25 +35,12 @@ func Render(zone string, records []Record) string {
 	return b.String()
 }
 
-// Splice returns the hosts file with mpd's block replaced by block — or
-// appended, when the file has none.
-//
-// Everything outside the fences is kept byte for byte: the distro's
-// 127.0.0.1/127.0.1.1 lines, cloud-init's header, IPv6 boilerplate, a
-// developer's own additions. Only the span between the fences is mpd's.
-//
-// Defensive by design, because this file is shared:
-//   - every fenced span is removed, not just the first, so a duplicated
-//     block (a bad merge, a manual paste) collapses back to one;
-//   - a BlockStart without a BlockEnd drops everything to the end of the
-//     file — only mpd writes that marker, so an unterminated one is a
-//     truncated mpd write, and keeping the tail would preserve the damage;
-//   - trailing blank lines are trimmed before the block is appended, so a
-//     repeat splice adds no whitespace. Splice(Splice(x, b), b) == Splice(x, b).
-//
-// The result always ends in exactly one newline. The block goes last,
-// after a blank line, where a reader scanning the file expects the
-// machine-managed part.
+// Splice returns the hosts file with mpd's block replaced by block, or
+// appended when the file has none. Everything outside the fences is kept
+// byte for byte. Every fenced span is removed, so a duplicated block
+// collapses to one; an unterminated BlockStart drops the rest of the
+// file, since only a truncated mpd write produces one. Idempotent:
+// Splice(Splice(x, b), b) == Splice(x, b).
 func Splice(existing, block string) string {
 	var kept []string
 	skipping := false
@@ -84,8 +69,7 @@ func Splice(existing, block string) string {
 	return b.String()
 }
 
-// sortRecords orders a group by canonical name, so the block is stable
-// across runs and VMs.
+// sortRecords orders a group by canonical name for a stable block.
 func sortRecords(records []Record) {
 	sort.Slice(records, func(i, j int) bool {
 		return records[i].Names[0] < records[j].Names[0]

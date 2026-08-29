@@ -1,33 +1,19 @@
 #!/bin/bash
-# rdp-start — open an RDP door into this VM's GNOME desktop.
+# rdp-start — open an RDP door into this VM's GNOME desktop, for devices
+# that cannot hold an SSH tunnel or the WireGuard overlay. Idempotent;
+# `rdp-stop` closes it again.
 #
-# For reaching the desktop from a device that cannot hold an SSH tunnel or
-# a WireGuard overlay — an iPad, a thin client, a borrowed machine. It is
-# the one thing in mpd that is not behind ssh or wg, so it is opt-in, it
-# is off after a fresh bootstrap, and `rdp-stop` closes it again.
-#
-# What it does, all idempotent:
-#   - installs xrdp + xorgxrdp if they are missing
-#   - sets a login password for this user (RDP authenticates through PAM,
-#     and an mpd VM's dev user normally has no password at all)
-#   - points the RDP session at GNOME on Xorg, via ~/.xsession
-#   - lets the remote session talk to colord without an auth-prompt loop
-#   - enables and starts xrdp, listening on tcp/3389 on every address
-#
-# SECURITY. The mpd VM's model is "exactly two open ports, both
-# cryptographically authenticated" (docs/security.md). This adds a third
-# that is authenticated by a password, so treat it like one: expose it on
-# a hypervisor's host-only network, or on a private network you reach
-# through a bastion or a zero-trust tunnel — never straight at the
-# internet. Close it with `rdp-stop` when you are done.
+# This is the one mpd port authenticated by a password — see
+# docs/security.md. Expose it on a private network only, never straight
+# at the internet.
 set -euo pipefail
 
 step() { printf '\n==> %s\n' "$*"; }
 ok()   { printf '    ok: %s\n' "$*"; }
 warn() { printf '    warn: %s\n' "$*"; }
 die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
-# apt-get waits for the dpkg lock (GNOME's packagekitd holds it after
-# login) and retries stalled downloads.
+# Waits for the dpkg lock (packagekitd holds it after login); retries
+# stalled downloads.
 apt_get() {
     sudo env DEBIAN_FRONTEND=noninteractive \
         apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 "$@"
@@ -54,25 +40,21 @@ esac
 RDP_USER="$(id -un)"
 RDP_PORT=3389
 
-# --- 1. A desktop has to exist for a session to start into -------------
 step "Desktop check"
 if ! command -v gnome-session >/dev/null 2>&1; then
     die "No GNOME here. Run 'gnome-install' first, then 'rdp-start'."
 fi
 ok "gnome-session present"
 
-# GNOME does not run twice for the same user. If this user already holds a
-# graphical session on the console, the RDP one will fail to start its
-# shell — so say so now rather than after the connection drops.
+# GNOME refuses a second session for the same user; warn now rather than
+# after the connection drops.
 if loginctl list-sessions --no-legend 2>/dev/null \
     | awk -v u="${RDP_USER}" '$3 == u && $4 == "seat0" {found=1} END {exit !found}'; then
     warn "${RDP_USER} already has a console session — log out there, or run 'gnome-stop', before connecting"
 fi
 
-# --- 2. xrdp ------------------------------------------------------------
-# xorgxrdp is only a Recommends of xrdp, and it is the half that provides
-# the X server. Without it xrdp accepts the login and hands back a blank
-# screen, so it is named explicitly.
+# xorgxrdp is only a Recommends of xrdp but provides the X server;
+# without it xrdp accepts the login and hands back a blank screen.
 step "xrdp packages"
 missing=()
 for pkg in xrdp xorgxrdp; do
@@ -86,10 +68,8 @@ else
     ok "installed ${missing[*]}"
 fi
 
-# --- 3. The session xrdp starts ----------------------------------------
-# xrdp's startwm.sh runs /etc/X11/Xsession, which prefers ~/.xsession when
-# there is one. Naming GNOME there is what stops Xsession falling through
-# to whatever x-session-manager happens to point at.
+# xrdp runs /etc/X11/Xsession, which prefers ~/.xsession. Naming GNOME
+# there stops the fall-through to whatever x-session-manager points at.
 step "Session (~/.xsession)"
 XSESSION="${HOME}/.xsession"
 XSESSION_MARK="# managed by mpd rdp-start"
@@ -110,10 +90,8 @@ EOF
     ok "${XSESSION} starts GNOME on Xorg"
 fi
 
-# --- 4. colord ----------------------------------------------------------
-# A GNOME session with no seat cannot satisfy colord's default polkit
-# rule, so every login raises an authentication dialog that reappears the
-# moment it is dismissed. Grant this one user those actions instead.
+# A seatless GNOME session fails colord's default polkit rule, so every
+# login loops an authentication dialog. Grant this user those actions.
 step "colord polkit rule"
 POLKIT_RULE=/etc/polkit-1/rules.d/49-mpd-rdp-colord.rules
 sudo tee "${POLKIT_RULE}" >/dev/null <<EOF
@@ -131,10 +109,8 @@ EOF
 sudo chmod 644 "${POLKIT_RULE}"
 ok "${POLKIT_RULE}"
 
-# --- 5. The password RDP will ask for -----------------------------------
-# PAM is the only authenticator xrdp has, so the account needs a usable
-# password. mpd's dev user normally has none: SSH is pubkey-only and sudo
-# is NOPASSWD, so nothing has ever asked for one.
+# xrdp authenticates through PAM only, so the account needs a usable
+# password; mpd's dev user normally has none.
 step "Login password for ${RDP_USER}"
 pw_state="$(sudo passwd -S "${RDP_USER}" | awk '{print $2}')"
 set_password=1
@@ -163,11 +139,9 @@ else
     ok "keeping the existing password"
 fi
 
-# --- 6. Keep SSH pubkey-only -------------------------------------------
-# The account has a password now. On an mpd VM SSH is meant to be
-# pubkey-only anyway, so make sure that new password cannot be used to log
-# in over the network as well. Only when a key is already installed —
-# otherwise this would lock the developer out of their own VM.
+# The new password must not become an SSH credential; keep SSH
+# pubkey-only. Only when a key is already installed — otherwise this
+# would lock the developer out of their own VM.
 step "SSH password authentication"
 SSHD_DROPIN=/etc/ssh/sshd_config.d/20-mpd-no-ssh-password.conf
 if ! command -v sshd >/dev/null 2>&1 && [ ! -x /usr/sbin/sshd ]; then
@@ -195,7 +169,6 @@ else
     warn "install your key, then re-run rdp-start to close that off"
 fi
 
-# --- 7. Start it --------------------------------------------------------
 step "xrdp service"
 sudo systemctl enable --now xrdp >/dev/null 2>&1
 sudo systemctl is-active --quiet xrdp || die "xrdp did not start — inspect: systemctl status xrdp; journalctl -u xrdp"

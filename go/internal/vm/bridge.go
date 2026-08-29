@@ -9,41 +9,25 @@ import (
 	"github.com/mutms/mpd/go/internal/ui"
 )
 
-// The container bridge mpdbr0 is created at boot by a small systemd oneshot —
-// a static bridge — rather than by netavark when the first container attaches.
-// So 10.163.<NNN>.1 exists before any container: the resolver binds it at
-// boot, caddy binds the gateway without racing, and netavark simply attaches
-// container veths to the existing bridge instead of creating and tearing it
-// down. That removes the whole "the bridge does not exist until the first
-// container attaches" class of fragility.
-//
-// The bridge is made with plain `ip` commands, not systemd-networkd. networkd
-// cannot manage links inside an Apple container's restricted sandbox (no BPF,
-// links stay pending), so a declarative .netdev/.network is never applied
-// there — it produced a bridge with no address. `ip link add` works the same
-// on a Parallels VM and an Apple container, and netavark does not care how the
-// bridge was made, only that a bridge named mpdbr0 with the gateway address
-// exists to attach veths to.
-//
-// The name matches NetworkInterface ("mpdbr0") in setup.go, which is what the
-// podman network is told to use — so netavark finds this bridge and reuses it.
+// The bridge is a static systemd oneshot, not netavark-created, so the
+// gateway address exists at boot before the resolver and caddy bind it.
+// Plain `ip` commands, not systemd-networkd: networkd cannot manage links
+// inside an Apple container's sandbox. The name must match
+// NetworkInterface in setup.go so netavark reuses the bridge.
+// See docs/networking.md.
 const (
 	BridgeName     = "mpdbr0"
 	bridgeUnit     = "mpd-bridge.service"
 	bridgeUnitPath = "/etc/systemd/system/" + bridgeUnit
 
-	// Legacy systemd-networkd units from the previous static-bridge approach.
-	// Removed on sight: left in place, networkd (on the VMs where it runs)
-	// would try to manage mpdbr0 too and fight the oneshot over the address.
+	// Legacy systemd-networkd units. Removed on sight: left in place,
+	// networkd would fight the oneshot over the bridge address.
 	legacyNetdevPath  = "/etc/systemd/network/10-mpdbr0.netdev"
 	legacyNetworkPath = "/etc/systemd/network/10-mpdbr0.network"
 )
 
-// bridgeUnitBody renders the oneshot unit. Ordered before the resolver — and so
-// before caddy and any container attach — and enabled at boot, it creates the
-// bridge, gives it the gateway address, and brings it up. Every step is
-// idempotent, so a re-run or a re-applied unit is harmless: the bridge is only
-// added when absent, and `addr replace` overwrites rather than duplicates.
+// bridgeUnitBody renders the oneshot unit. It is ordered before the
+// resolver, and every step is idempotent, so re-runs are harmless.
 func bridgeUnitBody(gatewayCIDR string) string {
 	return fmt.Sprintf(`[Unit]
 Description=mpd static container bridge (%[1]s)
@@ -61,14 +45,11 @@ WantedBy=multi-user.target
 `, BridgeName, DnsmasqUnit, gatewayCIDR)
 }
 
-// EnsureBridge installs and starts the bridge oneshot, so mpdbr0 is up with the
-// gateway address before the podman network and dnsmasq are configured, and is
-// recreated on every boot before anything binds or attaches.
+// EnsureBridge installs and starts the bridge oneshot so mpdbr0 is up
+// before the podman network and dnsmasq are configured.
 func EnsureBridge(ctx context.Context, out io.Writer, gatewayCIDR string) error {
 	ui.Step(out, "Static container bridge %s (systemd oneshot)", BridgeName)
 
-	// Drop the previous networkd units if present, so networkd does not also
-	// try to own mpdbr0 on VMs where it runs.
 	_, _ = exec.Run(ctx, exec.Cmd{Name: "rm", Args: []string{"-f", legacyNetdevPath, legacyNetworkPath}, Sudo: true})
 
 	changed, err := WriteRootOwnedFile(ctx, bridgeUnitPath, bridgeUnitBody(gatewayCIDR))
@@ -83,9 +64,8 @@ func EnsureBridge(ctx context.Context, out io.Writer, gatewayCIDR string) error 
 	if code, err := exec.Run(ctx, exec.Cmd{Name: "systemctl", Args: []string{"enable", bridgeUnit}, Sudo: true}); err != nil || code != 0 {
 		return fmt.Errorf("systemctl enable %s failed", bridgeUnit)
 	}
-	// restart, not start: re-applies the (idempotent) unit on a re-run and
-	// starts it when stopped. This is what actually creates + addresses the
-	// bridge now, before the podman network and dnsmasq that follow.
+	// restart, not start: re-applies the unit on a re-run and starts it
+	// when stopped.
 	if code, err := exec.Run(ctx, exec.Cmd{Name: "systemctl", Args: []string{"restart", bridgeUnit}, Sudo: true}); err != nil || code != 0 {
 		return fmt.Errorf("systemctl restart %s failed — check `journalctl -u %s`", bridgeUnit, bridgeUnit)
 	}

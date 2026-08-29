@@ -1,18 +1,7 @@
 #!/bin/bash
-# node-install — install nvm + Node.js into $HOME/.nvm (upstream-standard).
-# Idempotent: no-op if nvm is already installed (per architecture.md §7).
+# node-install — install nvm + Node.js into $HOME/.nvm.
+# Idempotent: no-op if nvm is already installed.
 # Default version is "lts"; pass an explicit version to override.
-# Runs as the dev user; no sudo required.
-#
-# Available in any runtime: the ~/.bashrc shipped in the runtime home puts this
-# directory (/opt/mpd/assets/runtime/bin) on the dev user's PATH
-# for every login shell. The runtime's build.sh also invokes it directly
-# during provisioning to seed the LTS Node version.
-#
-# Shell hookup: the runtime home ~/.bashrc already sources $HOME/.nvm/nvm.sh when
-# present, so opening a new login shell after install picks up nvm/node
-# without any extra config step. Root deliberately has no nvm on PATH
-# (privilege model: tools run as the dev user only).
 set -euo pipefail
 
 if [ -s "$HOME/.nvm/nvm.sh" ]; then
@@ -23,8 +12,6 @@ fi
 NODE_VER="${1:-lts}"
 export NVM_DIR="$HOME/.nvm"
 
-# Standard upstream nvm install: lands in $NVM_DIR (= $HOME/.nvm), owned
-# by the dev user, no privileged setup needed.
 NVM_VERSION=$(curl -fsSL "https://api.github.com/repos/nvm-sh/nvm/releases/latest" \
     | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
 curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh" | bash

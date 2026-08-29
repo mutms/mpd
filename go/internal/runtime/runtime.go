@@ -1,22 +1,7 @@
-// Package runtime creates the container a developer works inside.
-//
-// There is exactly one runtime per VM: a plain systemd container (no
-// pod) at net.HostRuntime, running /sbin/init so sshd, php-fpm, caddy
-// and friends are real services rather than PID 1 impersonators. TLS
-// for project URLs terminates inside it (mpd-caddy.service).
-//
-// The runtime is treated like a VM: created once from a pre-baked image
-// (Image), then upgraded in place — never rebuilt by mpd. The steps live
-// in assets/runtime/bootstrap/, numbered apart from the VM's own:
-//
-//	50-user.sh               as root      — creates the dev user (create only)
-//	60-install-software.sh   as dev user  — apt: dist-upgrade + every package
-//	70-configure-runtime.sh  as dev user  — php.ini/FPM, php dispatcher, caddy
-//
-// 50 is the single sanctioned root-context script in mpd (AGENTS.md
-// §"Mandatory privilege rule"): the user it creates cannot exist before it
-// runs. 60 is also what the Containerfile bakes into Image, so on a
-// current image it is a fast no-op at create.
+// Package runtime creates the one container per VM a developer works
+// inside. It runs /sbin/init, so sshd, php-fpm and caddy are real
+// services. Provisioning steps live in assets/runtime/bootstrap/; see
+// assets/runtime/README.md.
 package runtime
 
 import (
@@ -46,16 +31,8 @@ const Image = "ghcr.io/mutms/mpd-runtime:13.6.2"
 // the container at the same path.
 const bootstrapDir = "/opt/mpd/assets/runtime/bootstrap"
 
-// PidsLimit caps the runtime container's pids cgroup. Podman's default
-// is 2048, which a modern IDE remote backend (JetBrains java + jetbrainsd
-// + ijent), an AI agent, language servers and php-fpm pools exhaust over
-// a session — and once the cgroup is full, anything needing a new thread
-// or process fails with EAGAIN: git's parallel lstat dies "unable to
-// create threaded lstat: Resource temporarily unavailable", new sshd
-// sessions can't fork, the runtime wedges. This is a single-developer
-// container already inside the VM boundary, so a generous ceiling is
-// safe; it stays finite (not unlimited) so a runaway fork bomb still
-// hits a wall instead of taking the VM down.
+// PidsLimit caps the runtime's pids cgroup. Podman's default of 2048 is
+// exhausted by IDE backends plus agents; see docs/debugging.md.
 const PidsLimit = "32768"
 
 // TmpVolume is the disk-backed /tmp volume for the runtime container.
@@ -71,11 +48,8 @@ type CreateOptions struct {
 }
 
 // Create builds and provisions the runtime, leaving it running.
-//
-// On failure after the container exists, the container and its /tmp
-// volume are removed: a half-created runtime is worse than none, because
-// the next create would refuse on "already exists" while the thing does
-// not work.
+// On failure the container and its /tmp volume are removed, so the next
+// create does not refuse on a runtime that does not work.
 func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Client) (string, error) {
 	if p.Exists(ctx, o.Container) {
 		return "", fmt.Errorf("Runtime already exists.")
@@ -92,12 +66,9 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 
 	fmt.Fprintf(out, "\n\033[1m==> Creating runtime\033[0m\n")
 
-	// The control socket's directory must exist, and be dev-user-owned,
-	// before podman is asked to bind-mount it: podman would otherwise
-	// create it as root and the daemon could not bind a socket inside it.
-	// Created here rather than by the daemon because the mount is
-	// established now, at container create, and the daemon may not have
-	// started yet on a freshly set-up VM.
+	// The control socket's directory must exist, dev-user-owned, before
+	// the bind-mount: podman would otherwise create it as root and the
+	// daemon could not bind a socket inside it.
 	controlDir := podman.ControlDir(Name)
 	if err := os.MkdirAll(controlDir, 0o755); err != nil {
 		return "", fmt.Errorf("Failed to create %s: %w", controlDir, err)
@@ -108,19 +79,14 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 		return "", fmt.Errorf("Failed to create %s: %w", podman.RuntimeSSHDir, err)
 	}
 
-	// Container hostname matches its name. The prompt the developer sees
-	// is not this string: the home .bashrc rewrites `\h` to `mpd-<NNN>`,
-	// the host-side alias that reaches this container.
 	args := []string{"-d",
 		"--name", o.Container,
 		"--hostname", o.Container,
 		"--network", "mpd-internal:ip=" + runtimeIP,
 		"--systemd", "always",
 		"--pids-limit", PidsLimit,
-		// podman's default AppArmor profile denies userns_create, which
-		// systemd inside the runtime attempts for every service it
-		// sandboxes — a DENIED line on the VM console per service start.
-		// The runtime is a trusted container inside the VM boundary.
+		// podman's default AppArmor profile denies the userns_create
+		// systemd needs; see docs/debugging.md.
 		"--security-opt", "apparmor=unconfined",
 	}
 	args = append(args, podman.DNSOpts(o.Net.Gateway())...)
@@ -145,8 +111,6 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 		Image, "/sbin/init",
 	)
 	if code, err := p.Run(ctx, args); err != nil || code != 0 {
-		// Roll back, or the next create refuses on a runtime that does
-		// not work.
 		_, _ = p.Remove(ctx, o.Container)
 		_, _ = p.VolumeRemove(ctx, TmpVolume(o.Container))
 		return "", fmt.Errorf("Failed to create runtime container.")
@@ -161,8 +125,7 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 		}
 	}
 
-	// 50 — root. The one sanctioned root-context script: the dev user
-	// does not exist yet, so nothing else could create it.
+	// 50 runs as root: the dev user it creates does not exist yet.
 	fmt.Fprintln(out, "\n\033[1m==> Creating the dev user (50-user.sh, root)\033[0m")
 	if code, err := p.ExecWithOptions(ctx, o.Container, nil,
 		"bash", bootstrapDir+"/50-user.sh",
@@ -170,7 +133,7 @@ func Create(ctx context.Context, out io.Writer, o CreateOptions, p *podman.Clien
 		return "", fmt.Errorf("Runtime step 50-user.sh failed.")
 	}
 
-	// 60 + 70 — dev user. Everything from here runs unprivileged.
+	// 60 and 70 run as the dev user.
 	if err := Upgrade(ctx, out, o.Container, o.DevUser, p); err != nil {
 		return "", err
 	}
@@ -209,10 +172,8 @@ func Configure(ctx context.Context, out io.Writer, container, devUser string, p 
 	return nil
 }
 
-// installCA puts mpd's CA into the runtime's trust store so `curl
-// https://<project>.<zone>/` works inside the container without
-// --insecure. A failure warns rather than aborts: the runtime is usable
-// without it, just noisier.
+// installCA puts mpd's CA into the runtime's trust store. A failure
+// warns rather than aborts: the runtime is usable without it.
 func installCA(ctx context.Context, out io.Writer, container string, p *podman.Client) {
 	caPath := "/var/lib/mpd/conf/caroot/rootCA.pem"
 	if _, err := os.Stat(caPath); err != nil {
@@ -228,12 +189,9 @@ func installCA(ctx context.Context, out io.Writer, container string, p *podman.C
 	}
 }
 
-// installSSHKey authorises the VM's keys inside the runtime.
-//
-// Both the forwarded/laptop keys (~/.ssh/authorized_keys) and the VM's
-// own public keys are installed: the first lets the developer SSH in
-// from the workstation, the second lets the VM itself reach the runtime
-// without agent forwarding.
+// installSSHKey authorises the VM's keys inside the runtime: the
+// workstation keys from ~/.ssh/authorized_keys, and the VM's own public
+// keys so the VM reaches the runtime without agent forwarding.
 func installSSHKey(ctx context.Context, o CreateOptions, p *podman.Client) error {
 	keys := AuthorizedPublicKeys(o.Home)
 	if len(keys) == 0 {

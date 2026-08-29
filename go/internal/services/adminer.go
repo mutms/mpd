@@ -8,11 +8,9 @@ import (
 	"github.com/mutms/mpd/go/internal/service"
 )
 
-// adminer — database administration web UI. Built from Debian rather than
-// pulled: the docker.io/library/adminer image is Alpine-based, and libpq on
-// musl fails to resolve multi-label hostnames like `postgres-latest.db.<zone>`
-// — which is every database name mpd publishes. The symptom is an opaque
-// `SQLSTATE[08006] could not translate host name`.
+// adminer — database administration web UI. Built from Debian, not
+// pulled: the upstream Alpine image's libpq on musl cannot resolve the
+// multi-label hostnames mpd publishes ("could not translate host name").
 func init() {
 	service.Register(service.Service{
 		Name:         "adminer",
@@ -26,12 +24,8 @@ func init() {
 }
 
 // adminerProjectLinks builds a prefilled Adminer link for a project's
-// database.
-//
-// Adminer takes the driver as the parameter NAME, not a value: postgres
-// is `?pgsql=<host>`, while MySQL and MariaDB are `?server=<host>`. Get
-// that wrong and Adminer shows its own login form with nothing filled
-// in, which looks like the link is broken rather than mistyped.
+// database. Adminer takes the driver as the parameter name: postgres is
+// `?pgsql=<host>`, MySQL and MariaDB are `?server=<host>`.
 func adminerProjectLinks(s service.Service, n net.Net, info service.ProjectInfo) []service.Link {
 	if info.DBHost == "" {
 		return nil

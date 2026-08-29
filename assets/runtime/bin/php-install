@@ -2,41 +2,31 @@
 set -euo pipefail
 # Tool: install one PHP version into the runtime on demand.
 #
-#   php-install 7.4      # add a legacy version Moodle asks for
+#   php-install 7.4
 #
-# The current PHP versions are baked into the runtime image. Older, EOL
-# versions (7.4, 8.0, …) are not — they arrive here only when a project
-# actually needs one. `mpd start` calls this for you when a project's
-# MPD_PHP_VERSION is not present yet, so you rarely run it by hand.
-#
-# Runs as the dev user inside the runtime, sudo for the privileged ops
-# (AGENTS.md §"Mandatory privilege rule"). Idempotent: a version already
-# installed exits 0 without touching apt.
-#
+# Current versions are baked into the runtime image; EOL versions arrive
+# here. `mpd start` calls this when a project's MPD_PHP_VERSION is missing.
+# Idempotent: an already-installed version exits 0 without touching apt.
 # Installs the same extension set, php.ini defaults and FPM wiring as a
-# baked version, so a Moodle project runs the same either way.
+# baked version.
 
 VER="${1:-}"
 if [ -z "$VER" ]; then
     echo "Usage: php-install <version>   (e.g. php-install 7.4)" >&2
     exit 2
 fi
-# Strict format guard: the value reaches apt as php<VER>-*, so it must be
-# exactly <major>.<minor> and nothing else.
+# The value reaches apt as php<VER>-*; allow only <major>.<minor>.
 if ! [[ "$VER" =~ ^[0-9]+\.[0-9]+$ ]]; then
     echo "Bad PHP version '${VER}' — expected <major>.<minor>, e.g. 7.4 or 8.0." >&2
     exit 2
 fi
 
-# Already installed → nothing to do. (The default pool socket and FPM
-# service were set up when it was first installed.)
 if [ -x "/usr/bin/php${VER}" ]; then
     exit 0
 fi
 
-# The Sury PHP repository carries every version. build.sh adds it when the
-# runtime is built, so it is normally already here; add it defensively for
-# a runtime built before this tool existed.
+# The Sury repo is normally added at runtime build; add it for a runtime
+# built before this tool existed.
 SURY_LIST="/etc/apt/sources.list.d/sury-php.list"
 if [ ! -f "$SURY_LIST" ]; then
     echo "Adding the Sury PHP repository..."

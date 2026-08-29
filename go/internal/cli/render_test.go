@@ -12,9 +12,8 @@ import (
 	"github.com/mutms/mpd/go/internal/state"
 )
 
-// Column padding never truncates, including the over-width case: an
-// over-width name keeps all its characters and still gets two trailing
-// spaces, so a long name pushes the row instead of losing characters.
+// Column padding never truncates: an over-width name keeps all its
+// characters plus two trailing spaces.
 func TestCol(t *testing.T) {
 	if got := Col("php", 14); got != "php           " {
 		t.Errorf("Col(short) = %q (len %d)", got, len(got))
@@ -27,8 +26,7 @@ func TestCol(t *testing.T) {
 	}
 }
 
-// Output is piped in tests, so colour must be off — otherwise escape
-// codes would leak into the rendered text.
+// Output is piped in tests, so colour must be off.
 func TestStatusLabelIsPlainWhenNotATerminal(t *testing.T) {
 	got := StatusLabel(StatusRunning, colStatus)
 	if strings.Contains(got, "\033[") {
@@ -69,8 +67,8 @@ func TestListServices(t *testing.T) {
 	if !strings.HasPrefix(lines[0], "SERVICE") {
 		t.Errorf("header = %q", lines[0])
 	}
-	// Registry order: mailpit, adminer, selenium — infra (dnsmasq,
-	// portal) deliberately absent, that is `mpd list infra`.
+	// Registry order; infra (dnsmasq, portal) belongs to `mpd list
+	// infra`, not here.
 	for i, want := range []string{"mailpit", "adminer", "selenium"} {
 		if !strings.HasPrefix(lines[i+2], want) {
 			t.Errorf("row %d = %q, want it to start with %q", i, lines[i+2], want)

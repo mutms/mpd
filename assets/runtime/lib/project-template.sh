@@ -1,37 +1,21 @@
-# project-template.sh — sourced helper, not executable.
+# project-template.sh — sourced helper defining
+# apply_project_template <project-name> <type-dir>: seed a project with a
+# type's default files and keep them out of the project's git history.
 #
-# Defines apply_project_template <project-name> <type-dir>, the single place
-# that seeds a project directory with a project type's default files and keeps
-# them out of the project's git history.
+#   <type-dir>/template/   Copied to /srv/projects/<project>/<rel>. Never
+#                          overwrites an existing file. Mode is normalised
+#                          to 0644 (0755 when executable), so the repo
+#                          umask does not leak into the project.
+#   <type-dir>/generated/  Not copied — the type's configure.sh renders
+#                          these. Listed here only for git excludes.
 #
-# A project type declares those files by dropping them in one of two dirs,
-# mirroring the project directory structure:
-#
-#   <type-dir>/template/   Copied to /srv/projects/<project>/<rel>, creating
-#                          parent dirs. NEVER overwrites — a file that already
-#                          exists (upstream-tracked, or edited by the developer)
-#                          is left alone. Mode is normalised to 0644, or 0755
-#                          when the source is executable — the checked-out
-#                          asset's own mode carries the repo umask, which must
-#                          not leak into the project.
-#
-#   <type-dir>/generated/  NOT copied: these are rendered by the type's own
-#                          scripts/configure.sh, which needs substitution or
-#                          conditional logic. Listed here only so their relative
-#                          path is known. Source path == output path.
-#
-# Only regular files are considered (`find -type f`): a symlink dropped in
-# either dir is silently ignored, so don't reach for one.
-#
-# Every relative path from BOTH dirs is appended to .git/info/exclude as
-# "/<rel>" when absent. Entries are per file, never directory patterns: a
-# template file may live in a directory whose other contents are tracked
-# upstream (Moodle's .phpstorm.meta.php/ is exactly that).
+# Only regular files count (`find -type f`); a symlink is ignored.
+# Every relative path from both dirs goes into .git/info/exclude as
+# "/<rel>", per file — a template file may sit in a directory whose other
+# contents are tracked upstream.
 #
 # Idempotent — called on both `mpd init` and `mpd start`, so a file added
-# to template/ later reaches projects that already exist.
-#
-# Runs as the dev user; /srv/projects is dev-owned, so no sudo is needed.
+# to template/ later reaches existing projects.
 
 apply_project_template() {
     local project="$1" type_dir="$2"
@@ -43,8 +27,8 @@ apply_project_template() {
     _apply_project_template_exclude() {
         [ -d "${project_dir}/.git" ] || return 0
         mkdir -p "$(dirname "$exclude")"
-        # git ships info/exclude with a trailing newline, but a hand-edited one
-        # may lack it — appending then would splice onto the last entry.
+        # A hand-edited info/exclude may lack a trailing newline; appending
+        # then would splice onto the last entry.
         if [ -s "$exclude" ] && [ -n "$(tail -c1 "$exclude")" ]; then
             echo >> "$exclude"
         fi

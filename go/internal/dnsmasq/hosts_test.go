@@ -12,8 +12,7 @@ import (
 	"github.com/mutms/mpd/go/internal/state"
 )
 
-// A real /etc/hosts from a Proxmox cloud-init VM: cloud-init's header
-// comment, the distro lines, IPv6 boilerplate. None of it is mpd's.
+// A real /etc/hosts from a cloud-init VM; none of it is mpd's.
 const distroHosts = `# Your system has configured 'manage_etc_hosts' as True.
 # As a result, if you wish for changes to this file to persist
 # then you will need to either
@@ -35,9 +34,8 @@ func block(t *testing.T, records ...Record) string {
 	return Render("200.mpd.test", records)
 }
 
-// Records are hosts lines, which match the exact name and nothing else —
-// no dnsmasq config syntax, which in a hosts file would be read as a
-// hostname rather than a directive.
+// Records are plain hosts lines — no dnsmasq config syntax, which a
+// hosts file would read as a hostname.
 func TestRenderIsExactMatchHostsLines(t *testing.T) {
 	body := block(t,
 		Record{IP: "10.163.200.1", Names: []string{"200.mpd.test"}},
@@ -77,9 +75,8 @@ func TestSplicePreservesForeignLines(t *testing.T) {
 	}
 }
 
-// A second run must be a no-op: the reconcile compares bytes to decide
-// whether to write and reload, so any drift here would mean a reload on
-// every `mpd --vm-start`.
+// A second run must be a no-op: the reconcile compares bytes, and any
+// drift would mean a reload on every `mpd --vm-start`.
 func TestSpliceIsIdempotent(t *testing.T) {
 	b := block(t, Record{IP: "10.163.200.1", Names: []string{"200.mpd.test"}})
 	once := Splice(distroHosts, b)
@@ -88,8 +85,7 @@ func TestSpliceIsIdempotent(t *testing.T) {
 	}
 }
 
-// Replacing the block: the old span goes, the foreign lines stay, and a
-// record that was dropped from the set is gone.
+// Replacing the block: the old span goes, the foreign lines stay.
 func TestSpliceReplacesTheBlock(t *testing.T) {
 	old := block(t, Record{IP: "10.163.200.2", Names: []string{"gone.200.mpd.test"}})
 	fresh := block(t, Record{IP: "10.163.200.2", Names: []string{"kept.200.mpd.test"}})
@@ -106,10 +102,8 @@ func TestSpliceReplacesTheBlock(t *testing.T) {
 	}
 }
 
-// Defensive cases: a duplicated block collapses to one; an unterminated
-// block (a truncated write) is dropped to EOF rather than kept; a file
-// without a trailing newline does not glue the fence onto its last line;
-// an empty file gets the block alone.
+// Defensive cases: duplicated block, unterminated block, missing
+// trailing newline, empty file.
 func TestSpliceDefensiveCases(t *testing.T) {
 	b := block(t, Record{IP: "10.163.200.1", Names: []string{"200.mpd.test"}})
 
@@ -133,8 +127,7 @@ func TestSpliceDefensiveCases(t *testing.T) {
 	}
 }
 
-// Records with nothing to say are skipped rather than rendered as a
-// half-line dnsmasq would choke on.
+// Incomplete records are skipped, never rendered as half-lines.
 func TestRenderSkipsEmptyRecords(t *testing.T) {
 	body := block(t, Record{IP: "", Names: []string{"x.200.mpd.test"}}, Record{IP: "10.163.200.1"})
 	for _, line := range strings.Split(body, "\n") {
@@ -145,9 +138,7 @@ func TestRenderSkipsEmptyRecords(t *testing.T) {
 	}
 }
 
-// The LAN file is copied through with names outside mpd.test dropped:
-// this resolver's answers are final, so it must not answer for names it
-// has no business with.
+// The LAN file is copied through with names outside mpd.test dropped.
 func TestLANRecordsKeepOnlyMpdNames(t *testing.T) {
 	path := t.TempDir() + "/lan-hosts"
 	if err := os.WriteFile(path,
@@ -164,8 +155,8 @@ func TestLANRecordsKeepOnlyMpdNames(t *testing.T) {
 	}
 }
 
-// podman answering with two database containers — one stopped — and one
-// whose pinned address is on another VM's subnet.
+// podman fixture: two database containers, one stopped, and one pinned
+// to another VM's subnet.
 const dbPs = `[
  {"Names":["mpd-db-postgres-18"],"Labels":{"mpd.type":"db","mpd.name":"postgres-18","mpd.ip":"10.163.200.11"},"State":"running"},
  {"Names":["mpd-db-mariadb-11"],"Labels":{"mpd.type":"db","mpd.name":"mariadb-11","mpd.ip":"10.163.200.10"},"State":"exited"},
@@ -201,8 +192,8 @@ func testManager(t *testing.T) Manager {
 	return m
 }
 
-// The fixed records come first and in a fixed order: apex at the gateway,
-// runtime with its bare alias, the VM's own address only when it has one.
+// The fixed records come first: apex, runtime with its bare alias, the
+// VM's own address only when it has one.
 func TestRecordsFixedSet(t *testing.T) {
 	m := testManager(t)
 
@@ -225,10 +216,9 @@ func TestRecordsFixedSet(t *testing.T) {
 	}
 }
 
-// Projects contribute every in-zone host at the runtime's address — the
-// mail URL (a service's name) and a host in another VM's zone do not.
-// Databases contribute their pinned address whether running or not, and
-// never an address outside this VM's subnet.
+// Projects contribute every in-zone host at the runtime's address;
+// mail URLs and other VMs' hosts do not. Databases contribute their
+// pinned address whether running or not.
 func TestRecordsFromState(t *testing.T) {
 	m := testManager(t)
 	body := Render("200.mpd.test", m.Records(context.Background(),

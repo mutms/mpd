@@ -7,10 +7,7 @@ import (
 	"testing"
 )
 
-// The developer's authorized_keys is read, never written. mpd used to
-// append the VM's own pubkey here; it reached the runtimes anyway (via
-// the id_*.pub glob) and only made the VM trust itself, so the file is
-// now left exactly as the developer left it.
+// The developer's authorized_keys is read, never written.
 func TestEnsureAuthorizedKeysLeavesContentAlone(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "authorized_keys")
@@ -31,8 +28,8 @@ func TestEnsureAuthorizedKeysLeavesContentAlone(t *testing.T) {
 	}
 }
 
-// A sandbox VM may have no workstation side at all, so the file has to
-// be created — empty — for AuthorizedPublicKeys to read later.
+// A sandbox VM may have no workstation side, so the file is created
+// empty for AuthorizedPublicKeys to read later.
 func TestEnsureAuthorizedKeysCreatesEmptyWithMode600(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "authorized_keys")

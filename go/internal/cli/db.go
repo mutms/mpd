@@ -16,10 +16,8 @@ import (
 	"github.com/mutms/mpd/go/internal/state"
 )
 
-// Ok prints a success line. ANSI is emitted unconditionally — matching
-// the listing helpers, which do not check isatty. Changing that would
-// change output the difftest compares, so it stays as-is until the flag
-// day.
+// Ok prints a success line. ANSI is unconditional, matching the listing
+// helpers; the difftest compares this output byte for byte.
 func Ok(out io.Writer, format string, args ...any) {
 	fmt.Fprintf(out, "\033[1;32m✓ "+format+"\033[0m\n", args...)
 }
@@ -46,14 +44,13 @@ func DBStart(ctx context.Context, out io.Writer, input string,
 		return err
 	}
 	Ok(out, "%s is running.", ref.Container)
-	// Sticky: an explicitly started database comes back on the next reboot,
-	// even if no project needs it.
+	// Sticky: an explicitly started database comes back on the next
+	// reboot, even if no project needs it.
 	return syncDatabaseState(ctx, p, s, dns, n, ref.ID, true)
 }
 
-// DBStop stops a running DB container. Its DNS record stays: the address
-// is pinned to the container, so "connection refused" is the honest
-// answer while it is down.
+// DBStop stops a running DB container. Its DNS record stays; the address
+// is pinned to the container.
 func DBStop(ctx context.Context, out io.Writer, input string,
 	p *podman.Client, s state.Store, dns dnsmasq.Manager, n net.Net) error {
 
@@ -72,21 +69,15 @@ func DBStop(ctx context.Context, out io.Writer, input string,
 		return fmt.Errorf("Failed to stop '%s'.", ref.Container)
 	}
 	Ok(out, "%s stopped.", ref.Container)
-	// Clear the sticky flag: an explicit stop means it should stay down
-	// across a reboot unless a project pulls it back up.
+	// Clear the sticky flag: an explicit stop means stay down across a
+	// reboot unless a project pulls it back up.
 	return syncDatabaseState(ctx, p, s, dns, n, ref.ID, false)
 }
 
-// syncDatabaseState reconciles the derived artifacts after any DB
-// lifecycle change: the databases.json cache and the DNS records. When
-// setAutostart is a lifecycle verb's own intent (start → true, stop →
-// false), it is recorded for the given databaseId after the cache is
-// rebuilt; pass id "" to leave autostart flags untouched.
-//
-// The cache and DNS rebuild must happen on *every* path, including the
-// "already running" and "already stopped" ones. Those look like no-ops but
-// are exactly when the cache is most likely to be stale — something
-// changed the container outside mpd, which is why the user ran the command.
+// syncDatabaseState rebuilds the databases.json cache and DNS records,
+// then records autostart for id (pass "" to leave autostart untouched).
+// It must run on every path, including "already running/stopped": those
+// are exactly when the cache is most likely stale.
 func syncDatabaseState(ctx context.Context, p *podman.Client, s state.Store,
 	dns dnsmasq.Manager, n net.Net, id string, autostart bool) error {
 
@@ -116,16 +107,10 @@ func DBCreate(ctx context.Context, out io.Writer, input string, p *podman.Client
 	return syncDatabaseState(ctx, p, s, dns, n, ref.ID, true)
 }
 
-// DBDelete removes a DB container and its data.
-//
-// Both, deliberately: `mpd delete <project>` removes the DB, dataroot,
-// source and config together, so a DB delete that left 150 MB of engine
-// files behind would be inconsistent — and invisible, since `list dbs`
-// enumerates containers, not data directories.
-//
-// The blast radius is wider than one project: a container is shared by
-// every project on that engine:version, so the prompt names the projects
-// that will lose data rather than describing it abstractly.
+// DBDelete removes a DB container and its data. Data too, deliberately:
+// leftover engine files would be invisible, since `list dbs` enumerates
+// containers. The container is shared by every project on that
+// engine:version, so the prompt names the projects that lose data.
 func DBDelete(ctx context.Context, out io.Writer, in io.Reader, input string,
 	p *podman.Client, s state.Store, dns dnsmasq.Manager, n net.Net, assumeYes bool) error {
 
@@ -160,26 +145,24 @@ func DBDelete(ctx context.Context, out io.Writer, in io.Reader, input string,
 		fmt.Fprintln(out, "Aborted.")
 		return nil
 	}
-	// Stop first; ignore the result. A container that is already stopped
-	// or wedged should still be removable — rm -f handles it.
+	// Stop first; ignore the result so a stopped or wedged container is
+	// still removable.
 	_, _ = p.Stop(ctx, ref.Container)
 	if code, err := p.Remove(ctx, ref.Container); err != nil || code != 0 {
 		return fmt.Errorf("Failed to remove '%s'.", ref.Container)
 	}
-	// After the container: a failed removal must not leave data orphaned
-	// from an owner that still exists.
+	// Remove data after the container: a failed removal must not orphan
+	// data from an owner that still exists.
 	if err := srv.Remove(ctx, dataDir); err != nil {
 		return err
 	}
 	Ok(out, "'%s' and %s/ removed.", ref.Container, dataDir)
-	// The row drops out of the rebuilt cache with the container, taking its
-	// autostart flag and its DNS record with it — nothing to record.
+	// The row drops out of the rebuilt cache with the container.
 	return syncDatabaseState(ctx, p, s, dns, n, "", false)
 }
 
-// promptYesNo asks for confirmation, defaulting to no. Anything other
-// than an explicit yes is a refusal — the default must be the safe
-// answer for a destructive verb.
+// promptYesNo asks for confirmation. Anything but an explicit yes is a
+// refusal — the safe default for a destructive verb.
 func promptYesNo(out io.Writer, in io.Reader, message string) bool {
 	fmt.Fprintf(out, "\n%s [y/N] ", message)
 	reader := bufio.NewReader(in)
@@ -191,21 +174,10 @@ func promptYesNo(out io.Writer, in io.Reader, message string) bool {
 	return answer == "y" || answer == "yes"
 }
 
-// promptName asks the caller to type a name back, and reports whether they
-// typed it exactly.
-//
-// Used instead of promptYesNo for the two verbs that destroy data a
-// developer cannot get back: `delete` and `reset`. `y` is one keystroke
-// next to `n`, and it is the same keystroke whichever project the prompt is
-// about — so a mistyped project name plus a reflexive `y` is a plausible way
-// to lose the wrong site. Typing the name is the cheapest confirmation that
-// cannot be given by reflex, and it re-reads the name back to the caller in
-// the act of confirming.
-//
-// Whitespace is trimmed, because a copy-paste picks up a trailing newline
-// and that is not a different answer. Case is not folded: project names are
-// lowercase by construction (validProjectName), so a case difference means
-// the caller typed something else.
+// promptName asks the caller to type the name back exactly. Used for
+// `delete` and `reset`: a reflexive `y` can destroy the wrong project,
+// while a typed name cannot be given by reflex. Whitespace is trimmed;
+// case is not folded, since project names are lowercase by construction.
 func promptName(out io.Writer, in io.Reader, name, action string) bool {
 	fmt.Fprintf(out, "\nType the project name to confirm %s (or anything else to abort)\n  %s: ",
 		action, name)

@@ -1,13 +1,8 @@
 #!/bin/bash
 # project-stop.sh <project-name>
-# Run by `mpd stop <project>` for an Astro project.
-#
-# Prints. That is the whole job — see project-setup.sh for why nothing
-# here may run a command inside the project.
-#
-# `mpd stop` records the project as stopped. The vhost, certificate and
-# DNS record stay, because those are `mpd start`'s — so the URL keeps
-# resolving and answers again as soon as a server is up.
+# Run by `mpd stop <project>` for an Astro project. Prints guidance
+# only — see project-setup.sh for why it must not run project commands.
+# The vhost, certificate and DNS record belong to `mpd start` and stay.
 set -euo pipefail
 
 PROJECT_NAME="$1"

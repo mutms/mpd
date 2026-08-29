@@ -1,32 +1,7 @@
 #!/bin/bash
-# mdl-data-backup — save this Moodle project's data as one file.
-#
-# Run it from the project directory, inside the runtime:
-#
-#   cd /srv/projects/<project>
-#   mdl-data-backup            # names the bundle after the date and time
-#   mdl-data-backup before-upgrade
-#
-# The bundle goes to /srv/backups/projects/<name>.tgz and holds the
-# database, the dataroot, this project's mpd.env, and a manifest saying
-# what it came from. Every project's backups share this one directory, so
-# a bundle can be restored into any project — name yours so you can tell
-# them apart (mdl-data-backup akreditace_start). Copy one off the VM with
-# scp from your Mac:
-#
-#   scp mpd-<NNN>-vm:/srv/backups/projects/<name>.tgz .
-#
-# It does not save the source tree — that is what git is for — and it
-# does not save the PHPUnit or Behat dataroots, which `phpunit-init` and
-# `behat-init` build again and which are large.
-#
-# The site stays up while this runs. Moodle's CLI maintenance mode blocks
-# the web interface for as long as the backup takes, so nobody writes
-# through a browser mid-dump. This is a development snapshot, not a
-# production backup: it does not stop the project, and a `mdl-cron` you
-# start yourself while it runs can still write.
-#
-# Restore one with mdl-data-restore.
+# mdl-data-backup [name] — save this project's database, dataroot and
+# mpd.env as one bundle in /srv/backups/projects/. Restore with
+# mdl-data-restore. See docs/usage.md "Backups".
 set -euo pipefail
 
 source /opt/mpd/assets/runtime/project_types/moodle/scripts/mpd-env.sh
@@ -67,15 +42,11 @@ if [ -e "$OUT_FILE" ]; then
 fi
 mkdir -p "$OUT_DIR"
 
-# Moodle's CLI maintenance mode is a file in the dataroot, which
-# lib/setup.php checks long before it opens a database connection: a web
-# request gets a 503 and nothing else happens. Written here rather than
-# through `admin/cli/maintenance.php` so the same code works in
-# mdl-data-restore, where the database is mid-reload and Moodle cannot
-# start at all.
-#
-# A file that was already there is somebody's deliberate maintenance
-# mode. Leave it, and leave it behind afterwards.
+# The CLI maintenance file 503s web requests before any DB connection.
+# Written directly, not via admin/cli/maintenance.php, so the same
+# code works in mdl-data-restore, where Moodle cannot start. A
+# pre-existing file is somebody's deliberate maintenance mode: leave
+# it, before and after.
 MAINT_FILE="${DATAROOT}/climaintenance.html"
 MAINT_WAS_ON=0
 [ -f "$MAINT_FILE" ] && MAINT_WAS_ON=1
@@ -99,13 +70,11 @@ fi
 
 echo "Backing up '${PROJECT}' to ${OUT_FILE}"
 
-# --- Database ---
 echo "  database (${DB_TAG:-$DB_ENGINE})"
 case "$DB_ENGINE" in
     postgres)
-        # As the project role, which owns the database and everything in
-        # it. Ownership and grants are not carried: the restore runs as
-        # the same single role, and mpd owns who that role is.
+        # Dump as the project role. Ownership and grants are not
+        # carried: the restore runs as the same single role.
         PGPASSWORD="${PROJECT}" pg_dump -h "$DBHOST" -U "${PROJECT}" -d "${PROJECT}" \
             --no-owner --no-privileges | gzip -c >"${STAGING}/db.sql.gz"
         ;;
@@ -124,8 +93,8 @@ case "$DB_ENGINE" in
         ;;
 esac
 
-# --- What this came from, so the restore can refuse a bundle that does
-#     not fit and say why. ---
+# The manifest records what this came from, so restore can refuse a
+# bundle that does not fit.
 MOODLE_RELEASE=""
 if [ -f "${PROJECT_DIR}/version.php" ]; then
     MOODLE_RELEASE=$(grep -oP "^\\\$release\s*=\s*'\K[^']+" "${PROJECT_DIR}/version.php" || true)
@@ -142,14 +111,10 @@ jq -n \
 
 cp "${PROJECT_DIR}/mpd.env" "${STAGING}/mpd.env"
 
-# --- One bundle. The dataroot is added straight from where it lives
-#     rather than copied into the staging directory first — it is the
-#     large part, and copying it would double the disk cost.
-#
-#     climaintenance.html is excluded because this tool is what put it
-#     there: a bundle carrying it would restore a site that is down.
-#     The caches, sessions and trash are excluded because Moodle builds
-#     them again on demand, and they are most of the size. ---
+# The dataroot is added straight from where it lives; copying it into
+# staging would double the disk cost. climaintenance.html is excluded
+# because this tool wrote it. Caches, sessions and trash rebuild on
+# demand and are most of the size.
 echo "  dataroot"
 tar -czf "$OUT_FILE" \
     --exclude=dataroot/climaintenance.html \

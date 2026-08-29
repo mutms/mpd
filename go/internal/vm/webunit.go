@@ -15,14 +15,8 @@ const WebUnitName = "mpd-web.service"
 
 // WebUnitBody renders the user unit for `mpd --web`.
 //
-// A USER unit, like the shutdown unit beside it: the server binds
-// loopback on a high port and reads only files the dev user already owns,
-// so it needs no privileges at all. Linger is enabled by
-// InstallShutdownUnit, which is what keeps a user unit running while
-// nobody is logged in.
-//
-// Restart=always because this is a status page: if it dies, the useful
-// behaviour is to come back, not to wait for someone to notice.
+// A user unit: the server needs no privileges. Linger, enabled by
+// InstallShutdownUnit, keeps it running while nobody is logged in.
 func WebUnitBody(binary string) string {
 	return `[Unit]
 Description=mpd status web server
@@ -38,11 +32,9 @@ RestartSec=2
 WantedBy=default.target`
 }
 
-// InstallWebUnit writes, enables and (re)starts the web server unit.
-//
-// Idempotent, and deliberately a restart rather than a start: `--vm-setup`
-// runs after a rebuild, and a server still running the previous binary
-// would serve a stale page with no sign of it.
+// InstallWebUnit writes, enables and restarts the web server unit.
+// Restart, not start: after a rebuild a server on the old binary would
+// serve a stale page with no sign of it.
 func InstallWebUnit(ctx context.Context) error {
 	unitDir := filepath.Join(Home(), ".config", "systemd", "user")
 	if err := os.MkdirAll(unitDir, 0o755); err != nil {
@@ -64,16 +56,10 @@ func InstallWebUnit(ctx context.Context) error {
 	return nil
 }
 
-// StartUnits brings up the VM-hosted services `--vm-start` is
-// responsible for: the resolver, the status web server, and the TLS
-// frontdoor in front of it.
-//
-// The resolver goes first — the other two serve names it publishes.
-//
-// Start, not restart: this is the daily path, and a running unit should
-// keep serving. Failures warn rather than abort — a VM whose projects are
-// up but whose status page is down is still a working VM, and saying so
-// is more useful than refusing to start anything else.
+// StartUnits brings up the resolver, the status web server and its TLS
+// frontdoor for `--vm-start`. The resolver goes first: the other two
+// serve names it publishes. Start, not restart, on the daily path;
+// failures warn rather than abort.
 func StartUnits(ctx context.Context, out io.Writer) error {
 	for _, unit := range []string{DnsmasqUnit, CaddyUnit} {
 		if code, err := exec.Run(ctx, exec.Cmd{
@@ -90,12 +76,9 @@ func StartUnits(ctx context.Context, out io.Writer) error {
 	return nil
 }
 
-// UnitActive reports whether a systemd unit is running, for status
-// listings of services systemd owns rather than podman.
-//
-// user selects the scope. Passed in rather than probed: a system unit and
-// a user unit of the same name are different units, and asking both would
-// answer for whichever happened to exist.
+// UnitActive reports whether a systemd unit is running. user selects the
+// scope: a system unit and a user unit of the same name are different
+// units.
 func UnitActive(ctx context.Context, unit string, user bool) bool {
 	args := []string{"is-active", "--quiet", unit}
 	if user {

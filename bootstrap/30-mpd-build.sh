@@ -1,19 +1,11 @@
 #!/bin/bash
 # bootstrap/30-mpd-build.sh
 #
-# Step 3 of 3. Wgettable, self-contained — it is what puts the repo on
-# the box, so it cannot come from the repo.
-#
-#   1. Asserts passwordless sudo (step 1) and git (step 2).
-#   2. Creates /opt/mpd + /var/lib/mpd, owned by the dev user.
-#   3. Clones the mpd repo into /opt/mpd, or fast-forwards an existing
-#      checkout (refuses on a dirty tree — resolve by hand).
-#   4. Installs Go into /usr/local/go when the VM has none on PATH.
-#   5. `make install` → /opt/mpd/bin/mpd.
-#   6. Puts /opt/mpd/bin, assets/vm/bin and ~/.local/bin on PATH via ~/.bashrc.
-#
-# Idempotent: a current checkout costs a fetch and a `make install` that
-# finds nothing to do.
+# Step 3 of 3, wgettable and self-contained — it puts the repo on the
+# box, so it cannot come from the repo. Clones or fast-forwards
+# /opt/mpd, installs Go when none is on PATH, builds bin/mpd, and wires
+# the mpd shell include into ~/.bashrc.
+# Needs steps 1 (sudo) and 2 (git). Idempotent.
 #
 # Environment overrides:
 #   MPD_REPO    https URL of the mpd repo (default: github.com/mutms/mpd)
@@ -42,10 +34,8 @@ command -v git >/dev/null 2>&1 \
 ok "sudo -n works, git present"
 
 step "FHS directories: ${DEST} + ${STATE_DIR} (owned by ${USER_NAME})"
-# install -d is idempotent — creates the dir if missing, leaves it alone
-# if present (re-applying mode/owner). Owned by the dev user so git,
-# make install and mpd --vm-setup run without sudo from here on. The
-# subdirs of /var/lib/mpd (conf/, env/, state/) are created by
+# Owned by the dev user so git, make install and mpd --vm-setup need no
+# sudo from here on. The subdirs of /var/lib/mpd are created by
 # mpd --vm-setup as needed.
 sudo install -d -o "${USER_NAME}" -g "${GROUP_NAME}" -m 0755 "${DEST}"
 sudo install -d -o "${USER_NAME}" -g "${GROUP_NAME}" -m 0755 "${STATE_DIR}"
@@ -53,33 +43,23 @@ ok "ready"
 
 step "Clone or update ${REPO_URL} @ ${BRANCH} → ${DEST}"
 if [ -d "${DEST}/.git" ]; then
-    # Update straight from REPO_URL, WITHOUT touching origin. The default
-    # REPO_URL is public https, so the fetch needs no SSH key — that was the
-    # whole reason origin used to be force-set to https here. But a developer
-    # may have pointed origin at a git@ push URL (mutms-mpd-dev-setup does,
-    # for push access), and clobbering that back to https on every adopt would
-    # break their push and is plain rude. Fetching from the URL rather than
-    # `origin` gets the keyless pull without disturbing their remote. (An
-    # explicit MPD_REPO override is honoured the same way — it is simply the
-    # URL fetched from.)
+    # Fetch from REPO_URL, not `origin`: the default is public https (no
+    # SSH key needed), and a developer may have pointed origin at a git@
+    # push URL that must not be clobbered.
     git -C "${DEST}" fetch --quiet "${REPO_URL}" "${BRANCH}"
     git -C "${DEST}" checkout --quiet "${BRANCH}"
     git -C "${DEST}" merge --ff-only --quiet FETCH_HEAD \
         || die "fast-forward from ${REPO_URL} (${BRANCH}) failed in ${DEST}. Resolve manually and re-run."
     ok "fast-forwarded to ${BRANCH}"
 else
-    # install -d above made an empty dir; git clone into an empty
-    # existing dir is fine.
+    # The dir exists (install -d above) but is empty; clone accepts that.
     git clone --branch "${BRANCH}" "${REPO_URL}" "${DEST}"
     ok "cloned"
 fi
 
-# --- Go -----------------------------------------------------------------
-# Upstream Go, not Debian's: the go.mod files name the version they need
-# and the go command fetches that toolchain itself (GOTOOLCHAIN=auto), so
-# this install only has to exist — any version works as the seed. Pinned
-# with its checksums; bump both together. Skipped when a go is already on
-# PATH (from this install, or anywhere else).
+# Upstream Go as the seed toolchain; go.mod picks the real compiler (see
+# AGENTS.md "Change discipline"). Pinned with checksums — bump both
+# together. Skipped when a go is already on PATH.
 GO_VERSION="1.27.0"
 case "$(dpkg --print-architecture)" in
     amd64) GO_ARCH=amd64; GO_SHA256=675c26c449cbb18fc24b74650de1eabbae6e16f64326fd85a283fb3b58280685 ;;
@@ -100,9 +80,9 @@ else
     sudo rm -rf /usr/local/go
     sudo tar -C /usr/local -xzf "${tmp}/${tarball}"
     rm -rf "${tmp}"
-    # Symlinks, not a profile.d PATH entry: /usr/local/bin is on PATH in
-    # every context — non-login ssh commands (mpd-virt), sudo, systemd —
-    # while /etc/profile.d reaches login shells only.
+    # Symlinks, not a profile.d PATH entry: /usr/local/bin is on PATH for
+    # non-login ssh commands, sudo and systemd; /etc/profile.d reaches
+    # login shells only.
     sudo ln -sfn /usr/local/go/bin/go /usr/local/bin/go
     sudo ln -sfn /usr/local/go/bin/gofmt /usr/local/bin/gofmt
     ok "installed $(go version) → /usr/local/go"
@@ -113,23 +93,13 @@ step "Building mpd"
 make -C "${DEST}" install
 ok "built ${DEST}/bin/mpd"
 
-# --- mpd shell include (~/.bashrc) -------------------------------------
-# One managed line, sourcing assets/vm/lib/bashrc-include.sh — which sets
-# PATH (/opt/mpd/bin, assets/vm/bin, ~/.local/bin), sources the developer's
-# vm.env, and adjusts the prompt. Everything mpd wants in the dev user's
-# shell lives in that file, read live from /opt/mpd; ~/.bashrc carries only
-# this one stable line, so mpd never re-edits the user's file after adoption.
-#
-# Prepended at the very top — before Debian's "if not interactive, return"
-# guard — so it reaches every shell shape this VM's single dev user uses:
-# login (Debian's ~/.bash_profile → ~/.bashrc), interactive non-login, and
-# sshd-invoked non-interactive (bash sources ~/.bashrc when stdin is a
-# socket — the shell mpd-virt drives the VM over, which must have
-# /opt/mpd/bin on PATH). /etc/profile.d/ would miss `ssh user@vm cmd`.
-#
-# ~/.local/bin is pre-created here because Debian only adds it via ~/.profile
-# at login (and only if it exists then), so a CLI installed mid-session
-# (claude-install) would otherwise need a re-login.
+# One managed line sourcing assets/vm/lib/bashrc-include.sh, prepended
+# at the very top of ~/.bashrc — before Debian's non-interactive return
+# guard — so `ssh user@vm cmd` shells get PATH too; see that file's
+# header. mpd never re-edits ~/.bashrc after adoption.
+# ~/.local/bin is pre-created: Debian adds it to PATH via ~/.profile only
+# when it exists at login, so a CLI installed mid-session would
+# otherwise need a re-login.
 step "mpd shell include (~/.bashrc)"
 install -d "${HOME}/.local/bin"
 BASHRC="${HOME}/.bashrc"
@@ -147,8 +117,8 @@ else
     ok "prepended the mpd shell include to ${BASHRC}"
 fi
 
-# Also export PATH in this shell so whatever runs next in the same
-# session sees /opt/mpd/bin without a new login.
+# Export PATH here too, so the rest of this session sees /opt/mpd/bin
+# without a new login.
 case ":${PATH}:" in
     *":/opt/mpd/bin:"*) ;;
     *) export PATH="/opt/mpd/bin:${PATH}" ;;

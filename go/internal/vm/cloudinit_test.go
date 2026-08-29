@@ -6,11 +6,8 @@ import (
 	"testing"
 )
 
-// The drop-in leaves cloud-init only the disk modules: everything that
-// would touch the VM identity (hostname, users, host keys, /etc/hosts)
-// is gone, and the config and final stages are empty. Pinned here so an
-// edit that lets one of those back in fails in CI rather than on a VM at
-// boot.
+// The drop-in must leave cloud-init only the disk modules. An identity
+// module let back in would break a VM at boot, so it fails here instead.
 func TestCloudInitDropInAsset(t *testing.T) {
 	body, err := os.ReadFile("../../../assets/vm/cloud-init-99-mpd.cfg")
 	if err != nil {

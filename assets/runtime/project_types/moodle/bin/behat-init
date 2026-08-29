@@ -3,12 +3,9 @@
 set -euo pipefail
 source /opt/mpd/assets/runtime/project_types/moodle/scripts/mpd-env.sh
 
-# Behat must be enabled for this project at the mpd level: that's what
-# publishes the behat.<project>.<zone> vhost in Caddy and puts that host
-# in the project's TLS cert. Without it, init.php happily sets up Moodle's
-# behat env and prints the URL, but the URL isn't reachable (TLS handshake
-# fails), which is a confusing half-configured state. Guard against it — the
-# fix lives on the VM host, not inside the runtime.
+# Behat must be enabled at the mpd level, which publishes the behat
+# vhost and TLS cert. Otherwise init.php sets everything up but the
+# URL is unreachable.
 if [ "${MPD_MOODLE_BEHAT:-0}" != "1" ]; then
     echo "Error: Behat is not enabled for project '${PROJECT}' in mpd." >&2
     echo "The behat.${PROJECT}.${MPD_ZONE} vhost and its TLS certificate don't" >&2

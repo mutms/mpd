@@ -22,8 +22,7 @@ func testGuard(t *testing.T, runtime string, projects ...state.Project) Guard {
 	}
 }
 
-// testAssets writes a fake assets tree mirroring the real layout: the
-// unified runtime serving moodle and astro.
+// testAssets writes a fake assets tree mirroring the real layout.
 func testAssets(t *testing.T) assets.Tree {
 	t.Helper()
 
@@ -60,17 +59,14 @@ func testStore(t *testing.T, projects ...state.Project) state.Store {
 	return state.NewAt(stateDir)
 }
 
-// The allowlist must track cli.ProjectVerbs, minus the ones blocked here.
 // If this fails because a verb was added, decide deliberately whether a
 // runtime should reach it — do not just update the expectation.
 func TestAllowedVerbsTracksProjectVerbs(t *testing.T) {
 	want := map[string]bool{
 		"init": true, "delete": true,
 		"help": true, "status": true, "start": true, "stop": true,
-		// reset is project-scoped and needs VM privilege (drop the database,
-		// privileged removal under /srv), so it is a verb a runtime cannot
-		// perform for itself — and a corrupted database is something you
-		// discover while working inside the runtime. Allowed.
+		// reset needs VM privilege (drop the database, privileged
+		// removal under /srv), so a runtime cannot do it itself.
 		"reset": true,
 		"run":   false, // loops back into the calling runtime
 	}
@@ -102,7 +98,6 @@ func TestEveryAllowedVerbPasses(t *testing.T) {
 	}
 }
 
-// Every flag on the denylist is refused, in either flag form.
 func TestBlockedFlagsRefused(t *testing.T) {
 	g := testGuard(t, "runtime")
 	for _, argv := range [][]string{
@@ -123,11 +118,8 @@ func TestBlockedFlagsRefused(t *testing.T) {
 	}
 }
 
-// The denylist inversion opened db/service management, --runtime-backup
-// and list/version to the runtime; the guard must let them through (the
-// child owns the actual argument handling). An unknown token also passes
-// the guard — the child produces the canonical "unknown command" error,
-// not a second differently-worded one here.
+// An unknown token also passes the guard: the child produces the
+// canonical "unknown command" error, not a second one here.
 func TestNewlyAllowedCommandsPass(t *testing.T) {
 	g := testGuard(t, "runtime")
 	for _, argv := range [][]string{
@@ -146,9 +138,8 @@ func TestNewlyAllowedCommandsPass(t *testing.T) {
 	}
 }
 
-// Every global flag must be either denied or explicitly allowed from a
-// runtime — never unclassified. This is the safe-by-default pin: adding a
-// flag to cli.GlobalFlags without a decision here fails the build.
+// The safe-by-default pin: adding a flag to cli.GlobalFlags without a
+// decision here fails the build.
 func TestEveryGlobalFlagClassified(t *testing.T) {
 	allowedFromRuntime := map[string]bool{
 		"--runtime-backup":    true,
@@ -169,8 +160,8 @@ func TestEveryGlobalFlagClassified(t *testing.T) {
 	}
 	for _, flag := range cli.GlobalFlags {
 		_, blocked := blockedFlags[flag]
-		// Exactly one of the two must hold. Both-false is unclassified
-		// (a new flag); both-true is a contradiction.
+		// Exactly one of the two must hold: both-false is unclassified,
+		// both-true is a contradiction.
 		if blocked == allowedFromRuntime[flag] {
 			t.Errorf("global flag %q is not classified exactly once: "+
 				"put it in blockedFlags or this test's allowed set.\n"+
@@ -179,7 +170,6 @@ func TestEveryGlobalFlagClassified(t *testing.T) {
 	}
 }
 
-// run must be refused even though it IS a project verb.
 func TestRunIsRefusedWithGuidance(t *testing.T) {
 	g := testGuard(t, "runtime")
 	_, err := g.Check(Request{Argv: []string{"run", "php", "-v"}, Cwd: "/srv"})
@@ -191,8 +181,7 @@ func TestRunIsRefusedWithGuidance(t *testing.T) {
 	}
 }
 
-// A blocked flag smuggled in after a legitimate verb must not slip
-// through — the scan covers the whole argv, not just the first token.
+// The denylist scan covers the whole argv, not just the first token.
 func TestBlockedFlagAfterVerbRefused(t *testing.T) {
 	g := testGuard(t, "runtime", state.Project{Name: "moodle45", RuntimeName: "runtime"})
 	for _, argv := range [][]string{
@@ -207,7 +196,6 @@ func TestBlockedFlagAfterVerbRefused(t *testing.T) {
 	}
 }
 
-// A malformed cwd means the peer is not mpd. Refused outright.
 func TestMalformedCwdRefused(t *testing.T) {
 	g := testGuard(t, "runtime")
 	for _, cwd := range []string{
@@ -222,9 +210,8 @@ func TestMalformedCwdRefused(t *testing.T) {
 	}
 }
 
-// A cwd outside /srv is legitimate — you land in $HOME when you SSH in — but
-// it cannot serve as context, because the same path on the VM is a different
-// directory. The command still runs, from /srv.
+// A cwd outside /srv is legitimate but unusable as context; the command
+// still runs, from /srv.
 func TestCwdOutsideSrvRunsFromSrv(t *testing.T) {
 	g := testGuard(t, "runtime", state.Project{Name: "moodle45", RuntimeName: "runtime"})
 	for _, cwd := range []string{"/home/skodak", "/etc", "/srvsomething", "/"} {
@@ -239,8 +226,6 @@ func TestCwdOutsideSrvRunsFromSrv(t *testing.T) {
 	}
 }
 
-// Inside /srv, the caller's own directory is preserved — that is what makes
-// project inference and relative paths behave as they do on the VM.
 func TestCwdInsideSrvIsPreserved(t *testing.T) {
 	g := testGuard(t, "runtime", state.Project{Name: "moodle45", RuntimeName: "runtime"})
 	want := "/srv/projects/moodle45/public"
@@ -253,8 +238,6 @@ func TestCwdInsideSrvIsPreserved(t *testing.T) {
 	}
 }
 
-// Outside /srv there is nothing to infer from, so a verb that needs a
-// project must be told which one.
 func TestCwdOutsideSrvCannotInferProject(t *testing.T) {
 	g := testGuard(t, "runtime", state.Project{Name: "moodle45", RuntimeName: "runtime"})
 	_, err := g.Check(Request{Argv: []string{"start"}, Cwd: "/home/skodak"})
@@ -266,7 +249,6 @@ func TestCwdOutsideSrvCannotInferProject(t *testing.T) {
 	}
 }
 
-// Own projects are reachable by cwd inference.
 func TestOwnProjectAllowedByCwd(t *testing.T) {
 	g := testGuard(t, "runtime", state.Project{Name: "moodle45", RuntimeName: "runtime"})
 	if _, err := g.Check(Request{Argv: []string{"start"}, Cwd: "/srv/projects/moodle45/public"}); err != nil {
@@ -274,7 +256,6 @@ func TestOwnProjectAllowedByCwd(t *testing.T) {
 	}
 }
 
-// A declared --type must exist in the assets tree, in both flag forms.
 func TestInitValidatesDeclaredType(t *testing.T) {
 	g := testGuard(t, "runtime")
 	_, err := g.Check(Request{Argv: []string{"init", "thing", "--type=rails"}, Cwd: "/srv/projects/thing"})
@@ -298,8 +279,6 @@ func TestInitValidatesDeclaredType(t *testing.T) {
 	}
 }
 
-// Without --type the child's own inference and default apply — the guard
-// passes the argv through untouched.
 func TestInitWithoutTypePassesThrough(t *testing.T) {
 	g := testGuard(t, "runtime")
 	decision, err := g.Check(Request{Argv: []string{"init", "newthing"}, Cwd: "/srv/projects/newthing"})

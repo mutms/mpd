@@ -9,27 +9,12 @@ import (
 	"github.com/mutms/mpd/go/internal/ui"
 )
 
-// EnsureHome applies the developer's home overlay onto the VM dev user's home.
-// The files come from mpd-virt's asset tree (assets/vm/home), in two flavours:
-//
-//   - assets/vm/home/default/ — SEEDED: copied only when the file does not yet
-//     exist. It is the developer's once present, so an edit made in the VM
-//     survives and re-overlaying does not clobber it. For dotfiles you tweak
-//     (a ~/.vimrc, a ~/.ssh/known_hosts you append to).
-//
-//   - assets/vm/home/forced/ — OVERWRITTEN from the Mac on every run, so a Mac
-//     edit propagates. mpd owns these; edit them on the Mac, not in the VM. For
-//     settings you want kept in step (a ~/.gitconfig, forced tool configs).
-//
-// It NEVER deletes: a file removed from forced/ on the Mac is left in place in
-// the home, so this can never lose data — the deliberate trade for the
-// overwrite behaviour.
-//
-// This is not a fresh-account seed: the VM's dev account already exists at
-// adoption, so this overlays onto the live home (the reason the VM can't reuse
-// the runtime's copy-at-create path). mpd ships nothing here — the directories
-// exist only once a developer overlays into them — so an absent tree is the
-// normal "no overlay" case. Best-effort: a per-file failure warns and continues.
+// EnsureHome applies the developer's home overlay (assets/vm/home) onto
+// the dev user's home. default/ files are seeded only when absent, so
+// in-VM edits survive; forced/ files are overwritten on every run. It
+// never deletes, so a removed source file cannot lose data. An absent
+// tree is the normal "no overlay" case; per-file failures warn and
+// continue. See AGENTS.md on assets/vm.
 func EnsureHome(out io.Writer) error {
 	base := AssetsDir + "/vm/home"
 	home := Home()
@@ -52,11 +37,9 @@ func EnsureHome(out io.Writer) error {
 	return nil
 }
 
-// applyHomeDir copies every file under root into home, preserving the relative
-// path. overwrite=false seeds (an existing destination is left untouched);
-// overwrite=true refreshes (an existing destination is replaced). It NEVER
-// removes anything — a file gone from root stays in the home. An absent root is
-// a no-op. Returns the number of files written. Best-effort per file.
+// applyHomeDir copies every file under root into home. overwrite=false
+// seeds; overwrite=true replaces. It never removes anything; an absent
+// root is a no-op. Returns the number of files written.
 func applyHomeDir(out io.Writer, root, home string, overwrite bool) (int, error) {
 	if info, err := os.Stat(root); err != nil || !info.IsDir() {
 		return 0, nil
@@ -73,7 +56,7 @@ func applyHomeDir(out io.Writer, root, home string, overwrite bool) (int, error)
 		dest := filepath.Join(home, rel)
 		if !overwrite {
 			if _, err := os.Stat(dest); err == nil {
-				return nil // seed-once: the file is the developer's once present
+				return nil // seed-once: the file is the developer's
 			}
 		}
 		if err := seedFile(path, dest); err != nil {
@@ -86,8 +69,8 @@ func applyHomeDir(out io.Writer, root, home string, overwrite bool) (int, error)
 	return written, err
 }
 
-// seedFile copies src to dest, creating parent directories, preserving the
-// source file's permission bits (so a mode-0600 overlay stays 0600).
+// seedFile copies src to dest, creating parents and preserving the
+// source's permission bits, so a 0600 overlay stays 0600.
 func seedFile(src, dest string) error {
 	info, err := os.Stat(src)
 	if err != nil {

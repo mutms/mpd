@@ -1,41 +1,13 @@
 #!/bin/bash
-# mdl-data-restore — load data saved by mdl-data-backup into an empty
-# project.
-#
-# Run it from the project directory, inside the runtime:
-#
-#   cd /srv/projects/<project>
-#   mdl-data-restore --list        # what is there to restore
-#   mdl-data-restore before-upgrade
-#
-# It only ever writes. The project has to be empty first, which is what
-# `mpd reset` is for:
-#
-#   mpd reset          # drops the database, wipes the dataroot
-#   mpd start      # makes an empty database to restore into
-#   mdl-data-restore before-upgrade
-#
-# Restoring over a project that still has data is refused, and the
-# message says the same thing. Emptying a project is destructive and
-# belongs to the one command that does it properly: `mpd reset` also
-# stops the project, tears down what the project type built, and drops
-# the DNS record — none of which a tool in here can reach.
-#
-# It does not touch the source tree, and it does not apply the mpd.env
-# in the bundle — that copy is there to read. If the backup was made on
-# a different database engine, edit mpd.env yourself and run
-# `mpd start` before restoring.
-#
-# The site stays up while this runs, with Moodle's CLI maintenance mode
-# blocking the web interface. This is a development snapshot, not a
-# production restore.
+# mdl-data-restore <name>|--list — load an mdl-data-backup bundle into
+# an empty project. Refuses a project that still holds data; empty it
+# with `mpd reset` + `mpd start` first. See docs/usage.md "Backups".
 set -euo pipefail
 
 source /opt/mpd/assets/runtime/project_types/moodle/scripts/mpd-env.sh
 
-# Every project's backups share this one directory, so a bundle taken
-# from one project can be restored into another. The manifest carries the
-# project it came from, which `--list` shows.
+# All projects share this directory; the manifest records the source
+# project, which --list shows.
 BACKUP_DIR="/srv/backups/projects"
 
 list_bundles() {
@@ -95,9 +67,8 @@ FROM_TAG=$(printf '%s' "$MANIFEST" | jq -r '.dbTag // empty')
 FROM_RELEASE=$(printf '%s' "$MANIFEST" | jq -r '.moodleRelease // empty')
 FROM_CREATED=$(printf '%s' "$MANIFEST" | jq -r '.created // "unknown"')
 
-# A dump is written in its engine's own dialect, so this one is a refusal
-# rather than a warning: postgres SQL will not load into MariaDB, and a
-# half-loaded database is worse than none.
+# A dump is written in its engine's own dialect, and a half-loaded
+# database is worse than none — so a mismatch is a refusal.
 if [ -n "$FROM_ENGINE" ] && [ "$FROM_ENGINE" != "$DB_ENGINE" ]; then
     echo "This backup is from ${FROM_ENGINE}, and '${PROJECT}' now runs ${DB_ENGINE}." >&2
     echo "Set MPD_DB back to a ${FROM_ENGINE} version in mpd.env, run \`mpd start\`," >&2
@@ -105,12 +76,9 @@ if [ -n "$FROM_ENGINE" ] && [ "$FROM_ENGINE" != "$DB_ENGINE" ]; then
     exit 1
 fi
 
-# The target has to be empty, and the database is where that is worth
-# checking: loading a dump on top of live tables is how you get a site
-# that half works. An empty database also means an empty dataroot in
-# practice, because the only way to get one is `mpd reset`, which clears
-# both — and it means restoring twice in a row is refused the second
-# time rather than merging two dataroots.
+# The database is where "still has data" is checked: an empty database
+# implies an empty dataroot, because only `mpd reset` empties either.
+# It also makes a second restore refuse instead of merging dataroots.
 case "$DB_ENGINE" in
     postgres|mariadb|mysql) ;;
     *) echo "Unknown database engine '${DB_ENGINE}' — cannot restore." >&2; exit 1 ;;
@@ -139,14 +107,11 @@ fi
 DATA_DIR=$(moodle_status_field '.dataDir')
 DATAROOT="${DATA_DIR}/dataroot"
 
-# Moodle's CLI maintenance mode is a file in the dataroot, which
-# lib/setup.php checks before it opens a database connection — so the web
-# interface is fenced off even now, with no database worth connecting to.
-# Written directly rather than through `admin/cli/maintenance.php`,
-# which needs a database to run at all.
-#
-# A file that was already there is somebody's deliberate maintenance
-# mode. Leave it, and leave it behind afterwards.
+# The CLI maintenance file 503s web requests before any DB connection,
+# so the web interface stays fenced while the database reloads.
+# Written directly: admin/cli/maintenance.php needs a database to run.
+# A pre-existing file is somebody's deliberate maintenance mode: leave
+# it, before and after.
 MAINT_FILE="${DATAROOT}/climaintenance.html"
 MAINT_WAS_ON=0
 [ -f "$MAINT_FILE" ] && MAINT_WAS_ON=1
@@ -171,16 +136,15 @@ fi
 
 echo "Restoring '${BUNDLE_NAME}' into '${PROJECT}' (taken ${FROM_CREATED})"
 
-# Unpacked before anything is loaded: a bundle that will not open should
-# say so while the project is still exactly as it was.
+# Unpack before loading anything: a bundle that will not open should
+# fail while the project is still untouched.
 tar -xzf "$BUNDLE" -C "$STAGING" manifest.json db.sql.gz mpd.env
 
 echo "  database (${FROM_TAG:-$FROM_ENGINE} → ${DB_TAG:-$DB_ENGINE})"
 case "$DB_ENGINE" in
     postgres)
-        # As the project role, so every table the dump creates is owned
-        # by the role Moodle connects as. `mpd start` made the
-        # database and the role; this only fills it.
+        # Load as the project role, so every table the dump creates is
+        # owned by the role Moodle connects as.
         gunzip -c "${STAGING}/db.sql.gz" \
             | PGPASSWORD="${PROJECT}" psql -h "$DBHOST" -U "${PROJECT}" -d "${PROJECT}" \
                 -q -v ON_ERROR_STOP=1 >/dev/null

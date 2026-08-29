@@ -1,14 +1,9 @@
 #!/bin/bash
 # 60-install-software.sh — apt for the runtime: dist-upgrade, then every
-# package a runtime needs (tools, all PHP versions, DB clients, caddy).
-# The one package list; no configuration here (that is 70).
+# package a runtime needs. The one package list; configuration is 70's job.
 #
-# Runs in three places, identical each time:
-#   - the Containerfile, as root, to pre-bake the published image
-#   - runtime create, as the dev user, right after 50 (a fast no-op on
-#     a current image)
-#   - `mpd --vm-upgrade`, as the dev user, to bring an existing runtime
-#     forward in place — a runtime is upgraded, never rebuilt for this
+# Runs identically in three places: the Containerfile (as root, image
+# pre-bake), runtime create (after 50), and `mpd --vm-upgrade`.
 set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
@@ -21,9 +16,9 @@ apt_get() {
 # shellcheck source=/dev/null
 . "$(dirname "$0")/../lib/php-configure.sh"
 
-# apt-get update exits 0 when every index fetch fails, so a container that
-# cannot resolve gets an unrelated "package not available" screens later.
-# Name the cause, and give a just-created container's network a moment.
+# apt-get update exits 0 even when every index fetch fails, so a broken
+# resolver would surface later as "package not available". Check DNS
+# first, and give a just-created container's network a moment.
 resolved=false
 for _ in 1 2 3 4 5; do
     if getent hosts deb.debian.org >/dev/null 2>&1; then
@@ -43,8 +38,8 @@ echo "==> apt-get update + dist-upgrade"
 apt_get update -qq
 apt_get dist-upgrade -y -qq
 
-# Repos: Sury for every PHP version; PGDG because Debian's postgresql-client
-# is older than mpd's default server and pg_dump refuses a newer server.
+# Sury for every PHP version. PGDG because Debian's postgresql-client is
+# older than mpd's default server and pg_dump refuses a newer server.
 echo "==> Third-party repositories (Sury PHP, PGDG)"
 apt_get install -y -qq --no-install-recommends apt-transport-https ca-certificates curl gnupg2 lsb-release
 curl -fsSL https://packages.sury.org/php/apt.gpg | sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/sury-php.gpg
@@ -55,8 +50,8 @@ echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pu
     | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
 apt_get update -qq
 
-# Base: systemd as PID 1, sshd, sudo, developer tools (the last line is for
-# AI agents; not `gh` — useless until it stores a token here).
+# systemd as PID 1, sshd, sudo, developer tools. The last line is for AI
+# agents; not `gh` — useless until it stores a token here.
 BASE_PKGS=(
     systemd systemd-sysv sudo openssh-server openssh-client
     bash-completion bc bzip2 curl dnsutils file findutils git gzip htop
@@ -66,17 +61,15 @@ BASE_PKGS=(
     shellcheck shfmt ripgrep
 )
 
-# PHP: every version in MPD_PHP_VERSIONS with the Moodle extension set
-# (lib/php-configure.sh). Not golang-go: mudev is built on the VM and
-# bind-mounted in.
+# Every version in MPD_PHP_VERSIONS with the Moodle extension set.
+# Not golang-go: mudev is built on the VM and bind-mounted in.
 PHP_PKGS=()
 for VER in $MPD_PHP_VERSIONS; do
     # shellcheck disable=SC2207
     PHP_PKGS+=($(mpd_php_package_list "$VER"))
 done
 
-# DB clients and the in-runtime TLS frontdoor (caddy; its watcher needs
-# inotify-tools).
+# DB clients and the caddy frontdoor; its watcher needs inotify-tools.
 STACK_PKGS=(
     postgresql-client mariadb-client default-mysql-client
     caddy inotify-tools

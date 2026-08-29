@@ -10,15 +10,9 @@ import (
 	"github.com/mutms/mpd/go/internal/vm"
 )
 
-// InstallCompletion installs the shell-side completion shim for the
-// user's $SHELL.
-//
-// The shim is small and stable — it forwards every Tab press to `mpd
-// --complete`, which is where the real candidate logic lives. That split
-// means adding a verb never requires reinstalling completion.
-//
-// Operates on the user's shell config rather than on mpd state: this is
-// per-user ergonomics, so a failure warns and setup continues.
+// InstallCompletion installs the completion shim for the user's $SHELL.
+// The shim only forwards to `mpd --complete`, so adding a verb never
+// requires reinstalling it. Failures warn and setup continues.
 func InstallCompletion(out io.Writer) {
 	shell := os.Getenv("SHELL")
 	switch {
@@ -52,8 +46,8 @@ func installZshCompletion(out io.Writer) {
 	}
 	ui.OK(out, "zsh completion installed at ~/.zsh/completions/_mpd")
 
-	// zsh caches compiled completion definitions; a stale dump would
-	// keep serving the previous shim until it happened to expire.
+	// zsh caches compiled completions; a stale dump keeps serving the
+	// previous shim.
 	if entries, err := os.ReadDir(home); err == nil {
 		for _, e := range entries {
 			if strings.HasPrefix(e.Name(), ".zcompdump") {
@@ -68,9 +62,8 @@ func installZshCompletion(out io.Writer) {
 		ui.Note(out, "~/.zshrc already includes ~/.zsh/completions in fpath.")
 	} else {
 		block := "\n# mpd completions (added by mpd --vm-setup)\nfpath=(~/.zsh/completions $fpath)\n"
-		// compinit must run after fpath is set, but only add it when the
-		// user's own config does not already call it — a second compinit
-		// is slow and can print warnings.
+		// compinit must run after fpath is set. Skip it when the user's
+		// config already calls it — a second compinit is slow.
 		if !strings.Contains(current, "compinit") {
 			block += "autoload -Uz compinit && compinit\n"
 		}
@@ -98,8 +91,8 @@ func installBashCompletion(out io.Writer) {
 	}
 	ui.OK(out, "bash completion installed at ~/.bash_completion.d/mpd")
 
-	// The sentinel comment is what makes the append idempotent — bash
-	// has no fpath equivalent to test for.
+	// The sentinel makes the append idempotent — bash has no fpath
+	// equivalent to test for.
 	const sentinel = "# mpd completions (added by mpd --vm-setup)"
 	bashrc := filepath.Join(home, ".bashrc")
 	if strings.Contains(readOrEmpty(bashrc), sentinel) {
@@ -130,9 +123,8 @@ func readOrEmpty(path string) string {
 	return string(data)
 }
 
-// appendOrCreate appends to an rc file, creating it when absent. Append
-// rather than rewrite: this is the user's own shell config and mpd owns
-// only the block it adds.
+// appendOrCreate appends, never rewrites: the rc file is the user's own
+// config and mpd owns only the block it adds.
 func appendOrCreate(out io.Writer, path, content string) {
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {

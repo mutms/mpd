@@ -1,24 +1,11 @@
 #!/bin/bash
 # bootstrap/15-secure-ssh.sh
 #
-# Optional hardening between steps 1 and 2. Wgettable, self-contained.
-#
-# A default Debian install has a root account and a user account, and
-# sshd lets both log in with a password. mpd boxes are driven over SSH
-# with keys only, so this step writes one sshd drop-in that:
-#   - refuses root over SSH entirely (PermitRootLogin no)
-#   - refuses password and keyboard-interactive auth for everyone
-#   - keeps public-key auth on
-#
-# Lock-out guard: it refuses to disable passwords while the invoking
-# user has no key in ~/.ssh/authorized_keys — add one first
-# (`ssh-copy-id <user>@<ip>` from your workstation).
-#
-# No-op where openssh-server is not installed (a sandbox ships without
-# it). Needs passwordless sudo (step 1). Idempotent: the drop-in is
-# rewritten only when its content differs, and sshd is reloaded only
-# then. Not used for mpd-virt's Apple image, whose Containerfile ships
-# the same settings.
+# Optional hardening between steps 1 and 2, wgettable and self-contained:
+# one sshd drop-in that refuses root login and password auth and keeps
+# public-key auth on. Refuses to disable passwords while the invoking
+# user has no key in ~/.ssh/authorized_keys. No-op without
+# openssh-server. Needs passwordless sudo (step 1). Idempotent.
 #
 #   bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/bootstrap/15-secure-ssh.sh)
 
@@ -30,7 +17,7 @@ die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
 DROPIN="/etc/ssh/sshd_config.d/10-mpd.conf"
 
-# --- Hostname gate (same as step 1: never on a workstation by accident) ---
+# Same gate as step 1: never on a workstation by accident.
 step "Hostname gate"
 CURRENT_HOSTNAME="$(hostname -s 2>/dev/null || cut -d. -f1 /etc/hostname | tr -d '[:space:]')"
 case "${CURRENT_HOSTNAME}" in
@@ -46,7 +33,6 @@ sudo -n true 2>/dev/null \
     || die "Passwordless sudo not configured. Run 10-passwordless-sudo.sh first."
 ok "sudo -n true works"
 
-# --- sshd present? ---
 step "sshd"
 if ! dpkg -s openssh-server >/dev/null 2>&1; then
     ok "openssh-server is not installed — nothing to secure"
@@ -56,7 +42,6 @@ fi
     || die "/etc/ssh/sshd_config.d missing — this sshd does not read drop-ins."
 ok "openssh-server installed"
 
-# --- Lock-out guard ---
 step "Key for $(id -un)"
 if ! grep -qE '^[[:space:]]*(ssh-|ecdsa-|sk-)' "${HOME}/.ssh/authorized_keys" 2>/dev/null; then
     die "no public key in ${HOME}/.ssh/authorized_keys — disabling password auth now would lock you out.
@@ -66,10 +51,9 @@ then re-run this script."
 fi
 ok "authorized key present"
 
-# --- Drop-in ---
-# Debian's sshd_config starts with `Include /etc/ssh/sshd_config.d/*.conf`
-# and sshd keeps the first value it sees, so a drop-in wins over the main
-# file and over later-sorting drop-ins (cloud-init writes 50-cloud-init.conf).
+# Debian's sshd_config includes sshd_config.d/*.conf first and sshd keeps
+# the first value it sees, so this drop-in wins over the main file and
+# over later-sorting drop-ins (cloud-init writes 50-cloud-init.conf).
 step "${DROPIN}"
 want="$(cat <<'EOF'
 # Managed by mpd (bootstrap/15-secure-ssh.sh). Re-run that script to re-apply.

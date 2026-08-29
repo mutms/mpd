@@ -1,20 +1,13 @@
 #!/bin/bash
 # project-delete.sh <project-name>
-# Tears down per-project runtime-side state for a Moodle project:
-#   - Per-project FPM pool config (/etc/php/<ver>/fpm/pool.d/mpd-<n>.conf)
-#   - config-mpd.php (config.php is dev-owned and kept; it only sources config-mpd.php)
-#
-# The in-runtime caddy frontdoor handles TLS termination + routing; nothing
-# in /etc/apache2/, /etc/hosts, or per-project systemd is owned here.
-# DNS for the VM's zone is served by the dnsmasq service (out-of-runtime).
-# DB drop and source-tree removal happen on the host side, in mpd.
-# Called by mpd delete <project>.
+# Run by `mpd delete <project>`. Removes this project's FPM pools and
+# config-mpd.php. DB drop and source-tree removal happen host-side, in
+# mpd.
 set -euo pipefail
 
 PROJECT_NAME="$1"
 PROJECT_DIR="/srv/projects/${PROJECT_NAME}"
 
-# --- Per-project FPM pool configs ---
 for POOL in /etc/php/*/fpm/pool.d/mpd-"${PROJECT_NAME}".conf; do
     [ -f "$POOL" ] || continue
     sudo rm -f "$POOL"
@@ -22,5 +15,5 @@ for POOL in /etc/php/*/fpm/pool.d/mpd-"${PROJECT_NAME}".conf; do
     sudo systemctl reload "php${VER}-fpm" 2>/dev/null || true
 done
 
-# --- config-mpd.php only (config.php is dev-owned, kept) ---
+# config.php is dev-owned and kept; it only sources config-mpd.php.
 rm -f "${PROJECT_DIR}/config-mpd.php"

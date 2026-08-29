@@ -23,12 +23,9 @@ const (
 	colDBStatus = 10
 )
 
-// ListDatabases renders `list dbs`.
-//
-// Rows come from live containers rather than databases.json: the cache
-// records what mpd created, the containers are what exists. Labels carry
-// engine and version so a container adopted from an older scheme still
-// renders.
+// ListDatabases renders `list dbs`. Rows come from live containers, not
+// databases.json: the cache records what mpd created, the containers are
+// what exists.
 func ListDatabases(ctx context.Context, out io.Writer, n net.Net, p *podman.Client, s state.Store) {
 	items := p.Ps(ctx, "label=mpd.type=db")
 	if len(items) == 0 {
@@ -74,13 +71,9 @@ func ListDatabases(ctx context.Context, out io.Writer, n net.Net, p *podman.Clie
 	}
 }
 
-// ListProjects renders `list projects`.
-//
-// One STATUS column, from state.Project.Status: the autostart intent
-// ("started"/"stopped"), or "not initialised" for a project that has never
-// been configured. There is no separate live-observation column — a start
-// that does not fully come up records itself stopped, so the stored status
-// is the honest one.
+// ListProjects renders `list projects`. The single STATUS column is the
+// stored intent; a start that does not come up records itself stopped,
+// so no live-observation column is needed.
 func ListProjects(out io.Writer, s state.Store) {
 	projects := s.Projects()
 	if len(projects) == 0 {
@@ -105,10 +98,8 @@ func ListProjects(out io.Writer, s state.Store) {
 	}
 }
 
-// gitBranch reads a project's checked-out branch straight from
-// /srv/projects/<name>/.git/HEAD — no `git` subprocess, per the
-// host-command rule. Returns the branch name, a short commit for a
-// detached HEAD, or "-" when the tree is not a git checkout.
+// gitBranch reads .git/HEAD directly — no `git` subprocess, per the
+// host-command rule in docs/architecture.md.
 func gitBranch(name string) string {
 	head, ok := srv.Read(filepath.Join(srv.ProjectDir(name), ".git", "HEAD"))
 	if !ok {
@@ -118,8 +109,7 @@ func gitBranch(name string) string {
 	if ref := strings.TrimPrefix(head, "ref: refs/heads/"); ref != head {
 		return ref
 	}
-	// Detached HEAD: the file holds a bare commit hash. Only treat it as
-	// one when it actually looks like a hash — a `.git` that is a gitdir
+	// Detached HEAD holds a bare hash. Require hash shape: a gitdir
 	// pointer file (worktrees, submodules) is neither a ref nor a hash.
 	if isHex(head) && len(head) >= 7 {
 		return head[:7]
@@ -127,7 +117,6 @@ func gitBranch(name string) string {
 	return "-"
 }
 
-// isHex reports whether s is a non-empty string of hex digits.
 func isHex(s string) bool {
 	if s == "" {
 		return false

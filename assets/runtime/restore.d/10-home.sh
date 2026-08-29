@@ -1,12 +1,8 @@
 #!/bin/bash
 # Restore hook: the developer's home directory. Inverse of
-# backup.d/10-home.sh; $1 is the backup directory to restore from.
-# No-ops cleanly when the backup carries no home archive.
-#
-# A plain untar over the current home: config, dotfiles, IDE settings,
-# SSH known_hosts and shell history come back. Binaries were left out of
-# the backup on purpose and are NOT restored — reinstall the ones you
-# want fresh (e.g. `claude-install`).
+# backup.d/10-home.sh; $1 is the backup directory. No-op when the backup
+# carries no home archive. Binaries were excluded from the backup and are
+# not restored.
 set -euo pipefail
 
 ARCHIVE="$1/home.tar.gz"

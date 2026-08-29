@@ -1,25 +1,16 @@
 #!/bin/bash
-# Backup hook: the developer's home directory.
+# Backup hook: the developer's home directory. Invoked by
+# `mpd --runtime-backup` with the backup directory as $1.
 #
-# Runs inside the runtime as the dev user, invoked by `mpd
-# --runtime-backup` with the backup directory as $1 (a fresh
-# /srv/backups/runtime/<timestamp>/). Idempotent — writes one archive,
-# overwriting on re-run.
-#
-# A deny-list, not an allow-list: everything under $HOME is saved except
-# the paths below. Two kinds are left out — regenerable caches, and
-# installed binaries. Binaries are not carried across a rebuild on
-# purpose: a rebuilt runtime gets fresh, current tools, and reinstalling
-# one (e.g. `claude-install`) is a single command. So config, dotfiles,
-# IDE settings, SSH known_hosts and shell history come back; caches and
-# binaries do not.
+# A deny-list: everything under $HOME is saved except EXCLUDES below.
+# Caches and installed binaries stay out on purpose — a rebuilt runtime
+# reinstalls fresh tools (e.g. `claude-install`).
 set -euo pipefail
 
 DEST="$1"
 ARCHIVE="$DEST/home.tar.gz"
 
-# Excluded paths, relative to $HOME. Caches and package stores
-# (regenerable) plus installed binaries (reinstalled fresh, not restored).
+# Paths relative to $HOME: regenerable caches plus installed binaries.
 EXCLUDES=(
     ".cache"
     ".local/bin"
@@ -31,12 +22,9 @@ EXCLUDES=(
     "go/pkg"
     ".vscode-server"
     ".cursor-server"
-    # Toolbox-installed IDE backends — gigabytes each, and reinstalled
-    # rather than restored: `phpstorm-install-app` unpacks one in seconds
-    # from ~/install. Toolbox's own settings and channels stay in.
+    # IDE backends: gigabytes each, reinstalled by phpstorm-install-app.
     ".local/share/JetBrains/Toolbox/apps"
-    # The tarballs those tools unpack. Seeded from the developer's mpd-virt
-    # overlay on every runtime create, so a copy here would be dead weight.
+    # Seeded from the developer's mpd-virt overlay on every runtime create.
     "install"
 )
 
@@ -48,14 +36,13 @@ done
 args+=(--exclude="node_modules")
 
 mkdir -p "$DEST"
-# -C "$HOME" with "." stores paths relative, so restore is a clean untar
-# into $HOME whatever the dev user is named.
+# Store paths relative to $HOME, so restore is a plain untar for any user.
 set +e
 tar -czf "$ARCHIVE" "${args[@]}" -C "$HOME" .
 rc=$?
 set -e
-# tar exits 1 for "file changed as we read it" — routine on a live home
-# (shell history, IDE state) and not a failure. 2 and up are real errors.
+# tar exits 1 for "file changed as we read it" — routine on a live home,
+# not a failure. 2 and up are real errors.
 if [ "$rc" -gt 1 ]; then
     echo "home: tar failed (exit $rc)." >&2
     exit "$rc"

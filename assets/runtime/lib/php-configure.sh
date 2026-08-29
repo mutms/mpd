@@ -1,14 +1,7 @@
 #!/bin/bash
-# php-configure.sh — shared PHP-version install/config helpers.
-#
-# Sourced (never executed) by three callers, so the version list, the
-# package list and the per-version FPM/php.ini setup have one definition:
-#   - assets/runtime/bootstrap/60-install-software.sh — installs the set
-#   - assets/runtime/bootstrap/70-configure-runtime.sh — configures it
-#   - assets/runtime/bin/php-install — adds a legacy version on demand
-#
-# Both run as the dev user with passwordless sudo (AGENTS.md §"Mandatory
-# privilege rule"): the functions sudo the individual privileged ops.
+# php-configure.sh — shared PHP-version install/config helpers, sourced by
+# 60-install-software.sh, 70-configure-runtime.sh and bin/php-install so
+# the version list, package list and per-version setup have one definition.
 #
 # No `set -e` here — a sourced library must not change the caller's shell
 # options.
@@ -16,22 +9,19 @@
 # The PHP versions every runtime carries.
 MPD_PHP_VERSIONS="8.1 8.2 8.3 8.4 8.5"
 
-# The runtime-wide default PHP version — what the `php` dispatcher and the
-# project setup scripts use when no layer of mpd.env sets MPD_PHP_VERSION
-# (there is no shipped defaults file). Keep in sync with bin/php.
+# Used when no mpd.env layer sets MPD_PHP_VERSION. Keep in sync with bin/php.
 MPD_PHP_FALLBACK_VERSION="8.3"
 
-# Extensions every Moodle-capable PHP needs. Kept together so build.sh and
-# php-install install the same set.
+# Extensions every Moodle-capable PHP needs.
 MPD_PHP_REQUIRED_EXTS="cli fpm curl gd intl mbstring pgsql soap xml zip mysql"
 
-# Extensions we install when the Sury index has them. Some lag for the
-# newest PHP on Sury, so a missing one is skipped, not fatal.
+# Installed only when the Sury index has them; a missing one is skipped,
+# not fatal.
 MPD_PHP_OPTIONAL_EXTS="opcache redis apcu xmlrpc"
 
-# mpd_php_package_list <ver> — echo the php<ver>-* packages to install for
-# one version, dropping optionals that are not in the apt index. Needs the
-# Sury repo already present in the index (apt-get update run).
+# mpd_php_package_list <ver> — echo the php<ver>-* packages for one
+# version, dropping optionals absent from the apt index. Needs the Sury
+# repo in the index already.
 mpd_php_package_list() {
     local ver="$1" ext list=""
     for ext in $MPD_PHP_REQUIRED_EXTS; do
@@ -51,9 +41,9 @@ mpd_php_package_list() {
     printf '%s' "${list# }"
 }
 
-# mpd_php_configure_version <ver> — file-only setup for one already-installed
-# version: Moodle php.ini defaults (FPM + CLI), the default pool's unix
-# socket, and enabling + starting php<ver>-fpm. Idempotent. No apt here.
+# mpd_php_configure_version <ver> — configure one installed version:
+# Moodle php.ini defaults, the default pool's unix socket, and
+# enabling + starting php<ver>-fpm. Idempotent; no apt.
 mpd_php_configure_version() {
     local ver="$1" sapi ini_dir pool_conf
 
@@ -70,8 +60,8 @@ INIEOF
         fi
     done
 
-    # Default pool listens on a unix socket; per-project pools that
-    # project-setup.sh writes listen on their own TCP ports.
+    # The default pool listens on a unix socket; per-project pools listen
+    # on their own TCP ports.
     pool_conf="/etc/php/${ver}/fpm/pool.d/www.conf"
     if [ -f "$pool_conf" ]; then
         sudo sed -i "s|^listen = .*|listen = /run/php/php${ver}-fpm.sock|" "$pool_conf"

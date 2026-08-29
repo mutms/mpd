@@ -9,23 +9,15 @@ import (
 	"github.com/mutms/mpd/go/internal/srv"
 )
 
-// ProjectNameFromCwd returns the project whose tree the caller is
-// standing in: the working directory must be /srv/projects/<name> or any
-// directory below it.
-//
-// Subdirectories count, which is the point — you are usually deep inside
-// a source tree when you want to act on the project, not at its root.
-//
-// The rule is narrow on purpose. Anywhere outside that tree there is no
-// project, and inferring one — the only project, the last one used —
-// would act on something the caller never named.
+// ProjectNameFromCwd returns the project whose tree contains the working
+// directory (/srv/projects/<name> or below). Outside that tree it never
+// guesses a project.
 func ProjectNameFromCwd() (string, bool) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", false
 	}
-	// Resolve symlinks before matching: /srv is itself a bind mount, and
-	// neither a symlink nor a `..` segment may walk out of the tree.
+	// Resolve symlinks before matching so nothing walks out of the tree.
 	resolved, err := filepath.EvalSymlinks(cwd)
 	if err != nil {
 		resolved = filepath.Clean(cwd)
@@ -33,8 +25,6 @@ func ProjectNameFromCwd() (string, bool) {
 	return projectNameFromPath(resolved)
 }
 
-// projectNameFromPath returns the project directory name when path is
-// /srv/projects/<name> or below.
 func projectNameFromPath(path string) (string, bool) {
 	prefix := srv.Projects + string(os.PathSeparator)
 	if !strings.HasPrefix(path, prefix) {
@@ -48,12 +38,8 @@ func projectNameFromPath(path string) (string, bool) {
 	return name, true
 }
 
-// ProjectArg resolves a verb's project: the explicit argument when one is
-// given, otherwise the directory the caller is standing in.
-//
-// An explicit name always wins, so a habit of naming projects keeps
-// working unchanged and a script is never at the mercy of its working
-// directory.
+// ProjectArg resolves a verb's project: the explicit argument when given,
+// otherwise the project derived from the working directory.
 func ProjectArg(verb string, args []string) (string, error) {
 	if len(args) > 0 && args[0] != "" {
 		return args[0], nil
@@ -67,18 +53,9 @@ func ProjectArg(verb string, args []string) (string, error) {
 }
 
 // SplitStartArgs separates `mpd start`'s project name from its KEY=VALUE
-// settings.
-//
-// Both are positional, and the project may be omitted, so something has
-// to tell them apart: a setting always contains `=`, and a project name
-// never can (validProjectName allows lowercase letters, digits and
-// internal dashes). So a leading token with no `=` is the project, and
-// anything else means every token is a setting and the project comes
-// from the cwd.
-//
-//	mpd start moodle45 MPD_DB=postgres:18   → explicit project
-//	mpd start MPD_DB=postgres:18            → project from cwd
-//	mpd start                               → project from cwd, no changes
+// settings. A setting always contains `=` and a valid project name never
+// does, so a leading token without `=` is the project; otherwise the
+// project comes from the cwd.
 func SplitStartArgs(args []string) (project string, settings []string, err error) {
 	if len(args) > 0 && !strings.Contains(args[0], "=") {
 		return args[0], args[1:], nil

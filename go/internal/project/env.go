@@ -8,13 +8,9 @@ import (
 // EnvMutation is one KEY=VALUE pair destined for a project's mpd.env.
 type EnvMutation struct{ Key, Value string }
 
-// ParseMutations validates positional KEY=VALUE arguments.
-//
-// This is the CLI's boundary against shell injection into mpd.env. The
-// file is read by a whitelist parser rather than sourced, so a bad value
-// could not execute anyway — but it could still corrupt the file or
-// smuggle a value past the parser, so it is rejected here where the
-// error can name the argument.
+// ParseMutations validates positional KEY=VALUE arguments. This is the
+// CLI's boundary against injecting shell syntax into mpd.env; a bad
+// value is rejected here, where the error can name the argument.
 func ParseMutations(args []string, validateDBTag func(string) error) ([]EnvMutation, error) {
 	var out []EnvMutation
 	for _, arg := range args {
@@ -60,13 +56,9 @@ func validateKey(key string) error {
 	return nil
 }
 
-// validateValue applies a strict validator to keys with known shapes and
-// a conservative charset to everything else.
-//
-// An empty value is always allowed: it means "unset this key", which is
-// how a project drops back to the inherited default. SetEnvKey comments
-// the line out rather than removing it, so the key keeps its place under
-// the comment block that explains it.
+// validateValue applies a strict validator to keys with known shapes
+// and a conservative charset to everything else. An empty value is
+// always allowed: it means "unset this key".
 func validateValue(key, value string, validateDBTag func(string) error) error {
 	if value == "" {
 		return nil
@@ -74,9 +66,7 @@ func validateValue(key, value string, validateDBTag func(string) error) error {
 	if key == "MPD_DB" {
 		return validateDBTag(value)
 	}
-	// Deliberately narrow: alphanumerics plus . _ - : / , @ = +. Every
-	// shell metacharacter is excluded — whitespace, quotes, $, `, ;, &,
-	// |, <, >, parens, braces, brackets, newline.
+	// Deliberately narrow: every shell metacharacter is excluded.
 	const allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-:/,@=+"
 	for _, r := range value {
 		if !strings.ContainsRune(allowed, r) {

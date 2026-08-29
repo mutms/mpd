@@ -27,47 +27,22 @@ import (
 )
 
 // Network is the podman network every mpd container attaches to, and
-// NetworkInterface is the host bridge it hangs off.
-//
-// The bridge is named rather than left to podman's podman0/podman1
-// counter, whose value depends on what other networks happened to be
-// created first: mpd's resolver names that interface in its config to
-// bind the gateway, so a name that drifts is a name that silently stops
-// resolving.
-//
-// NOT "mpd0", however obvious that looks. That was the WireGuard tunnel
-// mpd used before it moved to a routed subnet (removed 2026-07-20), and
-// every VM bootstrapped before then still brings one up at boot from an
-// enabled wg-quick@mpd0.service. netavark then refuses to create the
-// network at all: "bridge interface mpd0 already exists but is a
-// Wireguard interface". The "br" keeps the two apart for good.
+// NetworkInterface is the host bridge it hangs off. The bridge is named
+// explicitly because the resolver binds the gateway by interface name.
+// Never rename it "mpd0": older VMs still bring up a WireGuard mpd0 at
+// boot, and netavark then refuses to create the network.
 const (
 	Network          = "mpd-internal"
 	NetworkInterface = "mpdbr0"
 )
 
-// Setup brings a bootstrapped VM to a working mpd install.
-//
-// Idempotent from end to end, and that is the property to preserve when
-// changing it: `--vm-setup` is the repair command. A developer whose VM has
-// drifted — containers removed by hand, state wiped, CA replaced, VM ID
-// changed — runs it again, and every step either converges or says
-// precisely what it cannot fix. No step may assume it is running for the
-// first time.
-//
-// Ordering is not arbitrary:
-//
-//   - identity (the hostname) before anything that composes a name or an
-//     address, since all of them derive from the VM ID;
-//   - the CA before the service containers, whose rebuild is keyed on
-//     its fingerprint;
-//   - the /srv mount before anything touching the data volume, since that
-//     is what makes the path exist on the VM;
-//   - dnsmasq and the portal after both, since they mount the CA-derived
-//     certificates.
+// Setup brings a bootstrapped VM to a working mpd install. It is the
+// repair command: idempotent end to end, and no step may assume it runs
+// for the first time. Ordering is a dependency chain — identity before
+// anything that composes a name, the CA before the service containers
+// keyed on its fingerprint, the /srv mount before anything touching the
+// volume, dnsmasq and the portal after both.
 func Setup(ctx context.Context, out io.Writer) error {
-	// The one verb that announces itself: its transcript is long enough
-	// that a scrollback needs a mark for where it began.
 	fmt.Fprintf(out, "\n\033[1mmpd --vm-setup\033[0m\n\n")
 
 	if _, err := vm.AssetsPath(); err != nil {
@@ -103,7 +78,7 @@ func Setup(ctx context.Context, out io.Writer) error {
 	}
 	ui.OK(out, "user=%s  uid=%s", user.User, user.UID)
 
-	// After Configuration, which is where the dev user's name is resolved.
+	// Must follow Configuration, which resolves the dev user's name.
 	ui.Step(out, "Runtime SSH aliases")
 	if err := vm.EnsureSSHConfig(out, user.User, runtimeSSHHosts(n)); err != nil {
 		return err
@@ -127,27 +102,24 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 
-	// After the podman network is *registered* (netavark records mpd-internal's
-	// subnet before any bridge owns it) but before dnsmasq and caddy bind the
-	// gateway: create the static bridge mpdbr0 (a systemd oneshot) with the
-	// gateway address, so it exists at boot and netavark just attaches
-	// containers to it instead of creating one on demand. wg0 gives the Mac an
-	// encrypted path to 10.163.<NNN>.x (peer added by mpd-virt).
+	// Create the static bridge after the network is registered but
+	// before dnsmasq and caddy bind the gateway, so it exists at boot
+	// and netavark only attaches containers to it. wg0 gives the host
+	// an encrypted path to the subnet (peer added by mpd-virt).
 	if err := vm.EnsureBridge(ctx, out, n.Gateway()+"/24"); err != nil {
 		return err
 	}
 	if err := vm.EnsureWireGuard(ctx, out, n.Octet()); err != nil {
 		return err
 	}
-	// Seal the container subnet from the LAN: only the bridge itself and
-	// wg0 (the MacBook overlay, which carries the whole /24) may route
-	// into 10.163.<NNN>.0/24. Container outbound NAT is untouched.
+	// Seal the container subnet from the LAN: only the bridge and wg0
+	// may route into it. Container outbound NAT is untouched.
 	if err := vm.EnsureFirewall(ctx, out, n.Subnet()); err != nil {
 		return err
 	}
 
-	// Before anything touches /srv: this is what makes the path exist on
-	// the VM at all, and it must resolve to the same tree containers see.
+	// Must run before anything touches /srv — this makes the path exist
+	// on the VM, resolving to the same tree containers see.
 	ui.Step(out, "Data volume mounted at /srv")
 	source, ok := p.VolumeMountpoint(ctx, vm.DataVolume)
 	if !ok {
@@ -157,8 +129,7 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 
-	// The volume root is root-owned, so this is what makes the tree
-	// writable by mpd at all.
+	// The volume root is root-owned; this makes the tree writable by mpd.
 	ui.Step(out, "Data volume layout")
 	if err := srv.EnsureLayout(ctx, user.UID); err != nil {
 		return err
@@ -180,10 +151,9 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 
-	// The records first, then the resolver that serves them: dnsmasq reads
-	// /etc/hosts on start, so a block written before the (re)start needs
-	// no reload, and a VM whose cloud-init would wipe the block at boot is
-	// told not to before the block is ever relied on.
+	// Records first, then the resolver: dnsmasq reads /etc/hosts on
+	// start, and cloud-init is told not to wipe the block before the
+	// block is relied on.
 	ui.Step(out, "DNS records in /etc/hosts")
 	if err := vm.DisableCloudInitHosts(ctx, out); err != nil {
 		return err
@@ -215,40 +185,30 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 
-	// Before the runtime, not after it: building the runtime base runs
-	// apt inside a container that resolves through this resolver, so a
-	// resolver that is not answering yet fails that build minutes in,
-	// with the cause several screens up. This used to sit at the end of
-	// setup because the resolver binds the podman bridge and podman only
-	// created that bridge once a container attached — no longer true:
-	// mpd-bridge.service brings mpdbr0 up at boot, and the dnsmasq unit
-	// orders itself after it.
+	// Must run before the runtime build: apt in the container resolves
+	// through this resolver, and a resolver not answering yet fails the
+	// build minutes in with the cause several screens up.
 	ui.Step(out, "DNS resolution")
 	if err := vm.EnsureDnsmasqResolving(ctx, out, n.Gateway(), n.Zone()); err != nil {
 		return err
 	}
-	// Fatal, unlike the report verifyDNS makes: without an upstream the
-	// runtime build below cannot install a single package, and failing
-	// here says why in one screen instead of a hundred lines of apt.
+	// Fatal, unlike verifyDNS's report: without an upstream the runtime
+	// build below cannot install a single package.
 	if err := vm.RequireDNSUpstream(ctx, out, n.Gateway()); err != nil {
 		return err
 	}
 	verifyDNS(ctx, out, n)
 
-	// The unified runtime: created here rather than lazily, so setup
-	// leaves the VM fully usable. Everything it needs exists by now —
-	// the CA (certificates step), /srv (volume mount), DNS (just
-	// verified) — and reconcileCaches has just adopted any existing entry.
-	// createdRuntime: RuntimeCreate already fired mpd-post-setup into the
-	// new container, so the fire below narrows to the VM.
+	// Create the runtime here, not lazily, so setup leaves the VM fully
+	// usable. createdRuntime: RuntimeCreate already fired mpd-post-setup
+	// into the new container, so the fire below narrows to the VM.
 	createdRuntime, err := setupRuntime(ctx, out, p, s, m, n, user)
 	if err != nil {
 		return err
 	}
 
-	// Extra services: nothing is installed by default — this converges
-	// whatever the developer has marked autostart (repairing revision drift).
-	// A service a project needs is started on demand by that project, not here.
+	// Converge whatever the developer marked autostart; a service a
+	// project needs starts on demand from that project, not here.
 	ui.Step(out, "Extra services")
 	if err := ReconcileServices(ctx, out, p, s, n); err != nil {
 		ui.Warn(out, "%v", err)
@@ -261,26 +221,21 @@ func Setup(ctx context.Context, out io.Writer) error {
 	if err := vm.InstallWebUnit(ctx); err != nil {
 		return err
 	}
-	// Restarted on every run, not just when missing: `--vm-setup` is what
-	// a developer reaches for after `make install`, and a server still
-	// running the previous binary would serve stale templates with
-	// nothing to show for it.
+	// Restarted on every run: after `make install` a server still
+	// running the previous binary would serve stale templates.
 	ui.OK(out, "%s restarted (listening on %s).", vm.WebUnitName, web.Addr)
 
 	ui.Step(out, "Control socket for runtimes (mpd --control)")
 	if err := vm.InstallControlUnit(ctx); err != nil {
 		return err
 	}
-	// Restarted for a sharper reason than the web server's: this daemon
-	// carries the guard that decides what a runtime may ask for, so one
-	// still running the previous binary would enforce the previous rules.
+	// Restarted on every run: this daemon carries the guard deciding
+	// what a runtime may ask for, so it must run the current rules.
 	ui.OK(out, "%s restarted (sockets under %s).", vm.ControlUnitName, podman.ControlRunDir)
 
 	ui.Step(out, "TLS frontdoor (caddy)")
-	// The VM's caddy serves exactly one name now: the zone apex, for the
-	// portal. Extra services are HTTP-only at their own addresses —
-	// reached over the WireGuard overlay or SOCKS, inside the trust
-	// boundary — so nothing else needs TLS termination here.
+	// The VM's caddy serves only the zone apex; extra services are
+	// HTTP-only at their own addresses, inside the trust boundary.
 	sites := []vm.CaddySite{
 		{Host: n.Zone(), Upstream: web.Addr},
 	}
@@ -307,24 +262,20 @@ func Setup(ctx context.Context, out io.Writer) error {
 		ui.Warn(out, "%v", err)
 	}
 
-	// Silent in the happy path; warns only when a hook directory is
-	// orphaned, misfiled, or newly stale after an event revision bump.
+	// Silent in the happy path; warns on orphaned or stale hook dirs.
 	hooks.Diagnose(out, state.Dir)
 
 	if err := current.NewObserver(n.VMID(), p).Refresh(ctx, state.Dir, s, time.Now()); err != nil {
 		return err
 	}
 
-	// Deliberately terse: anything about "what to do next" belongs to
-	// whatever orchestration called us — `mpd-virt` for a managed
-	// VM, mpd-sandbox-setup.sh for the sandbox.
+	// Terse: "what to do next" belongs to the calling orchestration.
 	fmt.Fprintf(out, "\n\033[1;32m✓ mpd --vm-setup complete.\033[0m\n")
 	return nil
 }
 
-// preflight refuses to run on a host mpd does not support, or one where
-// bootstrap has not finished. Both produce failures far from their cause
-// if allowed through.
+// preflight refuses an unsupported host or an unfinished bootstrap;
+// both otherwise fail far from their cause.
 func preflight(ctx context.Context, out io.Writer) error {
 	if err := vm.RequireSupportedHost(); err != nil {
 		return err
@@ -332,9 +283,8 @@ func preflight(ctx context.Context, out io.Writer) error {
 	if err := vm.RequirePackages(); err != nil {
 		return err
 	}
-	// Before podman is touched: an Apple container has /proc/sys read-only,
-	// which fails every podman sysctl write. Installs a boot-time remount
-	// unit (a no-op on a real VM) and applies it now for this run too.
+	// Must precede podman: an Apple container has /proc/sys read-only,
+	// which fails every podman sysctl write. No-op on a real VM.
 	if err := vm.EnsureProcSysWritable(ctx, out); err != nil {
 		return err
 	}
@@ -344,11 +294,9 @@ func preflight(ctx context.Context, out io.Writer) error {
 	return vm.EnablePodmanRestart(ctx, out)
 }
 
-// setupIdentity derives the VM's addressing from its hostname and reads
-// its LAN IP off the interface. Both come live from the running VM — the
-// hostname (mpd-<NNN>) is the single source of truth, and the IP is a
-// fact about the VM. It returns the Net and the VM's own IP (empty on a
-// DHCP-less box).
+// setupIdentity derives the VM's addressing from its hostname
+// (mpd-<NNN>, the single source of truth) and reads its LAN IP off the
+// interface; the IP is empty on a DHCP-less box.
 func setupIdentity(ctx context.Context, out io.Writer) (net.Net, string, error) {
 	ui.Step(out, "Platform identity")
 	n, err := net.Current()
@@ -367,21 +315,15 @@ func dashIfEmpty(s string) string {
 	return s
 }
 
-// certState reports what setupCertificates changed, so the steps after it
-// can react to the parts that concern them.
+// certState reports what setupCertificates changed.
 type certState struct {
-	// CAChanged is true when the CA that signs leaves moved. It
-	// invalidates every certificate derived from it, so service
-	// containers are rebuilt and project certs reissued.
+	// CAChanged is true when the CA that signs leaves moved; every
+	// derived certificate is then reissued.
 	CAChanged bool
 	// ServiceCertChanged is true when the certificate caddy serves was
-	// rewritten — on a CA change, on SAN drift, or on first creation.
-	//
-	// Tracked separately because caddy holds the certificate in memory
-	// and its configuration does not mention the contents, only the path.
-	// A reissued certificate therefore leaves the Caddyfile byte-identical
-	// and would, without this, never be picked up: the VM would go on
-	// serving a leaf signed by a CA that no longer exists.
+	// rewritten. Tracked separately: caddy holds the certificate in
+	// memory and a reissue leaves the Caddyfile byte-identical, so
+	// without this a new leaf would never be picked up.
 	ServiceCertChanged bool
 }
 
@@ -389,18 +331,16 @@ type certState struct {
 // are current, reporting what it changed.
 func setupCertificates(ctx context.Context, out io.Writer, n net.Net) (certState, error) {
 	ui.Step(out, "Root CA certificate")
-	// 0700 on both: one holds the CA private key, the other the openssl
-	// scratch files that briefly contain key material.
+	// 0700 on both: they hold key material.
 	for _, dir := range []string{vm.CARootDir, vm.TempDir} {
 		if err := vm.EnsureDir(dir, 0o700); err != nil {
 			return certState{}, err
 		}
 	}
 
-	// Which CA this VM signs with depends on how it was provisioned; see
-	// cert.ResolveSigner. Absent entirely means nobody has pushed CA
-	// material in, so this is a VM set up without mpd-virt: generate a
-	// self-signed CA that acts as its own anchor.
+	// Which CA this VM signs with depends on provisioning; see
+	// cert.ResolveSigner. No CA material means a VM set up without
+	// mpd-virt: generate a self-signed CA that is its own anchor.
 	signer, ok := cert.ResolveSigner()
 	if !ok {
 		if err := cert.GenerateCA(ctx, vm.SigningKeyPath, vm.SigningCertPath); err != nil {
@@ -426,23 +366,16 @@ func setupCertificates(ctx context.Context, out io.Writer, n net.Net) (certState
 		fingerprintPath = vm.ServiceDir + "/rootCA.fingerprint"
 		sansPath        = vm.ServiceDir + "/cert.sans"
 	)
-	// Fingerprint the signer, not the anchor. What invalidates a leaf is a
-	// change of whatever signed it, and on a VM with a per-zone
-	// intermediate that can move while the anchor stays put — as it does
-	// on every `mpd-virt refresh-ca`. Fingerprinting the anchor there would
-	// report "nothing changed" and leave every project serving a
-	// certificate signed by a CA that no longer exists.
+	// Fingerprint the signer, not the anchor: a per-zone intermediate
+	// can move while the anchor stays put, and fingerprinting the anchor
+	// would then report "nothing changed" for invalidated leaves.
 	fingerprint := vm.Fingerprint(ctx, signer.CertPath)
 	caChanged := readTrimmed(fingerprintPath) != fingerprint
 
-	// SAN drift: the service cert covers exactly the zone apex, and the
-	// zone changes when the VM's ID does. A cert issued for a previous
-	// zone still verifies against the CA, so nothing else here would
-	// notice — and every HTTPS hit on the portal would fail hostname
-	// verification. Same signature-file pattern the project certs use.
-	// Just the apex: the portal is the only thing the VM's own caddy
-	// terminates TLS for. Extra services are HTTP-only at their own
-	// addresses and never touch this certificate.
+	// SAN drift: the zone changes when the VM's ID does, and a cert for
+	// the old zone still verifies against the CA — only hostname
+	// verification would catch it. Just the apex: the portal is the only
+	// TLS the VM's own caddy terminates.
 	sans := []string{n.Zone()}
 	signature := strings.Join(sans, "\n")
 	sansChanged := readTrimmed(sansPath) != signature
@@ -469,13 +402,9 @@ func setupCertificates(ctx context.Context, out io.Writer, n net.Net) (certState
 	return state, nil
 }
 
-// runtimeSSHHosts builds the ~/.ssh/config entry for the runtime.
-//
-// The VM-qualified alias comes first because it is the unambiguous name
-// here: in the VM the bare `mpd-130` is this machine's own hostname, so
-// it cannot also mean the runtime. On the laptop it can, and does — the
-// host-side block mpd-virt writes maps `mpd-130` to the runtime and
-// `mpd-130-vm` to this VM. The bare `runtime` and the FQDN also answer.
+// runtimeSSHHosts builds the ~/.ssh/config entry for the runtime. The
+// VM-qualified alias comes first: in the VM the bare `mpd-<NNN>` is
+// this machine's own hostname, so it cannot mean the runtime here.
 func runtimeSSHHosts(n net.Net) []vm.RuntimeHost {
 	fqdn := n.RuntimeFQDN()
 	return []vm.RuntimeHost{{
@@ -484,9 +413,8 @@ func runtimeSSHHosts(n net.Net) []vm.RuntimeHost {
 	}}
 }
 
-// setupHostTrust covers the three trust stores on the VM that have to
-// learn about mpd's CA. (DNS needs no host-side hook: the VM reads mpd's
-// records from /etc/hosts, see the DNS step in Setup.)
+// setupHostTrust covers the three trust stores on the VM that must
+// learn about mpd's CA.
 func setupHostTrust(ctx context.Context, out io.Writer, n net.Net) error {
 	ui.Step(out, "Root Certificate Authority for %s in system trust store", net.RootDomain)
 	vm.TrustCA(ctx, out, vm.CACertPath)
@@ -502,19 +430,9 @@ func setupHostTrust(ctx context.Context, out io.Writer, n net.Net) error {
 }
 
 // setupNetworkAndVolume creates the podman network and the data volume.
-//
-// Both network checks are refusals, not repairs, and for the same reason:
-// neither property can be changed in place, so the honest move is to name
-// the migration rather than report success on a network that is wrong.
-//
-//   - Subnet: fixed at creation. A network created under a different VM ID
-//     keeps handing out addresses from the OLD subnet while mpd composes
-//     DNS records and certificate SANs from the new one, so every name
-//     resolves to an address nothing listens on.
-//   - DNS: `podman network update` edits nameserver lists only, never the
-//     dns_enabled flag. A network created with podman's DNS on has
-//     aardvark-dns holding port 53 on the gateway, which is where mpd's
-//     own resolver has to listen.
+// The network checks are refusals, not repairs: neither the subnet nor
+// the dns_enabled flag can be changed in place, so the honest move is
+// to name the migration (see networkMismatch).
 func setupNetworkAndVolume(ctx context.Context, out io.Writer, p *podman.Client, n net.Net) error {
 	ui.Step(out, "Podman network")
 	if p.NetworkExists(ctx, Network) {
@@ -569,10 +487,8 @@ func networkMismatch(ctx context.Context, p *podman.Client, n net.Net) string {
 // setupStateDirectories creates the directories and seed files mpd's own
 // state lives in, plus the two user-owned override slots.
 func setupStateDirectories(ctx context.Context, out io.Writer) error {
-	// Created empty, and that is the point: it is the bind-mount source
-	// for every runtime, so it must exist, and its presence tells the
-	// user where dotfile overrides go. bootstrap.sh skips the overlay
-	// while it stays empty.
+	// Created empty on purpose: it is the bind-mount source for every
+	// runtime and tells the user where dotfile overrides go.
 	ui.Step(out, "Runtime home override directory (%s/)", vm.HomeOverrideDir)
 	if err := os.MkdirAll(vm.HomeOverrideDir, 0o755); err != nil {
 		return err
@@ -583,8 +499,8 @@ func setupStateDirectories(ctx context.Context, out io.Writer) error {
 	if err := os.MkdirAll(filepath.Join(state.Dir, "runtimes"), 0o755); err != nil {
 		return err
 	}
-	// Seeded rather than left absent so every reader — including the
-	// portal, which cannot run mpd — finds a well-formed empty document.
+	// Seeded so every reader — including the portal, which cannot run
+	// mpd — finds a well-formed empty document.
 	for name, empty := range map[string]string{
 		"projects.json":  `{"projects":[]}`,
 		"databases.json": `{"databases":[]}`,
@@ -599,9 +515,8 @@ func setupStateDirectories(ctx context.Context, out io.Writer) error {
 	ui.OK(out, "%s/ ready.", state.Dir)
 
 	// The env dir must exist so the runtime's RO mount has a target and
-	// mpd-virt has somewhere to push vm.env / runtime.env. Nothing is seeded:
-	// there is no shipped template. A sandbox VM's own hand-written files and
-	// a managed VM's pushed ones are the only sources.
+	// mpd-virt has somewhere to push vm.env / runtime.env. Nothing is
+	// seeded — there is no shipped template.
 	ui.Step(out, "env dir")
 	if err := os.MkdirAll(vm.EnvDir, 0o755); err != nil {
 		return err
@@ -611,10 +526,8 @@ func setupStateDirectories(ctx context.Context, out io.Writer) error {
 }
 
 // reconcileCaches rebuilds every derived view from ground truth: the
-// data volume for projects, podman for runtimes and databases.
-//
-// This is the half of setup that repairs drift, so it runs on every
-// invocation and not only on a fresh VM.
+// data volume for projects, podman for runtimes and databases. It runs
+// on every invocation to repair drift.
 func reconcileCaches(ctx context.Context, out io.Writer, p *podman.Client, s state.Store,
 	n net.Net, m dnsmasq.Manager, vmIP, uid string, caChanged bool) error {
 
@@ -637,8 +550,8 @@ func reconcileCaches(ctx context.Context, out io.Writer, p *podman.Client, s sta
 	} else {
 		ui.OK(out, "Database cache rebuilt (%d database(s) found).", count)
 	}
-	// The rescan above may have found projects and databases the block does
-	// not carry yet.
+	// The rescan may have found projects and databases the DNS block
+	// does not carry yet.
 	if err := PublishDNS(ctx, out, m, n, s, false); err != nil {
 		return err
 	}
@@ -662,12 +575,9 @@ func reconcileCaches(ctx context.Context, out io.Writer, p *podman.Client, s sta
 	return nil
 }
 
-// setupRuntime converges the unified runtime: create it when missing,
-// start it when stopped, leave it alone when running. Clean break from
-// the pod era — legacy per-language runtime pods are reported loudly
-// rather than migrated.
-// setupRuntime ensures the runtime exists and is configured, reporting
-// whether it had to create one.
+// setupRuntime converges the runtime — create when missing, start when
+// stopped, configure when running — and reports whether it created one.
+// Legacy per-language runtime pods are reported, never migrated.
 func setupRuntime(ctx context.Context, out io.Writer, p *podman.Client, s state.Store,
 	m dnsmasq.Manager, n net.Net, user vm.Identity) (bool, error) {
 
@@ -697,9 +607,8 @@ func setupRuntime(ctx context.Context, out io.Writer, p *podman.Client, s state.
 		return false, RuntimeStart(ctx, out, p, s, m, o, n, user.User, user.UID)
 	}
 	ui.OK(out, "runtime is running (%s).", container)
-	// Configuration only (no apt): asset-level changes — units, php.ini,
-	// the php dispatcher — reach an existing runtime on every setup.
-	// Packages move with `mpd --vm-upgrade`.
+	// Configuration only, no apt: asset-level changes reach an existing
+	// runtime on every setup; packages move with `mpd --vm-upgrade`.
 	return false, runtime.Configure(ctx, out, container, user.User, p)
 }
 
@@ -716,11 +625,8 @@ func exists(path string) bool {
 	return err == nil
 }
 
-// copyFile duplicates src at dst with the given mode. Used to publish a
-// self-signed signing CA as its own trust anchor, which is why it copies
-// rather than symlinks: the anchor is read by trust stores and by
-// cert.ResolveSigner's byte comparison, and a link would make "are these
-// the same certificate?" depend on how the question was asked.
+// copyFile duplicates src at dst. A copy, never a symlink: the anchor
+// is compared byte for byte by cert.ResolveSigner.
 func copyFile(src, dst string, mode os.FileMode) error {
 	data, err := os.ReadFile(src)
 	if err != nil {

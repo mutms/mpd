@@ -1,11 +1,8 @@
 #!/bin/bash
-# gen-caddyfile.sh — render the frontdoor Caddyfile from /srv/meta/*/urls.json.
-#
-# Reads every project's URL list, groups by hostname (so main + behat for the
-# same project share one vhost block when their backends match), emits a Caddy
-# vhost per group. Backend types supported: php-fpm, reverse-proxy, redirect.
-# URLs without a backend are informational (dashboard links) and skipped.
-# Stdout is the rendered Caddyfile.
+# gen-caddyfile.sh — render the frontdoor Caddyfile from /srv/meta/*/urls.json
+# to stdout. URLs with matching backends share one vhost block. Backend
+# types: php-fpm, reverse-proxy, redirect. URLs without a backend are
+# informational and skipped.
 set -euo pipefail
 
 META_DIR="${META_DIR:-/srv/meta}"
@@ -21,10 +18,8 @@ emit_header() {
     echo
 }
 
-# Render one Caddy vhost block.
-# Args: project name, comma-joined hostnames, backend JSON (one URL's backend).
-# All URLs grouped under the same hostnames are assumed to share a backend
-# (configure.sh writes them that way for behat/main pairs).
+# render_vhost <project> <comma-joined hostnames> <backend JSON> — emit one
+# Caddy vhost block. Grouped hostnames share one backend by construction.
 render_vhost() {
     local project="$1"
     local hosts="$2"
@@ -45,8 +40,6 @@ render_vhost() {
             local fastcgi root tryfiles
             fastcgi=$(jq -r '.fastcgi'  <<<"$backend_json")
             root=$(   jq -r '.root'     <<<"$backend_json")
-            # tryFiles → space-separated list as-written; default to a sensible
-            # fallback when missing.
             tryfiles=$(jq -r '
                 if .tryFiles and (.tryFiles | length) > 0
                 then .tryFiles | join(" ")
@@ -55,9 +48,8 @@ render_vhost() {
             echo "    root * ${root}"
             echo "    php_fastcgi ${fastcgi} {"
             echo "        try_files ${tryfiles}"
-            # Moodle (and a few other PHP apps) hardcode a supported-webserver
-            # allowlist that doesn't include Caddy. Spoof Apache to satisfy
-            # the check; the actual server is still Caddy.
+            # Moodle's supported-webserver check does not know Caddy;
+            # spoof Apache to satisfy it.
             echo "        env SERVER_SOFTWARE \"Apache/2.4 (Caddy frontdoor)\""
             echo "    }"
             echo "    file_server"
@@ -81,27 +73,23 @@ render_vhost() {
     echo
 }
 
-# Walk every project. For each, group URLs that share the same backend so
-# main + behat (which share an FPM pool) get a single vhost.
 emit_header
 for meta in "${META_DIR}"/*/urls.json; do
     [ -f "$meta" ] || continue
     project=$(basename "$(dirname "$meta")")
 
-    # Skip projects with no backends (informational URLs only).
+    # Skip projects with informational URLs only.
     if ! jq -e '[.[] | select(.backend)] | length > 0' "$meta" >/dev/null 2>&1; then
         continue
     fi
 
-    # Group URLs by hash of their backend JSON. URLs with identical backends
-    # share a vhost; differing backends get separate ones.
+    # URLs with identical backends share a vhost (main + behat pairs).
     jq -c '
         [.[] | select(.backend)]
         | group_by(.backend | @json)
         | map({hosts: [.[] | (.url | sub("^https?://"; "") | sub("/$"; "") | sub(":[0-9]+$"; ""))], backend: .[0].backend})
         | .[]
     ' "$meta" | while IFS= read -r group; do
-        # group: {hosts: ["a.<zone>","behat.a.<zone>"], backend: {...}}
         hosts=$(jq -r '.hosts | join(", ")' <<<"$group")
         backend=$(jq -c '.backend' <<<"$group")
         render_vhost "$project" "$hosts" "$backend"

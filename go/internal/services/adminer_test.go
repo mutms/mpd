@@ -17,11 +17,8 @@ func testNet(t *testing.T, octet int) net.Net {
 	return n
 }
 
-// Adminer's per-project link carries the driver as the parameter NAME —
-// pgsql for postgres, server for mysql/mariadb. Getting it wrong shows an
-// empty Adminer login form that looks broken rather than mistyped. This is
-// the one service with behaviour worth a test; the pure-data services
-// (mailpit, selenium) are just descriptors, like the generic backend.
+// Adminer's per-project link carries the driver as the parameter name:
+// pgsql for postgres, server for mysql/mariadb.
 func TestAdminerProjectLink(t *testing.T) {
 	n := testNet(t, 150)
 	adminer, ok := service.Find("adminer")

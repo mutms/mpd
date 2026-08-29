@@ -1,13 +1,9 @@
 #!/bin/bash
-# rdp-stop — close the RDP door that `rdp-start` opened.
+# rdp-stop — close the RDP door that `rdp-start` opened. Stops xrdp and
+# disables it at boot; the packages stay installed.
 #
-# Stops xrdp and takes it off the boot path, so tcp/3389 is gone now and
-# stays gone after a reboot. The packages stay installed; a later
-# `rdp-start` is then just the password prompt and a service start.
-#
-# What it does NOT do is clear the login password. Locking it could shut
-# you out of the VM's own console greeter, and that call is yours — the
-# command to do it is printed at the end.
+# The login password stays set: locking it could shut you out of the
+# console greeter. The command to clear it is printed at the end.
 set -euo pipefail
 
 step() { printf '\n==> %s\n' "$*"; }
@@ -42,8 +38,7 @@ if ! dpkg -s xrdp >/dev/null 2>&1; then
     exit 0
 fi
 
-# xrdp.service pulls xrdp-sesman in, but disabling only the front door
-# would leave sesman enabled at boot. Name both.
+# Disabling xrdp alone would leave xrdp-sesman enabled at boot; name both.
 sudo systemctl disable --now xrdp xrdp-sesman >/dev/null 2>&1 || true
 if systemctl is-active --quiet xrdp; then
     die "xrdp is still running — inspect: systemctl status xrdp"

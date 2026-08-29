@@ -1,28 +1,11 @@
 #!/bin/bash
 # bootstrap/10-passwordless-sudo.sh
 #
-# Step 1 of 3. Wgettable, self-contained — it runs on a box that has
-# nothing of mpd on it yet, so it inlines its helpers and gates.
-#
-# What it does:
-#   1. Hostname gate: mpd-template, mpd-sandbox, mpd-template-<suffix>,
-#      mpd-sandbox-<suffix>, or mpd-NNN (3-digit). The -<suffix> forms
-#      let a developer keep several pre-adoption templates and sandboxes
-#      side by side (mpd-template-trixie, mpd-sandbox-utm). The canonical
-#      mpd-NNN hostname is set directly (at install, by cloud-init, or by
-#      the developer) — mpd derives its identity from it. Anything else
-#      is refused: an accidental run on a workstation is fatal.
-#   2. OS gate: Debian Trixie. Refuses root: the point is an unprivileged
-#      dev account that can escalate without a prompt.
-#   3. If `sudo -n true` already works (cloud-init / pre-prepped VM /
-#      template): silent no-op.
-#   4. Otherwise ask for the root password once (`su - -c`), install sudo
-#      when a minimal netinst lacks it, put the user in the sudo group and
-#      write /etc/sudoers.d/00-mpd-<user> with NOPASSWD. `su -c` is the
-#      privilege-rule-approved root elevation (no identity switch to a
-#      non-root user).
-#
-# Idempotent: the fast path is one `sudo -n true`.
+# Step 1 of 3, wgettable and self-contained: give the invoking dev user
+# passwordless sudo. Gates on an mpd hostname and Debian Trixie, so an
+# accidental run on a workstation is fatal. Refuses root. When needed it
+# asks for the root password once (`su - -c`) and installs sudo on a
+# minimal netinst. Idempotent: the fast path is one `sudo -n true`.
 #
 #   bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/bootstrap/10-passwordless-sudo.sh)
 
@@ -32,7 +15,8 @@ step() { printf '\n==> %s\n' "$*"; }
 ok()   { printf '    ok: %s\n' "$*"; }
 die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
-# --- Hostname gate ---
+# The -<suffix> forms let several pre-adoption templates and sandboxes
+# coexist (mpd-template-trixie, mpd-sandbox-utm).
 step "Hostname gate"
 CURRENT_HOSTNAME="$(hostname -s 2>/dev/null || cut -d. -f1 /etc/hostname | tr -d '[:space:]')"
 case "${CURRENT_HOSTNAME}" in
@@ -52,7 +36,6 @@ Then log out + back in and re-run."
 esac
 ok "hostname '${CURRENT_HOSTNAME}' accepted"
 
-# --- OS gate ---
 step "OS gate"
 [ -r /etc/os-release ] || die "/etc/os-release missing — cannot verify OS."
 # shellcheck disable=SC1091
@@ -63,12 +46,10 @@ step "OS gate"
     || die "bootstrap targets Debian Trixie (got VERSION_CODENAME=${VERSION_CODENAME:-unknown})."
 ok "Debian Trixie"
 
-# --- Passwordless sudo ---
 step "Passwordless sudo for $(id -un)"
 [ "$(id -u)" -ne 0 ] || die "run this as your dev user, not root."
 
-# Guard the probe with `command -v`: a minimal server install has no sudo
-# at all, and calling it would just print "command not found".
+# A minimal server install has no sudo; probe only when the command exists.
 if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
     ok "already configured (sudo -n works)"
     exit 0
@@ -82,11 +63,9 @@ echo "    (one-time setup — installs sudo if a minimal install lacks it)."
 echo "    The prompt comes from \`su\`."
 echo
 
-# `su - -c '<cmd>'` runs a single command as root in a login shell so
-# root's own PATH (with /usr/sbin) is used — visudo and usermod live
-# there and are not on a regular user's PATH. visudo -cf validates the
-# drop-in; if invalid the file is removed so subsequent sudo calls don't
-# get bricked. Atomic via install -m 440.
+# `su - -c` runs the command as root with root's PATH, where visudo and
+# usermod live. visudo -cf validates the drop-in; an invalid file is
+# removed so sudo is not bricked.
 if ! su - -c "
     set -e
     if ! command -v sudo >/dev/null 2>&1; then

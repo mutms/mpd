@@ -1,21 +1,11 @@
 #!/bin/bash
 # project-setup.sh <project-name>
-# Run by `mpd start <project>` for an Astro project.
+# Run by `mpd start <project>` for an Astro project. Prints guidance
+# only; the dev server is Astro's own, started by the developer.
 #
-# Prints. That is the whole job.
-#
-# mpd sets up the caddy frontdoor and nothing else: the vhost, the TLS
-# certificate and the DNS record, all written by `mpd start`. The
-# server behind them is Astro's own, started and stopped by the developer
-# with the commands in Astro's docs.
-#
-# NOTHING here may run a command inside the project — no `astro`, no
-# `npm`, no node. That is not a style preference, it is the bug this file
-# was rewritten to fix: `astro dev status` loads astro.config.mjs, which
-# spawns a persistent esbuild service that inherits stdout, so capturing
-# its output in a command substitution never returns. mpd hung holding
-# the state lock, which blocked every other mpd command on the VM.
-# Static text cannot hang.
+# Never run a project command here (astro, npm, node): `astro dev
+# status` spawns an esbuild service that inherits stdout, so a command
+# substitution never returns and mpd hangs holding the state lock.
 set -euo pipefail
 
 PROJECT_NAME="$1"
@@ -33,9 +23,8 @@ fi
 # shellcheck source=/dev/null
 source /opt/mpd/assets/runtime/lib/source-mpd-env.sh
 
-# Retire the per-project unit older mpd versions installed. Left enabled
-# it restarts on every runtime boot and takes the dev server's port and
-# lock file. Idempotent: nothing to do once it is gone.
+# Remove the per-project unit older mpd versions installed. Left
+# enabled, it restarts on boot and takes the dev server's port.
 if [ -f "$SERVICE_FILE" ]; then
     echo "Removing the mpd-managed dev server unit (${SERVICE_NAME}) — Astro's own commands replace it."
     sudo systemctl disable --now "${SERVICE_NAME}" >/dev/null 2>&1 || true

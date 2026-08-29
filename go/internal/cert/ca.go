@@ -10,19 +10,10 @@ import (
 )
 
 // CAConfig is the openssl config the local CA is generated from.
-//
-// KEEP IN SYNC with the host-side twin that may generate the same CA
-// before a VM exists: the mpd-virt repo's Go `ca` package
-// (go/internal/ca). Both must produce a certificate with an identical DN,
-// v3_ca extensions and name constraints, because a VM reuses whichever
-// one it finds.
-//
-// The name constraint is what makes this CA safe to trust on the
-// developer's own workstation: `permitted;DNS.0 = .mpd.test` means a
-// certificate this CA signs is rejected for every name outside the test
-// domain, so a stolen CA key cannot be used to impersonate a real site.
-// The leading dot permits arbitrary depth, which is why one CA covers
-// every VM's per-VM zone.
+// KEEP IN SYNC with mpd-virt's go/internal/ca package: both must produce
+// an identical DN, v3_ca extensions and name constraints, because a VM
+// reuses whichever CA it finds. The name constraint limits the CA to
+// mpd.test names; see docs/security.md.
 const CAConfig = `[ req ]
 distinguished_name = req_dn
 x509_extensions    = v3_ca
@@ -42,9 +33,8 @@ nameConstraints        = critical, @name_constraints
 permitted;DNS.0        = .mpd.test
 permitted;DNS.1        = mpd.test`
 
-// CADaysStr is the CA's validity. Long, unlike the leaf certs: rotating
-// the CA means re-trusting it in four places on the workstation, so it
-// should outlive the VM rather than the other way round.
+// CADaysStr is the CA's validity in days. Long on purpose: rotating the
+// CA means re-trusting it on every workstation.
 const CADaysStr = "3650"
 
 // GenerateCA creates the local CA key and certificate.

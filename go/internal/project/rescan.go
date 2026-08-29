@@ -10,9 +10,7 @@ import (
 	"github.com/mutms/mpd/go/internal/ui"
 )
 
-// metaJSON is the subset of /srv/meta/<project>/project.json a rescan
-// needs. The file has more in it; everything else is owned by whatever
-// wrote it and is none of the cache's business.
+// metaJSON is the subset of /srv/meta/<project>/project.json a rescan needs.
 type metaJSON struct {
 	Name            string `json:"name"`
 	Type            string `json:"type"`
@@ -22,15 +20,9 @@ type metaJSON struct {
 	RuntimeName     string `json:"runtime"`
 }
 
-// Rescan rebuilds projects.json from what is actually on the data
-// volume.
-//
-// The volume outlives the state directory — wiping /var/lib/mpd/state is
-// the documented way to reset mpd, and the projects survive it — so the
-// volume is the authority on which projects EXIST. Lifecycle intent
-// (requested, runtimeName) is not on the volume, so an entry already in
-// the cache keeps its own; only genuinely new projects are added, as
-// stopped and unassigned.
+// Rescan rebuilds projects.json from the data volume, the authority on
+// which projects exist. Lifecycle intent is not on the volume, so cached
+// entries keep theirs; new projects are added as stopped.
 func Rescan(ctx context.Context, out io.Writer, s state.Store) error {
 	ui.Step(out, "Scanning data volume for project metadata")
 
@@ -69,10 +61,8 @@ func Rescan(ctx context.Context, out io.Writer, s state.Store) error {
 			projects = append(projects, known)
 			continue
 		}
-		// A project only has a meta project.json once it has been
-		// configured, so RuntimeName carried from there is what marks it
-		// "initialised" rather than freshly scaffolded. Lifecycle intent
-		// (autostart) is not on the volume, so it comes back stopped.
+		// project.json exists only for configured projects, so the
+		// carried RuntimeName marks the project initialised.
 		projects = append(projects, state.Project{
 			Name:            e.Name,
 			Type:            e.Type,

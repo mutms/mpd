@@ -1,16 +1,9 @@
 // Package podman is the single shared gateway for container operations.
 //
-// **Mandatory architecture rule** (AGENTS.md, docs/architecture.md §3):
-// every container/runtime operation in mpd goes through this package, and
-// the only package permitted to run host commands at all is
-// internal/exec. Layers above (cli, runtime, service, action) must not
-// shell out — they ask here.
-//
-// Adding a new podman invocation? Add a method here, not a one-off call
-// somewhere else.
-//
-// Podman runs rootful in the VM, so every invocation goes through
-// `sudo -n`; that is applied here rather than at each call site.
+// Every container operation in mpd goes through this package, and only
+// internal/exec runs host commands; see docs/architecture.md
+// §"Mandatory Constraint". Add new podman invocations here, not at call
+// sites. Podman runs rootful, so every invocation uses `sudo -n`.
 package podman
 
 import (
@@ -25,7 +18,7 @@ import (
 )
 
 // PsItem is one container as reported by `podman ps --format json`.
-// Field names match podman's JSON exactly, so they stay capitalised.
+// Field names must match podman's JSON exactly.
 type PsItem struct {
 	Names  []string          `json:"Names"`
 	Labels map[string]string `json:"Labels"`
@@ -40,8 +33,7 @@ func (p PsItem) Name() string {
 	return p.Names[0]
 }
 
-// Label reads one label, returning "" when absent. A missing label and
-// an empty one are the same thing to every caller here.
+// Label reads one label, returning "" when absent.
 func (p PsItem) Label(key string) string {
 	if p.Labels == nil {
 		return ""
@@ -49,18 +41,16 @@ func (p PsItem) Label(key string) string {
 	return p.Labels[key]
 }
 
-// Client runs podman commands. It holds no state; the type exists so
-// tests can substitute a runner instead of shelling out.
+// Client runs podman commands. The type exists so tests can substitute
+// a runner instead of shelling out.
 type Client struct {
 	run Runner
-	// attach runs a command with the caller's stdin connected as well as
-	// stdout and stderr — for `mpd run`, where the child may be an
-	// interactive program.
+	// attach connects the caller's stdin as well as stdout/stderr, for
+	// interactive children (`mpd run`).
 	attach StreamRunner
-	// stream runs a command with podman's own stdout/stderr passed
-	// through to ours. Lifecycle commands (start/stop/restart) print the
-	// container name, and that output is part of mpd's visible
-	// behaviour — capturing it would silently change what the user sees.
+	// stream passes podman's own output through. Lifecycle commands
+	// print the container name, and that output is part of mpd's
+	// visible behaviour.
 	stream StreamRunner
 }
 
@@ -68,9 +58,7 @@ type Client struct {
 // returning the exit code.
 type StreamRunner func(ctx context.Context, args []string) (int, error)
 
-// Runner captures a podman invocation. Production uses internal/exec;
-// tests supply a stub, which is what makes everything above this package
-// testable without a container engine.
+// Runner captures a podman invocation. Tests supply a stub.
 type Runner func(ctx context.Context, args []string) (exec.Result, error)
 
 // New returns a Client that runs the real podman binary via sudo.
@@ -90,8 +78,7 @@ func New() *Client {
 	}
 }
 
-// NewWith returns a Client backed by a custom runner, for tests. Streamed
-// commands fall back to the same runner, discarding their output.
+// NewWith returns a Client backed by a custom runner, for tests.
 func NewWith(r Runner) *Client {
 	return &Client{
 		run: r,
@@ -110,10 +97,8 @@ func NewWith(r Runner) *Client {
 const LabelManaged = "label=mpd.managed=true"
 
 // Ps lists containers matching a label filter, including stopped ones.
-//
-// A failed or unparseable listing yields an empty slice rather than an
-// error: callers render "none found", which is the truthful answer when
-// podman cannot be asked.
+// A failed or unparseable listing yields an empty slice: "none found"
+// is the truthful answer when podman cannot be asked.
 func (c *Client) Ps(ctx context.Context, filter string) []PsItem {
 	res, err := c.run(ctx, []string{"ps", "-a", "--filter", filter, "--format", "json"})
 	if err != nil || res.Code != 0 {
@@ -170,10 +155,8 @@ func (c *Client) ContainerIP(ctx context.Context, name, network string) string {
 }
 
 // NetworkSubnet reports the CIDR a podman network was created with.
-//
-// A network's subnet is fixed at creation, so this — not what mpd
-// currently computes — is the authority on what addresses containers on
-// it will get. `--vm-setup` compares the two and refuses when they disagree.
+// The subnet is fixed at creation, so this is the authority over
+// whatever mpd currently computes; `--vm-setup` refuses on a mismatch.
 func (c *Client) NetworkSubnet(ctx context.Context, name string) string {
 	res, err := c.run(ctx, []string{
 		"network", "inspect", name, "--format", "{{range .Subnets}}{{.Subnet}}{{end}}",
@@ -185,10 +168,6 @@ func (c *Client) NetworkSubnet(ctx context.Context, name string) string {
 }
 
 // --- Lifecycle -------------------------------------------------------
-//
-// These stream podman's output rather than capturing it: `podman stop`
-// prints the container name, and that line is part of what the user
-// sees from `mpd --db-stop`. Swallowing it would change behaviour.
 
 // Start starts an existing container.
 func (c *Client) Start(ctx context.Context, name string) (int, error) {
@@ -235,24 +214,20 @@ func (c *Client) ExecQuietly(ctx context.Context, container string, command ...s
 	return res.Code
 }
 
-// OptMountRO bind-mounts the mpd checkout read-only at the same absolute
-// path inside a container, so /opt/mpd/assets/... resolves identically on
-// the VM and inside every container mpd creates.
+// OptMountRO bind-mounts the mpd checkout read-only at the same
+// absolute path inside a container, so /opt/mpd/assets/... resolves
+// identically on both sides.
 var OptMountRO = []string{"-v", "/opt/mpd:/opt/mpd:ro"}
 
 // MudevMountRO shares the VM's mudev build with every runtime, at the
-// same path. Read-only on purpose: mudev is built once on the VM, where
-// Go and make live, and a runtime consumes the binary rather than
-// rebuilding its own copy.
-//
-// Only added when the source directory exists — podman would otherwise
-// create it root-owned, which is exactly the state that stops
-// vm.EnsureMudev cloning into it later.
+// same path. Read-only: the VM builds mudev, a runtime only consumes
+// it. Add it only when the source directory exists — podman would
+// create a missing one root-owned, which stops vm.EnsureMudev cloning
+// into it later.
 var MudevMountRO = []string{"-v", vmMudevDir + ":" + vmMudevDir + ":ro"}
 
-// vmMudevDir mirrors vm.MudevDir. Duplicated rather than imported: this
-// package sits below internal/vm and importing it would invert the
-// dependency direction.
+// vmMudevDir mirrors vm.MudevDir. Duplicated, not imported: importing
+// internal/vm here would invert the dependency direction.
 const vmMudevDir = "/opt/mudev"
 
 // MudevPresent reports whether the VM has a mudev build to share.
@@ -261,11 +236,8 @@ func MudevPresent() bool {
 	return err == nil && info.IsDir()
 }
 
-// Pull fetches an image, streaming layer progress.
-//
-// Explicit pre-pull rather than letting `run -d` pull silently: a first
-// pull is hundreds of megabytes and the user should see it happening.
-// A cached pull returns in under a second.
+// Pull fetches an image, streaming layer progress so a first,
+// hundreds-of-megabytes pull is visible.
 func (c *Client) Pull(ctx context.Context, image string) (int, error) {
 	return c.stream(ctx, []string{"pull", image})
 }
@@ -276,8 +248,7 @@ func (c *Client) Run(ctx context.Context, args []string) (int, error) {
 }
 
 // VolumeRemove removes a named volume. `pod rm` leaves named volumes
-// behind, so a runtime's disk-backed /tmp volume must be reclaimed
-// explicitly or it accumulates on every recreate.
+// behind, so they must be reclaimed explicitly.
 func (c *Client) VolumeRemove(ctx context.Context, name string) (int, error) {
 	res, err := c.run(ctx, []string{"volume", "rm", name})
 	if err != nil {
@@ -287,11 +258,8 @@ func (c *Client) VolumeRemove(ctx context.Context, name string) (int, error) {
 }
 
 // VolumeMountpoint returns the host path backing a named volume.
-//
-// Asked rather than assumed: the layout under
-// /var/lib/containers/storage/volumes/ is podman's business, and mpd
-// bind-mounts this path onto /srv, so reading it back is the difference
-// between following podman and guessing at it.
+// Asked, not assumed: the layout under podman's storage directory is
+// podman's business.
 func (c *Client) VolumeMountpoint(ctx context.Context, name string) (string, bool) {
 	res, err := c.run(ctx, []string{
 		"volume", "inspect", name, "--format", "{{.Mountpoint}}",
@@ -325,24 +293,10 @@ func (c *Client) NetworkExists(ctx context.Context, name string) bool {
 	return err == nil && res.Code == 0
 }
 
-// NetworkCreate creates a bridge network with a fixed subnet and podman's
-// own DNS turned off.
-//
-// --disable-dns evicts aardvark-dns, which would otherwise bind port 53 on
-// the gateway address — exactly where mpd's resolver listens. It was never
-// earning its place anyway: mpd's names are all fully qualified and served
-// by dnsmasq, so aardvark answered nothing mpd asked for and forwarded the
-// rest, one hop for no answers.
-//
-// Containers get their resolver from DNSOpts at create time instead. That
-// cannot be folded back onto the network here: podman rejects
-// NetworkDNSServers when DNS is disabled, since it configures aardvark's
-// upstream rather than the container's resolv.conf.
-// iface pins the bridge's name instead of taking podman's podman0,
-// podman1, … counter, whose value depends on what other networks happened
-// to be created first. mpd's resolver has to name that interface in its
-// config to bind the gateway address, so a name that drifts is a name
-// that silently stops resolving.
+// NetworkCreate creates a bridge network with a fixed subnet and
+// podman's own DNS turned off (see docs/networking.md for why).
+// iface pins the bridge name: mpd's resolver names that interface in
+// its config, and podman's own podman0/podman1 counter is not stable.
 func (c *Client) NetworkCreate(ctx context.Context, name, iface, subnet string) (int, error) {
 	res, err := c.run(ctx, []string{
 		"network", "create",
@@ -358,9 +312,8 @@ func (c *Client) NetworkCreate(ctx context.Context, name, iface, subnet string) 
 }
 
 // NetworkInterface reports the host bridge a podman network uses.
-//
-// Read rather than assumed: it is what mpd's resolver binds to, and a
-// network created before mpd pinned the name still carries podman's own.
+// Read, not assumed: a network created before mpd pinned the name
+// still carries podman's own.
 func (c *Client) NetworkInterface(ctx context.Context, name string) string {
 	res, err := c.run(ctx, []string{
 		"network", "inspect", name, "--format", "{{.NetworkInterface}}",
@@ -371,12 +324,10 @@ func (c *Client) NetworkInterface(ctx context.Context, name string) string {
 	return strings.TrimSpace(res.Stdout)
 }
 
-// NetworkDNSEnabled reports whether podman's own DNS is on for a network.
-//
-// True means the network predates mpd's move to a VM-hosted resolver and
-// aardvark-dns still owns the gateway's port 53. It cannot be turned off
-// in place — `podman network update` only edits nameserver lists — so the
-// caller's job is to say so rather than to repair it.
+// NetworkDNSEnabled reports whether podman's own DNS is on for a
+// network. True means aardvark-dns still owns the gateway's port 53;
+// that cannot be turned off in place, so the caller reports it rather
+// than repairing it.
 func (c *Client) NetworkDNSEnabled(ctx context.Context, name string) bool {
 	res, err := c.run(ctx, []string{
 		"network", "inspect", name, "--format", "{{.DNSEnabled}}",
@@ -388,26 +339,9 @@ func (c *Client) NetworkDNSEnabled(ctx context.Context, name string) bool {
 }
 
 // DNSOpts is the resolver configuration every mpd container and pod is
-// created with: mpd's own resolver on the podman bridge gateway, and
-// nothing else.
-//
-// Exactly one nameserver, deliberately. Left to itself podman copies the
-// VM's resolv.conf, which lists the upstream link resolver as a fallback —
-// so a name under .test would quietly escape to public DNS whenever the
-// local resolver blinked, and answer NXDOMAIN instead of failing visibly.
-//
-// The timeout is glibc's, not dnsmasq's: the stock 5s × 2 attempts means a
-// query lost while the resolver restarts costs the caller ten seconds.
-// One second twice is still ample for a resolver on the same host.
-//
-// No base hosts file, also deliberately. Podman's default seeds a
-// container's /etc/hosts from the VM's, and the VM's carries mpd's DNS
-// records — so every container would start with a snapshot of the
-// project, database and LAN names as of its creation, and glibc's `files`
-// lookup would keep answering from that snapshot long after the records
-// moved. With "none" the container gets only podman's own entries (its
-// name, localhost, host.containers.internal) and asks the resolver for
-// everything mpd publishes.
+// created with: mpd's own resolver on the bridge gateway, exactly one
+// nameserver, short glibc timeouts, and no base hosts file. The
+// reasoning is in docs/networking.md §DNS.
 func DNSOpts(gateway string) []string {
 	return []string{
 		"--dns", gateway,
@@ -417,17 +351,10 @@ func DNSOpts(gateway string) []string {
 	}
 }
 
-// RemoveIfOutdated removes a container whose labels no longer match what
-// mpd would create today, so the caller's "create if missing" step
-// rebuilds it.
-//
-// This is how service containers pick up a changed image, mount set, or
-// CA: each carries a revision label and a CA-fingerprint label, and a
-// mismatch on either means the running container is stale. A container
-// that matches on every checked label is left alone — that is the common
-// case on a repeat `--vm-setup`, and rebuilding it would be pure churn.
-//
-// Reports whether anything was removed.
+// RemoveIfOutdated removes a container whose labels no longer match
+// what mpd would create today, so the caller's "create if missing"
+// step rebuilds it. A container matching every checked label is left
+// alone. Reports whether anything was removed.
 func (c *Client) RemoveIfOutdated(ctx context.Context, name string, labels map[string]string) bool {
 	if !c.Exists(ctx, name) {
 		return false
@@ -442,12 +369,8 @@ func (c *Client) RemoveIfOutdated(ctx context.Context, name string, labels map[s
 }
 
 // ExecAsUser runs a command inside a container as a named user or uid,
-// streaming its output.
-//
-// Project scripts run as the dev *user name* (not uid) — inside a
-// runtime that account exists and owns /srv, and asset scripts assume
-// they are it. This is the orchestrator setting the identity, which is
-// what AGENTS.md's privilege rule requires: scripts never switch users
+// streaming its output. The orchestrator sets the identity here, as
+// AGENTS.md's privilege rule requires; scripts never switch users
 // themselves.
 func (c *Client) ExecAsUser(ctx context.Context, container, user string, command ...string) (int, error) {
 	args := []string{"exec"}
@@ -460,11 +383,8 @@ func (c *Client) ExecAsUser(ctx context.Context, container, user string, command
 }
 
 // ExecAttached runs a command inside a container with the caller's
-// stdin, stdout and stderr connected to it.
-//
-// Distinct from ExecWithOptions, which streams output but gives the child
-// no stdin: an interactive shell, a REPL, or anything reading a piped
-// heredoc needs the real thing.
+// stdin, stdout and stderr connected — for interactive children, which
+// ExecWithOptions cannot serve.
 func (c *Client) ExecAttached(ctx context.Context, container string, options []string,
 	command ...string) (int, error) {
 	args := append([]string{"exec"}, options...)
@@ -490,11 +410,8 @@ func (c *Client) ImageExists(ctx context.Context, image string) bool {
 }
 
 // BuildImage builds an image from a context directory, stamping it with
-// the given labels.
-//
-// Labels are how a caller can later tell an image built from today's
-// Containerfile from one built months ago: an existence check cannot see
-// that the recipe changed.
+// the given labels so a later check can tell a stale build from a
+// current one.
 func (c *Client) BuildImage(ctx context.Context, tag, contextDir string, labels map[string]string) (int, error) {
 	args := []string{"build", "-t", tag}
 	for _, key := range sortedKeys(labels) {
@@ -504,8 +421,8 @@ func (c *Client) BuildImage(ctx context.Context, tag, contextDir string, labels 
 	return c.stream(ctx, args)
 }
 
-// ImageLabel reads one label off a built image. Empty when the image is
-// missing or has no such label — both mean "not what we asked for".
+// ImageLabel reads one label off a built image, "" when the image or
+// label is missing.
 func (c *Client) ImageLabel(ctx context.Context, image, key string) string {
 	res, err := c.run(ctx, []string{
 		"image", "inspect", image, "--format", fmt.Sprintf("{{index .Labels %q}}", key),
@@ -521,8 +438,7 @@ func (c *Client) ImageRemove(ctx context.Context, image string) {
 	_, _ = c.run(ctx, []string{"rmi", "-f", image})
 }
 
-// sortedKeys keeps generated arguments deterministic, so unchanged input
-// never produces a different command line.
+// sortedKeys keeps generated arguments deterministic.
 func sortedKeys(m map[string]string) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
@@ -538,13 +454,10 @@ func (c *Client) ExecCapture(ctx context.Context, container string, command ...s
 	return c.run(ctx, args)
 }
 
-// Mounts every mpd-created container gets, at identical absolute paths
-// inside and out so asset and env lookups resolve the same either side.
 var (
-	// EnvMountRO carries the developer's own env overrides. Mounted as a
-	// DIRECTORY, not a file, so vim/nano atomic-rename writes on the VM
-	// propagate into running containers — a file mount would pin the old
-	// inode.
+	// EnvMountRO carries the developer's own env overrides. A DIRECTORY
+	// mount, not a file: atomic-rename writes on the VM must propagate
+	// into running containers, and a file mount would pin the old inode.
 	EnvMountRO = []string{"-v", "/var/lib/mpd/env:/var/lib/mpd/env:ro"}
 	// HomeOverrideMountRO carries user-managed dotfile defaults for new runtimes.
 	HomeOverrideMountRO = []string{"-v", "/var/lib/mpd/home:/var/lib/mpd/home:ro"}
@@ -554,47 +467,31 @@ var (
 // container answers with the key known_hosts already trusts.
 const RuntimeSSHDir = "/var/lib/mpd/state/runtime-ssh"
 
-// RuntimeSSHMount gives that directory to the runtime alone. Read-write:
-// 50-user.sh saves the keys it generates back out through it.
+// RuntimeSSHMount gives that directory to the runtime alone.
+// Read-write: 50-user.sh saves the keys it generates back out.
 var RuntimeSSHMount = []string{"-v", RuntimeSSHDir + ":" + RuntimeSSHDir}
 
-// ControlRunDir mirrors control.RunDir. Duplicated rather than imported,
-// for the same reason as vmMudevDir above: internal/control sits above this
-// package and importing it would invert the dependency direction.
-//
-// Exported because internal/cli needs to name the directory too, and cli
-// cannot import internal/control either — control imports cli for the
-// project verb list, which is the canonical home for it.
+// ControlRunDir mirrors control.RunDir. Duplicated, not imported:
+// internal/control sits above this package. Exported because
+// internal/cli needs the path and cannot import internal/control either.
 const ControlRunDir = "/var/lib/mpd/run"
 
-// ControlMountRO gives one runtime the socket it sends project commands to,
-// and gives it nothing else.
+// ControlMountRO gives one runtime its control socket and nothing else.
 //
-// Per-runtime by construction: only <rt>'s own directory is mounted, so the
-// socket a container can reach is the socket that identifies it. That is
-// what lets the daemon take the caller's identity from the channel instead
-// of believing a claim in the request. A shared mount would forfeit it.
-//
-// Read-only, which is enough — connecting to a Unix socket needs write
-// permission on the socket inode, not on the directory, and an RO bind
-// mount was measured to permit connect() while still refusing to let the
-// container create or replace anything here.
-//
-// A DIRECTORY mount, not the socket file: the daemon unlinks and rebinds
-// its socket on every start, and a file mount would pin the old inode.
-// Measured too — a socket rebound to a new inode is immediately reachable
-// from an already-running container.
+// Only <rt>'s own directory is mounted, so the socket a container can
+// reach is the socket that identifies it; a shared mount would forfeit
+// that. Read-only suffices: connect() needs write permission on the
+// socket inode, not the directory. A DIRECTORY mount, not the socket
+// file, so the daemon's rebound socket is visible in running containers.
 func ControlMountRO(runtime string) []string {
 	dir := ControlDir(runtime)
 	return []string{"-v", dir + ":" + dir + ":ro"}
 }
 
-// ControlDir is the VM-side directory ControlMountRO shares with a runtime.
-//
-// Exported so the runtime provisioner can create it, owned by the dev user,
-// BEFORE podman runs. Podman auto-creates a missing bind-mount source as
-// root — the same trap MudevMountRO documents — and a root-owned directory
-// here is one the daemon cannot bind its socket in.
+// ControlDir is the VM-side directory ControlMountRO shares with a
+// runtime. The provisioner must create it, dev-user-owned, BEFORE
+// podman runs: podman creates a missing bind-mount source as root, and
+// the daemon cannot bind its socket in a root-owned directory.
 func ControlDir(runtime string) string { return ControlRunDir + "/" + runtime }
 
 // Copy copies between host and container (`podman cp`); either side may

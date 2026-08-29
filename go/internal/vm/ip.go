@@ -2,16 +2,10 @@ package vm
 
 import gonet "net"
 
-// PrimaryIP returns the VM's own IPv4 address on its primary interface —
-// the LAN address the workstation reaches it at, and the one DNS's
-// vm.service record points to.
-//
-// The address is a fact about the running VM, so it is read live rather
-// than recorded. Empty when it can't be determined (e.g. a DHCP-less
-// sandbox mid-boot), which callers render as "—".
-//
-// The mpd container bridge (10.163.x) is skipped: that is the VM as
-// containers see it, never the LAN address.
+// PrimaryIP returns the VM's IPv4 LAN address — the one the workstation
+// reaches and the vm.service DNS record points to. Read live, never
+// recorded; empty when it cannot be determined. The 10.163.x container
+// bridge is skipped: it is never the LAN address.
 func PrimaryIP() string {
 	ifaces, err := gonet.Interfaces()
 	if err != nil {

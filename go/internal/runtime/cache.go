@@ -12,14 +12,9 @@ import (
 	"github.com/mutms/mpd/go/internal/ui"
 )
 
-// RebuildStateCache makes the runtime state directory agree with what
-// podman actually has.
-//
-// Containers are the ground truth and the cache is derived: a runtime
-// whose container was removed behind mpd's back must lose its state
-// entry, and one created before the cache existed must gain one. This
-// runs during `--vm-setup`, which is where a VM that drifted — restored
-// from a snapshot, half-migrated, hand-edited — gets reconciled.
+// RebuildStateCache makes the runtime state cache agree with podman.
+// Containers are the ground truth; runs during --vm-setup to reconcile
+// a drifted VM.
 func RebuildStateCache(ctx context.Context, out io.Writer, p *podman.Client, s state.Store) error {
 	containers := p.Ps(ctx, "label=mpd.runtime")
 
@@ -69,16 +64,9 @@ func RebuildStateCache(ctx context.Context, out io.Writer, p *podman.Client, s s
 	return nil
 }
 
-// ReconcileCertificates reissues what a changed CA invalidated.
-//
-// Two things trust the CA and neither notices on its own that it moved:
-// the per-project certificates on the data volume (deleted here so the
-// caller's EnsureCert reissues them), and the trust store inside each
-// running runtime, so `curl https://<project>.<zone>/` from a container
-// keeps validating.
-//
-// Called only when the CA fingerprint actually changed — reissuing every
-// project certificate on each `--vm-setup` would be pure churn.
+// ReconcileCertificates reissues what a changed CA invalidated: the
+// per-project certificates and each running runtime's trust store.
+// Call it only when the CA fingerprint changed.
 func ReconcileCertificates(ctx context.Context, out io.Writer, p *podman.Client,
 	projects []CertTarget, reissue func(string) error) {
 

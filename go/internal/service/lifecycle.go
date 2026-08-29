@@ -11,17 +11,9 @@ import (
 	"github.com/mutms/mpd/go/internal/vm"
 )
 
-// Start installs (image, container) and runs a service, leaving it
-// auto-restarting: the container carries --restart always, which
-// podman-restart.service honours at boot, and the reconcile in
-// `mpd --vm-start` is the belt to that braces.
-//
-// The container-level primitive, used both by the explicit `--service-start`
-// (which also records the sticky autostart intent) and by an on-demand
-// EnsureService when a project declares the service in MPD_REQUIRE_SERVICES.
-//
-// Idempotent: a running service is reported, not rebuilt — except when its
-// Revision moved, which is exactly when a rebuild is the point.
+// Start installs and runs a service, leaving it auto-restarting via
+// --restart always. Idempotent: a running service is reported, not
+// rebuilt, unless its Revision moved.
 func Start(ctx context.Context, out io.Writer, s Service, n net.Net, p *podman.Client) error {
 	ui.Step(out, "Service: %s", s.Name)
 
@@ -54,8 +46,8 @@ func Start(ctx context.Context, out io.Writer, s Service, n net.Net, p *podman.C
 		}
 		ui.OK(out, "%s running — %s", s.Name, s.AccessHint(n))
 	case !p.Running(ctx, container):
-		// Restart of a stopped service: bring the restart policy back
-		// before starting, or the next reboot leaves it down again.
+		// Restore the restart policy before starting, or the next
+		// reboot leaves the service down again.
 		_ = p.UpdateRestartPolicy(ctx, container, "always")
 		if code, err := p.Start(ctx, container); err != nil || code != 0 {
 			return fmt.Errorf("Failed to start service '%s'.", s.Name)
@@ -68,9 +60,8 @@ func Start(ctx context.Context, out io.Writer, s Service, n net.Net, p *podman.C
 	return nil
 }
 
-// Stop stops a service and flips its restart policy off — without that,
-// podman-restart.service would resurrect it at the next boot. The container
-// and its volume stay for a later start.
+// Stop stops a service and flips its restart policy off; without that,
+// podman-restart.service would resurrect it at the next boot.
 func Stop(ctx context.Context, out io.Writer, s Service, p *podman.Client) error {
 	ui.Step(out, "Service: %s", s.Name)
 	container := s.Container()
@@ -88,8 +79,8 @@ func Stop(ctx context.Context, out io.Writer, s Service, p *podman.Client) error
 	return nil
 }
 
-// Uninstall removes the container but keeps the volume — the data
-// survives for a later start; --service-purge is the destructive step.
+// Uninstall removes the container but keeps the volume; --service-purge
+// is the destructive step.
 func Uninstall(ctx context.Context, out io.Writer, s Service, p *podman.Client) error {
 	ui.Step(out, "Service: %s", s.Name)
 	container := s.Container()
@@ -126,12 +117,8 @@ func Purge(ctx context.Context, out io.Writer, s Service, p *podman.Client) erro
 }
 
 // ensureImage builds (BuildContext) or pulls the service's image.
-//
-// For built images, existence alone is not enough. The revision tracks
-// the service's Containerfile and entrypoint, so an image built before
-// those changed is stale even though it is present — and the staleness
-// is invisible: RemoveIfOutdated recreates the container, it comes up
-// healthy, and it runs the old entrypoint.
+// For built images, existence alone is not enough: an image built before
+// the revision changed is stale, and the staleness is invisible.
 func ensureImage(ctx context.Context, out io.Writer, s Service, p *podman.Client) error {
 	if s.BuildContext == "" {
 		if p.ImageExists(ctx, s.Image) {

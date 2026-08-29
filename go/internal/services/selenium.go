@@ -2,10 +2,8 @@ package services
 
 import "github.com/mutms/mpd/go/internal/service"
 
-// selenium — Behat's WebDriver endpoint (standalone Chromium). A Moodle
-// project with MPD_MOODLE_BEHAT=1 adds it to its required services, so mpd
-// starts it on `mpd start`. The image is ~2 GB, so the first start announces
-// the pull.
+// selenium — Behat's WebDriver endpoint (standalone Chromium), required
+// by Moodle projects with MPD_MOODLE_BEHAT=1.
 func init() {
 	service.Register(service.Service{
 		Name:      "selenium",

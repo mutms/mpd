@@ -21,8 +21,7 @@ func storeWith(t *testing.T, files map[string]string) Store {
 	return NewAt(dir)
 }
 
-// `mpd list` on a VM that has never created anything must print "none",
-// not fail — so absent files read as empty rather than erroring.
+// `mpd list` on a fresh VM must print "none", not fail.
 func TestMissingFilesAreEmptyNotAnError(t *testing.T) {
 	s := NewAt(t.TempDir())
 	if got := s.Projects(); len(got) != 0 {
@@ -111,10 +110,8 @@ func TestMainURL(t *testing.T) {
 	}
 }
 
-// A stopped project keeps its URL: configure published the vhost, cert
-// and DNS record, and stop does not withdraw them, so the address is
-// still this project's — it just answers with a dead page until
-// something serves again.
+// A stopped project keeps its URL: stop does not withdraw the vhost,
+// cert or DNS record.
 func TestMainURLSurvivesStop(t *testing.T) {
 	p := Project{RuntimeName: "php", Autostart: false,
 		URLs: []ProjectURL{{Kind: "web", URL: "https://web/"}}}

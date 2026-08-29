@@ -1,18 +1,10 @@
 package cli
 
-// `mpd --vm-diag`: a read-only sweep that answers "is this VM actually
-// working?" in one screen.
-//
-// Deliberately distinct from `--vm-status`, which renders mpd's own state
-// files — requested versus observed. Diag *probes*: it resolves a name,
-// opens a socket, reads a certificate issuer. That difference is the
-// whole point, because the failures worth catching here leave the state
-// files looking perfect. A corporate VPN that captures DNS, claims the
-// container subnet, or intercepts TLS breaks every one of these probes
-// while `--vm-status` keeps reporting a healthy VM.
-//
-// Nothing here changes the system. Every probe is a read, a lookup or a
-// dial, so it is safe to run at any time, including mid-incident.
+// `mpd --vm-diag`: a read-only sweep of live probes, unlike `--vm-status`
+// which renders state files. The failures worth catching — a VPN that
+// captures DNS, claims the subnet, or intercepts TLS — leave the state
+// files looking perfect. Every probe is a read, lookup or dial; safe to
+// run mid-incident.
 
 import (
 	"context"
@@ -38,34 +30,30 @@ import (
 	"github.com/mutms/mpd/go/internal/vm"
 )
 
-// diagTimeout bounds every dial and lookup. Short on purpose: a probe
-// that hangs is itself the finding, and a wedged resolver must not be
-// able to stall the sweep.
+// diagTimeout bounds every dial and lookup; a wedged resolver must not
+// stall the sweep.
 const diagTimeout = 3 * time.Second
 
 // caExpiryWarning is how close to expiry a certificate gets a warning
-// rather than a pass. A month is enough notice to reissue calmly.
+// rather than a pass.
 const caExpiryWarning = 30 * 24 * time.Hour
 
-// DiagDeps is what the sweep needs. Same shape as the other read-only
-// commands: concrete collaborators, passed in.
+// DiagDeps is what the sweep needs.
 type DiagDeps struct {
 	Net      net.Net
 	Podman   *podman.Client
 	State    state.Store
 	Observer current.Observer
-	// ControlSocket is the runtime's control endpoint. Passed in rather
-	// than derived: internal/control imports this package, so naming its
-	// path here would close an import cycle.
+	// ControlSocket is passed in rather than derived: internal/control
+	// imports this package, so naming its path here closes an import
+	// cycle.
 	ControlSocket string
 	// Version is the running binary's stamped version, from main.
 	Version string
 }
 
-// Diag runs every probe and returns a non-nil error when any of them
-// failed, so the command is usable as a scripted health gate. Warnings
-// do not fail the run: they flag something worth knowing that still
-// leaves the VM working.
+// Diag runs every probe and returns an error when any failed, so the
+// command works as a scripted health gate. Warnings do not fail the run.
 func Diag(ctx context.Context, out io.Writer, d DiagDeps) error {
 	r := &diagRun{out: out}
 
@@ -80,8 +68,8 @@ func Diag(ctx context.Context, out io.Writer, d DiagDeps) error {
 	return r.summary()
 }
 
-// diagRun accumulates results while printing them, so a slow probe shows
-// its line as it completes rather than after the whole sweep.
+// diagRun accumulates results while printing them, so a slow probe
+// shows its line as it completes.
 type diagRun struct {
 	out               io.Writer
 	nOK, nWarn, nFail int
@@ -120,12 +108,8 @@ func (r *diagRun) summary() error {
 	return nil
 }
 
-// --- Version -------------------------------------------------------------
-
-// diagVersion opens the sweep by naming the binary that produced it.
-// First because every line below is only meaningful against a known
-// version — a diag pasted into a bug report without one is a description
-// of an unknown program.
+// diagVersion opens the sweep by naming the binary that produced it —
+// a diag pasted into a bug report needs a version.
 func diagVersion(r *diagRun, d DiagDeps) {
 	r.step("mpd")
 	r.note("version %s (%s)", d.Version, vm.BinaryPath)
@@ -137,16 +121,13 @@ func diagVersion(r *diagRun, d DiagDeps) {
 	case c.LastUpgradeVersion == d.Version:
 		r.note("last --vm-upgrade: %s, %s", c.LastUpgradeVersion, diagWhen(c.LastUpgradeAt))
 	default:
-		// Running something other than what the last upgrade installed is
-		// normal on a VM where mpd itself is developed (a local `make
-		// install`), and a real finding anywhere else.
+		// A version other than the last upgrade's is normal where mpd is
+		// developed (local `make install`), a real finding anywhere else.
 		r.note("last --vm-upgrade: %s, %s — the running binary is a local build",
 			c.LastUpgradeVersion, diagWhen(c.LastUpgradeAt))
 	}
 }
 
-// diagWhen renders a recorded timestamp as a date plus how long ago, and
-// falls back to the raw string rather than hiding a value it cannot parse.
 func diagWhen(stamp string) string {
 	t, err := time.Parse(time.RFC3339, stamp)
 	if err != nil {
@@ -159,8 +140,6 @@ func diagWhen(stamp string) string {
 	return fmt.Sprintf("%s (%d days ago)", t.Format(time.DateOnly), days)
 }
 
-// --- Identity and certificates ------------------------------------------
-
 func diagIdentity(ctx context.Context, r *diagRun, d DiagDeps) {
 	r.step("Identity")
 	r.note("vm id %s, zone %s, subnet %s", d.Net.VMID(), d.Net.Zone(), d.Net.Subnet())
@@ -171,10 +150,9 @@ func diagIdentity(ctx context.Context, r *diagRun, d DiagDeps) {
 		r.note("signer is an intermediate constrained to this zone (mpd-virt provisioned)")
 	}
 
-	// The trust store copy must be the same certificate as the anchor.
-	// A stale copy is the classic "browser still does not trust it after
-	// re-running setup" cause, and comparing bytes is the only way to see
-	// it: both files exist and both parse.
+	// The trust store copy must equal the anchor. A stale copy is the
+	// classic "browser still does not trust it" cause, and only a byte
+	// comparison sees it — both files exist and both parse.
 	if anchor != nil {
 		if store, err := readCert(vm.TrustStorePath); err != nil {
 			r.fail("CA not in the system trust store (%s) — run `mpd --vm-setup`", vm.TrustStorePath)
@@ -188,9 +166,8 @@ func diagIdentity(ctx context.Context, r *diagRun, d DiagDeps) {
 	diagNSSDB(ctx, r)
 }
 
-// diagCert parses one PEM certificate and reports presence and validity.
-// Returns nil when it could not be read, so callers can skip comparisons
-// that would be meaningless.
+// diagCert parses one PEM certificate and reports presence and
+// validity; nil when unreadable.
 func diagCert(r *diagRun, path, label string) *x509.Certificate {
 	c, err := readCert(path)
 	if err != nil {
@@ -222,8 +199,8 @@ func readCert(path string) (*x509.Certificate, error) {
 	return x509.ParseCertificate(block.Bytes)
 }
 
-// diagNSSDB checks the Chromium-family trust store, which is a separate
-// database from the system one and goes stale independently.
+// diagNSSDB checks the Chromium-family trust store, a separate database
+// that goes stale independently of the system one.
 func diagNSSDB(ctx context.Context, r *diagRun) {
 	dir := filepath.Join(vm.Home(), ".pki", "nssdb")
 	if _, err := os.Stat(filepath.Join(dir, "cert9.db")); err != nil {
@@ -245,15 +222,13 @@ func diagNSSDB(ctx context.Context, r *diagRun) {
 	r.ok("mpd CA present in the Chromium trust store (~/.pki/nssdb)")
 }
 
-// --- Networking ----------------------------------------------------------
-
 func diagNetwork(ctx context.Context, r *diagRun, d DiagDeps) {
 	r.step("Network")
 
 	gateway := d.Net.Gateway()
 
-	// The bridge carries everything mpd serves from the VM. Without the
-	// gateway address on it, dnsmasq and caddy have nothing to bind.
+	// Without the gateway address on the bridge, dnsmasq and caddy have
+	// nothing to bind.
 	res, err := exec.Capture(ctx, exec.Cmd{
 		Name: "ip",
 		Args: []string{"-o", "-4", "addr", "show", "dev", vm.BridgeName},
@@ -273,10 +248,8 @@ func diagNetwork(ctx context.Context, r *diagRun, d DiagDeps) {
 		r.fail("resolver not running (%s) — no .test name will resolve", vm.DnsmasqUnit)
 	}
 
-	// Zone resolution through NSS, not by asking dnsmasq directly: that is
-	// the path everything else on the VM takes — /etc/hosts first, where
-	// mpd's block lives — and it is the one a stray hosts edit or an
-	// nsswitch change breaks.
+	// Resolve through NSS, not dnsmasq directly: that is the path
+	// everything else takes, and the one a stray hosts edit breaks.
 	if addrs := diagLookup(ctx, d.Net.Zone()); len(addrs) == 0 {
 		r.fail("%s does not resolve on the VM — mpd's block is missing from /etc/hosts (run `mpd --vm-setup`)", d.Net.Zone())
 	} else if !contains(addrs, gateway) {
@@ -286,9 +259,8 @@ func diagNetwork(ctx context.Context, r *diagRun, d DiagDeps) {
 		r.ok("%s resolves to %s", d.Net.Zone(), gateway)
 	}
 
-	// The zone answers from /etc/hosts even when the resolver has no
-	// upstream at all, so forwarding needs its own probe — see
-	// vm.ForwardsUpstream.
+	// The zone answers from /etc/hosts even with no upstream, so
+	// forwarding needs its own probe.
 	if vm.ForwardsUpstream(ctx, gateway) {
 		r.ok("resolver forwards upstream (%s answers)", vm.UpstreamProbeName)
 	} else {
@@ -311,10 +283,9 @@ func diagNetwork(ctx context.Context, r *diagRun, d DiagDeps) {
 	}
 }
 
-// diagSubnetRoute is the VPN tripwire. A full-tunnel client that claims
-// RFC1918 space sends container traffic into its own interface, at which
-// point every project URL times out while every state file still says the
-// project is running.
+// diagSubnetRoute is the VPN tripwire: a full-tunnel client that claims
+// RFC1918 space sends container traffic into its own interface, and
+// every project URL times out while state files look healthy.
 func diagSubnetRoute(ctx context.Context, r *diagRun, d DiagDeps) {
 	target := d.Net.IP(net.HostRuntime)
 	res, err := exec.Capture(ctx, exec.Cmd{Name: "ip", Args: []string{"route", "get", target}})
@@ -334,8 +305,8 @@ func diagSubnetRoute(ctx context.Context, r *diagRun, d DiagDeps) {
 	}
 }
 
-// routeDevice pulls the interface out of `ip route get` output, which
-// reads "10.163.200.2 dev mpdbr0 src 10.163.200.1 uid 1000".
+// routeDevice pulls the interface out of `ip route get` output
+// ("10.163.200.2 dev mpdbr0 src 10.163.200.1 uid 1000").
 func routeDevice(out string) string {
 	fields := strings.Fields(out)
 	for i, f := range fields {
@@ -365,12 +336,9 @@ func contains(haystack []string, needle string) bool {
 	return false
 }
 
-// --- TLS -----------------------------------------------------------------
-
 // diagTLS is the interception tripwire. It verifies the portal's chain
-// against this VM's own anchor rather than the system store, so a
-// corporate CA that has been installed system-wide cannot make an
-// intercepted connection look fine.
+// against this VM's own anchor, not the system store, so a system-wide
+// corporate CA cannot make an intercepted connection look fine.
 func diagTLS(ctx context.Context, r *diagRun, d DiagDeps) {
 	r.step("TLS")
 
@@ -397,8 +365,7 @@ func diagTLS(ctx context.Context, r *diagRun, d DiagDeps) {
 	}
 
 	// Verification failed. Dial again without checking, purely so the
-	// message can name what is actually being served — "issued by
-	// <corporate CA>" turns a mystery into a diagnosis.
+	// message can name the issuer actually being served.
 	insecure, derr := tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
 		InsecureSkipVerify: true, //nolint:gosec // diagnostic: reports the issuer it finds
 		ServerName:         d.Net.Zone(),
@@ -418,8 +385,6 @@ func diagTLS(ctx context.Context, r *diagRun, d DiagDeps) {
 	r.fail("portal certificate does NOT chain to this VM's CA — issued by %q. TLS is being intercepted.",
 		certs[0].Issuer.CommonName)
 }
-
-// --- Runtime -------------------------------------------------------------
 
 func diagRuntime(ctx context.Context, r *diagRun, d DiagDeps) {
 	r.step("Runtime")
@@ -449,8 +414,8 @@ func diagRuntime(ctx context.Context, r *diagRun, d DiagDeps) {
 		r.fail("runtime sshd not reachable at %s:22 — IDE and `ssh` sessions will fail", want)
 	}
 
-	// The control socket is how `mpd` run inside the runtime reaches the
-	// VM. Its absence is invisible until a tool in the container tries.
+	// The control socket is how `mpd` inside the runtime reaches the VM;
+	// its absence is invisible until a tool in the container tries.
 	sock := d.ControlSocket
 	if _, err := os.Stat(sock); err != nil {
 		r.fail("control socket missing at %s — `mpd` inside the runtime will not work", sock)
@@ -461,21 +426,17 @@ func diagRuntime(ctx context.Context, r *diagRun, d DiagDeps) {
 	}
 }
 
-// --- Desktop and remote access -------------------------------------------
-
 // diagDesktop reports the optional desktop layer. Absence is never a
-// failure — a headless VM is the default and the supported shape — but a
-// desktop that cannot possibly render is, because that state is silent:
-// GNOME installs cleanly on a kernel with no DRM drivers and then shows a
-// black console with nothing in any log.
+// failure, but a desktop that cannot render is: GNOME installs cleanly
+// on a kernel with no DRM drivers and then shows a black console with
+// nothing in any log.
 func diagDesktop(ctx context.Context, r *diagRun) {
 	r.step("Desktop and remote access")
 
 	if _, err := os.Stat("/usr/bin/gnome-session"); err != nil {
 		r.note("GNOME not installed (headless VM — `gnome-install` adds it)")
-		// Not a problem while the VM stays headless, but it decides
-		// whether `gnome-install` can ever produce a visible desktop, and
-		// finding that out afterwards costs a kernel swap and a reboot.
+		// The kernel flavour decides whether `gnome-install` can ever
+		// render; finding out afterwards costs a kernel swap and reboot.
 		if k := kernelRelease(); strings.Contains(k, "-cloud") {
 			r.note("kernel %s has no DRM drivers — a desktop here would need "+
 				"linux-image-amd64 first", k)
@@ -515,21 +476,16 @@ func diagDesktop(ctx context.Context, r *diagRun) {
 	switch {
 	case vm.UnitActive(ctx, "xrdp", false) && diagDial("127.0.0.1", "3389"):
 		r.warn("RDP is OPEN on tcp/3389 — the one port held by a password, not a key. `rdp-stop` closes it")
-		// GNOME runs once per user. With a console session already
-		// holding the systemd user units, an RDP login starts
-		// gnome-session-failed instead of a shell — which arrives as a
-		// black screen and says nothing anywhere. Reported here rather
-		// than only by rdp-start, because the console login usually
-		// happens afterwards.
+		// GNOME runs once per user: with a console session holding the
+		// user units, an RDP login gets a silent black screen. Reported
+		// here because the console login usually happens after rdp-start.
 		user := vm.DetectIdentity().User
 		if s := diagConsoleSession(ctx); s != "" {
 			r.warn("...and %s holds a console session (%s) — an RDP login will get a black screen",
 				user, s)
 		}
-		// Autologin turns the collision from something you can cause into
-		// something that happens at every boot, so terminating the session
-		// is not a fix — it comes back. Report it even when no console
-		// session is live right now.
+		// Autologin recreates the collision at every boot, so terminating
+		// the session is not a fix. Report it even with no live session.
 		if who := gdmAutoLogin(); who != "" {
 			r.warn("...and gdm autologin is on for %s — the console claims the desktop at every boot. "+
 				"`gnome-stop` is the fix; terminating the session only lasts until the next reboot", who)
@@ -543,8 +499,7 @@ func diagDesktop(ctx context.Context, r *diagRun) {
 	}
 }
 
-// kernelRelease is `uname -r` without the exec: the flavour suffix is
-// what decides whether this kernel carries DRM drivers at all.
+// kernelRelease is `uname -r` without the exec.
 func kernelRelease() string {
 	raw, err := os.ReadFile("/proc/sys/kernel/osrelease")
 	if err != nil {
@@ -554,7 +509,7 @@ func kernelRelease() string {
 }
 
 // gdmAutoLogin returns the user gdm logs in automatically, or "" when
-// autologin is off. World-readable, so no privilege is needed.
+// autologin is off.
 func gdmAutoLogin() string {
 	raw, err := os.ReadFile("/etc/gdm3/daemon.conf")
 	if err != nil {
@@ -563,10 +518,9 @@ func gdmAutoLogin() string {
 	return parseGDMAutoLogin(string(raw))
 }
 
-// parseGDMAutoLogin reads the [daemon] keys out of gdm's config. Both
-// keys matter: AutomaticLogin names a user whether or not
-// AutomaticLoginEnable is set, so reporting the name alone would warn
-// about autologin that is configured but switched off.
+// parseGDMAutoLogin reads gdm's [daemon] keys. Both matter:
+// AutomaticLogin names a user even when AutomaticLoginEnable is off, so
+// the name alone would warn about autologin that is switched off.
 func parseGDMAutoLogin(conf string) string {
 	var enabled bool
 	var user string
@@ -597,8 +551,8 @@ func parseGDMAutoLogin(conf string) string {
 	return user
 }
 
-// diagConsoleSession returns the id of a local (seat) graphical session
-// belonging to this user, or "" when there is none.
+// diagConsoleSession returns the id of this user's local seat session,
+// or "" when there is none.
 func diagConsoleSession(ctx context.Context) string {
 	res, err := exec.Capture(ctx, exec.Cmd{
 		Name: "loginctl",
@@ -610,14 +564,10 @@ func diagConsoleSession(ctx context.Context) string {
 	return seatSessionOf(res.Stdout, vm.DetectIdentity().User)
 }
 
-// seatSessionOf finds a session on a physical seat belonging to user, in
-// `loginctl list-sessions --no-legend` output. Split out from the exec
-// call so it can be tested against real output.
-//
-// Columns: SESSION UID USER SEAT LEADER CLASS TTY IDLE SINCE. A session
-// with no seat ("-") is an ssh or systemd-manager session and cannot own
-// the desktop; a seat session belonging to Debian-gdm is the greeter, not
-// a login, and holds none of this user's units.
+// seatSessionOf finds user's session on a physical seat in `loginctl
+// list-sessions --no-legend` output (columns: SESSION UID USER SEAT …).
+// A session with no seat ("-") is ssh or systemd-manager and cannot own
+// the desktop.
 func seatSessionOf(out, user string) string {
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Fields(line)
@@ -644,11 +594,8 @@ func baseNames(paths []string) []string {
 	return out
 }
 
-// --- Projects, databases, services ---------------------------------------
-
 // diagData compares intent against reality for everything mpd was asked
-// to keep running. A container that was asked to run and is not is the
-// single most common "it worked yesterday".
+// to keep running.
 func diagData(ctx context.Context, r *diagRun, d DiagDeps) {
 	r.step("Projects, databases and services")
 
@@ -678,7 +625,7 @@ func diagData(ctx context.Context, r *diagRun, d DiagDeps) {
 			continue
 		}
 		// Ask the registry for the container name — composing it here
-		// would be a second copy of the naming rule.
+		// would copy the naming rule.
 		svc, known := service.Find(entry.Name)
 		if !known {
 			r.warn("service %q is marked autostart but is not a known service", entry.Name)
@@ -691,8 +638,6 @@ func diagData(ctx context.Context, r *diagRun, d DiagDeps) {
 		}
 	}
 }
-
-// --- Dialling ------------------------------------------------------------
 
 func diagDial(host, port string) bool {
 	c, err := gonet.DialTimeout("tcp", gonet.JoinHostPort(host, port), diagTimeout)

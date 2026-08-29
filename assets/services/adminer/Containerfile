@@ -1,16 +1,10 @@
 # mpd adminer service — Debian-based.
 #
-# We build our own image rather than using `docker.io/library/adminer`.
-# Despite living under Docker Hub's `library/` namespace, that image is
-# user-contributed — Vrana (adminer's author) explicitly disclaims it —
-# and ships Alpine/musl. libpq's getaddrinfo() on musl fails to resolve
-# multi-label hostnames like `postgres-latest.db.<zone>`, even when
-# shell `getent hosts` and PHP's `gethostbyname` succeed in the same
-# container. Building on glibc avoids the issue and keeps the supply
-# chain under our control.
+# Built here instead of docker.io/library/adminer: that image is
+# user-contributed and ships Alpine/musl, whose libpq fails to resolve
+# multi-label hostnames like `postgres-latest.db.<zone>`. glibc works.
 #
-# Adminer itself is a single self-contained PHP file. We pin a release for
-# reproducibility — bump ADMINER_VERSION to refresh.
+# Adminer is a single PHP file; bump ADMINER_VERSION to refresh.
 
 FROM docker.io/library/debian:trixie
 

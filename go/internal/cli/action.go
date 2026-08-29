@@ -21,59 +21,47 @@ import (
 	"github.com/mutms/mpd/go/internal/vm"
 )
 
-// Start brings the VM's mpd environment up: services, then any runtime
-// that had running projects before the last shutdown.
-//
-// Ordering: vm.json first, so nothing reads stale addressing; then the
-// services.
-//
-// Deliberately not idempotent-by-creation: `--vm-start` starts what exists
-// and reports what does not. Creating things is `--vm-setup`'s job, and
-// conflating them would make the daily command unpredictably slow.
+// Start brings the VM's mpd environment up: services, then the runtime.
+// It starts what exists and reports what does not; creating things is
+// `--vm-setup`'s job.
 func Start(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) error {
 	if _, err := os.Stat(stateDir); err != nil {
 		return fmt.Errorf("mpd is not set up yet. Run: mpd --vm-setup")
 	}
 
-	// Republish addressing before anything reads it: a VM whose ID
-	// changed since last boot must not leave stale URLs behind.
+	// Republish addressing before anything reads it: the VM's ID may
+	// have changed since last boot.
 	if err := writeVMMeta(ctx, d); err != nil {
 		return err
 	}
 
-	// VM-hosted services: systemd owns them, so they are started here
-	// rather than through the container path below.
+	// systemd owns the VM-hosted services, not the container path below.
 	if err := vm.StartUnits(ctx, out); err != nil {
 		return err
 	}
 
-	// Autostart extra services: --restart always + podman-restart.service
-	// normally brings them back at boot; this reconcile is the belt to
-	// that braces, and it also repairs a revision drift.
+	// podman-restart.service normally brings extra services back at
+	// boot; this reconcile backs that up and repairs revision drift.
 	if err := ReconcileServices(ctx, out, d.Podman, d.State, d.Net); err != nil {
 		return err
 	}
 
 	fmt.Fprintln(out, "\n\033[1m==> DNS resolution\033[0m")
-	// Republish the record set: the vm.<zone> record carries the VM's LAN
-	// address, and a VM that rebooted on a different network (DHCP) must
-	// not keep answering with the old one. Free when nothing moved — the
-	// block is compared before it is written.
+	// Republish the records: a VM rebooted on a different network must
+	// not keep answering with its old LAN address. Free when nothing
+	// moved — the block is compared before it is written.
 	if err := PublishDNS(ctx, out, d.Dnsmasq, d.Net, d.State, false); err != nil {
 		return err
 	}
-	// The resolver may be `active` without answering if it lost the race
-	// with the bridge at boot. This is where a rebooted VM lands, so it is
-	// where the repair belongs.
+	// The resolver may be `active` without answering if it lost the boot
+	// race with the bridge; repair it here, where a rebooted VM lands.
 	if err := vm.EnsureDnsmasqResolving(ctx, out, d.Net.Gateway(), d.Net.Zone()); err != nil {
 		return err
 	}
 	verifyDNS(ctx, out, d.Net)
 
-	// The runtime is core infrastructure now — start it whenever it
-	// exists, whether or not any project requested running. Failure warns
-	// rather than aborts: a VM without its runtime is still worth having
-	// started, and --vm-setup is the repair.
+	// Start the runtime whenever it exists, whatever the projects want.
+	// Failure warns rather than aborts; --vm-setup is the repair.
 	container := d.Observer.RuntimeContainer(runtime.Name)
 	switch {
 	case !d.Podman.Exists(ctx, container):
@@ -97,13 +85,10 @@ func Start(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) e
 	return nil
 }
 
-// verifyDNS checks that the VM resolves the fixed names every VM
-// publishes — the zone apex (→ gateway) and the runtime (→ its fixed
-// address) — through its own NSS path, which is /etc/hosts. That proves
-// the block landed where glibc reads it; whether dnsmasq serves it is the
-// separate question EnsureDnsmasqResolving answers.
-// Reports rather than fails: a VM with broken DNS is still worth having
-// started, and the message says what to inspect.
+// verifyDNS resolves the fixed names through the VM's own NSS path,
+// proving the block landed in /etc/hosts where glibc reads it. Whether
+// dnsmasq serves it is EnsureDnsmasqResolving's question. It reports
+// rather than fails.
 func verifyDNS(ctx context.Context, out io.Writer, n net.Net) {
 	if !dnsmasqReachable(ctx) {
 		fmt.Fprintf(out, "DNS check: resolver at %s:53 not active within 8s.\n", n.Gateway())
@@ -111,14 +96,13 @@ func verifyDNS(ctx context.Context, out io.Writer, n net.Net) {
 		return
 	}
 	// The apex answers at the gateway — the portal is VM infra behind
-	// caddy on .1, not a container with an address of its own.
+	// caddy, not a container with an address of its own.
 	checks := []struct{ host, want string }{
 		{n.Zone(), n.Gateway()},
 		{n.RuntimeFQDN(), n.IP(net.HostRuntime)},
 	}
-	// vm.<zone> answers with the VM's own LAN address. Checked against
-	// the live address, which is also what publishing uses — and skipped
-	// when there is none to compare (a DHCP-less sandbox mid-boot).
+	// vm.<zone> answers with the VM's own LAN address. Skipped when
+	// there is no live address to compare (a DHCP-less sandbox mid-boot).
 	if vmIP := vm.PrimaryIP(); vmIP != "" {
 		checks = append(checks, struct{ host, want string }{n.VMServiceRecord(), vmIP})
 	}
@@ -149,9 +133,8 @@ func verifyDNS(ctx context.Context, out io.Writer, n net.Net) {
 		fmt.Fprintf(out, "\033[1;32m✓ DNS: %s\033[0m\n", strings.Join(parts, ", "))
 	}
 
-	// Forwarding is a separate question from any of the above: every name
-	// checked so far is served from /etc/hosts, so they answer even when
-	// the resolver has no upstream at all.
+	// Forwarding is a separate question: the names above are served from
+	// /etc/hosts and answer even with no upstream at all.
 	if vm.ForwardsUpstream(ctx, n.Gateway()) {
 		fmt.Fprintf(out, "\033[1;32m✓ DNS: %s forwarded upstream\033[0m\n", vm.UpstreamProbeName)
 		return
@@ -181,15 +164,12 @@ func writeVMMeta(ctx context.Context, d ProjectDeps) error {
 	return VMMeta(ctx, d.Podman, d.Net, state.Dir)
 }
 
-// VMMeta publishes this VM's addressing to both places that need it.
-//
-// Two audiences, same bytes: runtime containers see /srv/meta/vm.json
-// via the data volume; the portal reads vm.json from the state dir.
-// Neither can read /var/lib/mpd/conf/, which holds the CA key and is
-// deliberately never mounted into a container.
+// VMMeta publishes this VM's addressing to both readers: runtime
+// containers via /srv/meta/vm.json, the portal via the state dir's
+// vm.json.
 func VMMeta(ctx context.Context, p *podman.Client, n net.Net, stateDir string) error {
-	// No separate resolver address: it listens on the gateway, and a
-	// second key holding the same value is a second thing to keep true.
+	// No separate resolver key: it listens on the gateway, and a second
+	// key holding the same value is a second thing to keep true.
 	meta := map[string]string{
 		"vmId":    n.VMID(),
 		"zone":    n.Zone(),
@@ -208,8 +188,8 @@ func VMMeta(ctx context.Context, p *podman.Client, n net.Net, stateDir string) e
 	return os.WriteFile(filepath.Join(stateDir, "vm.json"), data, 0o644)
 }
 
-// resolveHost asks the VM's own resolver for a name, via getent so the
-// answer comes through the same NSS path everything else uses.
+// resolveHost uses getent so the answer comes through the same NSS path
+// everything else uses.
 func resolveHost(ctx context.Context, host string) string {
 	res, err := exec.Capture(ctx, exec.Cmd{
 		Name: "bash",
@@ -225,35 +205,24 @@ func resolveHost(ctx context.Context, host string) string {
 // without losing its SSH session to a real poweroff.
 const StopSkipEnv = "MPD_STOP_DOES_NOT_SHUTDOWN_VM"
 
-// Stop powers the VM off — or, when systemd is the caller, fires the
-// pre-stop hooks.
-//
-// One command, two callers needing opposite halves of the work:
-//
-//   - a human typing `mpd --vm-stop` powers off, and must NOT fire hooks,
-//     because powering off makes systemd stop mpd.service, whose
-//     ExecStop runs this same command again;
-//   - systemd's ExecStop fires the hooks, and must NOT power off — that
-//     is already happening.
-//
-// Doing both in both places fired mpd-pre-stop twice, the second time
-// against databases already shutting down. systemd sets INVOCATION_ID
-// for every process it runs as a unit, so the callers tell themselves
-// apart with no unit change and nothing to migrate.
+// Stop powers the VM off, or fires the pre-stop hooks when systemd is
+// the caller. Poweroff makes systemd stop mpd.service, whose ExecStop
+// runs this same command; each caller must do only its half or the
+// hooks fire twice. INVOCATION_ID, set by systemd, tells them apart.
 func Stop(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) error {
 	if _, err := os.Stat(stateDir); err != nil {
 		return fmt.Errorf("mpd is not set up yet. Run: mpd --vm-setup")
 	}
 
 	if os.Getenv("INVOCATION_ID") != "" {
-		// Graceful DB shutdown. Without it the next boot finds postgres
-		// doing crash recovery. Failures are logged, never blocking.
+		// Graceful DB shutdown; without it the next boot finds postgres
+		// doing crash recovery. Failures log, never block.
 		fmt.Fprintln(out, "\n\033[1m==> Firing pre-stop hooks\033[0m")
 		return hooks.Fire(ctx, out, hooks.MpdPreStop(ctx, d.Podman), "stop", d.Podman)
 	}
 
-	// Project intent is preserved across the power cycle: projects marked
-	// running stay running in state, so the next start restores them.
+	// Projects marked running stay running in state, so the next start
+	// restores them.
 	fmt.Fprintln(out, "\n\033[1;33mPowering off VM\033[0m")
 	fmt.Fprintln(out, "(your SSH session will drop in a moment; pre-stop hooks fire during shutdown)")
 
@@ -269,11 +238,8 @@ func Stop(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) er
 	return nil
 }
 
-// Restart reboots the VM.
-//
-// No hooks fired here on purpose: the reboot makes systemd stop
-// mpd.service, and its ExecStop fires them once. Firing here as well
-// would double up, which is the defect Stop above exists to avoid.
+// Restart reboots the VM. No hooks fire here: the reboot makes systemd
+// stop mpd.service, whose ExecStop fires them once.
 func Restart(ctx context.Context, out io.Writer, stateDir string) error {
 	if _, err := os.Stat(stateDir); err != nil {
 		return fmt.Errorf("mpd is not set up yet. Run: mpd --vm-setup")

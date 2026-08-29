@@ -1,8 +1,8 @@
 #!/bin/bash
-# 50-user.sh — the runtime's one root-context script (the bootstrap
-# exception in AGENTS.md §"Mandatory privilege rule"): the dev user does
-# not exist yet, so nothing else could create it. Run by mpd once, at
-# runtime create, as root via `podman exec`. Safe to re-run.
+# 50-user.sh — the runtime's one root-context script: it creates the dev
+# user, so it cannot run as the dev user (the bootstrap exception in
+# AGENTS.md §"Mandatory privilege rule"). Run by mpd as root at runtime
+# create. Safe to re-run.
 #
 #   50-user.sh <container> <user> <uid> <zone>
 set -euo pipefail
@@ -12,24 +12,15 @@ EXTUSER="$2"
 EXTUID="$3"
 MPD_ZONE="$4"   # this VM's zone, e.g. 222.mpd.test — /srv/meta may not exist yet
 
-# Lift systemd's per-service task cap: DefaultTasksMax is 15% of the pids
-# limit and every service inherits it — ssh.service holds the whole IDE
-# backend + agent + git, which alone exceeds it and dies with EAGAIN.
+# Lift systemd's per-service task cap. ssh.service holds the IDE backend,
+# agent and git, which alone exceeds the default and dies with EAGAIN.
 mkdir -p /etc/systemd/system.conf.d
 printf '[Manager]\nDefaultTasksMax=infinity\n' > /etc/systemd/system.conf.d/mpd-tasksmax.conf
 systemctl daemon-reexec
 
-# sshd host keys: this runtime's own, kept across rebuilds.
-#
-# A host key is a secret, so it is made here and never shipped: the image
-# carries none (see the Containerfile), each runtime generates its own on
-# first create, and the keys are kept on the VM at the path below —
-# mounted into this container and no other — so `mpd --runtime-rebuild`
-# comes back as the same host instead of tripping a host-key warning on
-# the developer's workstation.
-#
-# Both branches clear /etc/ssh first, so a key left behind by a partial
-# run cannot outlive it.
+# sshd host keys: generated per runtime, kept on the VM across rebuilds;
+# see docs/security.md. Both branches clear /etc/ssh first, so a key left
+# by a partial run cannot outlive it.
 SSH_KEEP=/var/lib/mpd/state/runtime-ssh
 if compgen -G "${SSH_KEEP}/ssh_host_*_key" > /dev/null; then
     rm -f /etc/ssh/ssh_host_*
@@ -47,9 +38,8 @@ chmod 644 /etc/ssh/ssh_host_*_key.pub
 printf '%s\n' 'PermitRootLogin no' 'PasswordAuthentication no' 'KbdInteractiveAuthentication no' \
     > /etc/ssh/sshd_config.d/10-mpd.conf
 systemctl enable ssh
-# The image ships no host key, so sshd has been failing and retrying since
-# boot and may have hit systemd's start limit — which makes the restart
-# below fail even though the keys now exist. Clear that first.
+# The image ships no host key, so sshd may have hit systemd's start limit
+# before this ran. Clear it or the restart below fails.
 systemctl reset-failed ssh 2>/dev/null || true
 # Restart, not reload: sshd reads host keys at start.
 systemctl restart ssh
@@ -69,10 +59,8 @@ chmod 440 "/etc/sudoers.d/${EXTUSER}"
 
 USER_HOME="/home/${EXTUSER}"
 
-# Home files. The account is fresh here, so both flavours are just copied in:
-# default/ (the dev's to edit after) and forced/ (mpd's, re-applied on every
-# --vm-setup by 70-configure-runtime.sh). Then the VM-host /var/lib/mpd/home
-# override. cp -aT merges contents, dotfiles included.
+# Home files: the account is fresh, so copy in default/ and forced/, then
+# the VM-host /var/lib/mpd/home override. cp -aT merges dotfiles too.
 for d in default forced; do
     [ -d "/opt/mpd/assets/runtime/home/${d}" ] && \
         cp -aT "/opt/mpd/assets/runtime/home/${d}" "${USER_HOME}"

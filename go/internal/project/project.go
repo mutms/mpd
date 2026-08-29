@@ -20,18 +20,14 @@ import (
 	"github.com/mutms/mpd/go/internal/state"
 )
 
-// Hosts returns the unique hostnames from a project's URL list that fall
-// inside this VM's zone, sorted.
-//
-// Single source for both cert SANs and DNS records, so the two can
-// never drift. Filtering on the zone rather than the root domain is what
-// stops mpd issuing a local cert for a URL naming another VM's project.
+// Hosts returns the unique in-zone hostnames from a project's URL list,
+// sorted. Single source for cert SANs and DNS records, so the two cannot
+// drift; zone filtering stops certs for another VM's names.
 func Hosts(urls []state.ProjectURL, n net.Net) []string {
 	seen := map[string]bool{}
 	for _, u := range urls {
-		// A "mail" URL points at the mailpit SERVICE (its own address,
-		// its own DNS record), not at this project's vhost — issuing a
-		// project cert or DNS record for it would fight the service's.
+		// A "mail" URL points at the mailpit service, not this
+		// project's vhost; its cert and record are the service's.
 		if u.Kind == "mail" {
 			continue
 		}
@@ -53,13 +49,9 @@ func Hosts(urls []state.ProjectURL, n net.Net) []string {
 }
 
 // EnsureCert issues a per-project certificate covering every in-zone
-// host, unless the existing one already covers exactly that set.
-//
-// The SAN set is recorded beside the cert (cert.sans) and compared here.
-// A bare "does cert.pem exist" check would keep a stale cert forever, so
-// enabling behat on an existing project would never widen the cert and
-// its behat.<project>.<zone> SNI would fail the handshake. A missing
-// signature counts as a mismatch, forcing one regeneration.
+// host, unless the existing one covers exactly that set. The SAN set is
+// recorded beside the cert (cert.sans): an existence check alone would
+// never widen a stale cert when a project gains hosts.
 func EnsureCert(ctx context.Context, out io.Writer, name string, urls []state.ProjectURL,
 	n net.Net, p *podman.Client, uid string) error {
 
@@ -98,9 +90,8 @@ func EnsureCert(ctx context.Context, out io.Writer, name string, urls []state.Pr
 		return err
 	}
 
-	// srv.Write renames into place, which the Caddy frontdoor depends on:
-	// it re-validates on every change, and a half-written cert.pem fails
-	// validation, skipping the reload.
+	// srv.Write renames into place; the Caddy frontdoor re-validates on
+	// every change and must never see a half-written cert.
 	if err := srv.Write(srv.MetaFile(name, "cert.pem"), certData, 0o644); err != nil {
 		return err
 	}
@@ -115,13 +106,10 @@ func Exec(ctx context.Context, p *podman.Client, container, user string, command
 	return p.ExecAsUser(ctx, container, user, command...)
 }
 
-// WriteMeta writes /srv/meta/<project>/project.json — the ground-truth
-// project identity readable from inside containers.
-//
-// Written BEFORE a project type's configure.sh runs, because
-// source-mpd-env.sh reads runtime and type from it to locate the
-// matching mpd-defaults.env layers. Written again afterwards, once
-// configure.sh has produced URLs and DB fields.
+// WriteMeta writes /srv/meta/<project>/project.json, the project
+// identity readable from inside containers. It must run before a type's
+// configure.sh, which reads runtime and type from it; it runs again
+// afterwards with the URLs and DB fields configure.sh produced.
 func WriteMeta(ctx context.Context, p *podman.Client, uid string, entry state.Project) error {
 	meta := map[string]any{
 		"name":            entry.Name,
@@ -133,8 +121,8 @@ func WriteMeta(ctx context.Context, p *podman.Client, uid string, entry state.Pr
 		"autostart":       entry.Autostart,
 		"webRoot":         "/srv/projects/" + entry.Name,
 	}
-	// Always emit urls, possibly empty, so consumers need not distinguish
-	// "absent" from "present but empty" — they are the same thing.
+	// Always emit urls, possibly empty, so consumers need not
+	// distinguish "absent" from "empty".
 	urls := make([]map[string]any, 0, len(entry.URLs))
 	for _, u := range entry.URLs {
 		urls = append(urls, map[string]any{"label": u.Label, "kind": u.Kind, "url": u.URL})
@@ -144,13 +132,10 @@ func WriteMeta(ctx context.Context, p *podman.Client, uid string, entry state.Pr
 	return srv.WriteJSON(srv.MetaFile(entry.Name, "project.json"), meta)
 }
 
-// ReadURLs returns the URL list a project type's configure.sh wrote to
+// ReadURLs returns the URL list configure.sh wrote to
 // /srv/meta/<project>/urls.json, and whether the file could be read.
-//
-// The bool matters to callers refreshing a cached copy: "no URLs" is a
-// valid project state (a bare or cftunnel project publishes none), and it
-// is not the same answer as "the file is missing", which would otherwise
-// overwrite a good cache with nothing.
+// "No URLs" is a valid state, distinct from "file missing" — the bool
+// stops a missing file from overwriting a good cache.
 func ReadURLs(name string) ([]state.ProjectURL, bool) {
 	var urls []state.ProjectURL
 	if !srv.ReadMetaJSON(name, "urls.json", &urls) {
@@ -159,26 +144,14 @@ func ReadURLs(name string) ([]state.ProjectURL, bool) {
 	return urls, true
 }
 
-// CheckConfigured reports what makes a project's configuration unusable on
-// THIS VM — and only what mpd cannot repair by itself.
-//
-// The distinction is the whole point. A stale copy of urls.json in
-// projects.json is not a problem to report, because whoever noticed it can
-// simply re-read the file; telling a developer to run `mpd start` for
-// something mpd could fix itself is noise dressed as diagnostics. What
-// lands here is the opposite case: configuration that was written for a
-// different VM and can only be regenerated by re-running the project
-// type's configure.sh, which resolves database tags and may create
-// containers — too much for a start verb to do behind someone's back.
-//
-// Add future invariants here rather than in the verbs, and apply the same
-// test to each: if mpd can repair it, repair it instead.
+// CheckConfigured reports what makes a project's configuration unusable
+// on this VM — and only what mpd cannot repair by itself. Add future
+// invariants here, with the same test: if mpd can repair it, repair it
+// instead of reporting it.
 func CheckConfigured(name string, urls []state.ProjectURL, n net.Net) error {
 	if len(urls) == 0 || len(Hosts(urls, n)) > 0 {
 		return nil
 	}
-	// Every URL names somewhere else: /srv came from another VM, or this
-	// VM's MPD_VM_ID changed under a project configured before it did.
 	return fmt.Errorf(`Project '%s' is configured for a different VM.
 
 Its URLs name %s, but this VM's zone is %s. That happens when /srv is
@@ -190,8 +163,7 @@ Regenerate its configuration:
     mpd start %s`, name, foreignHost(urls, n), n.Zone(), name)
 }
 
-// foreignHost names one out-of-zone host, for the error above. The first
-// is enough — they all moved together.
+// foreignHost names one out-of-zone host for the error above.
 func foreignHost(urls []state.ProjectURL, n net.Net) string {
 	for _, u := range urls {
 		parsed, err := url.Parse(u.URL)
@@ -205,9 +177,8 @@ func foreignHost(urls []state.ProjectURL, n net.Net) string {
 	return "no resolvable host"
 }
 
-// ReadEffective returns what a project type's configure.sh resolved into
-// /srv/meta/<project>/effective.json — most importantly dbTag, which is
-// how the layered mpd.env cascade reaches mpd.
+// ReadEffective returns what configure.sh resolved into
+// /srv/meta/<project>/effective.json, most importantly dbTag.
 func ReadEffective(name string) map[string]any {
 	var eff map[string]any
 	if !srv.ReadMetaJSON(name, "effective.json", &eff) {

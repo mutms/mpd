@@ -1,30 +1,19 @@
 #!/bin/bash
-# gnome-install — add a minimal GNOME desktop plus Chromium to this VM.
+# gnome-install — add a minimal GNOME desktop plus Chromium to a VM that
+# has none. Idempotent.
 #
-# An mpd VM is headless by default and a managed VM arrives with GNOME
-# already installed. This is for the VMs that do not: a plain Debian
-# Trixie netinst with no desktop task selected, or a server-flavoured
-# image you want to look at with a browser once in a while.
-#
-# It installs GNOME Shell, GDM, a terminal and Chromium — and nothing
-# else. `--no-install-recommends` keeps the rest of `gnome-core` out,
-# including NetworkManager, which mpd deliberately does not run (the VM
-# is on systemd-networkd; the sandbox and adoption bootstraps purge NM).
-# GNOME's network panel is empty as a result; nothing else notices.
-#
-# Nothing is started and the boot target is left exactly as it was found,
-# even though installing GDM would otherwise flip it to graphical. Bring
-# the desktop up with `gnome-start`, put it away with `gnome-stop`.
-#
-# Idempotent: a second run installs nothing and changes nothing.
+# --no-install-recommends keeps NetworkManager out: the VM runs
+# systemd-networkd, so GNOME's network panel stays empty by design.
+# Nothing is started and the boot target is left as found; use
+# `gnome-start` / `gnome-stop`.
 set -euo pipefail
 
 step() { printf '\n==> %s\n' "$*"; }
 ok()   { printf '    ok: %s\n' "$*"; }
 warn() { printf '    warn: %s\n' "$*"; }
 die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
-# apt-get waits for the dpkg lock (GNOME's packagekitd holds it after
-# login) and retries stalled downloads.
+# Waits for the dpkg lock (packagekitd holds it after login); retries
+# stalled downloads.
 apt_get() {
     sudo env DEBIAN_FRONTEND=noninteractive \
         apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 "$@"
@@ -44,14 +33,9 @@ EOF
 }
 
 # Point Chromium at this VM's portal, https://<NNN>.mpd.test/.
-#
-# Written under policies/recommended/, not policies/managed/: the
-# recommended tier supplies a default and leaves the setting editable, so
-# a developer who wants a different home page just changes it in Chromium.
-# managed would grey the setting out.
-#
-# The VM id comes from the hostname (mpd-<NNN>), which is mpd's own source
-# of identity — the same one net.Current reads.
+# policies/recommended/ leaves the setting editable; managed/ would lock it.
+# The VM id comes from the hostname (mpd-<NNN>), the same identity
+# net.Current reads.
 install_chromium_homepage() {
     local host nnn url dir
     host="$(hostname -s)"
@@ -90,15 +74,10 @@ case "${1:-}" in
     *) die "Unknown argument: $1 (accepts --yes)" ;;
 esac
 
-# --- Graphics device ----------------------------------------------------
-# GNOME renders through DRM: gdm starts a Wayland greeter, which needs a
-# /dev/dri device. Debian's *cloud* kernel ships no DRM drivers at all --
-# drivers/gpu/drm/ in its module tree is empty -- so on a VM built from a
-# genericcloud image the desktop installs fine and then shows a black
-# console, while the text console keeps working because VGA text mode
-# needs no driver. Say so before the download rather than after.
-# The test is a card device, not the directory: /dev/dri can exist holding
-# nothing but by-path/ when no driver has bound.
+# GNOME needs a /dev/dri card device. Debian's cloud kernel ships no DRM
+# drivers, so the desktop installs and then shows a black console; warn
+# before the download. Test for a card device, not the directory:
+# /dev/dri can hold only by-path/ when no driver has bound.
 DRM_DEVS=""
 for _dev in /dev/dri/card*; do
     [ -e "${_dev}" ] || continue
@@ -125,22 +104,9 @@ else
     warn "'rdp-start' is unaffected — xorgxrdp's X server needs no graphics device"
 fi
 
-# --- Package set -------------------------------------------------------
-# Deliberately short. Each entry earns its place:
-#
-#   gnome-session           GNOME Shell, mutter, settings-daemon, the
-#                           portal, Xwayland — the desktop itself
-#   gnome-session-xsession  the X11 session. Only a Recommends of
-#                           gnome-session, so it has to be named — and
-#                           xrdp needs it (`rdp-start`)
-#   gdm3                    the greeter `gnome-start` shows on the console
-#   gnome-terminal          a terminal inside the desktop
-#   gnome-control-center    display, keyboard and language settings
-#   chromium                the browser, from Debian's own repo
-#   xdg-utils               xdg-open, which the mpd desktop launcher uses
-#
-# Anything more (an editor, a file manager beyond what GNOME Shell pulls
-# in, a second browser) is an ordinary `sudo apt-get install` away.
+# gnome-session-xsession is only a Recommends of gnome-session but must
+# be named: xrdp (`rdp-start`) needs the X11 session. xdg-utils supplies
+# xdg-open for the mpd desktop launcher.
 GNOME_PKGS=(
     gnome-session gnome-session-xsession gdm3
     gnome-terminal gnome-control-center
@@ -165,8 +131,7 @@ fi
 ok "to install: ${missing[*]}"
 
 if [ "${ASSUME_YES}" = 0 ]; then
-    # Size the download before asking. --print-uris needs no root and
-    # prints "'<uri>' <file> <bytes> <hash>" per package.
+    # --print-uris prints "'<uri>' <file> <bytes> <hash>" per package.
     dl_mb="$(apt-get install --print-uris -qq --no-install-recommends "${missing[@]}" 2>/dev/null \
         | awk '{s+=$3} END {if (s > 0) printf "%.0f", s/1048576}')"
     if [ -n "${dl_mb}" ]; then
@@ -182,9 +147,8 @@ if [ "${ASSUME_YES}" = 0 ]; then
     esac
 fi
 
-# Installing a display manager makes systemd's default target graphical,
-# which would silently turn a headless VM into a desktop one at the next
-# boot. Remember what the VM was set to and put it back.
+# Installing gdm3 flips the default target to graphical. Remember the
+# current target and restore it after the install.
 prev_target="$(systemctl get-default)"
 gdm_was_active=0
 systemctl is-active --quiet gdm3 2>/dev/null && gdm_was_active=1
@@ -202,8 +166,7 @@ else
     ok "unchanged: ${prev_target}"
 fi
 
-# Debian starts gdm3 the moment it is configured. If this VM was headless
-# before, it still is.
+# Debian starts gdm3 on install; stop it again if the VM was headless before.
 if [ "${gdm_was_active}" = 0 ] && systemctl is-active --quiet gdm3 2>/dev/null; then
     sudo systemctl stop gdm3
     ok "stopped gdm3 (this VM was headless before)"

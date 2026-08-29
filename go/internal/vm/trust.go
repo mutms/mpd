@@ -15,14 +15,10 @@ import (
 
 // TrustCA installs mpd's CA into the system trust store.
 //
-// Three trust stores need it and none of them share: this one covers
-// curl, wget and anything using OpenSSL; EnsureCAInUserNSSDB covers the
-// Chromium family; InstallFirefoxPolicy covers Firefox. Missing any one
-// of them shows up as a certificate warning in exactly one program,
-// which is a confusing thing to debug.
-//
+// Three trust stores need the CA and none share: this one (OpenSSL),
+// EnsureCAInUserNSSDB (Chromium family), InstallFirefoxPolicy (Firefox).
 // Failures warn rather than abort: an untrusted CA makes browsing noisy,
-// not impossible, and setup has more useful work left to do.
+// not impossible.
 func TrustCA(ctx context.Context, out io.Writer, caPath string) {
 	if sameFile(caPath, TrustStorePath) {
 		ui.OK(out, "CA already installed in system trust store.")
@@ -57,27 +53,23 @@ func sameFile(a, b string) bool {
 	return bytes.Equal(da, db)
 }
 
-// EnsureCAInUserNSSDB imports the CA into ~/.pki/nssdb.
-//
-// Chromium-family browsers on Linux read SSL trust from this database,
-// not from /etc/ssl/certs — so without this step the portal shows a
-// security warning even though the OS trust store has the CA.
+// EnsureCAInUserNSSDB imports the CA into ~/.pki/nssdb, which
+// Chromium-family browsers read instead of /etc/ssl/certs.
 func EnsureCAInUserNSSDB(ctx context.Context, out io.Writer, caPath string) error {
 	nssDir := filepath.Join(Home(), ".pki", "nssdb")
 	if err := os.MkdirAll(nssDir, 0o755); err != nil {
 		return err
 	}
 
-	// certutil comes from libnss3-tools. Not worth failing setup over:
-	// the user can accept the warning by hand until they install it.
+	// certutil comes from libnss3-tools; its absence is not worth failing
+	// setup over.
 	if !exec.Available("certutil") {
 		ui.Note(out, "certutil not found (apt: libnss3-tools). Skipping NSS-DB import.")
 		return nil
 	}
 
-	// `certutil -A` needs an existing cert9.db/key4.db pair and fails on
-	// an empty directory — which is what a dev account that has never
-	// started Chromium has.
+	// `certutil -A` fails on an empty directory, which an account that
+	// never started Chromium has.
 	if _, err := os.Stat(filepath.Join(nssDir, "cert9.db")); err != nil {
 		if code, err := exec.Run(ctx, exec.Cmd{
 			Name: "certutil",
@@ -87,15 +79,12 @@ func EnsureCAInUserNSSDB(ctx context.Context, out io.Writer, caPath string) erro
 		}
 	}
 
-	// `certutil -A` is NOT idempotent: it fails with
-	// SEC_ERROR_ADDING_CERT when the nickname already exists, even for
-	// identical bytes. Delete-then-add is the supported pattern; the
-	// delete errors harmlessly on the first run.
+	// `certutil -A` is not idempotent: it fails when the nickname exists,
+	// even for identical bytes. Delete-then-add is the supported pattern.
 	_, _ = exec.Run(ctx, exec.Cmd{
 		Name: "certutil", Args: []string{"-D", "-n", "mpd CA", "-d", "sql:" + nssDir},
 	})
-	// "C,," trusts the cert as a CA for SSL only — not for email or
-	// code signing, which mpd has no business vouching for.
+	// "C,," trusts the cert as a CA for SSL only.
 	if code, err := exec.Run(ctx, exec.Cmd{
 		Name: "certutil",
 		Args: []string{"-A", "-n", "mpd CA", "-t", "C,,", "-i", caPath, "-d", "sql:" + nssDir},
@@ -108,13 +97,8 @@ func EnsureCAInUserNSSDB(ctx context.Context, out io.Writer, caPath string) erro
 
 // FirefoxPolicy renders the enterprise policy JSON.
 //
-// `Certificates.Install` rather than `ImportEnterpriseRoots`: the latter
-// is a no-op on Linux (Mozilla's Linux build has no p11-kit path), while
-// Install loads PEM files into NSS directly.
-//
-// The homepage is set but deliberately not locked — the portal is the
-// useful default landing page, and a developer who prefers their own
-// Moodle should be able to say so.
+// Certificates.Install, not ImportEnterpriseRoots: the latter is a no-op
+// on Linux. The homepage is set but deliberately not locked.
 func FirefoxPolicy(certPath, zone string) (string, error) {
 	policy := map[string]any{
 		"policies": map[string]any{
@@ -126,9 +110,8 @@ func FirefoxPolicy(certPath, zone string) (string, error) {
 			},
 		},
 	}
-	// Go sorts map keys when marshalling, so the bytes are stable — which
-	// is what makes the "already in place" check in InstallFirefoxPolicy
-	// meaningful rather than a coin flip.
+	// Go sorts map keys when marshalling, so the bytes are stable and the
+	// "already in place" check in InstallFirefoxPolicy is meaningful.
 	data, err := json.MarshalIndent(policy, "", "  ")
 	if err != nil {
 		return "", err
@@ -146,14 +129,10 @@ type firefoxPaths struct {
 	FlavorName string
 }
 
-// firefoxLayout picks the paths for the installed flavour.
-//
-// Debian Trixie's firefox-esr resolves policies via XREAppDist, which on
-// Linux is <install-dir>/distribution/, and it can read the system trust
-// store copy of the CA. Everything else (Mozilla deb, snap) uses the
-// documented /etc/firefox/policies/ path — and snap confinement permits
-// that directory but generally not /usr/local/share/ca-certificates, so
-// there the cert has to travel alongside the policy.
+// firefoxLayout picks the paths for the installed flavour. firefox-esr
+// resolves policies via <install-dir>/distribution/ and reads the system
+// trust store; snap confinement cannot, so on the /etc/firefox path the
+// cert travels alongside the policy.
 func firefoxLayout() firefoxPaths {
 	const esrDist = "/usr/lib/firefox-esr/distribution"
 	if info, err := os.Stat(esrDist); err == nil && info.IsDir() {
@@ -176,8 +155,8 @@ func firefoxLayout() firefoxPaths {
 }
 
 // InstallFirefoxPolicy writes the enterprise policy that makes Firefox
-// trust the mpd CA. Harmless when no Firefox is installed; warns rather
-// than fails, for the same reason TrustCA does.
+// trust the mpd CA. Harmless with no Firefox installed; warns rather
+// than fails, like TrustCA.
 func InstallFirefoxPolicy(ctx context.Context, out io.Writer, caPath, zone string) {
 	p := firefoxLayout()
 	policyJSON, err := FirefoxPolicy(p.Cert, zone)
@@ -204,8 +183,7 @@ func InstallFirefoxPolicy(ctx context.Context, out io.Writer, caPath, zone strin
 	defer os.Remove(staged)
 
 	if p.CopyCert {
-		// The firefox-esr package owns its directory; the Mozilla path
-		// does not exist until something creates it.
+		// The Mozilla path does not exist until something creates it.
 		if _, err := os.Stat(p.Dir); err != nil {
 			if code, err := exec.Run(ctx, exec.Cmd{
 				Name: "install", Args: []string{"-d", "-m", "755", p.Dir}, Sudo: true,

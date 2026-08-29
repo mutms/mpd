@@ -2,29 +2,18 @@
 # setup/mpd-sandbox-setup.sh
 #
 # Turn a fresh Debian Trixie install into a self-contained mpd SANDBOX:
-# mpd built in place, its OWN self-signed CA generated in the VM (not
-# pushed from a Mac), the whole platform brought up, and a demo site you
-# can create in one command. You live in the VM (or reach it over an SSH
-# SOCKS proxy from your host browser).
-#
-# Same first half as mpd-prepare-adopt.sh (hostname mpd-<NNN>, sudo,
-# network stack → systemd-networkd + systemd-resolved). The difference is
-# the second half: here we install mpd and run `mpd --vm-setup` IN the VM,
-# so the CA is generated locally. Because the hostname is a real
-# mpd-<NNN>, this same VM can later be adopted as a managed VM with
-# `mpd-virt adopt <NNN> <IP>` from a Mac — that re-roots the certs to
-# the Mac's CA; your projects survive.
-#
-# Run it ON THE VM, as your dev user (NOT root). Step 3 asks for one
-# reboot; re-run to finish.
-#
-#   bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-sandbox-setup.sh)
-#
+# mpd built in place, a self-signed CA generated in the VM, the platform
+# brought up, and a demo site one command away. Run it ON THE VM, as
+# your dev user (not root). It needs the hostname set to mpd-<NNN>.
+# One reboot mid-way; re-run to finish. The VM can later be adopted as a
+# managed VM with `mpd-virt adopt`; projects survive.
 # Idempotent — safe to re-run after a partial step or a reboot.
 #
-# WARNING: a sandbox deliberately weakens VM security (passwordless sudo,
-# a self-signed CA in the system trust store, persistent host keys). Only
-# on a wipe-and-rebuild VM. Snapshot first.
+# WARNING: a sandbox deliberately weakens VM security (passwordless
+# sudo, a self-signed CA in the system trust store, persistent host
+# keys). Only on a wipe-and-rebuild VM. Snapshot first.
+#
+#   bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-sandbox-setup.sh)
 
 set -euo pipefail
 
@@ -35,7 +24,7 @@ ok()   { printf '    ok: %s\n' "$*"; }
 warn() { printf '    warn: %s\n' "$*"; }
 die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
-# --- 1. Hostname must be mpd-<NNN> (same gate as adoption prep) -------
+# Same hostname gate as mpd-prepare-adopt.sh.
 step "Hostname"
 host="$(hostname -s 2>/dev/null || cut -d. -f1 /etc/hostname | tr -d '[:space:]')"
 case "${host}" in
@@ -58,7 +47,6 @@ step "Operating system"
     || die "mpd targets Debian Trixie (got ID=${ID:-?} ${VERSION_CODENAME:-?})."
 ok "Debian Trixie"
 
-# --- 2. Passwordless sudo for the current (non-root) user ------------
 step "Passwordless sudo for $(id -un)"
 [ "$(id -u)" -ne 0 ] || die "run this as your dev user, not root."
 if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
@@ -85,9 +73,8 @@ else
     ok "passwordless sudo enabled for ${user_name}"
 fi
 
-# --- 3. Network stack → systemd-networkd + systemd-resolved ----------
-# Identical to mpd-prepare-adopt.sh: keep the DHCP address, convert
-# whatever manages the link, converge over one reboot.
+# Network stack: identical to mpd-prepare-adopt.sh — keep the DHCP
+# address, convert whatever manages the link, converge over one reboot.
 step "IPv6 off + IPv4 forwarding"
 printf 'net.ipv6.conf.all.disable_ipv6 = 1\nnet.ipv6.conf.default.disable_ipv6 = 1\nnet.ipv6.conf.lo.disable_ipv6 = 1\n' \
     | sudo tee /etc/sysctl.d/99-mpd-disable-ipv6.conf >/dev/null
@@ -150,32 +137,23 @@ if dpkg -s network-manager >/dev/null 2>&1; then
 fi
 ok "systemd-resolved + systemd-networkd active, DNS resolves"
 
-# --- 4. Install mpd from source --------------------------------------
-# The same bootstrap steps adoption drives over SSH, run locally:
-# 20 brings the OS current and installs every package mpd needs; 30
-# clones (or fast-forwards) /opt/mpd and builds the binary. Both are
-# idempotent. (Step 15, sshd keys-only, is deliberately not run: a
-# sandbox may have no SSH key at all, and its security is weakened on
-# purpose — see the warning at the top.)
+# Bootstrap steps 20 (packages) and 30 (clone + build), run locally.
+# Step 15 (SSH keys-only) is deliberately skipped: a sandbox may have no
+# SSH key, and its security is weakened on purpose.
 step "Install mpd (packages, clone, build)"
 bash <(wget -qO- "${BOOTSTRAP_URL}/20-install-software.sh")
 bash <(wget -qO- "${BOOTSTRAP_URL}/30-mpd-build.sh")
 export PATH="/opt/mpd/bin:${PATH}"
 ok "mpd built at /opt/mpd/bin/mpd"
 
-# --- 5. mpd --vm-setup: generates the in-VM self-signed CA -----------
 # No CA was pushed, so mpd generates its own and installs it in the
-# system trust store. (A later `mpd-virt adopt` would push a Mac CA
-# and re-root; both paths end at the same working platform.)
+# system trust store; a later `mpd-virt adopt` re-roots to the host CA.
 step "mpd --vm-setup (self-signed CA, generated in this VM)"
 mpd --vm-setup
 
-# --- 6. Pre-warm a database (best-effort) ----------------------------
-# (The runtime container itself is created by `mpd --vm-setup` above.)
 step "Pre-warming postgres (best-effort)"
 mpd --db-create=postgres:latest && ok "postgres ready" || warn "postgres pre-warm deferred to first use"
 
-# --- 7. GNOME launcher (only if a desktop is present) ---------------
 if [ -d /usr/share/xsessions ] || command -v gnome-shell >/dev/null 2>&1; then
     step "GNOME launcher"
     apps_dir="${HOME}/.local/share/applications"; mkdir -p "${apps_dir}"
@@ -193,7 +171,6 @@ EOF
     ok "launcher opens https://${nnn}.mpd.test/"
 fi
 
-# --- 8. Done: SOCKS access + first-project instructions -------------
 vm_ip="$(ip -4 -o addr show "${iface}" | awk '{print $4}' | cut -d/ -f1 | head -1)"
 cat <<EOF
 

@@ -10,23 +10,18 @@ import (
 	"github.com/mutms/mpd/go/internal/ui"
 )
 
-// Markers delimiting the block mpd owns in ~/.ssh/config. Everything
-// between them is regenerated on every `mpd --vm-setup`; everything
-// outside is the developer's and is preserved verbatim.
+// Markers for the block mpd owns in ~/.ssh/config. Everything between
+// them is regenerated; everything outside is the developer's.
 const (
 	sshBlockStart = "# >>> mpd runtimes (managed by mpd --vm-setup) >>>"
 	sshBlockEnd   = "# <<< mpd runtimes <<<"
 )
 
-// RuntimeHost is one runtime's SSH identity: the patterns `ssh` should
-// accept for it, and the name it actually connects to.
-//
-// Name composition stays with the caller, which has net.Net — this
-// package must not know that the runtime's FQDN is "runtime.<zone>".
+// RuntimeHost is one runtime's SSH identity. Name composition stays with
+// the caller: this package must not know the runtime's FQDN shape.
 type RuntimeHost struct {
-	// Patterns are the `Host` patterns, in the order a developer is
-	// likely to type them. Conventionally the VM-qualified alias
-	// ("mpd-130-runtime"), the bare name ("runtime"), and the FQDN.
+	// Patterns are the `Host` patterns: conventionally the VM-qualified
+	// alias ("mpd-130-runtime"), the bare name ("runtime"), and the FQDN.
 	Patterns []string
 	// HostName is what ssh resolves and connects to — the FQDN dnsmasq
 	// actually answers for.
@@ -34,32 +29,13 @@ type RuntimeHost struct {
 }
 
 // EnsureSSHConfig writes the runtime aliases into the dev user's
-// ~/.ssh/config, so `ssh mpd-130-runtime` reaches runtime.130.mpd.test
-// from a terminal on the VM.
+// ~/.ssh/config.
 //
-// The VM-qualified alias (`mpd-130-runtime`) is the one name that is
-// unambiguous on the VM and the laptop alike, and it is an ssh alias
-// because nothing resolves it. The bare `runtime` also answers, but not
-// because of this file: mpd publishes it as an alias on the runtime's line
-// in /etc/hosts, so libc resolves it — which is what a ProxyJump from the
-// laptop (the VM resolves the target) and an SSH client with a jump-host
-// field but no config file both need.
-//
-// One self-contained block rather than a wildcard plus a
-// shared options block: `ssh` has no captures in Host patterns, so the
-// alias→FQDN mapping has to be enumerated anyway, and enumerating the
-// options too removes the first-value-wins ordering subtlety entirely.
-//
-// The FQDN is listed as a pattern alongside the aliases so that the long
-// form `mpd status` prints picks up the same User and host-key handling.
-//
-// Host keys are deliberately not verified: a runtime is a container that
-// gets deleted and recreated freely, so its host key changes as a matter
-// of routine, and the usual REMOTE HOST IDENTIFICATION HAS CHANGED wall
-// would fire on ordinary use. The VM is the trust boundary (see
-// EnsureSSHKey) and the target is an address on this VM's own private
-// /24, so there is no meaningful man in the middle to catch. /dev/null
-// as the known_hosts keeps the churn out of the developer's real file.
+// The bare `runtime` name resolves via an /etc/hosts alias, not this
+// file. Host keys are deliberately not verified: a runtime container is
+// recreated freely, so its key changes routinely, and the VM is the
+// trust boundary (see docs/security.md). /dev/null as known_hosts keeps
+// the churn out of the developer's real file.
 func EnsureSSHConfig(out io.Writer, user string, hosts []RuntimeHost) error {
 	sshDir := filepath.Join(Home(), ".ssh")
 	if err := os.MkdirAll(sshDir, 0o700); err != nil {
@@ -104,15 +80,10 @@ func EnsureSSHConfig(out io.Writer, user string, hosts []RuntimeHost) error {
 	return nil
 }
 
-// stripBlock removes a previously written managed block, leaving the rest
-// of the file untouched. Shared by every dotfile mpd co-owns with the
-// developer, hence the markers as parameters.
-//
-// An unterminated block — a start marker with no end, from a truncated
-// write or a hand-edit — takes the remainder of the file with it. That is
-// the safe reading: the alternative is treating the developer's own
-// trailing content as part of the block and duplicating a start marker
-// above it, which compounds on every run.
+// stripBlock removes a previously written managed block, leaving the
+// rest of the file untouched. An unterminated block takes the remainder
+// of the file with it: the alternative duplicates a start marker on
+// every run.
 func stripBlock(body, start, end string) string {
 	var kept []string
 	inBlock := false

@@ -6,9 +6,8 @@ import (
 	"testing"
 )
 
-// The policy file is compared byte for byte to decide whether to rewrite
-// it, so the rendering has to be stable across runs. Go sorts map keys
-// when marshalling; this pins that property rather than assuming it.
+// The policy file is compared byte for byte, so the rendering must be
+// stable; Go's sorted map keys are pinned here rather than assumed.
 func TestFirefoxPolicyIsDeterministic(t *testing.T) {
 	first, err := FirefoxPolicy("/etc/firefox/policies/mpd-rootCA.crt", "150.mpd.test")
 	if err != nil {
@@ -54,8 +53,8 @@ func TestFirefoxPolicyContent(t *testing.T) {
 	if got := parsed.Policies.Homepage.URL; got != "https://150.mpd.test/" {
 		t.Errorf("Homepage.URL = %q", got)
 	}
-	// Not locked on purpose: a developer who prefers their own Moodle
-	// as the landing page must be able to say so.
+	// Not locked on purpose: the developer may prefer their own landing
+	// page.
 	if parsed.Policies.Homepage.Locked {
 		t.Error("Homepage.Locked = true, want the user to be able to override it")
 	}
@@ -64,9 +63,8 @@ func TestFirefoxPolicyContent(t *testing.T) {
 	}
 }
 
-// The unit's whole purpose is the shutdown half; a regression that drops
-// ExecStop, or that makes a failed boot-time start fatal (losing
-// ExecStop with it), silently costs every database a clean shutdown.
+// A regression that drops ExecStop, or makes a failed boot-time start
+// fatal, silently costs every database a clean shutdown.
 func TestUnitKeepsTheGracefulStopPath(t *testing.T) {
 	body := UnitBody("/opt/mpd/bin/mpd")
 	for _, want := range []string{

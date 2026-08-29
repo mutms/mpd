@@ -1,18 +1,7 @@
 // Package current computes the live "current" state of runtimes,
-// projects and DB containers.
-//
-// mpd keeps two things apart on purpose:
-//
-//   - **requested** — persisted intent, in projects.json and
-//     runtimes/<n>/meta.json, changed only by explicit user verbs.
-//   - **current** — live observation, computed from podman every time it
-//     is needed and never persisted.
-//
-// Display layers join the two so divergence is visible: after a reboot
-// but before `mpd --vm-start`, a project reads requested=running,
-// current=stopped, which is what makes the pending reconciliation
-// legible instead of mysterious. Never persist a value from here into a
-// requested field. See docs/hooks.md §"Resource lifecycle model".
+// projects and DB containers, as opposed to the persisted "requested"
+// intent. Never persist a value from here into a requested field.
+// See docs/hooks.md.
 package current
 
 import (
@@ -69,13 +58,9 @@ func (o Observer) Runtime(ctx context.Context, name string) State {
 	return Stopped
 }
 
-// Project observes a project's effective state.
-//
-// A project has no container of its own — its runtime hosts the
-// processes — so its state is derived: no runtime, or a missing runtime
-// container, means missing. A running runtime only makes the project
-// running if the project was actually asked to run; otherwise it is
-// stopped, because the runtime being up says nothing about this project.
+// Project observes a project's effective state. A project has no
+// container of its own, so its state derives from its runtime's — and a
+// running runtime only makes the project running when it was asked to run.
 func (o Observer) Project(ctx context.Context, p state.Project) State {
 	if p.RuntimeName == "" {
 		return Missing
@@ -93,9 +78,7 @@ func (o Observer) Project(ctx context.Context, p state.Project) State {
 	}
 }
 
-// DB observes a database container. DBs have no persisted intent — they
-// are emergent from runtime and project records — so there is nothing to
-// join against here.
+// DB observes a database container.
 func (o Observer) DB(ctx context.Context, containerName string) State {
 	if !o.p.Exists(ctx, containerName) {
 		return Missing
@@ -106,12 +89,9 @@ func (o Observer) DB(ctx context.Context, containerName string) State {
 	return Stopped
 }
 
-// Snapshot is the live-state view written to current-state.json.
-//
-// Out-of-process consumers — the portal container, in-runtime tools —
-// have no podman access and so cannot compute `current` themselves.
-// This file is how they see it. It is strictly observation: never mixed
-// with the `requested` files, which are strictly intent.
+// Snapshot is the live-state view written to current-state.json, for
+// consumers without podman access. Strictly observation — never mix it
+// with the requested files.
 type Snapshot struct {
 	RefreshedAt string           `json:"refreshedAt"`
 	Runtimes    map[string]State `json:"runtimes"`
@@ -119,10 +99,8 @@ type Snapshot struct {
 	Databases   map[string]State `json:"databases"`
 }
 
-// Refresh recomputes the snapshot and writes it to stateDir.
-//
-// Called from every listing and lifecycle verb, so a consumer reading
-// the file sees something recent without needing its own refresh path.
+// Refresh recomputes the snapshot and writes it to stateDir. Every
+// listing and lifecycle verb calls it, so readers see something recent.
 func (o Observer) Refresh(ctx context.Context, stateDir string, s state.Store, now time.Time) error {
 	snap := Snapshot{
 		RefreshedAt: now.UTC().Format("2006-01-02T15:04:05Z"),

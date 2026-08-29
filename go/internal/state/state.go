@@ -1,14 +1,10 @@
-// Package state reads mpd's persisted state under /var/lib/mpd/state/.
+// Package state reads and writes mpd's persisted state under
+// /var/lib/mpd/state/.
 //
-// These files are the contract between mpd and its out-of-process
-// consumers: the portal renders them read-only, and in-runtime shell
-// tools read them with jq. Renaming a field is a breaking change for
-// readers that mpd cannot see.
-//
-// Reading is deliberately forgiving: a missing file is an empty result,
-// not an error. `mpd list` on a VM that has never created a project
-// should print "none", not fail. Writing — which must not be forgiving —
-// lands with the mutating verbs.
+// The files are a contract with out-of-process readers (the portal,
+// jq in shell tools); renaming a field breaks readers mpd cannot see.
+// Reads are forgiving — a missing file is an empty result; writes are
+// atomic and report every failure.
 package state
 
 import (
@@ -22,8 +18,7 @@ import (
 // Dir is where mpd keeps operational state. Wipe it to reset a VM.
 const Dir = "/var/lib/mpd/state"
 
-// Store reads state from a directory. The path is a field so tests can
-// point at a fixture instead of the real VM.
+// Store reads state from a directory; tests point it at a fixture.
 type Store struct{ dir string }
 
 // New returns a Store over the real state directory.
@@ -41,12 +36,11 @@ type ProjectURL struct {
 
 // Project is one registered project, as stored in projects.json.
 //
-// Autostart is the whole of a project's lifecycle intent: true after
-// `mpd start`, false after `mpd stop`. It is what a reboot honours (see
-// RuntimeStart) and what Status reports. There is deliberately no stored
-// "observed" state to disagree with it — a start that does not fully
-// succeed sets Autostart back to false, so the flag is kept honest in the
-// safe direction (better to read stopped and be running than the reverse).
+// Autostart is the project's whole lifecycle intent: true after `mpd
+// start`, false after `mpd stop`; a reboot honours it. There is no
+// stored observed state to disagree with it — a start that does not
+// fully succeed sets it back to false, keeping the flag honest in the
+// safe direction.
 type Project struct {
 	Name            string       `json:"name"`
 	Type            string       `json:"type"`
@@ -58,14 +52,9 @@ type Project struct {
 	URLs            []ProjectURL `json:"urls"`
 }
 
-// Status is the single lifecycle word shown for a project.
-//
-//   - "not initialised" — scaffolded by `mpd init` (or emptied by `mpd
-//     reset`) but never configured: it has no runtime, database or URLs.
-//     A project only gains a RuntimeName once `mpd start` has configured
-//     it, so the empty runtime is the reliable signal.
-//   - "started" / "stopped" — the Autostart intent for a configured
-//     project.
+// Status returns the single lifecycle word for a project: "not
+// initialised" until `mpd start` has configured a runtime, else
+// "started" or "stopped" from the Autostart intent.
 func (p Project) Status() string {
 	if p.RuntimeName == "" {
 		return "not initialised"
@@ -76,18 +65,13 @@ func (p Project) Status() string {
 	return "stopped"
 }
 
-// MainURL is the URL to show for a project: the first entry whose kind is
-// "web" or whose label is "main", else the first. Empty only when the
+// MainURL is the URL to show for a project: the first entry whose kind
+// is "web" or whose label is "main", else the first; empty when the
 // project has no runtime or no URLs.
 //
-// Deliberately not gated on the project running. A configured project is
-// an addressable one — `mpd start` publishes the vhost, certificate
-// and DNS record, and they survive a stop — so the URL is correct whether
-// or not something is serving behind it right now. Hiding it would also
-// be unworkable for project types whose server the developer starts by
-// hand (astro), where mpd never learns the server came up. A link to a
-// dead page is the honest answer; a missing link reads as "this project
-// has no address", which is false.
+// Deliberately not gated on the project running: the vhost, certificate
+// and DNS record survive a stop, so the address stays correct even when
+// nothing serves behind it.
 func (p Project) MainURL() string {
 	if p.RuntimeName == "" {
 		return ""
@@ -105,11 +89,9 @@ func (p Project) MainURL() string {
 
 // Database is one DB container, as stored in databases.json.
 //
-// Status is a cache of the observed running/stopped state. Autostart is
-// persisted intent, set by `mpd --db-start` / `--db-stop`: it makes an
-// explicitly-started database sticky across a reboot even when no project
-// needs it. A project starting a database it needs does NOT change this
-// flag — the project's own Autostart is what brings that database back.
+// Status caches the observed running/stopped state. Autostart is the
+// sticky intent set by `mpd --db-start` / `--db-stop`; a project
+// starting a database it needs does not change it.
 type Database struct {
 	DatabaseID    string `json:"databaseId"`
 	Engine        string `json:"engine"`
@@ -129,11 +111,9 @@ type Runtime struct {
 
 // Service is one extra service container's persisted intent, as stored
 // in services.json. Presence means installed; Autostart is the sticky
-// "run it on boot" intent set by `--service-start`/`--service-stop` — the
-// same lifecycle a database has. A service a project needs is started
-// on demand (MPD_REQUIRE_SERVICES) without setting Autostart, so this flag
-// tracks only what the developer wants up independent of any project.
-// Absent from the file = uninstalled.
+// run-on-boot intent set by `--service-start`/`--service-stop`. A
+// service started on demand for a project (MPD_REQUIRE_SERVICES) does
+// not set it.
 type Service struct {
 	Name      string `json:"name"`
 	Autostart bool   `json:"autostart"`
@@ -170,10 +150,7 @@ func (s Store) Runtime(name string) (Runtime, bool) {
 }
 
 // RuntimeNames lists the runtimes that have a state directory, sorted.
-//
-// The cache, not podman: this is what mpd believes exists, and the
-// difference from what podman reports is exactly what a cache rebuild
-// has to reconcile.
+// This is mpd's cache, not podman; a cache rebuild reconciles the two.
 func (s Store) RuntimeNames() []string {
 	entries, err := os.ReadDir(filepath.Join(s.dir, "runtimes"))
 	if err != nil {
@@ -195,14 +172,8 @@ type Config struct {
 	User string `json:"user"`
 
 	// LastUpgradeVersion and LastUpgradeAt record the most recent
-	// successful `mpd --vm-upgrade`: the version the new binary reports,
-	// and when it was applied.
-	//
-	// Written by the upgrade rather than derived, because nothing else
-	// can know it afterwards — `--version` tells you what is running now,
-	// which after a manual `make install` is a different question. Empty
-	// on a VM that has never been upgraded, which is not an error: a
-	// freshly bootstrapped VM has only ever been set up.
+	// successful `mpd --vm-upgrade`. Written by the upgrade because
+	// nothing can derive it afterwards; empty on a VM never upgraded.
 	LastUpgradeVersion string `json:"lastUpgradeVersion,omitempty"`
 	LastUpgradeAt      string `json:"lastUpgradeAt,omitempty"`
 }
@@ -232,8 +203,8 @@ func ProjectNamesByDatabase(projects []Project) map[string][]string {
 	return byDB
 }
 
-// readJSON decodes path into v, reporting whether it succeeded. A missing
-// or malformed file leaves v untouched.
+// readJSON decodes path into v, reporting whether it succeeded. A
+// missing or malformed file leaves v untouched.
 func readJSON(path string, v any) bool {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -241,13 +212,6 @@ func readJSON(path string, v any) bool {
 	}
 	return json.Unmarshal(data, v) == nil
 }
-
-// --- Writing ----------------------------------------------------------
-//
-// Reads above are forgiving; writes are not. A half-written state file
-// is worse than a missing one — readers would act on it — so writes go
-// to a temp file and are renamed into place, and every failure is
-// reported rather than swallowed.
 
 // Services returns every installed extra service's intent.
 func (s Store) Services() []Service {
@@ -305,9 +269,9 @@ func (s Store) SaveDatabases(entries []Database) error {
 	}{entries})
 }
 
-// SetDatabaseAutostart records a database's autostart intent, keeping the
-// rest of its cached record. A no-op when the id is unknown — the cache is
-// rebuilt from podman, so a database that does not exist has nothing to
+// SetDatabaseAutostart records a database's autostart intent, keeping
+// the rest of its cached record. A no-op when the id is unknown: the
+// cache is rebuilt from podman, so an absent database has nothing to
 // remember.
 func (s Store) SetDatabaseAutostart(id string, v bool) error {
 	dbs := s.Databases()
@@ -322,11 +286,9 @@ func (s Store) SetDatabaseAutostart(id string, v bool) error {
 
 // SaveProjects replaces projects.json.
 //
-// Empty slices are normalised to `[]` rather than left nil, at both
-// levels. A nil slice marshals to `null`, and consumers — the portal's
-// PHP, jq in shell tools — would then have to distinguish "key absent",
-// "null" and "empty array", which all mean the same thing. Emitting a
-// real empty array keeps that a non-question.
+// Empty slices are normalised to `[]` rather than nil at both levels: a
+// nil slice marshals to `null`, and consumers would have to treat
+// absent, null and empty as the same thing.
 func (s Store) SaveProjects(projects []Project) error {
 	if projects == nil {
 		projects = []Project{}

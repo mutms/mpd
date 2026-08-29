@@ -21,11 +21,8 @@ import (
 	"github.com/mutms/mpd/go/internal/state"
 )
 
-// RuntimeStop stops the runtime container.
-//
-// Projects keep their Autostart flag: the user stopped the runtime, not
-// the projects, and that distinction is what lets RuntimeStart bring
-// them back. See docs/hooks.md §"Resource lifecycle model".
+// RuntimeStop stops the runtime container. Projects keep their
+// Autostart flag so RuntimeStart can bring them back; see docs/hooks.md.
 func RuntimeStop(ctx context.Context, out io.Writer, p *podman.Client,
 	s state.Store, dns dnsmasq.Manager, o current.Observer) error {
 
@@ -40,20 +37,15 @@ func RuntimeStop(ctx context.Context, out io.Writer, p *podman.Client,
 		return err
 	}
 
-	// DNS is untouched. Project names point at the runtime's fixed address,
-	// which is still this runtime's: a stopped runtime is a temporary state
-	// and the names answer again on the next start.
+	// DNS is untouched: the names point at the runtime's fixed address
+	// and answer again on the next start.
 	Ok(out, "Stopped the runtime.")
 	return nil
 }
 
 // RuntimeDelete removes the runtime container and everything scoped to
-// it.
-//
-// Projects are NOT deleted, and neither are their DNS names: the runtime
-// has a fixed address, so the names keep pointing where the next runtime
-// will be, and `mpd delete <project>` remains the explicit way to remove
-// a project.
+// it. Projects and their DNS names stay: the names keep pointing where
+// the next runtime will be, and `mpd delete <project>` removes projects.
 func RuntimeDelete(ctx context.Context, out io.Writer, in io.Reader,
 	p *podman.Client, s state.Store, dns dnsmasq.Manager, o current.Observer,
 	devUser string, assumeYes bool) error {
@@ -70,9 +62,8 @@ func RuntimeDelete(ctx context.Context, out io.Writer, in io.Reader,
 	if len(names) > 0 {
 		fmt.Fprintf(out, "The runtime has projects: %s\n", strings.Join(names, ", "))
 	}
-	// The runtime's home directory accumulates real work. Say exactly
-	// what is lost and what survives, because "rebuild the runtime"
-	// sounds cheaper than it is.
+	// The runtime home accumulates real work; say what is lost and what
+	// survives.
 	fmt.Fprintf(out, "Warning: /home/%s/ contents inside the runtime will be lost.\n", devUser)
 	fmt.Fprintln(out, "(config, dotfiles, IDE settings, shell history, manually installed CLIs in ~/.local/bin)")
 	fmt.Fprintln(out, "`mpd --runtime-backup` first saves the home directory (config, dotfiles, IDE settings,")
@@ -90,8 +81,8 @@ func RuntimeDelete(ctx context.Context, out io.Writer, in io.Reader,
 	if code, err := p.Remove(ctx, container); err != nil || code != 0 {
 		return fmt.Errorf("Failed to remove the runtime.")
 	}
-	// `rm` leaves named volumes behind; the disk-backed /tmp volume
-	// would otherwise accumulate on every rebuild.
+	// `rm` leaves named volumes behind; the /tmp volume would otherwise
+	// accumulate on every rebuild.
 	_, _ = p.VolumeRemove(ctx, runtime.TmpVolume(container))
 
 	if err := s.DeleteRuntime(runtime.Name); err != nil {
@@ -102,8 +93,8 @@ func RuntimeDelete(ctx context.Context, out io.Writer, in io.Reader,
 }
 
 // saveRuntimeIntent records requested state, reconstructing the entry
-// from container labels when no state file exists yet — a runtime
-// adopted from an earlier mpd, or one whose state was wiped.
+// from container labels when no state file exists yet (adopted runtime,
+// or wiped state).
 func saveRuntimeIntent(ctx context.Context, requested string,
 	p *podman.Client, s state.Store, container string) error {
 
@@ -119,22 +110,10 @@ func saveRuntimeIntent(ctx context.Context, requested string,
 	})
 }
 
-// RuntimeStart starts the runtime container and brings its projects
-// back.
-//
-// Three things happen after the container is up, in this order and for
-// reasons:
-//
-//  1. Wait for sshd. The container reports "running" as soon as systemd
-//     is up, but services boot asynchronously — without the wait, an
-//     immediate `ssh` after this command hits "connection refused" and
-//     looks like a failure.
-//  2. Start the databases that should autostart: those a `mpd --db-start`
-//     marked sticky, plus those an autostart project needs. A database
-//     used only by a stopped project stays down.
-//  3. Restore projects whose Autostart flag is set. RuntimeStop
-//     deliberately left their intent alone, so this is where that
-//     intent is honoured again.
+// RuntimeStart starts the runtime container, waits for sshd, starts the
+// autostart databases, then restores projects marked Autostart. The
+// sshd wait matters: the container reports "running" before services
+// boot, so an immediate `ssh` would look like a failure.
 func RuntimeStart(ctx context.Context, out io.Writer, p *podman.Client,
 	s state.Store, dns dnsmasq.Manager, o current.Observer, n net.Net,
 	devUser, uid string) error {
@@ -162,20 +141,17 @@ func RuntimeStart(ctx context.Context, out io.Writer, p *podman.Client,
 	Ok(out, "Started the runtime.")
 
 	ensureAutostartDatabases(ctx, out, p, s, n, uid)
-	// Refresh the cache so databases.json reflects what is now running,
-	// while preserving the autostart flags it carries.
+	// Refresh databases.json to what is now running; autostart flags
+	// are preserved.
 	if err := db.RebuildStateCache(ctx, p, s); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to refresh database cache: %v\n", err)
 	}
-	// restoreRunningProjects ends with the DNS publish, which also picks up
-	// any database container created a moment ago.
+	// restoreRunningProjects ends with the DNS publish, which also
+	// covers any database container created a moment ago.
 	return restoreRunningProjects(ctx, out, container, runtimeIP, p, s, dns, n, devUser, uid)
 }
 
-// waitForSSHD blocks until sshd answers on the runtime's address.
-//
-// Probed with bash's /dev/tcp rather than a TCP dial from Go: the check
-// must run in the same network namespace view mpd itself has, and the
+// waitForSSHD blocks until sshd answers on the runtime's address. The
 // banner check rejects a socket that accepts but is not sshd.
 func waitForSSHD(ctx context.Context, out io.Writer, ip string) error {
 	script := fmt.Sprintf(
@@ -199,13 +175,9 @@ func waitForSSHD(ctx context.Context, out io.Writer, ip string) error {
 	return nil
 }
 
-// ensureAutostartDatabases starts the databases that should come back on
-// their own after a reboot: the ones a `mpd --db-start` marked to
-// autostart, plus the ones an autostart project needs. A database used
-// only by a stopped project, and never explicitly started, stays down.
-//
-// Failures warn rather than abort: a runtime that starts without one of
-// its databases is still useful, and the project that needs it will say so.
+// ensureAutostartDatabases starts databases marked autostart plus those
+// an autostart project needs; one used only by a stopped project stays
+// down. Failures warn rather than abort.
 func ensureAutostartDatabases(ctx context.Context, out io.Writer,
 	p *podman.Client, s state.Store, n net.Net, uid string) {
 
@@ -258,14 +230,10 @@ func restoreRunningProjects(ctx context.Context, out io.Writer, container, runti
 	for _, proj := range projects {
 		fmt.Fprintf(out, "  Restoring '%s'...\n", proj.Name)
 
-		// Same refresh-and-check as ProjectStart, in the same order: the
-		// cert and DNS record below are composed from proj.URLs, and a
-		// rebuilt runtime is exactly when the cached copy is most likely
-		// to have gone stale.
-		//
-		// A project configured for another VM is skipped, not fatal: the
-		// other projects are fine, and taking the whole runtime down over
-		// one of them helps nobody.
+		// Same refresh-and-check as ProjectStart: the cert and DNS record
+		// come from proj.URLs, and a rebuilt runtime is when the cached
+		// copy is most likely stale. A project configured for another VM
+		// is skipped, not fatal.
 		urls := proj.URLs
 		if fresh, ok := project.ReadURLs(proj.Name); ok {
 			urls = fresh
@@ -292,19 +260,13 @@ func restoreRunningProjects(ctx context.Context, out io.Writer, container, runti
 			}
 		}
 	}
-	// Once, after the loop: the URLs refreshed above feed the record set,
-	// and one recompute covers every project.
+	// One publish after the loop covers every project.
 	return PublishDNS(ctx, out, dns, n, s, false)
 }
 
-// RuntimeCreate provisions the runtime and everything that hangs off
-// it: state, and any projects already assigned to it. (DNS needs no
-// step here — runtime.<zone> is a fixed record in the reconciled
-// service set.)
-//
-// The provisioning itself lives in internal/runtime; this is the
-// orchestration around it, which is why the two are separate — the
-// container work is testable without the DNS and state plumbing.
+// RuntimeCreate provisions the runtime plus its state and any projects
+// already assigned to it. The container work itself lives in
+// internal/runtime, testable without the DNS and state plumbing.
 func RuntimeCreate(ctx context.Context, out io.Writer, p *podman.Client,
 	s state.Store, dns dnsmasq.Manager, o current.Observer, n net.Net,
 	devUser, uid, home string) error {
@@ -322,8 +284,8 @@ func RuntimeCreate(ctx context.Context, out io.Writer, p *podman.Client,
 		return err
 	}
 
-	// No DNS step: runtime.<zone> has a fixed address, so the record is
-	// part of the reconciled service set and published ahead of time.
+	// No DNS step: runtime.<zone> is a fixed record, published ahead of
+	// time with the reconciled service set.
 	if err := s.SaveRuntime(state.Runtime{
 		Name: runtime.Name, RuntimeID: runtime.Name, IP: runtimeIP, Requested: "running",
 	}); err != nil {
@@ -338,8 +300,8 @@ func RuntimeCreate(ctx context.Context, out io.Writer, p *podman.Client,
 		return err
 	}
 
-	// A new container has a new home, so setup hooks fire here — the one
-	// place every create path goes through. Never fatal: the runtime is up.
+	// Setup hooks fire here, the one place every create path goes
+	// through. Never fatal: the runtime is up.
 	ev := hooks.MpdPostSetup(ctx, container, devUser, p).Only(hooks.AudienceRuntime)
 	if err := hooks.Fire(ctx, out, ev, "runtime-create", p); err != nil {
 		fmt.Fprintf(out, "  ⚠ %v\n", err)

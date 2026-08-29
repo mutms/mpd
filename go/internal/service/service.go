@@ -1,23 +1,8 @@
-// Package service is the registry and lifecycle framework the individual
-// services plug into: the Service descriptor, the registry, the address/label
-// helpers, and the container lifecycle (Start/Stop/Uninstall/Purge). The
-// services themselves live in internal/services and self-register — one file
-// each, registering from an init() via Register — so adding a service is a new
-// file there, never an edit to a central list here. Consumers blank-import
-// internal/services once (from the cli layer) to pull the registrations in,
-// exactly as internal/backend is fed by internal/backends.
-//
-// "Service" means exactly this: an opt-in container a project pulls in via
-// MPD_REQUIRE_SERVICES (started on demand, like its database) or the developer
-// drives directly with `mpd --service-start=<name>`. The VM-integral pieces
-// (dnsmasq, the portal) are infra, not services — they live in
-// internal/vm (vm.InfraServices).
-//
-// Services are HTTP-only, reached at their own address in the service
-// range (net.ServiceHostFirst–Last) via `http://<name>.svc.<zone>:<port>`
-// — no TLS, no proxying through the VM's caddy. The laptop reaches them
-// over the WireGuard overlay (which carries the whole /24) or
-// SOCKS-over-SSH, both inside the trust boundary.
+// Package service is the registry and lifecycle framework for optional
+// extra service containers (mailpit, adminer, selenium). Services live
+// in internal/services and self-register from an init(); adding one is a
+// new file there, never an edit here. They are HTTP-only, on their own
+// address in the service range; see docs/networking.md.
 package service
 
 import (
@@ -27,11 +12,9 @@ import (
 	"github.com/mutms/mpd/go/internal/net"
 )
 
-// Revision labels let mpd tell a container built by an older asset
-// revision from a current one. Bump a service's Revision whenever its
-// image, mounts, command or environment change: the label mismatch is
-// what makes the next enable/reconcile rebuild the container instead of
-// reporting an out-of-date one as healthy.
+// RevisionLabel marks the asset revision a container was built from.
+// Bump a service's Revision when its image, mounts, command or
+// environment change, so the next reconcile rebuilds the container.
 const RevisionLabel = "mpd.service.revision"
 
 // Service describes one optional extra service container.
@@ -59,10 +42,7 @@ type Service struct {
 	// RunArgs are extra `podman run` arguments (env vars, --shm-size…).
 	RunArgs []string
 	// LinkFn, when set, contributes per-project dashboard links (see
-	// ProjectLinks). This is the pluggable half of the portal integration:
-	// the portal ranges over services and asks, instead of hardcoding any
-	// service's URL scheme. Exported so a service in internal/services can
-	// set it when it registers.
+	// ProjectLinks); the portal asks instead of hardcoding URL schemes.
 	LinkFn func(s Service, n net.Net, info ProjectInfo) []Link
 }
 
@@ -79,9 +59,7 @@ type ProjectInfo struct {
 type Link struct{ Label, URL string }
 
 // ProjectLinks returns the links this service offers for one project,
-// or nil. The caller gates on the service being enabled and running and
-// on the database being up — a link to a connection error is worse than
-// no link.
+// or nil. The caller gates on the service and database being up.
 func (s Service) ProjectLinks(n net.Net, info ProjectInfo) []Link {
 	if s.LinkFn == nil {
 		return nil
@@ -89,15 +67,11 @@ func (s Service) ProjectLinks(n net.Net, info ProjectInfo) []Link {
 	return s.LinkFn(s, n, info)
 }
 
-// registry holds every service that registered itself from an init(). Each
-// service lives in its own file and calls Register there, so the set grows by
-// adding a file — never by editing a list here.
 var registry []Service
 
-// Register records one service, called from a service file's init(). A
-// duplicate name or an octet outside the service range is a programming error
-// in a service file, so it panics at startup rather than shipping a broken
-// registry.
+// Register records one service, called from a service file's init().
+// A duplicate name or an out-of-range octet is a programming error, so
+// it panics at startup.
 func Register(s Service) {
 	if s.HostOctet < net.ServiceHostFirst || s.HostOctet > net.ServiceHostLast {
 		panic(fmt.Sprintf("service %q octet %d is outside the service range %d–%d",
@@ -115,8 +89,8 @@ func Register(s Service) {
 	registry = append(registry, s)
 }
 
-// All returns every registered service, ordered by address (HostOctet) so the
-// order is stable regardless of the file-init order the compiler picks.
+// All returns every registered service, ordered by HostOctet so the
+// order does not depend on file-init order.
 func All() []Service {
 	out := append([]Service(nil), registry...)
 	sort.Slice(out, func(i, j int) bool { return out[i].HostOctet < out[j].HostOctet })
@@ -151,15 +125,12 @@ func (s Service) IP(n net.Net) string { return n.IP(s.HostOctet) }
 // DNS is this service's name on the given VM: <name>.svc.<zone>.
 func (s Service) DNS(n net.Net) string { return n.Service(s.Name) }
 
-// AccessHint is the human-facing "how do I reach this" string. Plain
-// HTTP at the service's own name and port — services have no TLS.
+// AccessHint is the human-facing URL: plain HTTP, services have no TLS.
 func (s Service) AccessHint(n net.Net) string {
 	return fmt.Sprintf("http://%s:%d/", s.DNS(n), s.Port)
 }
 
-// commonLabels are on every service container: mpd.managed marks it as
-// ours to reconcile, and the compose label groups the services together
-// in Podman Desktop and `podman ps` output.
+// commonLabels go on every service container.
 func commonLabels(name string) []string {
 	return []string{
 		"--label", "mpd.managed=true",

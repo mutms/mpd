@@ -59,10 +59,8 @@ func TestRuntime(t *testing.T) {
 	}
 }
 
-// A project has no container of its own, so its state is derived from
-// its runtime joined with its own persisted intent. The subtle case is
-// the last one: a running runtime does NOT make every project on it
-// running — only the ones actually asked to run.
+// A project's state derives from its runtime joined with its intent:
+// a running runtime only makes a project running when it was asked to run.
 func TestProjectDerivation(t *testing.T) {
 	o := NewObserver("150", fakePodman(map[string]bool{
 		"mpd-150-runtime": true,  // running

@@ -1,20 +1,10 @@
 #!/bin/bash
 # phpstorm-archive-app — pack this runtime's Toolbox-installed PhpStorm
-# into a single tarball at ~/install/phpstorm.tgz.
+# into a tarball at ~/install/phpstorm.tgz.
 #
-# The point is provisioning speed. Letting JetBrains Toolbox (or Gateway)
-# download the PhpStorm backend costs minutes and three gigabytes every
-# time a runtime is created — and `mpd --runtime-rebuild` creates one, so
-# this is not a once-per-VM cost. A tarball costs an unpack.
-#
-# Once you have it, put the file in your own
-#
-#     ~/.mpd-virt/assets/runtime/home/default/install/phpstorm.tgz
-#
-# and every runtime gets it seeded into ~/install/, where
-# `phpstorm-install-app` finds and unpacks it.
-#
-# Re-runs replace the archive: the newest install in this runtime wins.
+# Every runtime create otherwise re-downloads the ~3 GB backend. Seed the
+# tarball via ~/.mpd-virt/assets/runtime/home/default/install/ and
+# `phpstorm-install-app` unpacks it. Re-runs replace the archive.
 set -euo pipefail
 
 APPS_DIR="$HOME/.local/share/JetBrains/Toolbox/apps"
@@ -54,18 +44,16 @@ fi
 
 mkdir -p "${DEST_DIR}"
 
-# Write to a temporary file in the same directory and rename over the
-# destination, so an interrupted run never leaves a half-written archive
-# that `phpstorm-install-app` would happily unpack.
+# Write to a temp file and rename, so an interrupted run leaves no
+# half-written archive for phpstorm-install-app to unpack.
 TMP="$(mktemp "${DEST}.XXXXXX")"
 trap 'rm -f "${TMP}"' EXIT
 
 echo "Archiving ${SRC} (${BUILD})"
 echo "This takes a few minutes — gzip over about three gigabytes."
 
-# -C the apps dir so the archive holds a single top-level `phpstorm/`.
-# The IDE backend may be running and touching files under it; that is a
-# warning, not a failure, so exclude only the reason tar would exit 1.
+# -C keeps a single top-level phpstorm/ in the archive. A running backend
+# makes tar warn "file changed"; suppress only that so tar can still exit 0.
 tar --warning=no-file-changed -czf "${TMP}" -C "${APPS_DIR}" "${APP_NAME}"
 
 mv -f "${TMP}" "${DEST}"
@@ -75,11 +63,10 @@ chmod 644 "${DEST}"
 echo
 echo "Wrote ${DEST} ($(du -h "${DEST}" | cut -f1), ${BUILD})"
 
-# From the workstation the bare mpd-<NNN> alias reaches this runtime; the
-# hostname here is that name plus -runtime.
+# The workstation alias is the hostname minus its -runtime suffix.
 RUNTIME_HOST="$(hostname)"
-# SC2088: the tilde is meant to stay literal — this string is printed for
-# the developer to run on their workstation, not expanded here.
+# SC2088: the tilde stays literal — the string is printed for the
+# developer to run on their workstation.
 # shellcheck disable=SC2088
 OVERLAY="~/.mpd-virt/assets/runtime/home/default/install"
 cat <<EOF

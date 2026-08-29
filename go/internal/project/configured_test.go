@@ -48,16 +48,13 @@ func TestCheckConfiguredAcceptsAProjectWithNoURLs(t *testing.T) {
 }
 
 // The case this exists for: /srv restored from another VM, or MPD_VM_ID
-// changed. Nothing mpd can repair without re-running configure.sh, so it
-// must refuse rather than quietly issue certs and DNS for names that
-// belong to a different VM.
+// changed. mpd must refuse rather than issue certs for foreign names.
 func TestCheckConfiguredRejectsAnotherVMsZone(t *testing.T) {
 	err := CheckConfigured("m45", urls("https://m45.150.mpd.test/"), testNet(t, 180))
 	if err == nil {
 		t.Fatal("project from another VM's zone accepted")
 	}
-	// The message has to carry both zones and the remedy, or it sends the
-	// reader looking in the wrong place.
+	// The message must carry both zones and the remedy.
 	for _, want := range []string{"m45.150.mpd.test", "180.mpd.test", "mpd start m45"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error does not mention %q:\n%s", want, err)

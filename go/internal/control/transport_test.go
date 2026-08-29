@@ -12,9 +12,8 @@ import (
 	"time"
 )
 
-// The transport tests exercise the real socket and real SCM_RIGHTS passing.
-// They stop short of spawning mpd itself — that needs a provisioned VM, and
-// is covered by the end-to-end checks in the plan.
+// These tests exercise the real socket and real SCM_RIGHTS passing.
+// Spawning mpd itself needs a provisioned VM and is covered end to end.
 
 // serveOne accepts a single connection, receives the request and its
 // descriptors, and hands them to fn. Returns the socket path.
@@ -51,9 +50,8 @@ func serveOne(t *testing.T, fn func(Request, []*os.File) response) string {
 	return SocketPathIn(base, "php")
 }
 
-// The whole point of the transport: the descriptors that arrive on the
-// daemon side are the client's real files, so writing to them writes to the
-// caller's terminal.
+// The descriptors that arrive on the daemon side are the client's real
+// files, so writing to them writes to the caller's terminal.
 func TestPassedDescriptorsAreTheCallersFiles(t *testing.T) {
 	stdoutFile := filepath.Join(t.TempDir(), "stdout")
 	f, err := os.Create(stdoutFile)
@@ -64,7 +62,7 @@ func TestPassedDescriptorsAreTheCallersFiles(t *testing.T) {
 
 	const written = "written through the passed descriptor\n"
 	path := serveOne(t, func(req Request, files []*os.File) response {
-		// files[1] is the client's stdout. Write to it as a child would.
+		// files[1] is the client's stdout.
 		if _, err := files[1].WriteString(written); err != nil {
 			return response{Exit: 1, Error: err.Error()}
 		}
@@ -89,7 +87,6 @@ func TestPassedDescriptorsAreTheCallersFiles(t *testing.T) {
 	}
 }
 
-// The request must arrive intact: argv, cwd and TERM.
 func TestRequestCrossesIntact(t *testing.T) {
 	var got Request
 	path := serveOne(t, func(req Request, files []*os.File) response {
@@ -115,7 +112,6 @@ func TestRequestCrossesIntact(t *testing.T) {
 	}
 }
 
-// Exit codes are the reason a shim is usable in a script at all.
 func TestExitCodePropagates(t *testing.T) {
 	for _, want := range []int{0, 1, 42, 127} {
 		path := serveOne(t, func(Request, []*os.File) response {
@@ -131,8 +127,6 @@ func TestExitCodePropagates(t *testing.T) {
 	}
 }
 
-// A refusal comes back as an error with the daemon's message, and the
-// daemon has written nothing to the caller's terminal.
 func TestRefusalIsReportedToClient(t *testing.T) {
 	path := serveOne(t, func(Request, []*os.File) response {
 		return response{Exit: 1, Error: "cannot modify project 'site' from the 'php' runtime"}
@@ -149,8 +143,8 @@ func TestRefusalIsReportedToClient(t *testing.T) {
 	}
 }
 
-// Exactly three descriptors, or the peer is not our client. Anything else
-// would leave the daemon holding descriptors it never asked for.
+// Any count other than three means the peer is not our client, and an
+// extra descriptor is one the daemon never asked for.
 func TestReceiveRejectsWrongFDCount(t *testing.T) {
 	for _, count := range []int{0, 1, 2, 4} {
 		base := t.TempDir()
@@ -207,8 +201,7 @@ func TestReceiveRejectsWrongFDCount(t *testing.T) {
 	}
 }
 
-// The socket must not be world-accessible: its mode is a real second layer
-// behind the per-runtime path.
+// The socket mode is a second layer behind the per-runtime path.
 func TestSocketModeIsRestrictive(t *testing.T) {
 	base := t.TempDir()
 	l, err := listen(base, "php")
@@ -226,8 +219,8 @@ func TestSocketModeIsRestrictive(t *testing.T) {
 	}
 }
 
-// Rebinding over a socket left by a previous daemon must work: bind fails
-// with EADDRINUSE on an existing path even when nothing is listening.
+// bind fails with EADDRINUSE on an existing path even when nothing is
+// listening, so listen must replace a stale socket.
 func TestListenReplacesStaleSocket(t *testing.T) {
 	base := t.TempDir()
 
@@ -288,8 +281,8 @@ func TestSafeTermRejectsJunk(t *testing.T) {
 	}
 }
 
-// The runtime name becomes a path element, so it must not be able to walk
-// out of RunDir.
+// The runtime name becomes a path element, so it must not be able to
+// walk out of RunDir.
 func TestValidRuntimeNameRejectsTraversal(t *testing.T) {
 	for _, name := range []string{"php", "node", "util", "php-2"} {
 		if !validRuntimeName(name) {
@@ -305,7 +298,6 @@ func TestValidRuntimeNameRejectsTraversal(t *testing.T) {
 	}
 }
 
-// A rejected name must not produce a socket path at all.
 func TestSocketPathStaysUnderBase(t *testing.T) {
 	base := "/var/lib/mpd/run"
 	got := SocketPathIn(base, "php")

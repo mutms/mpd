@@ -1,9 +1,5 @@
 // Package assets inspects the shipped asset tree under /opt/mpd/assets.
-//
-// Assets are the language-agnostic half of mpd: the runtime, project
-// types and tools are shell, unchanged by the Go port. This package only
-// reads their layout — what project types exist, what a type declares —
-// never their behaviour.
+// It only reads layout — what project types exist, what a type declares.
 package assets
 
 import (
@@ -21,8 +17,7 @@ const Dir = "/opt/mpd/assets"
 // RuntimeDir is the unified runtime's asset directory under Dir.
 const RuntimeDir = "runtime"
 
-// Tree reads one asset directory. The path is a field so tests can point
-// at a fixture.
+// Tree reads one asset directory; the path is a field for tests.
 type Tree struct{ dir string }
 
 // New returns a Tree over the real asset directory.
@@ -32,22 +27,17 @@ func New() Tree { return Tree{dir: Dir} }
 func NewAt(dir string) Tree { return Tree{dir: dir} }
 
 // ProjectTypeConfig locates the assets that implement a project type.
-//
-// A type's scripts do not always live under its own directory:
 // `assetsType` lets a type reuse another's scripts, so callers must
-// resolve through here rather than assuming
-// runtime/project_types/<type>/.
+// resolve through here, never assume runtime/project_types/<type>/.
 type ProjectTypeConfig struct {
 	// AssetsType is the directory holding the type's scripts.
 	AssetsType string `json:"assetsType"`
 	// DetectFiles are paths, relative to the project directory, whose
 	// presence identifies a source tree as this type. Any one is enough.
 	DetectFiles []string
-	// WaitForURL is set when `mpd start` should block until the project's
-	// main URL answers. True for every type mpd starts a server for.
-	// False for types whose server the developer runs by hand (astro):
-	// there is nothing to wait for at start time, and waiting would spend
-	// 30s to print a warning about the expected state.
+	// WaitForURL is set when `mpd start` should block until the
+	// project's main URL answers; false for types whose server the
+	// developer runs by hand.
 	WaitForURL bool
 }
 
@@ -69,8 +59,8 @@ func (t Tree) ProjectTypeConfig(name string) (ProjectTypeConfig, bool) {
 			Files []string `json:"files"`
 		} `json:"detect"`
 		Start struct {
-			// Pointer so an absent key keeps the default rather than
-			// reading as false — waiting is what most types want.
+			// Pointer so an absent key keeps the default rather
+			// than reading as false.
 			WaitForURL *bool `json:"waitForURL"`
 		} `json:"start"`
 	}
@@ -153,18 +143,9 @@ func (t Tree) DetectTypeFromName(name string) string {
 	return ""
 }
 
-// DetectTypeFromTree infers a project type by looking at what is already
-// in the project directory, matching each type's `detect.files` from its
-// configuration.json. Returns "" when nothing matches (an empty or
-// unrecognised tree).
-//
-// Every matching type is returned, not just the first: two types
-// claiming the same tree is a real answer that the caller must not
-// silently pick a winner for. The order is AllProjectTypes' — sorted —
-// so a given tree always produces the same list.
-//
-// The type knowledge lives in the assets tree rather than here on
-// purpose: adding a project type should not mean editing Go.
+// DetectTypeFromTree infers project types from the project directory,
+// matching each type's `detect.files`. Every matching type is returned,
+// in sorted order: the caller must not silently pick a winner.
 func (t Tree) DetectTypeFromTree(dir string) []string {
 	var matched []string
 	for _, ty := range t.AllProjectTypes() {
@@ -174,8 +155,7 @@ func (t Tree) DetectTypeFromTree(dir string) []string {
 		}
 		for _, rel := range cfg.DetectFiles {
 			// Reject anything that could climb out of the project
-			// directory: these strings come from an asset file, but a
-			// path check is cheap and keeps the contract narrow.
+			// directory.
 			if rel == "" || filepath.IsAbs(rel) || strings.Contains(rel, "..") {
 				continue
 			}

@@ -11,29 +11,17 @@ import (
 	"github.com/mutms/mpd/go/internal/state"
 )
 
-// ExitError carries a child process's exit status up to main, which exits
-// with it.
-//
-// A forwarded command's exit code is the whole point of forwarding: a
-// shim is useless in a shell pipeline or a Makefile if every failure
-// collapses to 1. Its message is never printed — the child already said
-// whatever it had to say on its own stderr.
+// ExitError carries a child process's exit status up to main, which
+// exits with it. Its message is never printed — the child already wrote
+// its own stderr.
 type ExitError struct{ Code int }
 
 func (e ExitError) Error() string { return fmt.Sprintf("exit status %d", e.Code) }
 
-// Run executes a command inside the runtime that owns the current
-// project.
-//
-// The command runs with the caller's working directory, which is correct
-// verbatim rather than by translation: /srv is the same tree at the same
-// path on the VM and inside every container, so /srv/projects/moodle45
-// means the same thing on both sides.
-//
-// This is the mechanism behind the VM-side shims — `php` on the VM is a
-// two-line script that execs `mpd run -- php "$@"` — so its ergonomics
-// are load-bearing: exit codes propagate, stdin/stdout/stderr are the
-// caller's, and a TTY is allocated when the caller has one.
+// Run executes a command inside the runtime, in the caller's working
+// directory (/srv is the same path on both sides). The VM-side shims
+// build on it, so exit codes, stdio and TTY allocation must behave like
+// the real command.
 func Run(ctx context.Context, out io.Writer, d ProjectDeps, command []string) error {
 	if len(command) == 0 {
 		return fmt.Errorf("Usage: mpd run <command> [args...]")
@@ -69,25 +57,11 @@ func Run(ctx context.Context, out io.Writer, d ProjectDeps, command []string) er
 	return nil
 }
 
-// projectFromCwd resolves the project whose tree the caller is standing
-// in.
-//
-// The rule is deliberately narrow: the working directory must be
-// /srv/projects/<name> or below, and <name> must be a registered project.
-// Nothing else is a project context, and guessing one — the only runtime,
-// the last one used — would run a command somewhere the caller did not
-// ask for.
-//
-// This is NOT the rule the in-runtime tools use (walk up to mpd.env, take
-// the basename). They use that because a runtime container cannot read
-// projects.json; the state directory is not mounted into it. On the VM
-// the registry is right here, so a path check is both cheaper and safer:
-// a stray mpd.env elsewhere on the VM cannot impersonate a project, and a
-// project whose mpd.env is missing or not yet written still resolves.
-//
-// `what` names the command being forwarded, so an error reads `php: not
-// inside a project` rather than `mpd run: ...` — the caller typed the
-// shim, not this.
+// projectFromCwd resolves the registered project whose tree contains the
+// working directory; it never guesses. This is not the in-runtime tools'
+// walk-up-to-mpd.env rule: the registry is readable here, and a stray
+// mpd.env must not impersonate a project. `what` names the forwarded
+// command so errors read `php: ...`, not `mpd run: ...`.
 func projectFromCwd(s state.Store, what string) (state.Project, string, error) {
 	name, ok := ProjectNameFromCwd()
 	if !ok {
@@ -105,8 +79,8 @@ func projectFromCwd(s state.Store, what string) (state.Project, string, error) {
 	if err != nil {
 		return state.Project{}, "", err
 	}
-	// The container is handed the resolved path: /srv is a bind mount, so
-	// a symlinked cwd on the VM may not exist under that name inside.
+	// Hand the container the resolved path: a symlinked cwd on the VM
+	// may not exist under that name inside.
 	resolved, err := filepath.EvalSymlinks(cwd)
 	if err != nil {
 		resolved = filepath.Clean(cwd)
@@ -114,23 +88,11 @@ func projectFromCwd(s state.Store, what string) (state.Project, string, error) {
 	return entry, resolved, nil
 }
 
-// loginShell wraps the command so it runs with the environment an
-// interactive runtime session gets.
-//
-// `podman exec` starts no shell, so it inherits only the container's bare
-// PATH — /usr/bin and friends. Every mpd tool (mdl-install, phpunit,
-// composer-install, the php wrapper) is on PATH courtesy of the home
-// ~/.bashrc, which reads them out of the assets tree. Without a login
-// shell `mpd run mdl-install` fails with "executable file not found",
-// while `mpd run php` happens to work only because build.sh also
-// symlinks php into /usr/local/bin. Forwarding a command that behaves
-// differently from the same command typed in the runtime would be a trap.
-//
-// The `cd` is not redundant with `-w`: that same .bashrc ends with
-// `cd /srv/projects` for interactive convenience, which would otherwise
-// silently relocate the command. We set the directory again after the
-// shell has finished initialising, and `exec` keeps the child's exit
-// status and signals ours.
+// loginShell wraps the command so it gets an interactive session's
+// environment. `podman exec` starts no shell, and the mpd tools are on
+// PATH only via ~/.bashrc. The `cd` is not redundant with `-w`: that
+// .bashrc ends with `cd /srv/projects`, which would relocate the
+// command. `exec` keeps the child's exit status and signals ours.
 func loginShell(cwd string, command []string) []string {
 	args := []string{
 		"bash", "-lc",
@@ -141,12 +103,9 @@ func loginShell(cwd string, command []string) []string {
 	return append(args, command...)
 }
 
-// stdinIsTerminal reports whether stdin is a character device, which is
-// what decides `podman exec -t`.
-//
-// Asking rather than always passing -t: podman refuses to allocate a TTY
-// when stdin is a pipe, so `echo x | php -r ...` would fail outright, and
-// a TTY would also corrupt piped output with carriage returns.
+// stdinIsTerminal decides `podman exec -t`. Always passing -t breaks
+// pipes: podman refuses a TTY when stdin is a pipe, and a TTY corrupts
+// piped output with carriage returns.
 func stdinIsTerminal() bool {
 	info, err := os.Stdin.Stat()
 	if err != nil {

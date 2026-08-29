@@ -1,13 +1,9 @@
 package web
 
-// Templates live as Go string constants rather than embedded .html files
-// so a section and the type that feeds it can be read side by side.
-// Every value is escaped by html/template; nothing here interpolates raw.
-//
-// Each section is a named template AND its own URL. htmx refreshes them
-// independently, so a slow `podman ps` in one card never blanks the rest
-// of the page, and nothing has to be restored after a reload the way the
-// old portal restored open popovers from location.hash.
+// Templates live as Go string constants so a section and the type that
+// feeds it read side by side. Every value is escaped by html/template.
+// Each section is a named template and its own URL, refreshed by htmx
+// independently.
 
 const shellHTML = `{{define "page"}}<!doctype html>
 <html lang="en">

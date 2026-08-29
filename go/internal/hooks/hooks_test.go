@@ -12,9 +12,7 @@ import (
 	"github.com/mutms/mpd/go/internal/podman"
 )
 
-// labelled returns a podman stub whose containers report fixed labels,
-// so discovery — which reads labels rather than event fields — can be
-// exercised without a container engine.
+// labelled returns a podman stub whose containers report fixed labels.
 func labelled(labels map[string]string) *podman.Client {
 	return podman.NewWith(func(ctx context.Context, args []string) (exec.Result, error) {
 		for key, value := range labels {
@@ -32,8 +30,7 @@ func find(ev Event, audience AudienceKind, labels map[string]string) []Script {
 	return discover(context.Background(), labelled(labels), ev, audience, "c")
 }
 
-// withAssets points AssetsDir at a fixture tree for the duration of a
-// test, so discovery can be exercised without the real /opt/mpd.
+// withAssets points assetsDir at a fixture tree for one test.
 func withAssets(t *testing.T, files map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -52,8 +49,7 @@ func withAssets(t *testing.T, files map[string]string) string {
 	return dir
 }
 
-// The whole point of the extension filter: anything that is not *.sh
-// would otherwise be handed to bash and executed.
+// Anything that is not *.sh would otherwise be handed to bash.
 func TestOnlyShFilesAreDiscovered(t *testing.T) {
 	withAssets(t, map[string]string{
 		"runtime/hooks/project-post-start.d/10-real.sh":    "#!/bin/bash\n",
@@ -75,8 +71,8 @@ func TestOnlyShFilesAreDiscovered(t *testing.T) {
 	}
 }
 
-// Numeric prefixes are how hook authors order work; alphabetical sort
-// within a layer is what makes them mean anything.
+// Alphabetical sort within a layer is what makes numeric prefixes
+// mean anything.
 func TestScriptsAreOrderedWithinALayer(t *testing.T) {
 	withAssets(t, map[string]string{
 		"runtime/hooks/project-post-start.d/90-last.sh":  "",
@@ -95,13 +91,8 @@ func TestScriptsAreOrderedWithinALayer(t *testing.T) {
 	}
 }
 
-// Layer order is base → runtime, so a broadly-applicable hook runs
-// before a more specific one.
-//
-// There is deliberately NO project-type layer for runtime-audience
-// events: the Go implementation does not scan it, and firing hooks it
-// never fired would be a silent behaviour change. The type directory
-// below exists precisely to prove it is ignored.
+// There is deliberately no project-type layer for runtime-audience
+// events; the type directory below exists to prove it is ignored.
 func TestLayerOrderExcludesProjectType(t *testing.T) {
 	withAssets(t, map[string]string{
 		"runtime/hooks/project-post-start.d/10-runtime.sh":                   "",
@@ -119,9 +110,8 @@ func TestLayerOrderExcludesProjectType(t *testing.T) {
 	}
 }
 
-// Audiences are per-event and not interchangeable: a database-audience
-// event must not pick up runtime hooks, or a project-pre-start hook
-// would run in the wrong container.
+// Audiences are per-event: a database-audience event must not pick up
+// runtime hooks.
 func TestAudienceSelectsDifferentAssetTrees(t *testing.T) {
 	withAssets(t, map[string]string{
 		"runtime/hooks/project-pre-start.d/10-runtime.sh":       "",
@@ -140,8 +130,7 @@ func TestAudienceSelectsDifferentAssetTrees(t *testing.T) {
 	}
 }
 
-// A project with no database has nothing to fire a database-audience
-// event into. That is normal, not an error.
+// A project with no database fires database-audience events nowhere.
 func TestNoEngineMeansNoDatabaseHooks(t *testing.T) {
 	withAssets(t, map[string]string{
 		"databases/postgres/hooks/project-pre-start.d/10-db.sh": "",
@@ -159,9 +148,8 @@ func TestMissingDirectoryIsNotAnError(t *testing.T) {
 	}
 }
 
-// The container path must be the same absolute path, because /opt/mpd is
-// bind-mounted read-only at the same location inside every container —
-// that is what lets a host-side scan produce an executable path.
+// /opt/mpd is mounted at the same path inside every container, so a
+// host-side scan must yield the identical executable path.
 func TestContainerPathMatchesHostPath(t *testing.T) {
 	dir := withAssets(t, map[string]string{
 		"runtime/hooks/project-post-start.d/10-x.sh": "",
@@ -176,10 +164,9 @@ func TestContainerPathMatchesHostPath(t *testing.T) {
 	}
 }
 
-// mpd-pre-stop fires on every running database at once, and those can be
-// different engines. Discovery must therefore follow each CONTAINER, not
-// a single value carried on the event — otherwise postgres's hooks get
-// run inside mariadb.
+// mpd-pre-stop fires on databases of different engines at once, so
+// discovery must follow each container's own labels — otherwise one
+// engine's hooks run inside another.
 func TestDiscoveryFollowsTheContainerNotTheEvent(t *testing.T) {
 	withAssets(t, map[string]string{
 		"databases/postgres/hooks/mpd-pre-stop.d/90-graceful-stop.sh": "",
@@ -221,8 +208,7 @@ func TestGracefulStopSortsLast(t *testing.T) {
 	}
 }
 
-// The VM audience reads its own layer and only its own: the two run on
-// opposite sides of the container boundary.
+// The VM audience reads its own layer and only its own.
 func TestVMAudienceReadsTheVMLayer(t *testing.T) {
 	withAssets(t, map[string]string{
 		"vm/hooks/mpd-post-setup.d/50-vm.sh":           "",
@@ -278,8 +264,8 @@ func containsPair(list []string, flag, value string) bool {
 	return false
 }
 
-// End-to-end for the VM audience: the script really runs, and sees the
-// standard MPD_HOOK_* contract.
+// End-to-end for the VM audience: the script really runs and sees the
+// MPD_HOOK_* contract.
 func TestVMHookRunsAndSeesItsEnvironment(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "seen")
 	withAssets(t, map[string]string{

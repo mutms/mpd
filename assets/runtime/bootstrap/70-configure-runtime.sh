@@ -1,8 +1,7 @@
 #!/bin/bash
-# 70-configure-runtime.sh — configure what 60 installed: php.ini + FPM per
-# version, `php` as the project-aware dispatcher, Composer, Node (nvm),
-# the caddy frontdoor unit, /srv permissions. Runs as the dev user at
-# runtime create, on every `mpd --vm-setup`, and after 60 in
+# 70-configure-runtime.sh — configure what 60 installed: php.ini + FPM,
+# the php dispatcher, Composer, Node, the caddy unit, /srv permissions.
+# Runs at runtime create, on every `mpd --vm-setup`, and after 60 in
 # `mpd --vm-upgrade`. Idempotent; no apt.
 #
 #   70-configure-runtime.sh <container>
@@ -18,9 +17,8 @@ for VER in $MPD_PHP_VERSIONS; do
     mpd_php_configure_version "$VER"
 done
 
-# /usr/bin/php -> the dispatcher in bin/, registered as the Debian
-# alternative at priority 1000 and pinned, so IDE interpreter probes and
-# `update-alternatives --config php` both see one consistent `php`.
+# Register bin/php as the Debian alternative and pin it, so IDE probes of
+# /usr/bin/php see one consistent dispatcher.
 echo "==> php alternative"
 sudo rm -f /usr/local/bin/php   # legacy shim
 PHP_ALT_SLAVES=()
@@ -36,9 +34,8 @@ echo "==> Composer, Node"
 bash /opt/mpd/assets/runtime/bin/composer-install
 bash /opt/mpd/assets/runtime/bin/node-install lts
 
-# caddy runs AS the dev user: project keys under /srv/meta are 0600 to
-# that user, which the packaged caddy.service (User=caddy) could not read.
-# mpd-caddy.sh renders the Caddyfile from /srv/meta and reload-watches it.
+# caddy runs as the dev user, the only identity that can read the 0600
+# project keys under /srv/meta; see docs/architecture.md.
 echo "==> mpd-caddy.service"
 sudo systemctl disable --now caddy.service 2>/dev/null || true
 DEV_USER="$(id -un)"
@@ -68,10 +65,9 @@ sudo systemctl restart mpd-caddy.service || true
 # project-setup.sh creates subdirs here; setgid + world-writable.
 chmod 02777 /srv/data
 
-# Forced home files: mpd owns these, refreshed from the Mac on every converge
-# (this step runs on --vm-setup / --runtime-upgrade). Overwrite, never delete —
-# a file removed from the source is left in place, so this can never lose data.
-# default/ home files are seeded once at create (50-user.sh), not here.
+# forced/ home files are mpd's, re-applied on every converge. Overwrite,
+# never delete — this must not lose data. default/ is seeded once by
+# 50-user.sh.
 if [ -d /opt/mpd/assets/runtime/home/forced ]; then
     cp -aT /opt/mpd/assets/runtime/home/forced "${HOME}"
 fi

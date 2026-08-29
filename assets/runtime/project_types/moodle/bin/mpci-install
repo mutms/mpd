@@ -1,9 +1,7 @@
 #!/bin/bash
 # Tool: install moodle-plugin-ci into /srv/extra/mpci/.
-# Idempotent: no-op if the phar is already there. Re-run after
-# `rm` to pick up a newer release.
-# /srv is the persistent data volume, so this survives a runtime
-# rebuild (unlike /usr/local/bin) and needs no privilege.
+# Idempotent; re-run after `rm` to pick up a newer release. /srv
+# persists across runtime rebuilds and needs no privilege.
 set -euo pipefail
 
 TARGET="/srv/extra/mpci/moodle-plugin-ci.phar"

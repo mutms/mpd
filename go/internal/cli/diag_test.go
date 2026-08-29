@@ -6,10 +6,8 @@ import (
 	"time"
 )
 
-// diagWhen renders the recorded upgrade timestamp. The fallback matters
-// most: a stamp mpd cannot parse must still be shown, because hiding it
-// would turn "recorded, in a format I do not know" into the same output
-// as "never recorded".
+// A stamp mpd cannot parse must still be shown — hiding it would look
+// the same as "never recorded".
 func TestDiagWhen(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -51,10 +49,8 @@ func TestDiagWhen(t *testing.T) {
 	})
 }
 
-// routeDevice reads the interface out of `ip route get`. It is the VPN
-// tripwire's parser, so an unexpected shape must yield "" — which the
-// caller reports as "could not read" — rather than a wrong device name
-// that would read as a confident all-clear.
+// An unexpected `ip route get` shape must yield "", never a wrong
+// device name that reads as a confident all-clear.
 func TestRouteDevice(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -100,20 +96,16 @@ func TestRouteDevice(t *testing.T) {
 	}
 }
 
-// seatSessionOf decides whether an RDP login is about to collide with a
-// desktop session that already holds this user's systemd units. Both
-// samples are real `loginctl list-sessions --no-legend` output from a VM
-// where that collision happened.
+// Both samples are real `loginctl list-sessions --no-legend` output
+// from a VM where the RDP collision happened.
 func TestSeatSessionOf(t *testing.T) {
-	// Console login present: skodak holds seat0 on tty2. An RDP login
-	// here lands on gnome-session-failed — a black screen.
+	// Console login present: skodak holds seat0 on tty2.
 	const colliding = `      1 1000 skodak     -     735    manager       -    no   -
      11 1000 skodak     seat0 22666  user          tty2 no   -
      12 1000 skodak     -     34381  user          -    no   -
      c4 1000 skodak     -     35800  user          -    no   -`
 
-	// After that session logged out: the only seat session left is gdm's
-	// greeter, which is a different user and holds none of skodak's units.
+	// After logout: only gdm's greeter holds a seat, a different user.
 	const clear = `      1 1000 skodak     -     735    manager       -    no   -
      12 1000 skodak     -     34381  user          -    no   -
      13  105 Debian-gdm -     36211  manager-early -    no   -
@@ -130,12 +122,8 @@ func TestSeatSessionOf(t *testing.T) {
 	}
 }
 
-// gdm autologin makes the RDP black screen structural rather than
-// incidental: the console claims the desktop at every boot, so
-// terminating the session is not a fix. Both samples are real
-// /etc/gdm3/daemon.conf content from a VM where autologin was turned on
-// and then off again — note that switching it off leaves AutomaticLogin
-// naming a user, which is exactly the false positive to avoid.
+// Real /etc/gdm3/daemon.conf samples. Switching autologin off leaves
+// AutomaticLogin naming a user — the false positive to avoid.
 func TestParseGDMAutoLogin(t *testing.T) {
 	const on = `# GDM configuration storage
 

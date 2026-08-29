@@ -6,11 +6,9 @@ import (
 	"github.com/mutms/mpd/go/internal/net"
 )
 
-// The framework's registry mechanics, tested against a fresh registry — the
-// concrete services (internal/services) are deliberately not imported here, so
-// this package's registry starts empty and each test seeds exactly what it
-// needs. A panicking Register never appends (validation runs first), so the
-// reject tests leave the registry clean for the ordering test.
+// Registry mechanics, tested against a fresh registry: the concrete
+// services are not imported here, so each test seeds what it needs.
+// A panicking Register never appends, so reject tests leave it clean.
 
 func mustPanic(t *testing.T, want string, fn func()) {
 	t.Helper()

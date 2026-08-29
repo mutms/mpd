@@ -14,16 +14,10 @@ import (
 // showLabelWidth is the left column of the key/value show output.
 const showLabelWidth = 16
 
-// ShowProject renders `mpd status <project>`.
-//
-// Two shapes, not one: a started project gets the full detail (URLs, SSH,
-// resolved settings); a stopped or not-yet-initialised one gets the short
-// form plus the single next command to type. The long form would be
-// misleading otherwise — it lists URLs that nothing is serving.
-//
-// The single runtime is deliberately not shown: there is exactly one, it
-// is always running, and it is named the same for every project, so a
-// per-project "Runtime:" line carries no information.
+// ShowProject renders `mpd status <project>`. A started project gets the
+// full detail; a stopped or uninitialised one gets the short form plus
+// the next command — the long form would list URLs nothing serves. The
+// single runtime is the same for every project, so it is not shown.
 func ShowProject(out io.Writer, name string, s state.Store, n net.Net) {
 	var entry state.Project
 	found := false
@@ -63,14 +57,12 @@ func ShowProject(out io.Writer, name string, s state.Store, n net.Net) {
 		return
 	}
 
-	// Stopped: its addresses survive a stop, but lead with how to bring
-	// it back rather than listing URLs that answer with a dead page.
+	// Stopped: lead with how to bring it back, not URLs that answer with
+	// a dead page.
 	fmt.Fprintln(out, field("Directory:", "/srv/projects/"+name))
 	fmt.Fprintf(out, "\n  mpd start %s\n", name)
 }
 
-// writeURLs prints the URL block, label column padded to the widest
-// label so the URLs line up.
 func writeURLs(out io.Writer, urls []state.ProjectURL) {
 	if len(urls) == 0 {
 		return
@@ -91,9 +83,8 @@ func writeURLs(out io.Writer, urls []state.ProjectURL) {
 	}
 }
 
-// writeSettings surfaces what the project type's configure.sh resolved,
-// from /srv/meta/<project>/effective.json. mpd does not interpret these
-// — it shows them so the four-layer env cascade is inspectable.
+// writeSettings shows what the type's configure.sh resolved; mpd does
+// not interpret the values.
 func writeSettings(out io.Writer, project string) {
 	var eff map[string]any
 	if !srv.ReadMetaJSON(project, "effective.json", &eff) || len(eff) == 0 {
@@ -118,7 +109,6 @@ func writeSettings(out io.Writer, project string) {
 	}
 }
 
-// configurationDisplay summarises the project's configured DB, if any.
 func configurationDisplay(p state.Project) string {
 	if p.DatabaseEngine == "" {
 		return ""

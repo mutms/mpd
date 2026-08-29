@@ -17,10 +17,9 @@ type Repo struct {
 	Remote string
 }
 
-// SkipReason explains why a checkout was left alone, or "" when it can be
-// updated. Reported rather than fixed: every one of these describes work
-// in progress or a decision the developer made, and overriding it would
-// throw away exactly the thing they would miss.
+// SkipReason explains why a checkout was left alone, or "" when it can
+// be updated. Reported rather than fixed: each case is the developer's
+// own work or decision.
 func (r Repo) SkipReason() string {
 	if !isGitCheckout(r.Dir) {
 		return "not a git checkout"
@@ -46,10 +45,7 @@ func GitRemote(dir string) string {
 }
 
 // GitClean reports whether a checkout has no uncommitted changes.
-//
-// --porcelain rather than parsing `git status`: its output is a stable
-// machine format, and empty means clean regardless of git's version or
-// the user's locale.
+// --porcelain is stable across git versions and locales.
 func GitClean(dir string) bool {
 	res, err := exec.Capture(ctx0(), exec.Cmd{
 		Name: "git", Dir: dir, Args: []string{"status", "--porcelain"},
@@ -68,9 +64,8 @@ func GitRev(dir string) string {
 	return strings.TrimSpace(res.Stdout)
 }
 
-// GitCommitsBetween counts commits in old..new, for the "(N commits)" in
-// the upgrade summary. Zero on any error — it is decoration, and failing
-// an upgrade over a commit count would be absurd.
+// GitCommitsBetween counts commits in old..new for the upgrade summary.
+// Zero on any error: it is decoration.
 func GitCommitsBetween(dir, old, new string) int {
 	if old == "" || new == "" || old == new {
 		return 0
@@ -88,14 +83,9 @@ func GitCommitsBetween(dir, old, new string) int {
 	return n
 }
 
-// GitPullFastForward advances a checkout, refusing anything that is not a
-// fast-forward.
-//
-// --ff-only is the whole safety model. A merge or a rebase here would
-// rewrite work mpd did not create, in a directory the developer may be
-// mid-thought in; refusing and saying so leaves them in control. Combined
-// with the clean-tree check in SkipReason, an upgrade either advances the
-// checkout or changes nothing at all.
+// GitPullFastForward advances a checkout, refusing anything that is not
+// a fast-forward. With the clean-tree check in SkipReason, an upgrade
+// either advances the checkout or changes nothing at all.
 func GitPullFastForward(ctx context.Context, dir string) error {
 	code, err := exec.Run(ctx, exec.Cmd{
 		Name: "git", Dir: dir, Args: []string{"pull", "--ff-only"},
@@ -111,12 +101,9 @@ or an unreachable remote. Sort it out there and re-run:
 	return nil
 }
 
-// MakeInstall builds a checkout with its own Makefile.
-//
-// GOTOOLCHAIN=local for the reason mpd's Makefile pins it: Go's default
-// would silently download a ~210 MB toolchain when a go.mod asks for a
-// newer version than Debian ships, on every VM, during what is supposed
-// to be a quick upgrade.
+// MakeInstall builds a checkout with its own Makefile. GOTOOLCHAIN=local:
+// Go's default would silently download a large toolchain when go.mod
+// asks for a newer version than Debian ships.
 func MakeInstall(ctx context.Context, dir string) error {
 	code, err := exec.Run(ctx, exec.Cmd{
 		Name: "make", Args: []string{"-C", dir, "install"},
@@ -128,6 +115,6 @@ func MakeInstall(ctx context.Context, dir string) error {
 	return nil
 }
 
-// ctx0 is for the short read-only git queries above, which have no
-// cancellation story worth threading a context through for.
+// ctx0 serves the short read-only git queries, which need no
+// cancellation.
 func ctx0() context.Context { return context.Background() }

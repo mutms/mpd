@@ -7,12 +7,9 @@
 }
 
 (deny_sensitive) {
-    # Block sensitive paths even on a single-developer LAN. The webroot is
-    # the project checkout itself, so mpd.env, config-mpd.php, .git/ and
-    # friends sit directly under it. Four rules, matched anywhere in the
-    # path: any dot-segment (.git/, .mudev.json, .env, ...), dependency
-    # dirs, mpd/project config files, and phar archives.
-    # 404 (not 403) — don't acknowledge the file exists.
+    # The webroot is the project checkout, so mpd.env, .git/ and friends
+    # sit under it. Deny dot-segments, dependency dirs, mpd/project config
+    # files, and phars. 404, not 403 — do not acknowledge the file exists.
     @denied path_regexp /\.|/(vendor|node_modules)/|/(mpd\.env|config-mpd\.php|compose\.yaml|docker-compose\.yml|phpunit\.xml|behat\.yml)$|\.phar$
     respond @denied 404
 }

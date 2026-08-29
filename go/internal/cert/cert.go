@@ -1,18 +1,6 @@
 // Package cert issues the TLS certificates mpd's local CA signs.
-//
-// The CA material lives under /var/lib/mpd/conf/caroot/ — never on the
-// data volume and never inside a container. Leaf certs are signed in the
-// VM and written to where they are served from.
-//
-// Two certificates matter here and they are not the same thing. The
-// **anchor** is what the VM's trust stores are told to trust; the
-// **signer** is what leaf certificates are actually signed with. On a VM
-// provisioned by mpd-virt the signer is an intermediate constrained to
-// that VM's own zone, and the root's private key is never copied into the
-// VM at all — so a compromised VM can mint certificates for its own names
-// and for nothing else. On a sandbox VM, which has no orchestrator to
-// push a CA in, the two are one self-signed certificate. Signer resolves which case a
-// given VM is in; everything else here goes through it.
+// CA material lives under /var/lib/mpd/conf/caroot/, never in a container.
+// Trust anchor and signer differ on managed VMs; see docs/security.md.
 package cert
 
 import (
@@ -31,11 +19,8 @@ import (
 )
 
 // Paths under the private identity directory.
-//
-// KEEP IN SYNC with the same constants in internal/vm/vm.go. They are
-// duplicated rather than imported because this package is otherwise
-// independent of the VM-management package, and pulling that in for four
-// string constants would invert the dependency.
+// KEEP IN SYNC with internal/vm/vm.go; duplicated to avoid a dependency
+// on the VM-management package.
 const (
 	ConfDir   = "/var/lib/mpd/conf"
 	CARootDir = ConfDir + "/caroot"
@@ -46,15 +31,12 @@ const (
 	CACertPath = CARootDir + "/rootCA.pem"
 	CAKeyPath  = CARootDir + "/rootCA-key.pem"
 
-	// SigningCertPath and SigningKeyPath are the CA leaves are signed with.
+	// SigningCertPath and SigningKeyPath locate the CA that signs leaves.
 	SigningCertPath = CARootDir + "/vmCA.pem"
 	SigningKeyPath  = CARootDir + "/vmCA-key.pem"
 
-	// LeafDays is the longest a leaf may live. 397 is not arbitrary: macOS
-	// rejects leaf certificates valid for 398 days or more, so a
-	// longer-lived cert would be untrusted on the very workstation the
-	// developer browses from. A leaf can still be issued for less — see
-	// leafDays.
+	// LeafDays caps leaf validity: macOS rejects leaves valid 398 days or
+	// more (see docs/security.md).
 	LeafDays = 397
 )
 
@@ -63,29 +45,19 @@ type Signer struct {
 	CertPath string
 	KeyPath  string
 
-	// Chain is true when CertPath is not the trust anchor. A client that
-	// trusts only the anchor cannot verify a leaf signed by an
-	// intermediate unless the intermediate travels with it, so Generate
-	// appends CertPath to the leaf file it writes.
+	// Chain is true when CertPath is not the trust anchor; Generate then
+	// appends CertPath to the leaf file so clients can verify the chain.
 	Chain bool
 }
 
-// ResolveSigner reports which CA this VM signs with, and false when there
-// is no CA material at all — a fresh VM, where the caller's answer is to
-// generate one rather than to fail.
-//
-// The intermediate wins when present. A VM migrated by `mpd-virt
-// refresh-ca` has its root key deleted, but an interrupted migration (or
-// a re-run of an older mpd-virt) could leave both on disk, and in that
-// state the constrained signer is the one we want — preferring the root
-// would silently undo the migration.
+// ResolveSigner reports which CA this VM signs with; false means no CA
+// material exists yet. When both root key and intermediate are on disk,
+// the intermediate wins — preferring the root would undo a CA migration.
 func ResolveSigner() (Signer, bool) { return resolveSignerIn(CARootDir) }
 
-// resolveSignerIn is ResolveSigner against an arbitrary directory, so the
-// three-way decision can be tested without writing to /var/lib.
 func resolveSignerIn(dir string) (Signer, bool) {
-	// Basenames come from the path constants rather than being spelled
-	// again, so the tested code and the production paths cannot drift.
+	// Basenames come from the path constants so tests and production
+	// paths cannot drift.
 	var (
 		anchorCert = filepath.Join(dir, filepath.Base(CACertPath))
 		anchorKey  = filepath.Join(dir, filepath.Base(CAKeyPath))
@@ -96,34 +68,21 @@ func resolveSignerIn(dir string) (Signer, bool) {
 		return Signer{
 			CertPath: signerCert,
 			KeyPath:  signerKey,
-			// A sandbox VM writes one self-signed certificate to both
-			// paths. Identical bytes mean the chain is one long and there
-			// is nothing to append.
+			// A sandbox writes one self-signed cert to both paths;
+			// identical bytes mean there is no chain to append.
 			Chain: !sameFile(signerCert, anchorCert),
 		}, true
 	}
 	if fileExists(anchorKey) && fileExists(anchorCert) {
-		// A VM provisioned before per-VM intermediates existed. It still
-		// holds the root key and still signs with it, which is what it did
-		// before this code shipped — `mpd-virt refresh-ca` moves it on.
+		// Pre-intermediate VM: it still signs with the root key until
+		// `mpd-virt refresh-ca` migrates it.
 		return Signer{CertPath: anchorCert, KeyPath: anchorKey}, true
 	}
 	return Signer{}, false
 }
 
-// leafDays is how long a leaf signed right now may live: LeafDays, unless
-// the CA signing it expires sooner.
-//
-// Nothing may outlive its issuer. A leaf valid past its CA's expiry does
-// not gracefully degrade — the whole chain fails on the CA's date, while
-// the leaf still claims months of validity, so every tool reports a
-// puzzle: `openssl x509 -enddate` on the leaf says it is fine and every
-// client rejects it anyway.
-//
-// This binds in practice rather than in theory. A per-VM intermediate is
-// itself capped at whatever the root has left, so on a root approaching
-// renewal the signer can easily have fewer than 397 days remaining, and
-// an uncapped leaf would sail past it.
+// leafDays caps a new leaf at LeafDays or the signing CA's remaining
+// validity, whichever is less. A leaf must not outlive its issuer.
 func leafDays(signerCertPath string) (int, error) {
 	data, err := os.ReadFile(signerCertPath)
 	if err != nil {
@@ -165,10 +124,6 @@ func sameFile(a, b string) bool {
 
 // Generate signs a certificate for sans, writing PEM files to certPath
 // and keyPath.
-//
-// 397 days is not arbitrary: macOS rejects leaf certificates valid for
-// 398 days or more, so a longer-lived cert would be untrusted on the
-// very workstation the developer browses from.
 func Generate(ctx context.Context, sans []string, certPath, keyPath string) error {
 	if len(sans) == 0 {
 		return fmt.Errorf("no SANs given")
@@ -226,20 +181,11 @@ func Generate(ctx context.Context, sans []string, certPath, keyPath string) erro
 			return err
 		}
 	}
-	// The key never leaves this directory world-readable, even briefly.
 	return os.Chmod(keyPath, 0o600)
 }
 
-// appendChain concatenates the signing CA onto the leaf file, leaf first.
-//
-// Everything that serves these files hands the whole file to the client:
-// caddy's `tls <cert> <key>` — the VM's own and the in-runtime frontdoor.
-// So the file *is* the chain, and a leaf alone would fail verification
-// everywhere the intermediate is not already installed — which is
-// everywhere, since only the root is ever distributed.
-//
-// Leaf first is not a stylistic choice: TLS requires the end-entity
-// certificate to come first in the chain the server sends.
+// appendChain concatenates the signing CA onto the leaf file. Leaf must
+// come first: TLS requires the end-entity certificate first in the chain.
 func appendChain(certPath, caPath string) error {
 	ca, err := os.ReadFile(caPath)
 	if err != nil {

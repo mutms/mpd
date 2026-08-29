@@ -29,9 +29,7 @@ import (
 	"github.com/mutms/mpd/go/internal/vm"
 )
 
-// ProjectDeps bundles what the project verbs need. Passed as a struct
-// because the alternative is an eight-argument signature repeated per
-// verb.
+// ProjectDeps bundles what the project verbs need.
 type ProjectDeps struct {
 	Podman   *podman.Client
 	State    state.Store
@@ -43,20 +41,11 @@ type ProjectDeps struct {
 	UID      string
 }
 
-// ProjectStart configures a project and brings it up — the two used to be
-// separate verbs (`configure` then `start`), now one.
-//
-// It always reconciles first: settings (KEY=VALUE) land in mpd.env, the
-// type's configure.sh runs, and the database, certificate and DNS record
-// are provisioned from the result — so `mpd start` after an mpd.env edit
-// makes reality match the file. Then it starts.
-//
-// Order matters throughout the start tail: the runtime and database are
-// already up (reconcileProject ensured them), so pre-start hooks fire
-// against a live database, the type's setup script runs against a cert
-// and DNS that already exist, and `requested` is only recorded after
-// setup succeeds — so a failed start does not leave a project claiming to
-// run.
+// ProjectStart configures a project and brings it up in one verb. It
+// always reconciles first — settings land in mpd.env, configure.sh
+// runs, database, cert and DNS follow — so `mpd start` after an mpd.env
+// edit makes reality match the file. Autostart is recorded only after
+// every step succeeds, so a failed start never claims to run.
 func ProjectStart(ctx context.Context, out io.Writer, name string, settings []string,
 	d ProjectDeps) error {
 
@@ -66,18 +55,14 @@ func ProjectStart(ctx context.Context, out io.Writer, name string, settings []st
 
 	url, err := startProject(ctx, out, name, settings, d)
 	if err != nil {
-		// Fail-safe: a start that did not fully succeed is recorded as
-		// stopped, never left claiming to run. Showing stopped for
-		// something that limped up is harmless; the reverse hides a broken
-		// site behind a green status. Best-effort — the start error is
-		// what the caller needs to see.
+		// A start that did not fully succeed is recorded stopped — the
+		// reverse hides a broken site behind a green status.
 		markStopped(out, d.State, name)
 		return err
 	}
 
-	// Only now, after every step succeeded, is the project marked to
-	// autostart. Re-read first: reconcileProject persisted its own view of
-	// the entry (runtime, database, URLs).
+	// Mark autostart only after every step succeeded. Re-read first:
+	// reconcileProject persisted its own view of the entry.
 	if entry, found := findProject(d.State, name); found {
 		entry.Autostart = true
 		if err := d.State.UpsertProject(entry); err != nil {
@@ -92,17 +77,14 @@ func ProjectStart(ctx context.Context, out io.Writer, name string, settings []st
 	return nil
 }
 
-// startProject configures a project and runs its server-side start
-// lifecycle, returning the URL to print. It does not touch the autostart
-// flag — ProjectStart owns that, so the flag is set exactly once, after
-// success, and cleared on any failure.
+// startProject configures a project and runs its start lifecycle,
+// returning the URL to print. It never touches the autostart flag —
+// ProjectStart owns that.
 func startProject(ctx context.Context, out io.Writer, name string, settings []string,
 	d ProjectDeps) (string, error) {
 
-	// Configure first: this is what makes `mpd start` a one-verb path from
-	// a fresh `mpd init`. It applies settings, runs configure.sh, and
-	// provisions the database, certificate and DNS. It leaves the runtime
-	// up, which is exactly what the start tail below needs.
+	// Configure first; it leaves the runtime up, which the start tail
+	// below needs.
 	if err := reconcileProject(ctx, out, name, settings, d); err != nil {
 		return "", err
 	}
@@ -114,15 +96,14 @@ func startProject(ctx context.Context, out io.Writer, name string, settings []st
 	container := d.Observer.RuntimeContainer(entry.RuntimeName)
 	ev := hookProject(entry, container, d)
 
-	// Pre-start: runtime and DB are up, project setup has not run. Hook
-	// authors apply migrations or seed data here. Failure aborts —
-	// a project whose precondition failed should not come up.
+	// Pre-start: runtime and DB are up, project setup has not run.
+	// Failure aborts — a failed precondition should not come up.
 	if err := hooks.Fire(ctx, out, hooks.ProjectPreStart(ctx, ev, d.Podman), "start", d.Podman); err != nil {
 		return "", err
 	}
 
-	// Certificate and DNS were already provisioned by reconcileProject
-	// above, so the start tail goes straight to the type's setup script.
+	// Cert and DNS are already provisioned; go straight to the type's
+	// setup script.
 	cfg, hasType := d.Assets.ProjectTypeConfig(entry.Type)
 	if hasType && d.Assets.HasTypeFile(cfg.AssetsType, "project-setup.sh") {
 		fmt.Fprintf(out, "\n\033[1m==> Setting up '%s' in the runtime\033[0m\n", name)
@@ -145,9 +126,8 @@ func startProject(ctx context.Context, out io.Writer, name string, settings []st
 	return url, nil
 }
 
-// markStopped records a project as stopped, best-effort. Used on the
-// fail-safe path where the real error is a start failure the caller is
-// already returning, so a problem writing state is only warned about.
+// markStopped records a project as stopped, best-effort: the caller is
+// already returning the real start error.
 func markStopped(out io.Writer, s state.Store, name string) {
 	entry, found := findProject(s, name)
 	if !found || !entry.Autostart {
@@ -160,23 +140,10 @@ func markStopped(out io.Writer, s state.Store, name string) {
 }
 
 // waitForURL blocks until the project's main URL answers, up to ~30s.
-//
-// This is the only readiness gate on what the developer actually opens.
-// ProjectStart already waits for sshd and for the database, but the
-// frontdoor is updated out of band: mpd writes /srv/meta/<project>/, and
-// the in-runtime caddy notices by inotify, coalesces, regenerates, validates
-// and reloads on its own schedule (assets/runtime/caddy/mpd-caddy.sh), while
-// PHP-FPM binds its new pool independently. Without this, mpd prints
-// "is running" while the URL still returns a connection error or a 502.
-//
-// Deliberately last, and deliberately non-fatal. Every piece of work mpd
-// owns — setup script, state write, DNS record, certificate, hooks — has
-// already completed and been persisted by the time this runs; what it
-// waits on belongs to other processes that do not care whether mpd is
-// alive. mpd installs no signal handler, so Ctrl-C here kills the process
-// outright — and that is safe precisely because nothing is left to do.
-// The timeout path warns for the same reason: a slow frontdoor is worth
-// reporting, but it has not failed the start.
+// The frontdoor updates out of band (the in-runtime caddy watches
+// /srv/meta by inotify), so without this wait mpd prints "is running"
+// while the URL still 502s. Last and non-fatal: everything mpd owns is
+// already done and persisted, so Ctrl-C or a timeout here loses nothing.
 func waitForURL(ctx context.Context, out io.Writer, url string) {
 	if url == "" {
 		return
@@ -187,9 +154,8 @@ func waitForURL(ctx context.Context, out io.Writer, url string) {
 		return
 	}
 
-	// Anything below 500 means the vhost is wired to a live backend. A
-	// redirect counts and is not followed: Moodle bounces to a login or
-	// setup page, and chasing it proves nothing extra about readiness.
+	// Anything below 500 means the vhost is wired to a live backend; a
+	// redirect counts and is not followed.
 	probe := func() bool {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
@@ -218,14 +184,9 @@ func waitForURL(ctx context.Context, out io.Writer, url string) {
 }
 
 // trustingClient is an HTTP client that trusts this VM's anchor and
-// nothing else.
-//
-// Verification is not skipped, because a leaf the local trust store
-// rejects is exactly the failure this probe should surface rather than
-// paper over: after a CA rotation Caddy can keep serving a certificate
-// signed by an anchor nothing trusts any more, with both the config and
-// the files on disk looking correct (see assets/runtime/caddy/mpd-caddy.sh).
-// An InsecureSkipVerify probe would report that broken project as ready.
+// nothing else. Verification is not skipped: after a CA rotation caddy
+// can serve a certificate nothing trusts any more, and an
+// InsecureSkipVerify probe would report that broken project as ready.
 func trustingClient() (*http.Client, error) {
 	pem, err := os.ReadFile(vm.CACertPath)
 	if err != nil {
@@ -247,38 +208,28 @@ func trustingClient() (*http.Client, error) {
 	}, nil
 }
 
-// ProjectStop takes a project down.
-//
-// Note what it does NOT do: stop the runtime, or stop the database. mpd
-// is demand-driven (docs/hooks.md §"Resource lifecycle model") — devs
-// poke at a database after the project is down, and cascading stops
-// would fight that. Reclaiming idle resources is `mpd --gc`'s job.
+// ProjectStop takes a project down. It stops neither the runtime nor
+// the database — mpd is demand-driven (see docs/hooks.md), and
+// reclaiming idle resources is `mpd --gc`'s job.
 func ProjectStop(ctx context.Context, out io.Writer, name string, d ProjectDeps) error {
 	entry, found := findProject(d.State, name)
 	if !found {
 		return fmt.Errorf("Project '%s' not found. Create it: mpd init %s", name, name)
 	}
 
-	// Idempotent: stop always runs, even on an already-stopped project.
-	// Every step below is best-effort, so re-running is harmless and the
-	// project ends up recorded stopped either way — which is the point,
-	// since a stop must never leave a project claiming to run.
+	// Idempotent: every step is best-effort, and the project ends up
+	// recorded stopped either way.
 	container := d.Observer.RuntimeContainer(entry.RuntimeName)
 	ev := hookProject(entry, container, d)
 
 	// Pre-stop: still live, so hooks can drain work or flush caches.
-	// Failure is logged, never blocking — you cannot fail to stop.
+	// Failure logs, never blocks — you cannot fail to stop.
 	if err := hooks.Fire(ctx, out, hooks.ProjectPreStop(ctx, ev, d.Podman), "stop", d.Podman); err != nil {
 		fmt.Fprintf(out, "Warning: %v\n", err)
 	}
 
-	// A type may ship project-stop.sh to do — or just to say — whatever
-	// stopping means for it. Astro's only prints how to stop the dev
-	// server, because that server is the developer's, not mpd's.
-	//
-	// Optional, and best-effort by design: you cannot fail to stop, so a
-	// missing script, a stopped runtime, or a script that errors all
-	// leave the project stopped regardless.
+	// A type may ship project-stop.sh for whatever stopping means to it.
+	// Optional and best-effort: the project ends up stopped regardless.
 	if cfg, ok := d.Assets.ProjectTypeConfig(entry.Type); ok &&
 		d.Assets.HasTypeFile(cfg.AssetsType, "project-stop.sh") {
 		if d.Podman.Running(ctx, container) {
@@ -292,10 +243,8 @@ func ProjectStop(ctx context.Context, out io.Writer, name string, d ProjectDeps)
 		return err
 	}
 
-	// The DNS record stays. It belongs to the project being configured,
-	// not to it being up: the name keeps resolving and the URL keeps
-	// working the moment something serves again. Only delete (and a
-	// runtime that is removed outright) withdraws it.
+	// The DNS record stays: it belongs to the project being configured,
+	// not to it being up. Only delete withdraws it.
 	Ok(out, "'%s' stopped.", name)
 	return nil
 }
@@ -309,10 +258,8 @@ func findProject(s state.Store, name string) (state.Project, bool) {
 	return state.Project{}, false
 }
 
-// hookProject builds the hook-facing view of a project.
-//
-// No project-type fields: hook discovery reads the container's labels,
-// and runtime-audience events have no type-level layer in v1.
+// hookProject builds the hook-facing view of a project. No project-type
+// fields: hook discovery reads the container's labels.
 func hookProject(entry state.Project, container string, d ProjectDeps) hooks.Project {
 	return hooks.Project{
 		Name:             entry.Name,
@@ -324,12 +271,9 @@ func hookProject(entry state.Project, container string, d ProjectDeps) hooks.Pro
 	}
 }
 
-// ProjectDelete removes a project and everything scoped to it.
-//
-// Unlike `db delete`, which only recently learned to remove its data,
-// this has always been a full removal: source tree, dataroot, meta, the
-// project's database inside its engine, and its DNS record. The prompt
-// says so before asking.
+// ProjectDelete removes a project and everything scoped to it: source
+// tree, dataroot, meta, its database inside the engine, and its DNS
+// record. The prompt says so before asking.
 func ProjectDelete(ctx context.Context, out io.Writer, in io.Reader, name string,
 	d ProjectDeps, assumeYes bool) error {
 
@@ -367,8 +311,7 @@ func ProjectDelete(ctx context.Context, out io.Writer, in io.Reader, name string
 		}
 	}
 
-	// The type's own teardown (Apache alias, systemd unit, …) — only
-	// possible while the runtime is running.
+	// The type's own teardown — only possible while the runtime runs.
 	if entry.RuntimeName != "" && d.Podman.Running(ctx, container) {
 		if cfg, ok := d.Assets.ProjectTypeConfig(entry.Type); ok {
 			script := assets.TypeScript(cfg.AssetsType, "project-delete.sh")
@@ -376,8 +319,8 @@ func ProjectDelete(ctx context.Context, out io.Writer, in io.Reader, name string
 		}
 	}
 
-	// The project's database inside its engine — not the engine itself,
-	// which other projects share.
+	// Drop the project's database inside its engine — not the engine
+	// itself, which other projects share.
 	if entry.DatabaseEngine != "" {
 		dbContainer := db.ContainerName(entry.DatabaseEngine, entry.DatabaseVersion)
 		if d.Podman.Running(ctx, dbContainer) {
@@ -400,8 +343,8 @@ func ProjectDelete(ctx context.Context, out io.Writer, in io.Reader, name string
 	if err := d.State.DeleteProject(name); err != nil {
 		return err
 	}
-	// After the state change: the record set is recomputed from
-	// projects.json, so this is what retracts the project's names.
+	// Recomputing after the state change is what retracts the project's
+	// names.
 	if err := PublishDNS(ctx, out, d.Dnsmasq, d.Net, d.State, false); err != nil {
 		return err
 	}
@@ -410,46 +353,12 @@ func ProjectDelete(ctx context.Context, out io.Writer, in io.Reader, name string
 	return nil
 }
 
-// ProjectReset throws away a project's data and returns it to the state
-// `create` left it in, keeping the source tree.
-//
-// # What it is for
-//
-// Two situations, both of which used to mean delete-and-start-over:
-//
-//   - The database is corrupted, or the site's data is simply not worth
-//     keeping, and you want a fresh install against the code you already
-//     have. The source tree and config.php survive, so nothing has to be
-//     re-cloned and no hand-edited settings are lost.
-//   - You want a different database engine. Reset, edit MPD_DB in
-//     mpd.env, then configure: config-mpd.php is regenerated from the new
-//     value, so the switch needs no manual edit of any PHP file.
-//
-// # What survives, and why that is the whole point
-//
-// /srv/projects/<name>/ is untouched — code, git history, mpd.env,
-// config.php. configure.sh writes config.php only when it is missing and
-// regenerates config-mpd.php every time, which is what lets the DB change
-// underneath an unchanged config.php.
-//
-// Everything derived goes: the project's database, the contents of
-// /srv/data/<name>/ (dataroot and its behat/phpunit siblings), the
-// generated metadata in /srv/meta/<name>/ including the TLS certificate,
-// and the project's DNS record.
-//
-// # Not configured afterwards, deliberately
-//
-// The resulting state is exactly what `create` writes — type and name, and
-// nothing else — so `start` refuses until `configure` has run. That is the
-// honest description of the project at that moment: it has no database, no
-// dataroot and no runtime assignment, and pretending otherwise would only
-// move the failure to somewhere less obvious. It is also what makes the
-// switch-the-database flow work, since configure is what reads the new
-// MPD_DB.
-//
-// The database *engine* container is left running. It is shared with every
-// other project on that engine:version, so stopping it would reach outside
-// this project, and an idle engine costs nothing.
+// ProjectReset throws away a project's derived data — database,
+// /srv/data/<name>/, /srv/meta/<name>/ including the certificate, DNS
+// record — and keeps /srv/projects/<name>/ (code, mpd.env, config.php).
+// The result is exactly what `create` writes, deliberately not
+// configured: the next start re-reads mpd.env, which is what makes
+// switching MPD_DB work. The shared engine container is left running.
 func ProjectReset(ctx context.Context, out io.Writer, in io.Reader, name string,
 	d ProjectDeps, assumeYes bool) error {
 
@@ -475,19 +384,16 @@ func ProjectReset(ctx context.Context, out io.Writer, in io.Reader, name string,
 		return nil
 	}
 
-	// Stop while the runtime is still up, so the type's stop path and the
-	// pre-stop hooks run against a live project — the same ordering
-	// argument as delete.
+	// Stop while the runtime is still up, so the type's stop path and
+	// pre-stop hooks run against a live project.
 	if entry.Autostart {
 		if err := ProjectStop(ctx, out, name, d); err != nil {
 			fmt.Fprintf(out, "Warning: stop failed, continuing with reset: %v\n", err)
 		}
 	}
 
-	// The type's teardown: Apache alias, systemd unit, whatever it owns.
-	// Reset is a re-scaffold, so the project must be torn down as
-	// completely as a delete would tear it down — configure.sh builds it
-	// all back.
+	// The type's teardown: reset is a re-scaffold, so tear down as
+	// completely as delete would — configure.sh builds it all back.
 	if entry.RuntimeName != "" && d.Podman.Running(ctx, container) {
 		if cfg, ok := d.Assets.ProjectTypeConfig(entry.Type); ok {
 			script := assets.TypeScript(cfg.AssetsType, "project-delete.sh")
@@ -495,7 +401,7 @@ func ProjectReset(ctx context.Context, out io.Writer, in io.Reader, name string,
 		}
 	}
 
-	// The project's database inside its engine — never the engine itself.
+	// Drop the project's database — never the engine itself.
 	if entry.DatabaseEngine != "" {
 		dbContainer := db.ContainerName(entry.DatabaseEngine, entry.DatabaseVersion)
 		if d.Podman.Running(ctx, dbContainer) {
@@ -512,25 +418,22 @@ func ProjectReset(ctx context.Context, out io.Writer, in io.Reader, name string,
 	if err := srv.RemoveContents(ctx, srv.DataDir(name)); err != nil {
 		return err
 	}
-	// Generated metadata, including the certificate: all of it is rebuilt
-	// by configure from mpd.env, and a certificate for URLs the project no
-	// longer publishes should not outlive them.
+	// Generated metadata, certificate included: configure rebuilds all
+	// of it from mpd.env.
 	if err := srv.Remove(ctx, srv.MetaDir(name)); err != nil {
 		return err
 	}
 
-	// Exactly what ProjectCreate writes. Assembled field by field rather
-	// than by clearing the old entry, so a field added to state.Project
-	// later cannot silently survive a reset. No RuntimeName and no
-	// Autostart, so Status reports "not initialised" until the next start.
+	// Exactly what ProjectCreate writes, assembled field by field so a
+	// field added to state.Project later cannot survive a reset.
 	if err := d.State.UpsertProject(state.Project{
 		Name: entry.Name,
 		Type: entry.Type,
 	}); err != nil {
 		return err
 	}
-	// The entry has no URLs now, so recomputing the record set retracts
-	// the project's names — they pointed at a vhost it no longer has.
+	// The entry has no URLs now, so the recompute retracts the
+	// project's names.
 	if err := PublishDNS(ctx, out, d.Dnsmasq, d.Net, d.State, false); err != nil {
 		return err
 	}
@@ -542,17 +445,11 @@ func ProjectReset(ctx context.Context, out io.Writer, in io.Reader, name string,
 	return nil
 }
 
-// reconcileProject applies mpd.env mutations, runs the project type's
-// configure.sh, and reconciles everything that depends on its output. It
-// is the configure half of `mpd start`, always run before the start tail.
-//
-// The order is a data dependency chain, not a preference: mutations land
-// in mpd.env → configure.sh resolves the four-layer env and emits
-// effective.json + urls.json → mpd reads dbTag from effective.json to
-// provision the database → URLs drive cert and DNS.
-//
-// It leaves the runtime running: its only caller, ProjectStart, is about
-// to use it.
+// reconcileProject is the configure half of `mpd start`. The order is a
+// data dependency chain: mutations land in mpd.env, configure.sh emits
+// effective.json + urls.json, dbTag from effective.json provisions the
+// database, URLs drive cert and DNS. It leaves the runtime running for
+// the start tail.
 func reconcileProject(ctx context.Context, out io.Writer, name string, args []string,
 	d ProjectDeps) error {
 
@@ -569,14 +466,14 @@ func reconcileProject(ctx context.Context, out io.Writer, name string, args []st
 		return err
 	}
 
-	// Type is immutable — it decides which asset scripts run, so changing
-	// it would mean re-scaffolding, which is what `init` is for.
+	// Type is immutable — changing it would mean re-scaffolding, which
+	// is `init`'s job.
 	if entry.Type == "" {
 		return fmt.Errorf("Project type is not set for '%s'.\n"+
 			"Create a new project to choose a type (default: moodle).", name)
 	}
-	// RuntimeName is a JSON contract with shell/jq consumers; there is one
-	// runtime, so it is pinned rather than resolved.
+	// RuntimeName is a JSON contract with shell/jq consumers; there is
+	// one runtime, so it is pinned rather than resolved.
 	entry.RuntimeName = runtime.Name
 
 	container := d.Observer.RuntimeContainer(entry.RuntimeName)
@@ -590,10 +487,8 @@ func reconcileProject(ctx context.Context, out io.Writer, name string, args []st
 		}
 	}
 
-	// Written from the VM, which reaches /srv through the srv.mount bind.
-	// No container is involved: the runtime has nothing to contribute to
-	// editing a text file, and a podman exec per key was the cost of
-	// asking it to.
+	// Written from the VM directly; a podman exec per key would buy
+	// nothing.
 	if len(mutations) > 0 {
 		fmt.Fprintf(out, "\n\033[1m==> Updating /srv/projects/%s/mpd.env\033[0m\n", name)
 		if err := project.ApplyMutations("/srv/projects/"+name+"/mpd.env", mutations); err != nil {
@@ -601,8 +496,8 @@ func reconcileProject(ctx context.Context, out io.Writer, name string, args []st
 		}
 	}
 
-	// Write project.json first: source-mpd-env.sh reads runtime and type
-	// from it to locate the mpd-defaults.env layers configure.sh needs.
+	// Write project.json first: source-mpd-env.sh reads runtime and
+	// type from it to locate the mpd-defaults.env layers.
 	if err := project.WriteMeta(ctx, d.Podman, d.UID, entry); err != nil {
 		return err
 	}
@@ -616,21 +511,16 @@ func reconcileProject(ctx context.Context, out io.Writer, name string, args []st
 		}
 	}
 
-	// dbTag comes from the layered env, so only configure.sh can resolve
-	// it — mpd reads the answer rather than duplicating the cascade.
+	// Only configure.sh can resolve dbTag — mpd reads the answer rather
+	// than duplicating the env cascade.
 	effective := project.ReadEffective(name)
 	dbTag, _ := effective["dbTag"].(string)
 
 	warnPortClash(out, name, effective, d.State)
 
-	// Services the project declares it needs: MPD_REQUIRE_SERVICES in its
-	// mpd.env, which configure.sh resolves and emits into effective.json
-	// (behat contributes selenium on its behalf, so its ~2 GB image is
-	// pulled here rather than failing the first `behat` run). Each is started
-	// on demand, the way the project's database is ensured — without setting
-	// the sticky autostart intent. The config configure.sh already rendered
-	// from the same declaration (mailpit's smtphosts) then has a live service
-	// to reach.
+	// Start the services the project declares (MPD_REQUIRE_SERVICES,
+	// resolved by configure.sh into effective.json) on demand, without
+	// setting the sticky autostart intent.
 	for _, svcName := range requiredServices(effective) {
 		if _, ok := service.Find(svcName); !ok {
 			fmt.Fprintf(out, "  Warning: MPD_REQUIRE_SERVICES lists unknown service '%s' — skipping.\n", svcName)
@@ -667,9 +557,7 @@ func reconcileProject(ctx context.Context, out io.Writer, name string, args []st
 	}
 
 	entry.URLs, _ = project.ReadURLs(name)
-	// Setting RuntimeName above is what moves the project out of "not
-	// initialised"; the Autostart flag it carries is left untouched here,
-	// because start and stop are the only things that own it.
+	// Autostart is left untouched here: start and stop own it.
 	if err := project.WriteMeta(ctx, d.Podman, d.UID, entry); err != nil {
 		return err
 	}
@@ -681,38 +569,24 @@ func reconcileProject(ctx context.Context, out io.Writer, name string, args []st
 		return err
 	}
 
-	// DNS is published here, before the start tail: a configured project is
-	// an addressable one. The name resolving while nothing serves it yields
-	// a dead page, which is the honest answer — and the only one that
-	// works for types whose server the developer starts by hand (astro),
-	// where mpd never learns that the dev server came up. The project's
-	// names and the database created above both come out of the one
-	// recompute.
+	// DNS is published before the start tail: a configured project is an
+	// addressable one, the only rule that works for types whose server
+	// the developer starts by hand (astro). One recompute covers the
+	// project's names and the database created above.
 	if err := PublishDNS(ctx, out, d.Dnsmasq, d.Net, d.State, false); err != nil {
 		return err
 	}
 
-	// The runtime is left running: ProjectStart is about to use it for the
-	// start tail (hooks, project-setup.sh). Reclaiming an idle runtime is
-	// `mpd --gc`'s job, not this path's.
+	// The runtime stays up for the start tail; reclaiming an idle
+	// runtime is `mpd --gc`'s job.
 	return nil
 }
 
-// warnPortClash reports when another project already claims the loopback
-// port this one publishes as its frontdoor upstream.
-//
-// Worth a warning rather than silence because the failure is invisible:
-// caddy points two vhosts at the same 127.0.0.1:<port>, so whichever
-// server is up answers for both names. You get someone else's site at
-// your project's URL, with a 200 and no error anywhere — much harder to
-// read than the bind failure the second server would hit.
-//
-// Only types that publish a "port" (astro's dev server) are compared.
-// Moodle's effective.json carries phpFpmPort, which mpd allocates and
-// keeps distinct, so it is deliberately not in scope here.
-//
-// A warning, never a refusal: the developer may be mid-edit, or may
-// intend to run only one of the two at a time.
+// warnPortClash reports another project claiming the same frontdoor
+// port. The failure is otherwise invisible: whichever server is up
+// answers for both names with a 200. Only types that publish "port"
+// (astro) are compared — Moodle's phpFpmPort is mpd-allocated and
+// distinct. A warning, never a refusal.
 func warnPortClash(out io.Writer, name string, effective map[string]any, s state.Store) {
 	port, ok := effectivePort(effective)
 	if !ok {
@@ -735,9 +609,8 @@ func warnPortClash(out io.Writer, name string, effective map[string]any, s state
 	}
 }
 
-// effectivePort reads the frontdoor upstream port a project type wrote
-// into effective.json. JSON numbers decode as float64; a string is
-// accepted too, since the file is written by shell interpolation.
+// effectivePort reads the frontdoor upstream port from effective.json.
+// A string is accepted too — the file is written by shell interpolation.
 func effectivePort(effective map[string]any) (int, bool) {
 	switch v := effective["port"].(type) {
 	case float64:
@@ -752,10 +625,9 @@ func effectivePort(effective map[string]any) (int, bool) {
 	return 0, false
 }
 
-// requiredServices returns the service names a project declared via
-// MPD_REQUIRE_SERVICES, which configure.sh resolves and emits into
-// effective.json as a JSON array (behat contributes selenium). A missing
-// or malformed field yields nil.
+// requiredServices returns the names configure.sh emitted into
+// effective.json for MPD_REQUIRE_SERVICES; nil when missing or
+// malformed.
 func requiredServices(effective map[string]any) []string {
 	raw, ok := effective["requireServices"].([]any)
 	if !ok {
@@ -770,11 +642,9 @@ func requiredServices(effective map[string]any) []string {
 	return names
 }
 
-// sameURLs reports whether two URL lists are identical, so a refresh that
-// changes nothing does not rewrite projects.json.
-//
-// Order matters and that is deliberate: configure.sh emits them in a
-// stable order, so a difference in order is a real difference.
+// sameURLs reports whether two URL lists are identical, so a refresh
+// that changes nothing does not rewrite projects.json. Order matters:
+// configure.sh emits a stable order.
 func sameURLs(a, b []state.ProjectURL) bool {
 	if len(a) != len(b) {
 		return false
@@ -793,16 +663,13 @@ var projectVerbs = map[string]bool{
 	"status": true, "help": true, "init": true, "reset": true,
 	"start": true, "stop": true, "delete": true, "run": true,
 	"project": true,
-	// Command aliases resolve as commands too, so a project cannot take
-	// their names: "rm" (delete), "ls" (list).
+	// Aliases resolve as commands too: "rm" (delete), "ls" (list).
 	"rm": true, "ls": true,
 }
 
 // reservedNames are names a project may not take because they live
-// directly under the project DNS namespace: runtime.<zone> is the
-// runtime container, *.svc.<zone> are the extra service containers,
-// *.db.<zone> are the database containers, and vm.<zone> is the VM's
-// own diagnostic record.
+// directly under the project DNS namespace (runtime, svc, db, vm
+// records).
 var reservedNames = map[string]bool{
 	"runtime": true, "svc": true, "db": true, "vm": true,
 }
@@ -814,13 +681,10 @@ type CreateOptions struct {
 	Type string
 }
 
-// ProjectCreate scaffolds a new project — the `mpd init` verb.
-//
-// Deliberately does NOT configure it: init lays down the source tree
-// and an mpd.env seeded from the type's template, then stops so the
-// developer can edit that file before anything acts on it. `mpd start`
-// is the step that resolves the env, provisions a database and brings
-// the project up.
+// ProjectCreate scaffolds a new project — the `mpd init` verb. It does
+// not configure: init lays down the tree and a seeded mpd.env, then
+// stops so the developer can edit the file before `mpd start` acts on
+// it.
 func ProjectCreate(ctx context.Context, out io.Writer, name string, opts CreateOptions,
 	d ProjectDeps, home string) error {
 
@@ -840,15 +704,9 @@ func ProjectCreate(ctx context.Context, out io.Writer, name string, opts CreateO
 		return fmt.Errorf("Project '%s' already exists.", name)
 	}
 
-	// Type resolution, strongest evidence first: an explicit --type, then
-	// what is actually in the source tree, then the project's name, then
-	// moodle as mpd's overall default.
-	//
-	// The tree outranks the name because it is evidence rather than a
-	// guess: `mpd init docs` on a checkout holding astro.config.mjs is
-	// an astro project whatever the directory is called. Initialising an
-	// existing tree is the normal path — `init` does not fetch source,
-	// so the clone usually happened first.
+	// Type resolution, strongest evidence first: explicit --type, then
+	// the source tree, then the name, then moodle. The tree outranks the
+	// name because it is evidence rather than a guess.
 	typeName := opts.Type
 	if typeName == "" {
 		matched := d.Assets.DetectTypeFromTree(srv.ProjectDir(name))
@@ -869,7 +727,7 @@ func ProjectCreate(ctx context.Context, out io.Writer, name string, opts CreateO
 		typeName = "moodle"
 	}
 
-	// Start the runtime BEFORE touching any project state, so a failure
+	// Start the runtime before touching any project state, so a failure
 	// here leaves nothing half-created.
 	if err := ensureRuntime(ctx, out, d, home); err != nil {
 		return err
@@ -882,8 +740,8 @@ func ProjectCreate(ctx context.Context, out io.Writer, name string, opts CreateO
 		return fmt.Errorf("Failed to create /srv/projects/%s in the runtime.", name)
 	}
 
-	// The type's own scaffolding: seeds mpd.env from its template and
-	// excludes it from git. Optional — types without the script skip.
+	// The type's own scaffolding; optional — types without the script
+	// skip.
 	if cfg, ok := d.Assets.ProjectTypeConfig(typeName); ok {
 		if d.Assets.HasFile(fmt.Sprintf("%s/project_types/%s/project-create.sh",
 			assets.RuntimeDir, cfg.AssetsType)) {
@@ -896,11 +754,9 @@ func ProjectCreate(ctx context.Context, out io.Writer, name string, opts CreateO
 		}
 	}
 
-	// Registered only after scaffolding succeeds. If anything above
-	// failed, no entry is written and /srv/projects/<name>/ is left for
-	// the developer to inspect, fix, or remove.
-	// No RuntimeName and no Autostart: Status reports "not initialised"
-	// until the first `mpd start` configures it.
+	// Register only after scaffolding succeeds; a failure leaves the
+	// directory for the developer to inspect. No RuntimeName and no
+	// Autostart: Status reports "not initialised" until the first start.
 	if err := d.State.UpsertProject(state.Project{
 		Name: name, Type: typeName,
 	}); err != nil {
@@ -929,11 +785,8 @@ func ensureRuntime(ctx context.Context, out io.Writer, d ProjectDeps, home strin
 	return nil
 }
 
-// ShowHelp prints the verb reference for one project — what `mpd help
-// <project>` answers.
-//
-// Per-project rather than generic because the useful form of "what can I
-// do here" names the project: the reader can copy any line as-is.
+// ShowHelp prints the verb reference for one project, named so the
+// reader can copy any line as-is.
 func ShowHelp(out io.Writer, project string, n net.Net) {
 	fmt.Fprintf(out, "Usage: mpd <verb> %s [options...]\n", project)
 	fmt.Fprintln(out, "\nVerbs:")

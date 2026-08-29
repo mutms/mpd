@@ -1,46 +1,25 @@
 #!/bin/bash
 # setup/mpd-prepare-adopt.sh
 #
-# Prepares a fresh Debian Trixie install — desktop OR server — to be
-# adopted by the host-side `mpd-virt` orchestrator. Run it ON THE VM, as
-# your dev user (NOT root).
-#
-# It may take a few runs with reboots in between to converge the network
-# stack (a GNOME desktop ships NetworkManager, which mpd replaces with
-# systemd-networkd + systemd-resolved). When every check is green it
-# prints the exact command to run on the Mac:
-#
-#     mpd-virt adopt <NNN> --backend=<backend>
-#
-# with the id read from the hostname and the IP left to mDNS discovery
-# (avahi is set up below) — plus the explicit-IP variant as a fallback.
-#
-# Wgettable / self-contained: it runs before the mpd repo is cloned, so
-# it inlines its own helpers.
-#
-#   bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-prepare-adopt.sh)
-#
+# Prepare a fresh Debian Trixie install — desktop or server — for
+# adoption by the host-side `mpd-virt` orchestrator. Run it ON THE VM,
+# as your dev user (not root). It needs the hostname set to mpd-<NNN>
+# and asks for the root password once. Converting the network stack
+# takes one reboot; re-run after it. When every check is green it
+# prints the `mpd-virt adopt` command to run on the host.
+# Self-contained: runs before the mpd repo is cloned.
 # Idempotent — safe to re-run after a partial step or a reboot.
 #
-# Steps: (1) hostname gate mpd-<NNN>, (2) passwordless sudo, (3) convert
-# the network stack to systemd-networkd + systemd-resolved (desktop:
-# NetworkManager; server: ifupdown), (4) guest integration (avahi mDNS +
-# qemu-guest-agent), (5) readiness check → prints the adopt command.
-# Step 3 asks for one reboot; the re-run finishes and prints the command.
+#   bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-prepare-adopt.sh)
 
 set -euo pipefail
 
-# --- Inline helpers (the mpd repo may not be cloned yet) --------------
 step() { printf '\n==> %s\n' "$*"; }
 ok()   { printf '    ok: %s\n' "$*"; }
 warn() { printf '    warn: %s\n' "$*"; }
 die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
-# --- 1. Hostname must be mpd-<NNN> -----------------------------------
-# The hostname is mpd's single source of truth: the id, zone, subnet and
-# every name derive from it. Managed ids are 100..254 — always exactly
-# three digits, the same characters everywhere the id appears.
-# You set this at install time; prep only validates it.
+# The hostname is mpd's source of identity; prep only validates it.
 step "Hostname"
 host="$(hostname -s 2>/dev/null || cut -d. -f1 /etc/hostname | tr -d '[:space:]')"
 case "${host}" in
@@ -56,7 +35,6 @@ if [ "${id10}" -lt 100 ] || [ "${id10}" -gt 254 ]; then
 fi
 ok "hostname '${host}' (id ${nnn})"
 
-# --- OS gate: Debian Trixie ------------------------------------------
 step "Operating system"
 [ -r /etc/os-release ] || die "/etc/os-release missing — cannot verify the OS."
 # shellcheck disable=SC1091
@@ -67,19 +45,15 @@ step "Operating system"
     || die "mpd targets Debian Trixie (got VERSION_CODENAME=${VERSION_CODENAME:-unknown})."
 ok "Debian Trixie"
 
-# --- 2. Passwordless sudo for the current (non-root) user ------------
 # Adoption drives the VM over SSH as this user and never types a
-# password, so `sudo -n` must be silent. Refuse root: the whole point is
-# an unprivileged dev account that can escalate without a prompt.
+# password, so `sudo -n` must be silent.
 step "Passwordless sudo for $(id -un)"
 [ "$(id -u)" -ne 0 ] \
     || die "run this as your dev user, not root.
 Adoption drives the VM as an unprivileged user over SSH; root has no
 authorized key and no home for mpd to live in."
 
-# Guard the probe with `command -v`: a minimal server has no sudo at all,
-# and calling it would just print "command not found". Everything that
-# needs root below goes through `su -` (root password), never sudo.
+# A minimal server install has no sudo; probe only when the command exists.
 if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
     ok "already configured (sudo -n works)"
 else
@@ -90,13 +64,9 @@ else
     echo "    The prompt below comes from \`su\`."
     echo
 
-    # `su - -c` runs one command as root in a login shell, so root's PATH
-    # (with /usr/sbin) finds visudo/usermod. A minimal Debian server
-    # install ships neither sudo nor /etc/sudoers.d, so install sudo
-    # first; a desktop install already has both. Then make the dev user a
-    # real sudoer (sudo group) and drop in a NOPASSWD rule. visudo -cf
-    # validates the drop-in; an invalid file is removed rather than left
-    # to brick sudo. install -m 0440 writes it with the mode sudoers wants.
+    # `su - -c` runs the command as root with root's PATH, where visudo
+    # and usermod live. visudo -cf validates the drop-in; an invalid
+    # file is removed so sudo is not bricked.
     if ! su - -c "
         set -e
         if ! command -v sudo >/dev/null 2>&1; then
@@ -118,24 +88,14 @@ else
 user isn't permitted to become root via su, or sudo couldn't be installed."
     fi
 
-    # No `sudo -n` re-check here: the su block already installed sudo,
-    # wrote the drop-in, and validated it with `visudo -cf`. A re-run of
-    # this script takes the fast path above and confirms it end to end.
+    # No re-check: the su block validated the drop-in with visudo -cf.
     ok "passwordless sudo enabled for ${user_name}"
 fi
 
-# --- 3. Network stack: systemd-networkd + systemd-resolved -----------
-# mpd standardizes on systemd-networkd for the link and systemd-resolved
-# for the VM's own DNS, so every adopted VM runs one known stack. (mpd's
-# *.mpd.test names do not depend on it: they live in /etc/hosts and
-# dnsmasq forwards through whatever /etc/resolv.conf says.) A desktop
-# ships NetworkManager, a server ships ifupdown; both are converted. We keep the DHCP address — the IP is never pinned
-# here, it is read at the end and handed to adoption.
-#
-# The switch completes on a reboot: this run only DISABLES the old
-# manager (so SSH/console survive), then asks for a reboot + re-run. The
-# second run finds the stack already on networkd and prints the adopt
-# line.
+# mpd standardizes on systemd-networkd + systemd-resolved; both
+# NetworkManager (desktop) and ifupdown (server) are converted. The DHCP
+# address is kept. The old manager is only DISABLED, so SSH and the
+# console survive; the reboot completes the switch and a re-run finishes.
 
 step "IPv6 off + IPv4 forwarding"
 printf 'net.ipv6.conf.all.disable_ipv6 = 1\nnet.ipv6.conf.default.disable_ipv6 = 1\nnet.ipv6.conf.lo.disable_ipv6 = 1\n' \
@@ -162,23 +122,21 @@ step "Link manager → systemd-networkd (DHCP)"
 iface="$(ip -4 -o route show default | awk '{print $5; exit}')"
 [ -n "${iface}" ] || die "no default IPv4 route — cannot find the primary interface."
 
-# 05- sorts ahead of any distro/cloud-init .network so networkd matches
-# ours first. DHCP=yes: keep whatever address the hypervisor hands out.
+# 05- sorts ahead of any distro/cloud-init .network, so networkd matches
+# this file first.
 printf '[Match]\nName=%s\n\n[Network]\nDHCP=yes\n' "${iface}" \
     | sudo tee /etc/systemd/network/05-mpd.network >/dev/null
 sudo systemctl enable systemd-networkd >/dev/null 2>&1
 ok "wrote 05-mpd.network (DHCP on ${iface}), enabled systemd-networkd"
 
-# Hand the link off from whatever manages it now. DISABLE (not stop) so
-# this session survives; the reboot below completes the switch.
 reboot_needed=0
 if systemctl is-active --quiet NetworkManager; then
     sudo systemctl disable NetworkManager >/dev/null 2>&1 || true
     reboot_needed=1
     ok "NetworkManager disabled (purged on the next run, once off the link)"
 elif systemctl is-active --quiet networking && ! systemctl is-active --quiet systemd-networkd; then
-    # ifupdown: comment out the iface's stanzas so its hotplug/ifup won't
-    # fight networkd, then disable the service (networkd manages lo too).
+    # Comment out the iface's stanzas so hotplug/ifup cannot fight
+    # networkd; networkd manages lo too, so the service can go.
     sudo sed -i -E "s/^[[:space:]]*(auto|allow-hotplug|iface)[[:space:]]+${iface}([[:space:]].*)?$/# mpd-disabled: &/" \
         /etc/network/interfaces
     sudo systemctl disable networking >/dev/null 2>&1 || true
@@ -188,7 +146,6 @@ else
     ok "link already on systemd-networkd"
 fi
 
-# --- 4. Readiness + the adopt line --------------------------------
 if [ "${reboot_needed}" = 1 ]; then
     echo
     echo "================================================================"
@@ -201,8 +158,7 @@ fi
 
 step "Readiness"
 sudo systemctl start systemd-resolved >/dev/null 2>&1 || true
-# Now that networkd feeds resolved real upstream servers, route glibc at
-# the resolved stub (belt-and-suspenders with libnss-resolve).
+# Route glibc at the resolved stub (belt-and-suspenders with libnss-resolve).
 sudo ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 resolved_ok=0; systemctl is-active --quiet systemd-resolved && resolved_ok=1
 networkd_ok=0; systemctl is-active --quiet systemd-networkd && networkd_ok=1
@@ -220,25 +176,18 @@ If you just reconfigured the stack, reboot and re-run. Otherwise inspect:
 fi
 ok "systemd-resolved active, systemd-networkd managing ${iface}, DNS resolves"
 
-# Off the old manager now — purge NetworkManager if it lingers (we're on
-# networkd, so this can't drop the link).
+# Purge a lingering NetworkManager; the link is on networkd, so this
+# cannot drop it.
 if dpkg -s network-manager >/dev/null 2>&1; then
     sudo DEBIAN_FRONTEND=noninteractive apt-get -y purge network-manager network-manager-gnome >/dev/null 2>&1 || true
     ok "NetworkManager purged"
 fi
 
-# --- Guest integration: mDNS advertisement + hypervisor agent ---------
-# avahi-daemon advertises <host>.local over mDNS — that is how
-# `mpd-virt adopt <NNN>` finds this VM when you don't hand it an IP.
-# qemu-guest-agent lets KVM-family hypervisors (UTM, Proxmox,
-# virt-manager) see the guest; on Debian it is udev-activated only where
-# the virtio device exists, so it sits idle everywhere else. Installed
-# here (not by `mpd --vm-setup`) so the packages arrive with the
-# platform prep, before adoption needs the mDNS name — and so mpd itself
-# never assumes it runs under a hypervisor.
-# openssh-server is here too: adoption drives the VM over SSH, and a
-# desktop install ships without sshd unless the "SSH server" task was
-# ticked — prep makes the VM adoptable regardless.
+# avahi-daemon advertises <host>.local, which is how `mpd-virt adopt`
+# finds this VM without an IP; adoption needs the name before mpd is
+# installed, so the package comes here, not from `mpd --vm-setup`.
+# openssh-server: a desktop install ships without sshd, and adoption
+# drives the VM over SSH.
 step "Guest integration (openssh-server, avahi-daemon, qemu-guest-agent)"
 need=()
 dpkg -s openssh-server   >/dev/null 2>&1 || need+=(openssh-server)
@@ -257,10 +206,9 @@ if sudo systemctl enable --now avahi-daemon >/dev/null 2>&1; then
 else
     warn "avahi-daemon could not be enabled — pass the IP to adopt explicitly"
 fi
-# Gated on the device, never attempted-and-caught: the unit is BindsTo= +
-# After= its .device unit, and a device unit no udev event will activate
-# has no job timeout — so on a VM without the device (Apple
-# virtualisation) `systemctl start` does not fail, it blocks forever.
+# Gate on the device, never attempt-and-catch: without the device, the
+# unit's BindsTo= .device dependency has no job timeout, so
+# `systemctl start` blocks forever instead of failing.
 if [ -e /dev/virtio-ports/org.qemu.guest_agent.0 ]; then
     sudo systemctl start qemu-guest-agent >/dev/null 2>&1 \
         && ok "qemu-guest-agent running" \

@@ -34,9 +34,8 @@ func line(s, prefix string) int {
 	return 0
 }
 
-// An existing setting is rewritten where it stands. This is the whole
-// point of the file: move it and it lands under a comment about something
-// else.
+// An existing setting is rewritten where it stands; moved, it would land
+// under a comment about something else.
 func TestExistingSettingKeepsItsPlace(t *testing.T) {
 	before := line(tmpl, "MPD_DB=")
 	got := string(setEnvKey([]byte(tmpl), "MPD_DB", "postgres:18"))
@@ -88,9 +87,8 @@ func TestUnsetLeavesACommentedExampleAlone(t *testing.T) {
 	}
 }
 
-// A real setting wins over a commented example even when the example comes
-// first, and duplicates below the kept line are dropped — the last one used
-// to be the effective value, so leaving them would contradict the new one.
+// A real setting wins over a commented example even when the example
+// comes first; duplicates below the kept line are dropped.
 func TestSettingWinsOverExampleAndDuplicatesGo(t *testing.T) {
 	in := "#MPD_DB=hint\nX=1\nMPD_DB=old\nfiller\nMPD_DB=dup\n"
 	want := "#MPD_DB=hint\nX=1\nMPD_DB=new\nfiller\n"
@@ -125,9 +123,8 @@ func TestPrefixOfAnotherKeyIsNotTouched(t *testing.T) {
 	}
 }
 
-// The file mode survives the rewrite. mktemp-and-rename defaults to 0600,
-// which would leave a project's mpd.env unreadable to anything but its
-// owner.
+// The file mode survives the rewrite: mktemp-and-rename defaults to
+// 0600, which would leave mpd.env unreadable to anything but its owner.
 func TestSetEnvKeyKeepsFileMode(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "mpd.env")
 	if err := os.WriteFile(path, []byte(tmpl), 0o644); err != nil {

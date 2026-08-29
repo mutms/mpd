@@ -13,10 +13,9 @@ import (
 	"github.com/mutms/mpd/go/internal/vm"
 )
 
-// ServiceStart installs and runs a service and records it as autostart —
-// the sticky, boot-persistent intent that ReconcileServices honours. This is
-// the explicit half of the DB-like lifecycle: a service a project merely
-// needs is brought up by EnsureService instead, without this flag.
+// ServiceStart installs and runs a service and records it as autostart,
+// the boot-persistent intent ReconcileServices honours. A service a
+// project merely needs goes through EnsureService, without this flag.
 func ServiceStart(ctx context.Context, out io.Writer, name string,
 	p *podman.Client, s state.Store, dns dnsmasq.Manager, n net.Net, vmIP string) error {
 
@@ -33,11 +32,10 @@ func ServiceStart(ctx context.Context, out io.Writer, name string,
 	return PublishDNS(ctx, out, dns, n, s, false)
 }
 
-// ServiceStop stops a service and clears its autostart intent. The container,
-// its volume and its DNS record stay — the octet is static, so the record
-// cannot mislead, and keeping it saves resolver churn. A project that requires
-// the service will start it again on its next `mpd start`, exactly as a
-// stopped database comes back when a project needs it.
+// ServiceStop stops a service and clears its autostart intent. The
+// container, volume and DNS record stay — the address is static, so the
+// record cannot mislead. A project that requires the service starts it
+// again on its next `mpd start`.
 func ServiceStop(ctx context.Context, out io.Writer, name string,
 	p *podman.Client, s state.Store, dns dnsmasq.Manager, n net.Net, vmIP string) error {
 
@@ -54,12 +52,9 @@ func ServiceStop(ctx context.Context, out io.Writer, name string,
 	return PublishDNS(ctx, out, dns, n, s, false)
 }
 
-// EnsureService starts a service on demand — a project declared it in
-// MPD_REQUIRE_SERVICES — the way `mpd start` ensures a project's database.
-// It does NOT set the sticky autostart intent: the service runs because a
-// project needs it now, and whether it should also come up on its own at boot
-// stays the developer's call (`--service-start`). Idempotent; a no-op when the
-// service is already running (bar a revision rebuild).
+// EnsureService starts a service a project declared in
+// MPD_REQUIRE_SERVICES. It does not set autostart — boot persistence
+// stays the developer's call via --service-start. Idempotent.
 func EnsureService(ctx context.Context, out io.Writer, name string,
 	p *podman.Client, s state.Store, dns dnsmasq.Manager, n net.Net, vmIP string) error {
 
@@ -70,9 +65,8 @@ func EnsureService(ctx context.Context, out io.Writer, name string,
 	if err := service.Start(ctx, out, svc, n, p); err != nil {
 		return err
 	}
-	// Record its presence for DNS + `list`, but leave any existing autostart
-	// intent untouched — an on-demand start must not silently promote a
-	// service to boot-persistent.
+	// Record presence for DNS + `list`, but never promote an on-demand
+	// start to boot-persistent.
 	if !serviceRecorded(s, name) {
 		if err := s.UpsertService(state.Service{Name: name, Autostart: false}); err != nil {
 			return err
@@ -81,7 +75,6 @@ func EnsureService(ctx context.Context, out io.Writer, name string,
 	return PublishDNS(ctx, out, dns, n, s, false)
 }
 
-// serviceRecorded reports whether the service already has a state entry.
 func serviceRecorded(s state.Store, name string) bool {
 	for _, entry := range s.Services() {
 		if entry.Name == name {
@@ -125,12 +118,10 @@ func ServicePurge(ctx context.Context, out io.Writer, name string,
 	return PublishDNS(ctx, out, dns, n, s, false)
 }
 
-// ReconcileServices converges installed services with their recorded
-// intent: autostart ones running (recreated if their revision moved), the
-// rest left alone. The boot path (`mpd --vm-start`) and setup both run this,
-// so a rebooted VM comes back with what the developer marked autostart. A
-// service that only some project needs is not started here — it comes up when
-// that project's `mpd start` ensures it, like the project's database.
+// ReconcileServices starts every service marked autostart (recreating
+// on revision drift) and leaves the rest alone. Boot and setup both run
+// this. A service only a project needs comes up via that project's
+// `mpd start`.
 func ReconcileServices(ctx context.Context, out io.Writer,
 	p *podman.Client, s state.Store, n net.Net) error {
 
@@ -150,10 +141,9 @@ func ReconcileServices(ctx context.Context, out io.Writer,
 	return nil
 }
 
-// ServiceDNSRecords composes one DNS record per INSTALLED extra service,
-// pointing at its own address. This lives in cli rather than in the
-// dnsmasq package because the service registry is cli's to consult; the
-// fixed infra records (apex, runtime, vm) are the dnsmasq package's own.
+// ServiceDNSRecords composes one DNS record per installed extra service.
+// It lives in cli because the service registry is cli's to consult; the
+// fixed infra records are the dnsmasq package's own.
 func ServiceDNSRecords(n net.Net, s state.Store) []dnsmasq.Record {
 	var records []dnsmasq.Record
 	for _, entry := range s.Services() {
@@ -165,11 +155,9 @@ func ServiceDNSRecords(n net.Net, s state.Store) []dnsmasq.Record {
 }
 
 // PublishDNS recomputes every DNS record from state and rewrites the
-// block in /etc/hosts if it changed. The one call every mutation path
-// ends with — project, database, service, runtime, boot — so nothing has
-// to remember which record it touched. The VM's LAN address is read live
-// here: a VM that rebooted on a different network must not keep answering
-// vm.<zone> with the old one.
+// /etc/hosts block if it changed. Every mutation path ends with this
+// call, so nothing has to remember which record it touched. The VM's
+// LAN address is read live in case the network changed.
 func PublishDNS(ctx context.Context, out io.Writer, dns dnsmasq.Manager,
 	n net.Net, s state.Store, verbose bool) error {
 	return dns.Reconcile(ctx, out, ServiceDNSRecords(n, s), vm.PrimaryIP(), verbose)

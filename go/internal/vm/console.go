@@ -11,10 +11,9 @@ import (
 
 const printkSysctl = "/etc/sysctl.d/99-mpd-printk.conf"
 
-// QuietConsole keeps the kernel console to warnings and errors. The cloud
-// image boots without `quiet`, so at the default console loglevel every
-// AppArmor profile load and audit line scrolls over the VM console.
-// Everything still reaches the journal.
+// QuietConsole limits the kernel console to warnings and errors. The
+// cloud image boots without `quiet`, so AppArmor and audit lines flood
+// the console; everything still reaches the journal.
 func QuietConsole(ctx context.Context, out io.Writer) error {
 	changed, err := WriteRootOwnedFile(ctx, printkSysctl, "kernel.printk = 4 4 1 7\n")
 	if err != nil {

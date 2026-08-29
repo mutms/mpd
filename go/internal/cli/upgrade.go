@@ -15,25 +15,15 @@ import (
 	"github.com/mutms/mpd/go/internal/vm"
 )
 
-// Upgrade moves the VM's mpd install forward: pull, build, apply.
-//
-// The third step is the reason this verb exists. `git pull && make
-// install` looks like the whole job and is not: asset scripts, systemd
-// units, the resolver's config and the podman network's properties only
-// reach the VM through `--vm-setup`. Skipping it leaves a VM running a new
-// binary against old plumbing, which is how two VMs ended up with a
-// resolver at an address nothing listened on.
-//
-// mudev and the /srv/extra catalogues come along because mpd clones and
-// builds them itself — but only when they are still mpd's clones. A
-// checkout the developer re-pointed at their own remote is theirs, and
-// gets reported rather than pulled.
+// Upgrade moves the VM's mpd install forward: pull, build, apply. The
+// apply step is the point — systemd units, resolver config and network
+// properties only reach the VM through `--vm-setup`, so `git pull &&
+// make install` alone leaves new code on old plumbing. Companion
+// checkouts come along only while they are still mpd's own clones.
 func Upgrade(ctx context.Context, out io.Writer, s state.Store) error {
 	fmt.Fprintf(out, "\n\033[1mmpd --vm-upgrade\033[0m\n\n")
 
-	// mpd first and on its own: it gates everything after it, and unlike
-	// the others a stale or dirty checkout here means there is nothing to
-	// build.
+	// mpd first: it gates everything after it.
 	ui.Step(out, "mpd (%s)", vm.MpdDir)
 	upgraded, err := upgradeMpd(ctx, out)
 	if err != nil {
@@ -48,17 +38,15 @@ func Upgrade(ctx context.Context, out io.Writer, s state.Store) error {
 		upgradeCompanion(ctx, out, vm.Repo{Dir: filepath.Join(srv.Extra, name), Remote: remote}, false)
 	}
 
-	// Apply, by running the binary we just built rather than calling
-	// Setup in-process: this process is the OLD mpd, and its idea of what
-	// setup does is exactly what the upgrade replaced.
+	// Apply by running the freshly built binary, not Setup in-process:
+	// this process is the old mpd.
 	fmt.Fprintf(out, "\n\033[1m==> Applying: %s --vm-setup\033[0m\n", vm.BinaryPath)
 	if code, err := exec.Run(ctx, exec.Cmd{Name: "mpd", Args: []string{"--vm-setup"}}); err != nil || code != 0 {
 		return fmt.Errorf("`%s --vm-setup` failed after upgrading. The new binary is built; re-run it to see why.",
 			vm.BinaryPath)
 	}
 
-	// The runtime is upgraded in place, like the VM: apt + re-configure
-	// inside the existing container. Same new-binary rule as --vm-setup.
+	// The runtime is upgraded in place. Same new-binary rule as above.
 	fmt.Fprintf(out, "\n\033[1m==> Applying: %s --runtime-upgrade\033[0m\n", vm.BinaryPath)
 	if code, err := exec.Run(ctx, exec.Cmd{Name: "mpd", Args: []string{"--runtime-upgrade"}}); err != nil || code != 0 {
 		return fmt.Errorf("`%s --runtime-upgrade` failed. The new binary is built; re-run it to see why.",
@@ -75,18 +63,9 @@ func Upgrade(ctx context.Context, out io.Writer, s state.Store) error {
 	return nil
 }
 
-// recordUpgrade stamps config.json with what the upgrade landed on, so
-// `mpd --vm-diag` can answer "when was this VM last moved forward, and to
-// what" — a question neither the checkout nor the running binary answers
-// once someone has run `make install` by hand.
-//
-// Asks the *new* binary for its version rather than reporting this
-// process's own: this process is the old mpd, and its stamped version is
-// precisely what the upgrade just replaced.
-//
-// Read-modify-write, and never fatal: the upgrade itself has already
-// succeeded by the time this runs, so a failure to record it must not
-// turn a good upgrade into a reported failure.
+// recordUpgrade stamps config.json for `mpd --vm-diag`. It asks the new
+// binary for its version — this process is the old mpd. Never fatal:
+// the upgrade already succeeded by the time this runs.
 func recordUpgrade(ctx context.Context, out io.Writer, s state.Store) {
 	res, err := exec.Capture(ctx, exec.Cmd{Name: "mpd", Args: []string{"--version"}})
 	if err != nil || res.Failed() {
@@ -102,8 +81,7 @@ func recordUpgrade(ctx context.Context, out io.Writer, s state.Store) {
 }
 
 // upgradeMpd advances and rebuilds mpd's own checkout, reporting whether
-// anything moved. Refuses rather than works around: this is the tree mpd
-// is developed in, and today it may well hold work in progress.
+// anything moved. A dirty tree refuses: it may hold work in progress.
 func upgradeMpd(ctx context.Context, out io.Writer) (bool, error) {
 	if !vm.GitClean(vm.MpdDir) {
 		return false, fmt.Errorf(`%s has uncommitted changes.
@@ -120,8 +98,7 @@ mpd will not pull over work in progress. Commit, stash or discard it:
 
 	if before == after {
 		ui.OK(out, "already at %s.", after)
-		// Built anyway: the checkout can be current while bin/mpd is not,
-		// after an interrupted upgrade or an edit that was reverted.
+		// Build anyway: the checkout can be current while bin/mpd is not.
 		return false, vm.MakeInstall(ctx, vm.MpdDir)
 	}
 	ui.OK(out, "%s → %s (%d commits).", before, after, vm.GitCommitsBetween(vm.MpdDir, before, after))
@@ -132,12 +109,9 @@ mpd will not pull over work in progress. Commit, stash or discard it:
 	return true, nil
 }
 
-// upgradeCompanion advances one of the checkouts mpd provisions.
-//
-// Never fatal. These are conveniences beside the mpd upgrade itself, and
-// a private recipe catalogue that cannot be reached is not a reason to
-// abandon a binary that already built. build says whether the checkout
-// has a Makefile worth running.
+// upgradeCompanion advances one of the checkouts mpd provisions. Never
+// fatal — an unreachable companion must not fail an upgrade that built.
+// build says whether the checkout has a Makefile worth running.
 func upgradeCompanion(ctx context.Context, out io.Writer, repo vm.Repo, build bool) {
 	name := filepath.Base(repo.Dir)
 	if reason := repo.SkipReason(); reason != "" {

@@ -1,35 +1,12 @@
-// Package control lets `mpd` be used from inside a runtime container.
+// Package control lets `mpd` run from inside a runtime container by
+// forwarding commands to the VM over a per-runtime Unix socket.
 //
-// The runtime has the mpd binary — /opt/mpd is bind-mounted RO at the same
-// path — but not the control plane: /var/lib/mpd/conf and
-// /var/lib/mpd/state are deliberately absent, and there is no podman
-// socket. So an in-runtime `mpd` forwards the command to the VM over a
-// Unix socket and the VM does the work.
-//
-// # What the VM will and will not do
-//
-// The daemon never runs a program named in a request. It refuses a
-// small, compiled-in denylist and forwards everything else to the mpd
-// binary it spawns itself; the request chooses a verb or flag, never an
-// executable. With a single runtime there is no other tenant to isolate,
-// so the boundary is a denylist of the genuinely dangerous — commands
-// that act on the VM, tear down the runtime the caller is standing in,
-// or drive a control-plane daemon — rather than an allowlist of project
-// verbs. db and service management, project verbs, `--runtime-backup`,
-// `list` and `version` all pass.
-//
-// # Identity comes from the channel
-//
-// Each runtime gets its own socket, mounted only into that runtime, so the
-// caller's identity is the socket that accepted the connection — a fact no
-// client can forge. SO_PEERCRED cannot do this job: every runtime runs the
-// same UID-matched dev user, so peer credentials cannot tell php from
-// node.
-//
-// Context is treated the same way. The cwd in a request is validated, not
-// believed: most verbs infer their target project from the working
-// directory, so a cwd taken on faith is a way to name someone else's
-// project.
+// The daemon only ever runs the mpd binary it spawns itself; a request
+// chooses a verb or flag, never an executable, and a compiled-in
+// denylist refuses commands that act on the VM, tear down the caller's
+// runtime, or start a control-plane daemon. Caller identity comes from
+// the socket the connection arrived on, never from the request, and the
+// request's cwd is validated, not believed.
 package control
 
 import (
@@ -46,27 +23,22 @@ import (
 
 // Request is what an in-runtime client asks the VM to do.
 type Request struct {
-	// Argv is the command as typed, without the program name:
-	// ["init", "moodle45", "--type=moodle"].
+	// Argv is the command as typed, without the program name.
 	Argv []string `json:"argv"`
 	// Cwd is the client's working directory. Meaningful across the
-	// boundary only because /srv is the same tree at the same path on the
-	// VM and inside every container.
+	// boundary only because /srv is the same tree at the same path on
+	// both sides.
 	Cwd string `json:"cwd"`
-	// Term is the caller's TERM, forwarded so the child renders colour the
-	// way the caller's terminal expects. Sanitised before use: it reaches
-	// the child's environment, so it is treated as untrusted input like
-	// everything else in a request.
+	// Term is the caller's TERM. Untrusted input; sanitised by SafeTerm
+	// before it reaches a child's environment.
 	Term string `json:"term,omitempty"`
 }
 
 // SafeTerm returns Term when it looks like a terminal name, else "".
 //
-// A TERM value ends up in a child process's environment. Nothing in mpd
-// interprets it as a path or a command, so this is not an execution
-// vector, but an unbounded attacker-chosen environment variable is not
-// worth carrying either. Terminfo names are short and use a small
-// alphabet, so anything else is refused rather than trimmed.
+// The value ends up in a child process's environment, so anything
+// outside the short terminfo-name alphabet is refused rather than
+// trimmed.
 func (r Request) SafeTerm() string {
 	if r.Term == "" || len(r.Term) > 64 {
 		return ""
@@ -82,8 +54,8 @@ func (r Request) SafeTerm() string {
 	return r.Term
 }
 
-// blockedVerb is a verb that exists but must not be reachable from a
-// runtime, with the reason shown to the caller.
+// blockedVerbs are verbs a runtime may not ask for, with the reason
+// shown to the caller.
 var blockedVerbs = map[string]string{
 	// run would loop: runtime → VM → the same runtime.
 	"run": "you are already inside the runtime — run the command directly",
@@ -95,20 +67,12 @@ const (
 	reasonDaemon  = "it is a control-plane daemon started by systemd, not an interactive command"
 )
 
-// blockedFlags are the global-flag commands a runtime may NOT ask for,
-// each with the reason shown to the caller. Everything not listed —
-// project verbs, --db-*, --service-* (deletes and purges included),
-// --runtime-backup, the read-only --vm-status, list, and the
-// --yes/--debug/--help modifiers — is forwarded: with a
-// single runtime there is no other tenant to protect, so the fence is
-// only around what would terminate the runtime the caller is standing in
-// (directly, or by stopping/rebuilding the VM under it) or start a
-// control-plane daemon that would hang or conflict.
-//
-// A pinning test (TestEveryGlobalFlagClassified) cross-checks this map
-// against cli.GlobalFlags, so a newly added flag cannot reach a runtime
-// silently: it fails the build until classified here or in that test's
-// allowed set.
+// blockedFlags are the global-flag commands a runtime may not ask for.
+// With a single runtime there is no other tenant to protect, so the
+// fence is only around what would terminate the caller's runtime or
+// start a control-plane daemon; everything else is forwarded.
+// TestEveryGlobalFlagClassified pins this map against cli.GlobalFlags,
+// so a new flag fails the build until classified.
 var blockedFlags = map[string]string{
 	"--vm-setup":   reasonVM,
 	"--vm-upgrade": reasonVM,
@@ -123,10 +87,9 @@ var blockedFlags = map[string]string{
 	"--control": reasonDaemon,
 }
 
-// flagName strips any =value so a flag matches its denylist key whether
-// written --vm-stop or (hypothetically) --vm-stop=1. A non-flag argument
-// — a project name, a KEY=VALUE start setting — never matches,
-// because every denied entry begins with "--".
+// flagName strips any =value so --vm-stop=1 matches the same denylist
+// key as --vm-stop. Non-flag arguments never match: every denied key
+// begins with "--".
 func flagName(arg string) string {
 	name, _, _ := strings.Cut(arg, "=")
 	return name
@@ -134,11 +97,9 @@ func flagName(arg string) string {
 
 // AllowedVerbs returns the project verbs a runtime may ask for, sorted.
 //
-// Derived from cli.ProjectVerbs rather than copied, so the two cannot
-// drift, minus blockedVerbs. Global-flag commands are gated separately
-// (blockedFlags), so this is the project-verb slice specifically — used
-// by the pinning test that keeps adding a verb a deliberate decision
-// about runtime exposure rather than a silent grant.
+// Derived from cli.ProjectVerbs minus blockedVerbs, so the two cannot
+// drift. A pinning test makes adding a verb a deliberate decision about
+// runtime exposure.
 func AllowedVerbs() []string {
 	var out []string
 	for _, v := range cli.ProjectVerbs {
@@ -154,18 +115,13 @@ func AllowedVerbs() []string {
 type Decision struct {
 	// Argv is the validated command line for the child mpd.
 	Argv []string
-	// Dir is the child's working directory.
-	//
-	// The caller's own cwd when that is inside /srv — the one tree at the
-	// same path on both sides, so it means the same thing to the child.
-	// Otherwise /srv, because a path like /home/<user> exists on the VM as
-	// well but is a *different* directory there, and running in the VM's
-	// copy of it would be quietly wrong rather than loudly wrong.
+	// Dir is the child's working directory: the caller's cwd when inside
+	// /srv, else /srv. A path like /home/<user> exists on the VM too but
+	// is a different directory there, so it must not be used.
 	Dir string
 }
 
-// Guard decides whether a request from a runtime may run, and returns the
-// argv to hand the child process.
+// Guard decides whether a request from a runtime may run.
 type Guard struct {
 	// Runtime is the calling runtime, taken from the socket. Never from
 	// the request.
@@ -176,7 +132,7 @@ type Guard struct {
 
 // Check validates a request and returns the argv to execute.
 //
-// A returned error is shown to the caller verbatim, so each one names both
+// A returned error is shown to the caller verbatim, so each one names
 // what was refused and where to do it instead.
 func (g Guard) Check(r Request) (Decision, error) {
 	if g.Runtime == "" {
@@ -191,12 +147,9 @@ func (g Guard) Check(r Request) (Decision, error) {
 		return Decision{}, fmt.Errorf("mpd %s is not available from inside a runtime: %s", verb, reason)
 	}
 
-	// Denylist. A handful of global-flag commands act on the VM, the
-	// runtime container itself, or a control-plane daemon; refuse those
-	// wherever they appear in the argv, so one cannot ride along on a
-	// project verb (`mpd start x --vm-stop`) either. Cobra would already
-	// reject that combination as an unknown flag, but a security boundary
-	// should not rest on another package's flag-inheritance rules.
+	// Refuse blocked flags anywhere in the argv, so one cannot ride
+	// along on a project verb. Cobra would reject that too, but a
+	// security boundary must not rest on another package's flag rules.
 	for _, arg := range r.Argv {
 		if reason, blocked := blockedFlags[flagName(arg)]; blocked {
 			return Decision{}, fmt.Errorf(
@@ -211,21 +164,14 @@ func (g Guard) Check(r Request) (Decision, error) {
 	}
 	decide := func(argv []string) Decision { return Decision{Argv: argv, Dir: dir} }
 
-	// A global-flag command (--db-*, --service-*, --runtime-backup) or a
-	// non-project verb (list, version) is not project-scoped: there is no
-	// target project to resolve, so hand it straight to the child, which
-	// owns both the argument parsing and the "unknown command" error for
-	// anything bogus. Only project verbs get the target cross-check below.
+	// Non-project commands have no target project to resolve; the child
+	// owns their argument parsing and any "unknown command" error.
 	if !cli.IsProjectVerb(verb) {
 		return decide(r.Argv), nil
 	}
 
-	// `help` prints text and touches nothing. With no project argument it
-	// prints the general help, so there is no target to cross-check.
-	//
-	// Only a cwd inside /srv can name a project. Outside it, inference is
-	// not merely refused, it is meaningless: the same path on the VM is a
-	// different directory.
+	// Only a cwd inside /srv can name a project: the same path outside
+	// /srv is a different directory on the VM.
 	name := ""
 	if inSrv {
 		name = targetProject(verb, r.Argv, dir)
@@ -241,15 +187,13 @@ func (g Guard) Check(r Request) (Decision, error) {
 			verb, r.Cwd, srv.Projects, verb)
 	}
 
-	// There is one runtime, so every registered project belongs to the
-	// caller — no cross-runtime ownership to check any more.
+	// One runtime: every registered project belongs to the caller.
 	if _, found := g.project(name); found {
 		return decide(r.Argv), nil
 	}
 
-	// Not a registered project. Only `init` does anything useful with
-	// that; the rest are left to fail in the child with mpd's own
-	// "not found" message rather than a second, differently-worded one.
+	// Unregistered project: only init does anything useful with that.
+	// The rest fail in the child with mpd's own "not found" message.
 	if verb != "init" {
 		return decide(r.Argv), nil
 	}
@@ -260,23 +204,13 @@ func (g Guard) Check(r Request) (Decision, error) {
 	return decide(argv), nil
 }
 
-// checkCwd validates the client's claimed working directory and reports
-// where the child should run.
+// checkCwd validates the client's claimed working directory. It returns
+// the directory the child should run in, and whether the caller's cwd
+// was inside /srv.
 //
-// Returns the directory to use, and whether the caller's cwd was inside
-// /srv — which is what decides if cwd may name a project.
-//
-// A cwd outside /srv is not an error. When you SSH into a runtime you land
-// in $HOME, so refusing there would fail the first command anyone types,
-// even one that names its project explicitly and has no use for cwd. It is
-// simply not usable as context: /home/<user> exists on the VM too, but it
-// is a *different* directory, so the child runs in /srv instead of quietly
-// operating in the VM's copy.
-//
-// What is rejected is a path that is malformed rather than merely
-// elsewhere: relative, or not lexically clean. Those indicate a client that
-// is not mpd, and `..` is how a claimed path would try to reach out of the
-// tree it appears to be in.
+// A cwd outside /srv is legitimate — SSH lands in $HOME — but unusable
+// as context, so the child runs in /srv instead. A relative or unclean
+// path indicates a client that is not mpd and is refused.
 func (g Guard) checkCwd(cwd string) (dir string, inSrv bool, err error) {
 	if cwd == "" {
 		return "", false, fmt.Errorf("request has no working directory")
@@ -293,8 +227,8 @@ func (g Guard) checkCwd(cwd string) (dir string, inSrv bool, err error) {
 	return cwd, true, nil
 }
 
-// explicitProject returns the project named on the command line, ignoring
-// the working directory. Used when cwd cannot name a project.
+// explicitProject returns the project named on the command line,
+// ignoring the working directory.
 func explicitProject(verb string, argv []string) string {
 	for _, arg := range argv[1:] {
 		if strings.HasPrefix(arg, "-") {
@@ -308,11 +242,8 @@ func explicitProject(verb string, argv []string) string {
 	return ""
 }
 
-// checkInitType validates a declared `--type` against the types the
-// asset tree actually defines. With a single runtime there is no
-// ownership to enforce any more — an undeclared type is left for the
-// child to infer (name match, else the moodle default), same as on the
-// VM.
+// checkInitType validates a declared --type against the types the asset
+// tree defines. An undeclared type is left for the child to infer.
 func (g Guard) checkInitType(name string, argv []string) ([]string, error) {
 	all := g.Assets.AllProjectTypes()
 
@@ -337,13 +268,10 @@ func (g Guard) project(name string) (state.Project, bool) {
 	return state.Project{}, false
 }
 
-// targetProject resolves which project a command is about, mirroring the
-// CLI's own rules: the first positional argument after the verb, else the
-// project whose tree the caller is standing in.
-//
-// Returns "" when neither applies. `start` takes KEY=VALUE settings in
-// the same positional slot, so a token containing `=` is a setting and not
-// a name (see cli.SplitStartArgs).
+// targetProject resolves which project a command is about, mirroring
+// the CLI's rules: the first positional argument, else the project
+// whose tree the caller is standing in. A `start` token containing `=`
+// is a setting, not a name (see cli.SplitStartArgs).
 func targetProject(verb string, argv []string, cwd string) string {
 	if name := explicitProject(verb, argv); name != "" {
 		return name
@@ -356,10 +284,8 @@ func targetProject(verb string, argv []string, cwd string) string {
 }
 
 // projectFromPath returns the project directory name when path is
-// /srv/projects/<name> or below.
-//
-// Deliberately not cli.ProjectNameFromCwd: that reads this process's own
-// working directory, which on the daemon side is the daemon's, not the
+// /srv/projects/<name> or below. Deliberately not
+// cli.ProjectNameFromCwd, which reads the daemon's own cwd, not the
 // caller's.
 func projectFromPath(path string) (string, bool) {
 	prefix := srv.Projects + string(filepath.Separator)

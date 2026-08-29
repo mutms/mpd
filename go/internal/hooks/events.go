@@ -7,13 +7,9 @@ import (
 	"github.com/mutms/mpd/go/internal/podman"
 )
 
-// The event catalogue. Closed by design: a hook author subscribes to
-// what exists, and events are added only when a real use case drives one
-// (docs/hooks.md §"Future trajectory").
-//
-// Names are the kebab-case form the `<name>.d` directories use, and they
-// are a public contract: renaming one silently stops every subscribing
-// hook, because a directory matching no event is simply never scanned.
+// The event catalogue, closed by design (docs/hooks.md). Names are a
+// public contract: renaming one silently orphans every subscribing
+// hook, because a directory matching no event is never scanned.
 const (
 	EventMpdPostSetup     = "mpd-post-setup"
 	EventMpdPreStop       = "mpd-pre-stop"
@@ -22,22 +18,15 @@ const (
 	EventProjectPostStart = "project-post-start"
 )
 
-// TIMEOUTS are enforced: 30 s by default, 120 s for mpd-pre-stop, where
-// a database flushing pending IO legitimately takes longer. See
-// hooks.go for the caveat about what "killed" means for podman exec.
-
-// Project describes the project an event concerns, and supplies
-// everything both the environment and audience resolution need.
+// Project describes the project an event concerns.
 type Project struct {
 	Name string
-	// Runtime is the runtime's short name; RuntimeContainer is its
-	// container. Both are needed: the name scopes asset discovery, the
-	// container is what hooks execute in.
+	// Runtime is the runtime's short name, used to scope asset
+	// discovery; RuntimeContainer is the container hooks execute in.
 	Runtime          string
 	RuntimeContainer string
 	// DBEngine and DBVersion identify the project's database, if any.
-	// Empty engine means the project has none, so database-audience
-	// events fire nowhere — normal, not an error.
+	// Empty engine means database-audience events fire nowhere — normal.
 	DBEngine, DBVersion string
 	// DevUser is who runtime hooks run as. See Event.User.
 	DevUser string
@@ -53,34 +42,28 @@ func (pr Project) env() map[string]string {
 }
 
 // ProjectPreStart fires before a project starts: runtime and database
-// are up, but no project setup has run yet — the moment for per-project
-// migrations or seed data.
-//
-// Audience is the project's DATABASE, not its runtime. Failure aborts
-// the start: a project whose precondition failed should not come up
-// half-configured.
+// are up, but no project setup has run. It fires on the project's
+// DATABASE, not its runtime, and failure aborts the start.
 func ProjectPreStart(ctx context.Context, pr Project, p *podman.Client) Event {
 	return projectEvent(ctx, EventProjectPreStart, pr, p,
 		[]AudienceKind{AudienceDatabase}, Abort)
 }
 
-// ProjectPreStop fires while the project is still live — draining work,
-// flushing caches. Failure never blocks a stop.
+// ProjectPreStop fires while the project is still live. Failure never
+// blocks a stop.
 func ProjectPreStop(ctx context.Context, pr Project, p *podman.Client) Event {
 	return projectEvent(ctx, EventProjectPreStop, pr, p,
 		[]AudienceKind{AudienceRuntime}, Continue)
 }
 
-// ProjectPostStart fires once the project is live and recorded running —
-// cache warming, announcements, first-request triggers.
+// ProjectPostStart fires once the project is live and recorded running.
 func ProjectPostStart(ctx context.Context, pr Project, p *podman.Client) Event {
 	return projectEvent(ctx, EventProjectPostStart, pr, p,
 		[]AudienceKind{AudienceRuntime}, Continue)
 }
 
 // MpdPostSetup fires at the end of `mpd --vm-setup`, on the VM and its
-// runtime — the point where both are configured. Failure never aborts:
-// setup is already done.
+// runtime. Failure never aborts: setup is already done.
 func MpdPostSetup(ctx context.Context, runtimeContainer, devUser string, p *podman.Client) Event {
 	return Event{
 		Name:      EventMpdPostSetup,
@@ -158,9 +141,8 @@ func projectEvent(ctx context.Context, name string, pr Project, p *podman.Client
 	}
 }
 
-// running filters to containers that are actually up: a hook cannot run
-// in a stopped container, and firing into one would report a failure for
-// something that is really "not applicable".
+// running filters to containers that are up: firing into a stopped
+// container would report a failure for "not applicable".
 func running(ctx context.Context, p *podman.Client, names ...string) []string {
 	var out []string
 	for _, n := range names {

@@ -8,9 +8,8 @@ import (
 	"github.com/mutms/mpd/go/internal/exec"
 )
 
-// stub returns a Client whose runner records the args it was given and
-// replays a canned result — so everything above this package is testable
-// without podman installed.
+// stub returns a Client whose runner records its args and replays a
+// canned result.
 func stub(out string, code int) (*Client, *[]string) {
 	var got []string
 	c := NewWith(func(ctx context.Context, args []string) (exec.Result, error) {
@@ -51,8 +50,8 @@ func TestPsParsesPodmanJSON(t *testing.T) {
 	}
 }
 
-// podman prints the literal "null" for an empty list; a failed call gives
-// an empty string. Neither is an error — the honest answer is "none".
+// podman prints the literal "null" for an empty list; a failed call
+// gives an empty string. Neither is an error.
 func TestPsEmptyForms(t *testing.T) {
 	for _, out := range []string{"", "null", "[]"} {
 		c, _ := stub(out, 0)
@@ -87,8 +86,7 @@ func TestRunningIsExactMatch(t *testing.T) {
 	}
 }
 
-// Network names contain hyphens, which breaks Go-template dot notation —
-// the format string must use index notation with a quoted name.
+// Network names contain hyphens, which breaks Go-template dot notation.
 func TestContainerIPUsesIndexNotation(t *testing.T) {
 	c, args := stub("10.163.150.100", 0)
 	ip := c.ContainerIP(context.Background(), "mpd-150-php-main", "mpd-internal")

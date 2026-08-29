@@ -41,13 +41,9 @@ func ParseOSRelease(body string) OSRelease {
 	return os
 }
 
-// RequireSupportedHost is a hard gate on Debian Trixie.
-//
-// Not conservatism for its own sake: package names, Go toolchain
-// availability, the systemd unit layout and systemd-resolved's defaults
-// all differ between releases, and mpd drives all four. Running on
-// anything else produces failures far from their cause, so the check is
-// up front and refuses rather than warns.
+// RequireSupportedHost refuses to run on anything but Debian Trixie.
+// Package names, toolchain and systemd defaults differ between releases,
+// and off-release failures surface far from their cause.
 func RequireSupportedHost() error {
 	body, err := os.ReadFile("/etc/os-release")
 	if err != nil {
@@ -67,21 +63,11 @@ func RequireSupportedHost() error {
 	return nil
 }
 
-// requiredPackages is what mpd itself needs at run time, keyed by a
-// binary whose absence proves the package is missing.
-//
-// This is a verification table, not an installer: the one package list
-// is bootstrap/20-install-software.sh, which also carries the reason
-// for each package (dnsmasq-base not dnsmasq, no aardvark-dns, vim not
-// vim-tiny, …). mpd never runs apt — a VM whose packages are missing
-// or stale is converged by re-running that script, and `--vm-setup`
-// refuses until it has been. A new run-time dependency is added there
-// and here.
-//
-// Package name and binary name are not the same thing — nft comes from
-// nftables, newuidmap from uidmap, rg from ripgrep — so both are named
-// rather than derived. /usr/bin/vim is the proof of full vim: vim-tiny
-// provides only /usr/bin/vi.
+// requiredPackages is a verification table, not an installer: the one
+// package list is bootstrap/20-install-software.sh, and mpd never runs
+// apt. A new run-time dependency is added there and here. Package and
+// binary names differ (nft from nftables, rg from ripgrep), so both are
+// named; /usr/bin/vim proves full vim rather than vim-tiny.
 var requiredPackages = []struct{ Package, Binary string }{
 	{"podman", "/usr/bin/podman"},
 	{"catatonit", "/usr/bin/catatonit"},
@@ -100,9 +86,8 @@ var requiredPackages = []struct{ Package, Binary string }{
 	{"tree", "/usr/bin/tree"},
 }
 
-// bootstrapInstallScript is the one command that installs or converges
-// everything in requiredPackages. The checkout exists by the time
-// --vm-setup runs, so the local copy is named rather than a wget URL.
+// bootstrapInstallScript installs or converges everything in
+// requiredPackages.
 const bootstrapInstallScript = MpdDir + "/bootstrap/20-install-software.sh"
 
 // RequirePackages refuses to continue while a run-time dependency is
@@ -122,14 +107,9 @@ func RequirePackages() error {
 		"    bash %s", strings.Join(missing, ", "), bootstrapInstallScript)
 }
 
-// EnablePodmanRestart enables the unit that restarts containers marked
-// --restart=always after a host reboot.
-//
-// The unit ships with the podman package (bootstrap/20 installs it);
-// enabling it is mpd's job because mpd is what relies on it.
-//
-// Without it, --restart=always is silently ineffective across reboots:
-// containers come back only when something starts them by hand.
+// EnablePodmanRestart enables the packaged unit that restarts
+// --restart=always containers after a reboot. Without it the flag is
+// silently ineffective across reboots.
 func EnablePodmanRestart(ctx context.Context, out io.Writer) error {
 	if unitIsActive(ctx, "podman-restart.service") {
 		return nil
@@ -145,29 +125,14 @@ func EnablePodmanRestart(ctx context.Context, out io.Writer) error {
 	return nil
 }
 
-// DisableGitHooks stops git hooks running on the VM. Two mechanisms,
-// because one is not enough:
+// DisableGitHooks stops git hooks running on the VM; runtimes keep their
+// own hooks.
 //
-//  1. `git config --system core.hooksPath /dev/null`. Applies to every
-//     git invocation regardless of shell or environment; git looks for
-//     /dev/null/<hook>, gets ENOTDIR, and runs nothing. Surgical — it
-//     edits one key rather than overwriting /etc/gitconfig.
-//
-//  2. GIT_CONFIG_* in /etc/environment. Needed because (1) LOSES to a
-//     repository's own config, and the hooks worth stopping are exactly
-//     the self-installing kind: husky (docusaurus, moodledev) writes
-//     core.hooksPath into .git/config. These variables are applied as if
-//     passed with `-c`, which outranks repo config. /etc/environment
-//     rather than /etc/profile.d, because PAM applies it to `ssh vm
-//     <cmd>` too, and profile.d only fires for login shells.
-//
-// VM only: runtime containers have their own /etc and keep hooks
-// working, which is where a project's own tooling belongs. The VM has no
-// node to run a JavaScript pre-commit hook with in any case.
-//
-// Escape hatch, for running a hook deliberately:
-//
-//	GIT_CONFIG_COUNT=0 git commit ...
+// Two mechanisms: system core.hooksPath=/dev/null covers every git
+// invocation but loses to a repository's own config, which is what husky
+// writes. GIT_CONFIG_* in /etc/environment outranks repo config, and PAM
+// applies it to `ssh vm <cmd>` too, unlike profile.d.
+// To run a hook deliberately: GIT_CONFIG_COUNT=0 git commit ...
 func DisableGitHooks(ctx context.Context, out io.Writer) error {
 	if code, err := exec.Run(ctx, exec.Cmd{
 		Name: "git", Args: []string{"config", "--system", "core.hooksPath", "/dev/null"},
@@ -191,10 +156,7 @@ func DisableGitHooks(ctx context.Context, out io.Writer) error {
 }
 
 // mergeEnvironment sets keys in /etc/environment, leaving every other
-// line alone.
-//
-// Merged rather than written: /etc/environment belongs to the machine,
-// not to mpd, and a VM may well have entries from elsewhere.
+// line alone: the file belongs to the machine, not to mpd.
 func mergeEnvironment(ctx context.Context, want map[string]string) (bool, error) {
 	const path = "/etc/environment"
 
@@ -245,12 +207,9 @@ func unitIsActive(ctx context.Context, unit string) bool {
 
 // WriteRootOwnedFile installs content at a root-owned path via sudo,
 // reporting whether anything changed. An identical file short-circuits
-// before sudo runs, so a repeat `--vm-setup` neither writes nor prompts.
-//
-// The replacement is atomic: the content is installed beside the target
-// and renamed over it. `install` alone unlinks the destination before
-// copying, leaving an instant with no file — harmless for a unit file,
-// not for /etc/hosts, which every getent on the VM reads.
+// before sudo runs. The replacement is staged then renamed: `install`
+// alone leaves an instant with no file, which /etc/hosts readers would
+// see.
 func WriteRootOwnedFile(ctx context.Context, path, content string) (bool, error) {
 	if existing, err := os.ReadFile(path); err == nil && string(existing) == content {
 		return false, nil
@@ -281,12 +240,9 @@ func WriteRootOwnedFile(ctx context.Context, path, content string) (bool, error)
 	return true, nil
 }
 
-// InstallLoginBanner renders assets/vm/motd for this VM and makes
-// it the static /etc/motd.
-//
-// Debian's update-motd.d scripts regenerate /etc/motd on login and would
-// overwrite it, so they are disabled first. The banner names the portal
-// URL, which is per-VM, hence a template rather than a shipped file.
+// InstallLoginBanner renders assets/vm/motd and installs it as /etc/motd.
+// Debian's update-motd.d scripts would overwrite it on login, so they
+// are disabled first.
 func InstallLoginBanner(ctx context.Context, out io.Writer, zone string) error {
 	source := AssetsDir + "/vm/motd"
 	template, err := os.ReadFile(source)

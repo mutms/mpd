@@ -1,10 +1,8 @@
 #compdef mpd
 
-# mpd zsh completion shim.
-#
-# Forwards to `mpd --complete` for the actual candidate set — see
-# go/internal/cli/complete.go. Adding new flags/verbs only needs Go edits;
-# this shim doesn't have to change.
+# mpd zsh completion shim. Forwards to `mpd --complete` for the
+# candidate set — see go/internal/cli/complete.go; new flags and verbs
+# need only Go edits.
 
 _mpd() {
     emulate -L zsh

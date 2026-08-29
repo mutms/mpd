@@ -11,21 +11,9 @@ import (
 )
 
 // Diagnostics cross-reference the asset tree against the event
-// catalogue. They are warnings, never failures: an orphaned hook simply
-// never fires, and refusing to run mpd over one would be worse than the
-// problem.
-//
-// Three classes, all of which produce silence rather than an error at
-// dispatch time — which is exactly why a diagnostic is needed:
-//
-//  1. Unknown event — `hooks/<name>.d/` matches no event, so it is never
-//     scanned.
-//  2. Wrong audience — the event exists but does not fire on this
-//     layer's container kind. This is the one that caught a real mistake
-//     during the port: project-pre-start fires on the DATABASE, so a
-//     copy under runtime/hooks/ silently does nothing.
-//  3. Revision bump — the event's contract changed since the last run,
-//     so a hook may be reading env vars that moved.
+// catalogue: unknown events, wrong audiences, revision bumps. All three
+// produce silence at dispatch time, so a warning here is the only thing
+// that surfaces them. Warnings never fail a run.
 
 // CatalogueEntry is what the diagnostic knows about one event.
 type CatalogueEntry struct {
@@ -34,8 +22,8 @@ type CatalogueEntry struct {
 	Audiences []AudienceKind
 }
 
-// Catalogue is every event mpd can fire. Add new events here when
-// introduced, or their hook directories will be reported as orphans.
+// Catalogue is every event mpd can fire. Add new events here, or their
+// hook directories are reported as orphans.
 func Catalogue() []CatalogueEntry {
 	return []CatalogueEntry{
 		{EventMpdPostSetup, 1, []AudienceKind{AudienceVM, AudienceRuntime}},
@@ -47,7 +35,7 @@ func Catalogue() []CatalogueEntry {
 }
 
 // StateFile records the revision each event was last seen at, so a bump
-// can be reported once rather than on every run.
+// is reported once rather than on every run.
 const StateFile = "hooks-state.json"
 
 type diagState struct {
@@ -62,8 +50,7 @@ type foundDir struct {
 }
 
 // Diagnose walks the asset tree, prints warnings, and stamps current
-// revisions. Returns the warnings so callers can test it without parsing
-// output.
+// revisions. It returns the warnings so tests need not parse output.
 func Diagnose(out io.Writer, stateDir string) []string {
 	byName := map[string]CatalogueEntry{}
 	for _, e := range Catalogue() {
@@ -115,7 +102,7 @@ func Diagnose(out io.Writer, stateDir string) []string {
 }
 
 // walkHookDirs finds every `hooks/<event>.d` directory, tagged with the
-// container kind that layer fires into.
+// audience that layer fires into.
 func walkHookDirs() []foundDir {
 	var found []foundDir
 

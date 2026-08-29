@@ -28,7 +28,7 @@ func TestCleanTreeProducesNoWarnings(t *testing.T) {
 }
 
 // A directory naming no known event is never scanned, so its hooks
-// silently never run — the diagnostic is the only thing that surfaces it.
+// silently never run — the diagnostic is what surfaces it.
 func TestUnknownEventIsReported(t *testing.T) {
 	withAssets(t, map[string]string{
 		"runtime/hooks/project-pre-launch.d/10-x.sh": "",
@@ -39,9 +39,8 @@ func TestUnknownEventIsReported(t *testing.T) {
 	}
 }
 
-// The mistake this actually caught during the port: project-pre-start
-// fires on the DATABASE, so a copy under runtime/hooks does
-// nothing at all.
+// project-pre-start fires on the DATABASE, so a copy under
+// runtime/hooks does nothing at all.
 func TestWrongAudienceIsReported(t *testing.T) {
 	withAssets(t, map[string]string{
 		"runtime/hooks/project-pre-start.d/10-x.sh": "",
@@ -64,8 +63,7 @@ func TestRevisionBumpIsReportedOnceThenStamped(t *testing.T) {
 	withAssets(t, map[string]string{})
 	stateDir := t.TempDir()
 
-	// Seed a lower revision than the catalogue's, as though the event
-	// had been revised since the last run.
+	// Seed a lower revision than the catalogue's.
 	seed := diagState{Revisions: map[string]int{EventProjectPreStart: 0}}
 	data, _ := json.Marshal(seed)
 	if err := os.WriteFile(filepath.Join(stateDir, StateFile), data, 0o644); err != nil {
@@ -82,8 +80,8 @@ func TestRevisionBumpIsReportedOnceThenStamped(t *testing.T) {
 	}
 }
 
-// First run on a fresh VM has no stamp for any event. That is not a
-// bump — reporting one would warn on every new VM.
+// A missing stamp is not a bump — reporting one would warn on every
+// new VM.
 func TestFirstRunIsNotABump(t *testing.T) {
 	withAssets(t, map[string]string{})
 	if w := Diagnose(nil, t.TempDir()); len(w) != 0 {

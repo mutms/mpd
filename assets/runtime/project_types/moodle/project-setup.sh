@@ -1,17 +1,8 @@
 #!/bin/bash
 # project-setup.sh <project-name>
-# Run by `mpd start <project>` to bring an already-configured Moodle project's
-# runtime-side state into a startable shape:
-#   - Reads phpVersion / phpFpmPort from /srv/meta/<n>/effective.json (written
-#     by scripts/configure.sh during `mpd start <project>`)
-#   - Creates /srv/data/<project-name>/{dataroot,dataroot_behat,behat_faildump,dataroot_phpunit}
-#   - Writes per-project FPM pool listening on TCP 127.0.0.1:<phpFpmPort>
-#     (the in-runtime caddy frontdoor reaches it on localhost)
-# No Apache, no /etc/hosts edits — TLS termination + project routing live in
-# the in-runtime caddy frontdoor (mpd-caddy.service).
-# Per-project TLS certs are at /srv/meta/<n>/cert.pem + key.pem (mpd writes them).
-# DB provisioning happens during `mpd start <project>` — by start time the
-# DB container exists and the per-project DB has been created.
+# Run by `mpd start <project>` after scripts/configure.sh. Creates the
+# data directories and writes this project's FPM pool on
+# 127.0.0.1:<phpFpmPort>, where the caddy frontdoor reaches it.
 set -euo pipefail
 
 PROJECT_NAME="$1"
@@ -22,7 +13,6 @@ BEHATFAILDUMP="/srv/data/${PROJECT_NAME}/behat_faildump"
 PHPUNITDATAROOT="/srv/data/${PROJECT_NAME}/dataroot_phpunit"
 EFFECTIVE_FILE="/srv/meta/${PROJECT_NAME}/effective.json"
 
-# Basic validation
 if ! [[ "$PROJECT_NAME" =~ ^[a-z][a-z0-9]+$ ]]; then
     echo "Error: project name must start with a letter and contain only lowercase letters and digits (min 2 chars)" >&2
     exit 1
@@ -43,20 +33,16 @@ if [ ! -f "$EFFECTIVE_FILE" ]; then
     exit 1
 fi
 
-# --- Resolve effective settings (configure.sh wrote effective.json) ---
 # shellcheck source=/dev/null
 source /opt/mpd/assets/runtime/lib/source-mpd-env.sh
-# Explicit setting wins; otherwise the runtime-wide default (php-configure.sh
-# holds it — the same one the `php` dispatcher falls back to).
+# Explicit MPD_PHP_VERSION wins; php-configure.sh holds the fallback.
 # shellcheck source=/dev/null
 . /opt/mpd/assets/runtime/lib/php-configure.sh
 PHP_VER="${MPD_PHP_VERSION:-$MPD_PHP_FALLBACK_VERSION}"
 
-# The current PHP versions are baked into the image; a legacy one this
-# project asks for is installed on demand. php-install is idempotent and
-# no-ops instantly for a version already present, so this is cheap on the
-# common path. A version that cannot be installed fails start loudly here,
-# rather than silently skipping the FPM pool below into a 502.
+# php-install no-ops when the version is present and installs a legacy
+# one on demand. A version that cannot install fails start here, not
+# as a 502 later.
 /opt/mpd/assets/runtime/bin/php-install "$PHP_VER"
 
 FPM_PORT=$(jq -r '.phpFpmPort // empty' "$EFFECTIVE_FILE")
@@ -65,9 +51,8 @@ if [ -z "$FPM_PORT" ]; then
     exit 1
 fi
 
-# --- Per-project data directories ---
-# Script runs as the dev user (projectExec --user <dev>); /srv/data is
-# dev-owned (set by volume provisioning), so plain mkdir/chmod work.
+# The script runs as the dev user and /srv/data is dev-owned, so
+# plain mkdir/chmod work.
 for DIR in "$DATAROOT" "$BEHATDATAROOT" "$BEHATFAILDUMP" "$PHPUNITDATAROOT"; do
     mkdir -p "$DIR"
     chmod 02777 "$DIR"
@@ -76,14 +61,9 @@ done
 touch "${DATAROOT}/php_error.log"
 chmod 0666 "${DATAROOT}/php_error.log"
 
-# --- Drop any stale pool for this project under a *different* PHP version ---
-# If the project's PHP version changed (e.g. an upgrade bumped Moodle's
-# minimum), project-setup previously wrote the pool into the new version's
-# pool.d but left the old one behind. That orphan keeps its old listen port
-# in the wrong php-fpm — and once that port is reallocated to another project,
-# the orphan makes the shared php-fpm fail to bind and start at all, taking
-# every project on that version offline (a 502). Remove it and refresh the
-# affected service before writing the current pool.
+# Drop a stale pool left under a different PHP version. Once its
+# listen port is reallocated, the orphan stops that php-fpm from
+# binding at all, taking every project on that version offline (502).
 for STALE in /etc/php/*/fpm/pool.d/mpd-"${PROJECT_NAME}".conf; do
     [ -e "$STALE" ] || continue
     STALE_VER=$(printf '%s' "$STALE" | sed -n 's#^/etc/php/\([0-9.]\+\)/.*#\1#p')
@@ -94,18 +74,10 @@ for STALE in /etc/php/*/fpm/pool.d/mpd-"${PROJECT_NAME}".conf; do
         || sudo systemctl restart "php${STALE_VER}-fpm" 2>/dev/null || true
 done
 
-# --- Per-project FPM pool (TCP, runs as the dev user) ---
-# The caddy frontdoor reaches this pool via 127.0.0.1:${FPM_PORT} on the
-# container loopback. FPM workers run as the developer user so web and CLI both
-# read/write the same project files as the same identity.
-#
-# Errors are always displayed in the response body. This is a development
-# environment: a bare 500 with an empty body tells the developer nothing,
-# and the failures that matter most — anything fatal inside config.php —
-# happen *before* Moodle's setup.php gets to apply $CFG->debugdisplay, so
-# relying on Moodle's own error handling loses exactly the errors that are
-# hardest to diagnose. php_admin_* (not php_value) so nothing downstream
-# can switch it back off mid-request.
+# FPM workers run as the dev user, so web and CLI touch project files
+# as the same identity. display_errors stays on: a fatal inside
+# config.php happens before Moodle can apply $CFG->debugdisplay, and a
+# bare 500 hides it. php_admin_* so nothing can switch it back off.
 DEV_USER=$(id -un)
 FPM_CONF_DIR="/etc/php/${PHP_VER}/fpm/pool.d"
 if [ -d "$FPM_CONF_DIR" ]; then

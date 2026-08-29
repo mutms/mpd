@@ -1,20 +1,7 @@
-// Package exec is mpd's single gateway for running external processes.
-//
-// It is the ONLY package that imports os/exec. Every other package that
-// needs a subprocess builds a domain wrapper on top of this one — most
-// notably internal/podman. AGENTS.md states this as a mandatory
-// constraint: direct host-OS command execution is allowed only here.
-//
-// # Difference from mudev's internal/exec
-//
-// mudev resolves commands with exec.LookPath. mpd deliberately does not:
-// it runs privileged operations on the VM, so every executable is pinned
-// to an absolute path in an allow-list (see binaries below). A command
-// that is not on the list cannot be run at all, and a PATH manipulation
-// cannot redirect one that is. Keep that property — it is the reason this
-// package exists rather than callers using os/exec directly, and it is
-// what AGENTS.md means by "direct host-OS command execution is allowed
-// only here".
+// Package exec is mpd's single gateway for running external processes;
+// no other package may import os/exec (see AGENTS.md). Every command is
+// pinned to an absolute path in an allow-list, so PATH manipulation
+// cannot redirect one. Keep that property.
 package exec
 
 import (
@@ -27,13 +14,12 @@ import (
 	"strings"
 )
 
-// ExitNotPermitted is returned as the exit code when a command is not on
-// the allow-list. 127 is the shell's "command not found", which is the
-// closest existing convention for "mpd will not run that".
+// ExitNotPermitted is the exit code for a command not on the allow-list;
+// 127 matches the shell's "command not found".
 const ExitNotPermitted = 127
 
-// binaries maps a bare command name to its absolute path. Adding an entry
-// is a deliberate act: it widens what mpd is able to execute.
+// binaries maps a bare command name to its absolute path. Adding an
+// entry widens what mpd can execute; do it deliberately.
 var binaries = map[string]string{
 	"bash":     "/bin/bash",
 	"certutil": "/usr/bin/certutil",
@@ -44,8 +30,7 @@ var binaries = map[string]string{
 	"ip":       "/usr/sbin/ip",
 	"loginctl": "/usr/bin/loginctl",
 	"make":     "/usr/bin/make",
-	// mpd itself, so `--vm-upgrade` can apply the binary it just built
-	// rather than the one it is running.
+	// mpd itself, so --vm-upgrade can run the binary it just built.
 	"mpd":                    "/opt/mpd/bin/mpd",
 	"mv":                     "/usr/bin/mv",
 	"nft":                    "/usr/sbin/nft",
@@ -72,27 +57,14 @@ type Cmd struct {
 	Env []string
 	// Stdin is optional standard input.
 	Stdin io.Reader
-	// Stdout and Stderr are where Run sends the command's output. Nil
-	// means this process's own os.Stdout / os.Stderr, which is what every
-	// caller on the VM wants.
-	//
-	// They exist for callers that are not the process's own terminal. When
-	// mpd serves a request from inside a runtime, the command's output has
-	// to reach the caller's terminal rather than the daemon's journal, and
-	// output produced by children — asset scripts, podman — is most of what
-	// a verb like `create` prints. Since this package is the only one
-	// allowed to start a process, nothing else can redirect it.
-	//
-	// Passing an *os.File matters: os/exec hands a real file descriptor
-	// straight to the child, so the child sees a genuine (possibly tty)
-	// descriptor and writes to it unbuffered. Any other io.Writer gets a
-	// pipe plus a copying goroutine, which works but loses the tty.
-	//
-	// Capture ignores both — capturing output is its entire contract.
+	// Stdout and Stderr receive the command's output; nil means this
+	// process's own. Pass an *os.File to hand the child a real (possibly
+	// tty) descriptor; any other io.Writer goes through a pipe and loses
+	// the tty. Capture ignores both.
 	Stdout io.Writer
 	Stderr io.Writer
-	// Sudo runs the command via `sudo -n`. Non-interactive on purpose:
-	// mpd never prompts for a password, it fails and says what to fix.
+	// Sudo runs the command via `sudo -n`: mpd never prompts for a
+	// password, it fails and says what to fix.
 	Sudo bool
 }
 
@@ -162,12 +134,9 @@ func Run(ctx context.Context, cmd Cmd) (int, error) {
 	return wait(c)
 }
 
-// writerOr returns w, or fallback when w is nil.
-//
-// Written out rather than inlined because a typed-nil io.Writer is not
-// == nil, and assigning one to osexec.Cmd.Stdout makes the child's output
-// vanish silently. Callers build Cmd from many places; funnelling the
-// choice through one func keeps that trap in a single spot.
+// writerOr returns w, or fallback when w is nil. A typed-nil io.Writer
+// assigned to osexec.Cmd.Stdout makes the child's output vanish silently;
+// this func keeps that trap in one spot.
 func writerOr(w io.Writer, fallback io.Writer) io.Writer {
 	if w == nil {
 		return fallback
@@ -231,8 +200,6 @@ func wait(c *osexec.Cmd) (int, error) {
 	return 0, nil
 }
 
-// asExitError is errors.As specialised to *osexec.ExitError, kept
-// separate so the intent reads clearly at the call site.
 func asExitError(err error, target **osexec.ExitError) bool {
 	ee, ok := err.(*osexec.ExitError)
 	if ok {

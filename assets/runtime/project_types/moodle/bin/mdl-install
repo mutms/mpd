@@ -1,39 +1,31 @@
 #!/bin/bash
-# install — quick Moodle CLI install.
-# Reads defaults from mpd.env (global and per-project).
-# All arguments are passed through to admin/cli/install_database.php.
+# mdl-install — quick Moodle CLI install. Reads defaults from mpd.env.
+# All arguments pass through to admin/cli/install_database.php.
 set -euo pipefail
 
 source /opt/mpd/assets/runtime/project_types/moodle/scripts/mpd-env.sh
 
-# Only that config.php and a database exist — not that the database is
-# empty. install_database.php does the already-installed check itself,
-# and it keys on the real install prefix, so it ignores the test-prefix
-# tables `phpunit-init` leaves in the same database. A table-count guard
-# here would count those too and wrongly refuse a fresh install. If the
-# site really is installed and you want to start over: `mpd reset`, then
-# `mpd start`, then `mdl-install`.
+# Checks that config.php and a database exist, not that the database
+# is empty: install_database.php keys its own already-installed check
+# on the real prefix, ignoring phpunit-init's test-prefix tables. A
+# table-count guard here would count those and refuse a fresh install.
 if ! moodle_configured; then
     echo "Project '${PROJECT}' is not configured yet." >&2
     echo "Run \`mpd start\` first: it makes the database and writes config.php." >&2
     exit 1
 fi
 
-# Composer install runs at PROJECT_DIR — composer.json + vendor/ stay at the
-# project root in both pre-5.0 and post-5.0 layouts.
+# composer.json and vendor/ stay at the project root in every layout.
 if [ ! -f "${PROJECT_DIR}/vendor/autoload.php" ]; then
     echo "Running composer install..."
     (cd "${PROJECT_DIR}" && composer install --no-interaction)
 fi
 
-# Build extra options from env variables.
 EXTRA_OPTS=()
 [ -n "${MPD_MOODLE_AGREE_LICENSE:-}" ] && EXTRA_OPTS+=("--agree-license")
 [ -n "${MPD_MOODLE_ADMINPASS:-}"     ] && EXTRA_OPTS+=("--adminpass=${MPD_MOODLE_ADMINPASS}")
 [ -n "${MPD_MOODLE_ADMINEMAIL:-}"    ] && EXTRA_OPTS+=("--adminemail=${MPD_MOODLE_ADMINEMAIL}")
 
-# moodle_run resolves admin/cli/install_database.php to the right cwd
-# (root for pre-5.0 and 5.x; admin/cli/* never moved under public/).
 moodle_run admin/cli/install_database.php \
     --fullname="mpd ${PROJECT}" \
     --shortname="${PROJECT}" \

@@ -1,15 +1,8 @@
 #!/bin/bash
 # project-create.sh <project-name>
-# Run by `mpd init <project>` inside the runtime container, AFTER any
-# git clone and BEFORE the project is registered as ready.
-#
-# Responsibilities:
-#   - Seed /srv/projects/<project>/ from this type's template/ directory
-#     (mpd.env). Existing files are never overwritten — a user-supplied
-#     mpd.env is sacred.
-#   - Add every template/ path to .git/info/exclude.
-# Both are apply_project_template's job; `mpd start` calls it again so a
-# file added to template/ later reaches projects that already exist.
+# Run by `mpd init <project>`, after any git clone and before the
+# project is registered. apply_project_template seeds template/ files
+# (never overwriting) and maintains the git excludes.
 set -euo pipefail
 
 PROJECT_NAME="$1"

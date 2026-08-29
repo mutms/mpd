@@ -1,18 +1,8 @@
 #!/bin/bash
 # project-delete.sh <project-name>
-# Retires the per-project systemd unit older mpd versions installed for the
-# Astro dev server. Source files and node_modules are kept (the source tree
-# is dev-owned and may have local work; deletion happens on the host side,
-# in mpd).
-#
-# mpd no longer runs a dev server, so on a current install there is usually
-# nothing here to do — a dev server the developer started is theirs to stop
-# (`astro dev stop`), and it is not a service mpd can or should reach into.
-#
-# The in-runtime caddy frontdoor handles TLS termination + routing; nothing
-# in /etc/apache2/, /etc/hosts, or anywhere else is owned by the runtime
-# for this project. DNS is served by the out-of-runtime dnsmasq service.
-# Called by mpd delete <project> (astro type).
+# Run by `mpd delete <project>` (astro type). Removes the per-project
+# dev-server unit older mpd versions installed. The source tree is
+# dev-owned; its removal happens host-side, in mpd.
 set -euo pipefail
 
 PROJECT_NAME="$1"

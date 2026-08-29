@@ -1,11 +1,8 @@
 #!/bin/bash
 # mpd-caddy.sh — the in-runtime TLS frontdoor, run by mpd-caddy.service
 # as the dev user (the only identity that can read the 0600 project keys
-# under /srv/meta/<project>/).
-#
-# Generates the Caddyfile from /srv/meta/*/urls.json, starts caddy (the
-# apt-installed binary), and rebuilds-and-reloads on changes inside
-# /srv/meta/. Successor of the retired caddy frontdoor sidecar's entry.sh.
+# under /srv/meta/). Renders the Caddyfile, starts caddy, and
+# rebuilds-and-reloads on changes inside /srv/meta/.
 set -euo pipefail
 
 CADDYFILE="${CADDYFILE:-/run/mpd-caddy/Caddyfile}"
@@ -25,13 +22,11 @@ regenerate() {
     mv "${CADDYFILE}.new" "${CADDYFILE}"
 }
 
-# Initial render must succeed for first start; after that, reload failures are
-# logged and the previous Caddyfile keeps serving traffic.
+# The initial render must succeed for first start. Later reload failures
+# are logged and the previous Caddyfile keeps serving.
 mkdir -p "$(dirname "$CADDYFILE")"
 regenerate
 
-# Start caddy in the background. `--watch` makes it reload automatically when
-# the Caddyfile on disk changes.
 caddy run --config "${CADDYFILE}" --adapter caddyfile --watch &
 CADDY_PID=$!
 
@@ -39,24 +34,13 @@ CADDY_PID=$!
 mkdir -p "$META_DIR"
 inotifywait -m -r -e close_write,delete,moved_to,moved_from "$META_DIR" 2>/dev/null \
     | while read -r path event file; do
-        # Coalesce bursts: wait briefly so a project-create that touches
-        # several files doesn't fire one regenerate per file.
+        # Coalesce bursts: a project create touches several files.
         sleep 0.5
-        # Drain any pending events without blocking forever.
         if regenerate; then
-            # --force is the point of this call. A certificate rotation
-            # rewrites cert.pem but not the Caddyfile, which only ever
-            # names its path — so the regenerated config is byte-identical,
-            # `caddy --watch` compares the two, finds no difference, and
-            # does not reload. Caddy then serves the superseded
-            # certificate from memory until something restarts the
-            # service. After a CA rotation that certificate is signed by
-            # a CA nothing trusts any more, so every project URL fails TLS
-            # while both the config and the files on disk look correct.
-            #
-            # When the config genuinely did change, --watch reloads as
-            # well and this is a second, graceful reload of identical
-            # content: milliseconds, and only on a real change.
+            # --force matters: a certificate rotation rewrites cert.pem but
+            # not the Caddyfile, so `--watch` sees no change and caddy keeps
+            # serving the superseded cert from memory. On a real config
+            # change this is only a second, graceful reload.
             caddy reload --config "${CADDYFILE}" --adapter caddyfile --force \
                 >/dev/null 2>&1 || true
         fi

@@ -12,17 +12,10 @@ import (
 	"github.com/mutms/mpd/go/internal/state"
 )
 
-// Shell completion candidate emitter — the single source of truth for
-// both bash and zsh.
-//
-// The shims under assets/completions/ invoke `mpd --complete <cword>
-// <word0> <word1> …` and feed these lines back to compadd / COMPREPLY.
-// Dynamic rather than a static script because mpd's grammar depends on
-// filesystem state: which projects, runtimes and databases exist. Hand-
-// writing that grammar twice, once per shell, would drift.
-//
-// Latency budget: every Tab press forks mpd. Keep this path to state-file
-// reads and directory listings — no podman calls, no network.
+// Shell completion candidates for bash and zsh; the shims under
+// assets/completions/ call `mpd --complete <cword> <word0> …`.
+// Every Tab press forks mpd: keep this path to state-file reads and
+// directory listings — no podman calls, no network.
 
 // ProjectVerbs are the tokens accepted as the first positional argument.
 // They are reserved as project names, so a project can never collide with
@@ -39,11 +32,10 @@ func IsProjectVerb(token string) bool {
 	return false
 }
 
-// GlobalFlags is every long flag mpd accepts. Mirrors the flag set in
-// cmd/mpd/main.go — add new entries in both places. Exported so the
-// runtime control guard can pin its denylist against the full set
-// (control.TestEveryGlobalFlagClassified), forcing a deliberate
-// runtime-exposure decision whenever a flag is added.
+// GlobalFlags is every long flag mpd accepts. It mirrors the flag set in
+// cmd/mpd/main.go — add new entries in both places.
+// control.TestEveryGlobalFlagClassified pins the runtime denylist
+// against this list.
 var GlobalFlags = []string{
 	"--vm-setup",
 	"--vm-upgrade",
@@ -107,9 +99,8 @@ func candidates(cword int, words []string, s state.Store, a assets.Tree) []strin
 	if cword == 2 && (first == "list" || first == "ls") {
 		return []string{"projects", "services", "infra", "dbs", "network"}
 	}
-	// Verb-first form: the second token is a project name. `init` takes
-	// a NEW name, so no suggestion list applies there. `rm` is the alias
-	// for `delete`, so it completes project names too.
+	// The second token is a project name. `init` takes a new name, so
+	// nothing is suggested there.
 	if cword == 2 && (IsProjectVerb(first) || first == "rm") {
 		if first == "init" {
 			return nil
@@ -128,8 +119,7 @@ func firstTokenCandidates(prefix string) []string {
 	}
 	out := append([]string{}, ProjectVerbs...)
 	sort.Strings(out)
-	// "ls" (list) and "rm" (delete) are command aliases, offered alongside
-	// their canonical names.
+	// "ls" and "rm" are aliases for "list" and "delete".
 	return append(append(out, "list", "ls", "rm"), GlobalFlags...)
 }
 
@@ -138,8 +128,7 @@ func optionValues(flag string, s state.Store, a assets.Tree) []string {
 	case "--db-start", "--db-stop", "--db-delete":
 		return databaseNames(s)
 	case "--db-create":
-		// The DB layer accepts a bare engine (version defaulted) as well
-		// as engine:version, so offer both shapes.
+		// The DB layer accepts a bare engine or engine:version; offer both.
 		return []string{"postgres", "postgres:17", "mariadb", "mariadb:10.11", "mysql", "mysql:8.4"}
 	case "--service-start", "--service-stop", "--service-uninstall", "--service-purge":
 		return service.Names()
@@ -152,12 +141,10 @@ func optionValues(flag string, s state.Store, a assets.Tree) []string {
 func verbArgs(verb string) []string {
 	switch verb {
 	case "init":
-		// No --db here: project-type knobs live in mpd.env and are set
-		// through start.
+		// No --db here: project-type knobs live in mpd.env, set via start.
 		return []string{"--type=", "--yes"}
 	case "start":
-		// start applies KEY=VALUE settings before it configures and
-		// starts. Commonly-set keys; any MPD_* key is accepted.
+		// Commonly-set keys; any MPD_* key is accepted.
 		return []string{"MPD_DB=", "MPD_PHP_VERSION=", "MPD_MOODLE_BEHAT="}
 	case "delete", "rm", "reset":
 		return []string{"--yes"}
@@ -184,11 +171,9 @@ func databaseNames(s state.Store) []string {
 	return names
 }
 
-// CompleteFromArgs is the `--complete` entry point: it parses the raw
-// argument list the shim passes and emits candidates.
-//
-// A malformed cword yields no candidates rather than an error, for the
-// same reason the rest of this file swallows failures.
+// CompleteFromArgs is the `--complete` entry point: it parses the shim's
+// raw argument list and emits candidates. A malformed cword yields no
+// candidates rather than an error.
 func CompleteFromArgs(out io.Writer, args []string, s state.Store, a assets.Tree) {
 	if len(args) == 0 {
 		return

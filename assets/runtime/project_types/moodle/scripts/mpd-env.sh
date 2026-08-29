@@ -3,7 +3,6 @@
 # Provides: PROJECT, PROJECT_DIR, moodle_run(), and all MPD_* env variables.
 # Usage: source /opt/mpd/assets/runtime/project_types/moodle/scripts/mpd-env.sh
 
-# Detect project from current working directory.
 if [[ "$PWD" =~ ^/srv/projects/([^/]+) ]]; then
     PROJECT="${BASH_REMATCH[1]}"
 else
@@ -14,18 +13,10 @@ fi
 PROJECT_DIR="/srv/projects/${PROJECT}"
 
 # moodle_run <relative-script-path> [args...]
-#
-# Moodle's source layout shifted between versions. Pre-5.0 keeps everything
-# at the project root. 5.0+ moved web entry points under public/ — but it's
-# *partial*: in 5.x, admin/cli/* (install_database, cron, upgrade, ...) is
-# still at the root, while admin/tool/* (phpunit, behat, ...) moved under
-# public/. So MOODLE_DIR-as-a-single-value doesn't work — each script needs
-# to be resolved individually.
-#
-# This helper takes the relative path the tool wants to run (e.g.
-# "admin/cli/install_database.php"), checks where it actually lives in the
-# current project, cd's there, and execs php on it. The cwd matters because
-# Moodle CLIs use require_once(__DIR__/../config.php) etc.
+# Runs a Moodle CLI script with php from the directory that holds it.
+# Moodle 5.x split the tree — admin/cli/* stays at the root while
+# admin/tool/* moved under public/ — so each path resolves on its own.
+# The cwd matters: Moodle CLIs require config.php relative to __DIR__.
 moodle_run() {
     local rel="$1"; shift
     if [ -f "${PROJECT_DIR}/${rel}" ]; then
@@ -39,17 +30,9 @@ moodle_run() {
     exec php "$rel" "$@"
 }
 
-# moodle_status
-#
-# This project's status, as JSON, from `mpd status --json`.
-#
-# Ask mpd rather than reading /srv/meta: the layout of that directory is
-# mpd's, and a script that opens it is a copy of mpd's own schema written
-# in a language that cannot check it. `mpd` runs in here now — over the
-# runtime's control socket — so there is no longer a reason to guess.
-#
-# Fetched once per script. The call is about 0.2s, which is nothing for a
-# tool that runs it once and too much to repeat in a loop.
+# moodle_status — this project's status JSON from `mpd status --json`,
+# fetched once per script (each call is about 0.2s). Ask mpd instead of
+# reading /srv/meta; see AGENTS.md "Ask mpd, don't read its files".
 moodle_status() {
     if [ -z "${_MPD_STATUS:-}" ]; then
         _MPD_STATUS=$(mpd status "$PROJECT" --json) || return 1
@@ -58,9 +41,7 @@ moodle_status() {
 }
 
 # moodle_status_field <jq-path> — one string out of moodle_status.
-#
-# For strings only. `// empty` treats a false boolean as absent, which is
-# a jq trap, so booleans get their own accessor below.
+# Strings only: `// empty` treats a false boolean as absent.
 moodle_status_field() {
     moodle_status | jq -r "$1 // empty"
 }
@@ -71,15 +52,9 @@ moodle_configured() {
     [ "$(moodle_status | jq -r '.configured')" = "true" ]
 }
 
-# moodle_db_table_count
-#
-# How many tables this project's database holds. Prints the number, or
-# fails when the project has no database yet.
-#
-# "Is this project already carrying data?" is a question several tools
-# have to answer before they do anything — mdl-install must not install
-# over a site, mdl-data-restore must not load a dump on top of one — and
-# the database is the only place the answer cannot go stale.
+# moodle_db_table_count — prints how many tables this project's
+# database holds; fails when there is no database. Tools use it to
+# refuse acting on a project that still carries data.
 moodle_db_table_count() {
     local engine host client
     engine=$(moodle_status_field '.database.engine') || return 1
@@ -105,10 +80,8 @@ moodle_db_table_count() {
     esac
 }
 
-# Layered MPD_* env via the secure whitelist parser (NOT raw `source` — a
-# malicious project's mpd.env with `MPD_FOO=$(rm -rf ~)` would otherwise
-# execute when cloned from git). Loads dev defaults → type defaults →
-# project mpd.env, last-assignment-wins.
+# Layered MPD_* config via the whitelist parser, never raw `source`:
+# a cloned project's mpd.env must not execute code.
 PROJECT_NAME="${PROJECT}"
 # shellcheck source=/dev/null
 source /opt/mpd/assets/runtime/lib/source-mpd-env.sh

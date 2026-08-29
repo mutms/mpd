@@ -406,9 +406,44 @@ Two known tensions, both resolved toward the repo's own rules:
 - Plain language wants short files; a genuine safety explanation
   (`MPD_DB=""` on astro) stays. Cutting the reason is not simplifying.
 
-`docs/` and the Go sources are not covered — they address a different
-reader, and code comments carry reasoning that plain-language rules are
-not shaped for.
+`docs/` is not covered — it addresses a different reader. Code
+comments everywhere (Go and shell) follow the "Comments" section below.
+
+## Comments
+
+Keep comments to a minimum. Code and `docs/` are the record; comments
+are a last resort for what the code cannot say.
+
+A comment is allowed only when it states:
+
+- a constraint or invariant the code can't express ("must run before X",
+  "RO — never write here"),
+- a non-obvious why (a workaround, a deliberate rejection of the obvious
+  approach) that is not already in `docs/` — if it is, point there,
+- a required doc comment (Go exported identifiers: one sentence,
+  starting with the identifier's name, per Go convention),
+- a file's one-line purpose header (shell tools, Go packages).
+
+Never write comments that:
+
+- restate what the next line does,
+- narrate design history, alternatives, or rationale that belongs in
+  `docs/`,
+- use markdown emphasis, headings, or multi-paragraph essays,
+- address the reviewer ("this is correct because…").
+
+Style for the comments that remain: simple technical English — one idea
+per sentence, active voice, present tense, under ~20 words. A reader
+with English as a second language must parse it in one pass.
+
+```
+Wrong:  // Two certificates matter here and they are not the same thing.
+        // The **anchor** is what the VM's trust stores are told to
+        // trust; the **signer** is what leaf certificates are actually
+        // signed with. …
+Right:  // Signer picks this VM's signing CA. Trust anchor and signer
+        // differ on managed VMs; see docs/security.md.
+```
 
 ## Authoring verbs and tools
 
@@ -496,7 +531,7 @@ set -euo pipefail
 # Runs as the dev user inside the runtime. May use sudo freely
 # (see architecture.md §7 "Privilege model").
 
-# Walk up from $PWD to find the project root (presence of mpd.env).
+# Find the project root: nearest parent with mpd.env.
 PROJECT_DIR="$PWD"
 while [ ! -f "$PROJECT_DIR/mpd.env" ] && [ "$PROJECT_DIR" != "/" ]; do
     PROJECT_DIR="$(dirname "$PROJECT_DIR")"
@@ -506,10 +541,8 @@ if [ ! -f "$PROJECT_DIR/mpd.env" ]; then
     exit 1
 fi
 
-# Load the layered MPD_* config (dev defaults → type defaults → project
-# mpd.env), each parsed through a whitelist so a cloned project's mpd.env
-# cannot inject code. The developer's general env (runtime.env) is not a
-# layer — it is ambient, sourced into the shell by the runtime ~/.bashrc.
+# Load the layered MPD_* config; parsing is whitelisted, mpd.env cannot
+# inject code (see docs/architecture.md §8).
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
 . /opt/mpd/assets/runtime/lib/source-mpd-env.sh
 

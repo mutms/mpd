@@ -10,12 +10,8 @@ import (
 )
 
 // gitRepo builds a throwaway checkout with the given origin.
-//
-// Deliberately makes no commit. Committing drags in the developer's own
-// git identity, and on this VM that means SSH commit signing: `git
-// commit` blocks on ssh-keygen waiting for an agent, which a unit test
-// has no business needing. Everything under test — is it a checkout, what
-// is its origin, is it dirty — is observable without one.
+// Deliberately no commit: committing drags in the developer's git
+// identity, and SSH commit signing then blocks on an agent.
 func gitRepo(t *testing.T, origin string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -30,8 +26,8 @@ func gitRepo(t *testing.T, origin string) string {
 	return dir
 }
 
-// dirty makes a checkout unclean. An untracked file is enough: `git
-// status --porcelain` reports it, which is what GitClean reads.
+// dirty makes a checkout unclean; an untracked file is enough for
+// GitClean.
 func dirty(t *testing.T, dir string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, "scratch"), []byte("x\n"), 0o644); err != nil {
@@ -41,7 +37,7 @@ func dirty(t *testing.T, dir string) {
 
 const testRemote = "https://github.com/mutms/mudev.git"
 
-// The ordinary case: mpd's own clone, untouched, is mpd's to move.
+// mpd's own clone, untouched, is mpd's to move.
 func TestSkipReasonAllowsMpdsOwnCleanCheckout(t *testing.T) {
 	repo := Repo{Dir: gitRepo(t, testRemote), Remote: testRemote}
 	if reason := repo.SkipReason(); reason != "" {
@@ -49,9 +45,8 @@ func TestSkipReasonAllowsMpdsOwnCleanCheckout(t *testing.T) {
 	}
 }
 
-// The case that matters most: a developer who re-pointed the checkout at
-// their own remote is working there. Pulling would drag their tree
-// forward under them, which is why origin decides ownership.
+// A checkout re-pointed at the developer's own remote is theirs; origin
+// decides ownership.
 func TestSkipReasonLeavesADevelopersOwnRemoteAlone(t *testing.T) {
 	repo := Repo{Dir: gitRepo(t, "git@github.com:mutms/mudev.git"), Remote: testRemote}
 	reason := repo.SkipReason()
@@ -63,9 +58,8 @@ func TestSkipReasonLeavesADevelopersOwnRemoteAlone(t *testing.T) {
 	}
 }
 
-// Uncommitted work outranks ownership: even mpd's own clone is left alone
-// once someone has edited it, because --ff-only would fail anyway and the
-// useful thing is to say why.
+// Uncommitted work outranks ownership: even mpd's own clone is left
+// alone once edited.
 func TestSkipReasonLeavesADirtyCheckoutAlone(t *testing.T) {
 	dir := gitRepo(t, testRemote)
 	dirty(t, dir)
@@ -75,8 +69,8 @@ func TestSkipReasonLeavesADirtyCheckoutAlone(t *testing.T) {
 	}
 }
 
-// A missing directory is normal, not an error: --vm-setup creates these,
-// and an upgrade running before it must not fail on their absence.
+// A missing directory is normal: an upgrade running before --vm-setup
+// must not fail on its absence.
 func TestSkipReasonHandlesAMissingCheckout(t *testing.T) {
 	repo := Repo{Dir: filepath.Join(t.TempDir(), "absent"), Remote: testRemote}
 	if reason := repo.SkipReason(); !strings.Contains(reason, "not a git checkout") {
@@ -84,8 +78,7 @@ func TestSkipReasonHandlesAMissingCheckout(t *testing.T) {
 	}
 }
 
-// GitClean underpins every decision above, so it is pinned directly
-// rather than only through SkipReason.
+// GitClean underpins every decision above, so it is pinned directly.
 func TestGitCleanReadsTheCheckout(t *testing.T) {
 	dir := gitRepo(t, testRemote)
 	if !GitClean(dir) {
@@ -97,9 +90,8 @@ func TestGitCleanReadsTheCheckout(t *testing.T) {
 	}
 }
 
-// GitRev must answer "" rather than fail on a checkout with no commits —
-// the upgrade prints it, and a half-initialised tree must not crash the
-// summary line.
+// GitRev must answer "" on a checkout with no commits; a half-initialised
+// tree must not crash the upgrade summary.
 func TestGitRevIsEmptyWithoutCommits(t *testing.T) {
 	if rev := GitRev(gitRepo(t, testRemote)); rev != "" {
 		t.Errorf("GitRev on a commitless checkout = %q, want empty", rev)

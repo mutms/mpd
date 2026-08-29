@@ -1,9 +1,8 @@
 #!/bin/bash
 # configure.sh <project-name>
-# Idempotent project repair/configuration for Astro:
-#   - re-applies this type's template/ (and refreshes the git excludes)
-#   - fixes ownership of /srv/projects/<project>
-#   - ensures dependencies exist
+# Idempotent configure step for an Astro project, run by `mpd start`:
+# re-applies template/, ensures dependencies, resolves the dev-server
+# port, and writes /srv/meta/<project>/{urls.json,effective.json}.
 set -euo pipefail
 
 # shellcheck source=/dev/null
@@ -18,9 +17,8 @@ if [ ! -d "$PROJECT_DIR" ]; then
     exit 1
 fi
 
-# Re-apply template/ before anything reads mpd.env: a project created before a
-# template file existed picks it up here, and mpd.env is guaranteed present for
-# source-mpd-env.sh below.
+# Re-apply template/ first so mpd.env exists for source-mpd-env.sh
+# below and older projects pick up new template files.
 # shellcheck source=/dev/null
 . /opt/mpd/assets/runtime/lib/project-template.sh
 apply_project_template "$PROJECT_NAME" "$TYPE_DIR"
@@ -30,13 +28,9 @@ if [ ! -f "${PROJECT_DIR}/package.json" ]; then
     exit 1
 fi
 
-# /srv/meta/<project>/ holds urls.json + effective.json plus
-# cert.pem/key.pem/project.json that mpd writes from the VM (which
-# runs as the dev uid). /srv/meta is dev-owned, so plain mkdir works.
+# /srv/meta is dev-owned, so plain mkdir works.
 mkdir -p "/srv/meta/${PROJECT_NAME}"
 
-# Layered resolution: dev defaults, type defaults, then per-project
-# mpd.env (seeded from template/ above, and never overwritten once present).
 # shellcheck source=/dev/null
 source /opt/mpd/assets/runtime/lib/source-mpd-env.sh
 
@@ -46,7 +40,6 @@ if [ -f ".nvmrc" ]; then
     nvm install
 fi
 
-# Keep configure idempotent and lightweight: install deps only when missing.
 if [ ! -d "${PROJECT_DIR}/node_modules" ]; then
     echo "node_modules missing — running npm install..."
     npm install
@@ -54,19 +47,10 @@ else
     echo "node_modules already present — skipping npm install."
 fi
 
-# Resolve the dev-server port from astro.config.mjs, defaulting to Astro's
-# own 4321.
-#
-# astro.config.mjs is the ONLY source, deliberately. mpd no longer starts
-# the dev server, so an mpd-side port setting could only move caddy's
-# upstream — the server would keep binding whatever its own config says,
-# and the mismatch would surface as a 502 with nothing obviously wrong.
-# One knob that both sides already read beats two that can disagree.
-#
-# Two astro projects in one runtime therefore need different server.port
-# values in their own configs; the second to start otherwise fails to
-# bind. (There used to be an MPD_NODE_ASTRO_PORT override here, from when
-# mpd ran the server and could pass --port itself.)
+# The port comes from astro.config.mjs only (default 4321): the server
+# reads that file itself, so a separate mpd-side setting could disagree
+# and surface as a 502. Two astro projects in one runtime need distinct
+# server.port values.
 PORT="4321"
 if [ -f "${PROJECT_DIR}/astro.config.mjs" ]; then
     DETECTED=$(grep -oE 'port\s*:\s*[0-9]+' "${PROJECT_DIR}/astro.config.mjs" 2>/dev/null \
@@ -74,16 +58,9 @@ if [ -f "${PROJECT_DIR}/astro.config.mjs" ]; then
     [ -n "$DETECTED" ] && PORT="$DETECTED"
 fi
 
-# Publish URLs for portal/cert/dnsmasq + the in-runtime caddy frontdoor.
-# Astro projects expose an HTTP dev server on a fixed local port — caddy
-# reverse-proxies HTTPS at <project>.<zone> to it.
-#
-# The upstream is "localhost", not "127.0.0.1", and that is load-bearing:
-# a default `astro dev` binds [::1] only, while `astro dev --host` binds
-# 0.0.0.0 (IPv4 only). Either one alone leaves a literal address dialing
-# a port nothing listens on, and caddy answers 502. A name lets Go's
-# dialer try both families and take whichever answers, so both ways of
-# starting the dev server work.
+# caddy reverse-proxies https://<project>.<zone> to the dev server.
+# The upstream must stay the name "localhost", not an IP — see
+# docs/usage.md (Astro).
 cat > "/srv/meta/${PROJECT_NAME}/urls.json" <<EOF
 [
   {
@@ -98,8 +75,7 @@ cat > "/srv/meta/${PROJECT_NAME}/urls.json" <<EOF
 ]
 EOF
 
-# Effective resolved settings — read by sibling scripts (project-setup.sh,
-# future Caddy generator) and by mpd for dbTag (empty for astro = no DB).
+# effective.json marks the project configured; empty dbTag = no DB.
 cat > "/srv/meta/${PROJECT_NAME}/effective.json" <<EOF
 {
   "port": ${PORT},

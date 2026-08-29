@@ -1,14 +1,8 @@
 #!/bin/bash
-# goland-install-app — unpack ~/install/goland.tgz into the JetBrains
-# Toolbox apps directory, so a new VM gets GoLand without downloading it.
-#
-# The archive is made by `goland-archive-app` on a VM that already has
-# GoLand, and reaches new VMs through your own mpd-virt overlay
-# (~/.mpd-virt/assets/vm/home/default/install/goland.tgz).
-#
-# Idempotent, and safe to call blindly during provisioning:
-#   - GoLand already installed -> no-op.
-#   - no archive to unpack     -> says so and exits 0.
+# goland-install-app — unpack ~/install/goland.tgz (made by
+# `goland-archive-app`) into the JetBrains Toolbox apps directory.
+# Idempotent and safe to call blindly during provisioning: exits 0 when
+# GoLand is already installed or there is no archive.
 set -euo pipefail
 
 APPS_DIR="$HOME/.local/share/JetBrains/Toolbox/apps"
@@ -57,8 +51,7 @@ EOF
     exit 0
 fi
 
-# A leftover directory without bin/goland is a failed earlier unpack, not
-# an install. Clear it so tar starts from clean ground.
+# A directory without bin/goland is a failed earlier unpack; clear it.
 if [ -e "${TARGET}" ]; then
     echo "Removing incomplete ${TARGET}"
     rm -rf "${TARGET}"
@@ -71,7 +64,7 @@ STAGE="$(mktemp -d "${APPS_DIR}/.${APP_NAME}.XXXXXX")"
 trap 'rm -rf "${STAGE}"' EXIT
 
 # Unpack beside the target and move into place, so an interrupted run
-# leaves no half-extracted app for the next run to mistake for one.
+# leaves no half-extracted app.
 tar -xzf "${ARCHIVE}" -C "${STAGE}"
 [ -x "${STAGE}/${APP_NAME}/bin/${APP_NAME}" ] || die "${ARCHIVE} has no ${APP_NAME}/bin/${APP_NAME} — re-make it with goland-archive-app."
 

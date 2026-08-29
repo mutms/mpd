@@ -1,33 +1,12 @@
 #!/bin/bash
-# libvirt-install — turn this VM into a libvirt/KVM host for mpd-virt testing.
+# libvirt-install — turn this VM into a libvirt/KVM host for mpd-virt
+# testing: the host prep from mpd-virt's docs/LIBVIRT.md, then clone and
+# build mpd-virt and clone mpd-proxy into ~/Developer/.
 #
-# An mpd VM is the place mpd gets developed and tested, and mpd-virt's
-# libvirt backend lets it also be the place mpd-virt makes *further* VMs
-# (`mpd-virt create NNN --backend=libvirt`). That needs a hypervisor
-# inside the VM, which is nested virtualisation: the outer hypervisor
-# must hand the CPU's VMX/SVM extensions through (Proxmox: CPU type
-# `host`; Parallels/UTM/Fusion: the "nested virtualisation" checkbox).
-# This script checks for that first, since nothing below is any use
-# without it, then does the one-time host prep from mpd-virt's
-# docs/LIBVIRT.md and fetches the two host-side repos:
-#
-#   1. qemu/KVM + libvirt installed; libvirtd enabled; this user in the
-#      `libvirt` group; the `default` NAT network up and autostarted;
-#      /var/lib/mpd-virt/ for the nested VMs' disks (outside $HOME, which
-#      is 0700 and so unreadable to qemu's libvirt-qemu user).
-#   2. KVM's own `nested=1` pinned in /etc/modprobe.d, so the VMs made
-#      here (they run with <cpu mode='host-passthrough'>) see VMX/SVM in
-#      turn and can nest one level deeper themselves.
-#   3. https://github.com/mutms/mpd-virt cloned to ~/Developer/mpd-virt
-#      and `make install`ed — the binary lands in ~/.local/bin/mpd-virt,
-#      which is already on PATH on an mpd VM.
-#   4. https://github.com/mutms/mpd-proxy cloned to ~/Developer/mpd-proxy
-#      and left unbuilt: it is the macOS overlay helper and is not
-#      Linux-ready yet. The clone is there to work on, not to run.
-#
-# Idempotent: a second run installs nothing, re-clones nothing (an
-# existing clean clone is fast-forwarded, a dirty one is left alone) and
-# rebuilds mpd-virt from whatever the checkout holds.
+# Needs nested virtualisation: the outer hypervisor must pass VMX/SVM
+# through (Proxmox: CPU type `host`; Parallels/UTM/Fusion: the nested
+# virtualisation checkbox). Checked first; nothing below works without it.
+# Idempotent: re-runs install nothing and leave a dirty checkout alone.
 set -euo pipefail
 
 step() { printf '\n==> %s\n' "$*"; }
@@ -37,8 +16,8 @@ die() {
     printf 'Error: %s\n' "$*" >&2
     exit 1
 }
-# apt-get waits for the dpkg lock (GNOME's packagekitd holds it after
-# login) and retries stalled downloads.
+# Waits for the dpkg lock (packagekitd holds it after login); retries
+# stalled downloads.
 apt_get() {
     sudo env DEBIAN_FRONTEND=noninteractive \
         apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 "$@"
@@ -79,13 +58,9 @@ MPD_VIRT_DIR="${DEV_DIR}/mpd-virt"
 MPD_PROXY_REPO=https://github.com/mutms/mpd-proxy.git
 MPD_PROXY_DIR="${DEV_DIR}/mpd-proxy"
 
-# --- Nested virtualisation ----------------------------------------------
-# Two things have to be true before KVM can run here: the CPU the outer
-# hypervisor shows us advertises VMX (Intel) or SVM (AMD), and the kernel
-# has bound /dev/kvm to it. The first is the outer hypervisor's setting;
-# the second follows from it on a stock Debian kernel (kvm_intel/kvm_amd
-# autoload), so a missing /dev/kvm with VMX present is the odd case and
-# gets its own hint.
+# KVM needs the CPU to advertise VMX/SVM and the kernel to bind /dev/kvm.
+# kvm_intel/kvm_amd autoload on a stock Debian kernel, so a missing
+# /dev/kvm with VMX present is the odd case and gets its own hint.
 step "Nested virtualisation"
 if grep -qE '^flags\s*:.*\b(vmx|svm)\b' /proc/cpuinfo; then
     ok "CPU advertises $(grep -qw vmx /proc/cpuinfo && echo VMX || echo SVM)"
@@ -103,18 +78,9 @@ else
     die "no /dev/kvm — KVM cannot start guests here"
 fi
 
-# --- Package set --------------------------------------------------------
-# The list from mpd-virt's docs/LIBVIRT.md plus what the build needs.
-# git/make are on every mpd VM already (bootstrap step 20) and are named
-# only so the script also works on a plainer Debian.
-#
-#   qemu-system-x86        the hypervisor binary (qemu-system-x86_64)
-#   libvirt-daemon-system  libvirtd + its default network definition
-#   libvirt-clients        virsh, which the backend drives everything with
-#   qemu-utils             qemu-img, to make the VM's disk from the cloud image
-#   genisoimage            the cloud-init NoCloud seed ISO
-#   git make               fetch and build mpd-virt (Go itself comes from
-#                          mpd's bootstrap step 30, already on every mpd VM)
+# The list from mpd-virt's docs/LIBVIRT.md plus the build. git/make are
+# on every mpd VM already; named so the script also works on a plainer
+# Debian. genisoimage makes the cloud-init NoCloud seed ISO.
 PKGS=(
     qemu-system-x86 libvirt-daemon-system libvirt-clients qemu-utils genisoimage
     git make
@@ -145,13 +111,10 @@ else
     ok "installed ${#missing[@]} package(s)"
 fi
 
-# --- KVM nested=1 for the guests ------------------------------------------
-# The guests mpd-virt makes here run with <cpu mode='host-passthrough'>,
-# so they see VMX/SVM only if *this* kernel's KVM exposes it, which is the
-# module's `nested` parameter. Debian's kernel defaults it on, but the
-# default has changed before; pin it so the guests can nest a level deeper
-# no matter what. Takes effect at the next module load — the live value is
-# reported either way, and a reload is attempted only while no guest runs.
+# Guests run with <cpu mode='host-passthrough'> and see VMX/SVM only if
+# this kernel's KVM exposes it. Debian defaults `nested` on, but the
+# default has changed before, so pin it. Takes effect at the next module
+# load; a reload is attempted only while no guest runs.
 step "KVM nested parameter"
 if grep -qw vmx /proc/cpuinfo; then kvm_mod=kvm_intel; else kvm_mod=kvm_amd; fi
 conf=/etc/modprobe.d/kvm-nested.conf
@@ -176,7 +139,6 @@ case "${nested_live}" in
         ;;
 esac
 
-# --- libvirtd ---------------------------------------------------------------
 step "libvirtd"
 if systemctl is-active --quiet libvirtd; then
     ok "libvirtd running"
@@ -185,9 +147,8 @@ else
     ok "libvirtd enabled and started"
 fi
 
-# The backend talks to qemu:///system as the plain user; the `libvirt`
-# group is what libvirt's polkit rule grants that to. A group change only
-# lands on the next login, so say so instead of pretending.
+# libvirt's polkit rule grants qemu:///system access to the `libvirt`
+# group. A group change only lands at the next login.
 step "libvirt group"
 RELOGIN=0
 if id -nG "$USER" | tr ' ' '\n' | grep -qx libvirt; then
@@ -198,10 +159,8 @@ else
     ok "added $USER to libvirt — takes effect at the next login"
 fi
 
-# --- default NAT network ----------------------------------------------------
-# libvirt ships it defined but inactive. mpd-virt pins its VMs to
-# 192.168.122.NNN on this network's bridge (virbr0), so it has to be up
-# and come back up on its own after a reboot.
+# libvirt ships the default network defined but inactive. mpd-virt pins
+# its VMs to 192.168.122.NNN on its bridge, so it must be up and autostart.
 step "default network"
 net_info="$(sudo virsh -q net-info default 2>/dev/null)" \
     || die "libvirt has no 'default' network — libvirt-daemon-system normally defines it; check 'sudo virsh net-list --all'"
@@ -218,7 +177,8 @@ else
     ok "autostart enabled"
 fi
 
-# --- /var/lib/mpd-virt -------------------------------------------------------
+# Disk storage for the nested VMs. Outside $HOME: $HOME is 0700 and so
+# unreadable to qemu's libvirt-qemu user.
 step "/var/lib/mpd-virt"
 if [ -d /var/lib/mpd-virt ] && [ "$(stat -c %U /var/lib/mpd-virt)" = "$USER" ]; then
     ok "present, owned by $USER"
@@ -227,11 +187,9 @@ else
     ok "created, owned by $USER"
 fi
 
-# --- Repos ------------------------------------------------------------------
-# clone_or_update <url> <dir>: a fresh clone, or a fast-forward of an
-# existing one — and a dirty checkout is left exactly as it is, since
-# this is where the developer works and nothing here may cost them an
-# edit. A non-git directory of the same name is an error, not a merge.
+# clone_or_update <url> <dir>: fresh clone, or fast-forward of a clean
+# one. A dirty checkout is left untouched — it may hold the developer's
+# edits. A non-git directory of the same name is an error.
 clone_or_update() {
     local url="$1" dir="$2"
     if [ ! -e "${dir}" ]; then
@@ -254,9 +212,6 @@ clone_or_update() {
 step "mpd-virt"
 mkdir -p "${DEV_DIR}"
 clone_or_update "${MPD_VIRT_REPO}" "${MPD_VIRT_DIR}"
-# `make install` = build + copy to ~/.local/bin, which mpd's bootstrap put
-# on PATH. GOTOOLCHAIN=local is set by the Makefile: a go.mod newer than
-# Debian's Go fails here legibly instead of downloading a toolchain.
 make -C "${MPD_VIRT_DIR}" --no-print-directory install >/dev/null
 ok "built and installed $("${HOME}/.local/bin/mpd-virt" --version 2>/dev/null || echo "${HOME}/.local/bin/mpd-virt")"
 
@@ -264,7 +219,6 @@ step "mpd-proxy"
 clone_or_update "${MPD_PROXY_REPO}" "${MPD_PROXY_DIR}"
 ok "source only — not built (not Linux-ready yet)"
 
-# --- Done -------------------------------------------------------------------
 echo
 if [ "${RELOGIN}" = 1 ]; then
     echo "Log out and back in (new libvirt group membership), then:"

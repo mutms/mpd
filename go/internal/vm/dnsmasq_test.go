@@ -5,9 +5,8 @@ import (
 	"testing"
 )
 
-// Every one of these directives is load-bearing, and dropping any of them
-// fails somewhere far from the config file — so they are asserted here
-// rather than discovered on a VM.
+// Each directive is load-bearing and fails far from the config file when
+// dropped, so it is asserted here rather than discovered on a VM.
 func TestDnsmasqConfCarriesTheLoadBearingDirectives(t *testing.T) {
 	body := DnsmasqConfBody("10.163.150.1", "mpdbr0")
 
@@ -29,9 +28,8 @@ func TestDnsmasqConfCarriesTheLoadBearingDirectives(t *testing.T) {
 	}
 }
 
-// Records come from /etc/hosts and upstream from /etc/resolv.conf — both
-// dnsmasq defaults. Any of these directives would reintroduce a second
-// record store or a second resolver in the path.
+// Any of these directives would reintroduce a second record store or a
+// second resolver in the path; the design relies on dnsmasq's defaults.
 func TestDnsmasqConfReadsEtcHostsAndResolvConfByDefault(t *testing.T) {
 	for _, line := range directives(DnsmasqConfBody("10.163.150.1", "mpdbr0")) {
 		for _, forbidden := range []string{"hostsdir", "no-hosts", "addn-hosts", "resolv-file", "server="} {
@@ -42,9 +40,8 @@ func TestDnsmasqConfReadsEtcHostsAndResolvConfByDefault(t *testing.T) {
 	}
 }
 
-// directives drops comments and blanks, leaving what dnsmasq acts on. The
-// comments explain the reasoning and name the addresses being argued
-// against, so a whole-body match would read them as configuration.
+// directives drops comments and blanks: the config's comments name
+// addresses that a whole-body match would misread as configuration.
 func directives(body string) []string {
 	var out []string
 	for _, raw := range strings.Split(body, "\n") {
@@ -57,8 +54,8 @@ func directives(body string) []string {
 	return out
 }
 
-// The listen address is the only thing that varies per VM, and getting it
-// wrong makes the resolver answer for a subnet it is not on.
+// The listen address is the only per-VM value; a wrong one makes the
+// resolver answer for a subnet it is not on.
 func TestDnsmasqConfListensOnTheGivenAddressOnly(t *testing.T) {
 	body := DnsmasqConfBody("10.163.222.1", "mpdbr0")
 	if !strings.Contains(body, "listen-address=10.163.222.1") {
@@ -71,9 +68,8 @@ func TestDnsmasqConfListensOnTheGivenAddressOnly(t *testing.T) {
 	}
 }
 
-// The unit must name mpd's own config file. Left to the default, dnsmasq
-// reads /etc/dnsmasq.conf — the sysadmin's file, which mpd does not own
-// and must not depend on.
+// The unit must name mpd's own config file; the default is the
+// sysadmin's /etc/dnsmasq.conf, which mpd does not own.
 func TestDnsmasqUnitNamesMpdsConfigFile(t *testing.T) {
 	body := DnsmasqUnitBody(DnsmasqConfPath)
 	if !strings.Contains(body, "--conf-file="+DnsmasqConfPath) {

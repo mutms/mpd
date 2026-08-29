@@ -1,19 +1,13 @@
 #!/bin/bash
 # Tool: install Composer phar to /usr/local/bin/composer.
-# Idempotent: no-op if already installed (per architecture.md §7).
-# Runs as the dev user; uses `sudo` only for the final write into
-# /usr/local/bin/. The dev/AI invokes this as a bare `composer-install`,
-# never `sudo composer-install`.
+# Idempotent; sudo only for the write into /usr/local/bin/.
 set -euo pipefail
 
 TARGET="/usr/local/bin/composer"
 
-# Composer distrusts a COMPOSER_HOME that is group- or world-writable and
-# warns about it (SelfUpdateCommand::warnIfUntrustedDir, `fileperms & 0022`).
-# Debian's pam_umask with USERGROUPS_ENAB gives login sessions umask 002, so a
-# COMPOSER_HOME that Composer creates for itself from an SSH shell lands 0775.
-# Pre-create it 0755 — and re-tighten it on every run, before the idempotency
-# check, so an already-installed runtime gets fixed too.
+# Composer warns when COMPOSER_HOME is group- or world-writable, and Debian's
+# login umask 002 makes a self-created one land 0775. Pre-create and
+# re-tighten it before the idempotency check, so existing runtimes get fixed.
 if [ -n "${COMPOSER_HOME:-}" ]; then
     HOME_DIR="$COMPOSER_HOME"
 elif [ -d "$HOME/.composer" ]; then
@@ -29,9 +23,8 @@ if [ -x "$TARGET" ]; then
     exit 0
 fi
 
-# Sury packages give us several PHP versions; we use 8.2 explicitly here
-# because Composer's installer.sig is reliable on it. The installed
-# composer.phar runs against any of the installed PHP versions.
+# php8.2 is pinned because the installer.sig check is reliable on it; the
+# installed phar runs on any installed PHP version.
 EXPECTED_CHECKSUM="$(php8.2 -r 'copy("https://composer.github.io/installer.sig", "php://stdout");')"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
@@ -44,8 +37,5 @@ if [ "$EXPECTED_CHECKSUM" != "$ACTUAL_CHECKSUM" ]; then
     exit 1
 fi
 
-# The phar landing in /usr/local/bin/ is the only operation that needs
-# root. Everything else (download, checksum, tmpdir cleanup) runs as
-# the calling user.
 sudo php8.2 "$TMPDIR/composer-setup.php" --quiet --install-dir=/usr/local/bin --filename=composer
 echo "Composer installed at $TARGET"

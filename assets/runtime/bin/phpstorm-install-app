@@ -1,18 +1,10 @@
 #!/bin/bash
 # phpstorm-install-app — unpack ~/install/phpstorm.tgz into the JetBrains
-# Toolbox apps directory, so a runtime gets its PhpStorm backend without
-# downloading it.
+# Toolbox apps directory, so a runtime skips the backend download.
 #
-# The archive is made by `phpstorm-archive-app` in a runtime that already
-# has PhpStorm, and reaches new runtimes through your own mpd-virt overlay
-# (~/.mpd-virt/assets/runtime/home/default/install/phpstorm.tgz), which
-# mpd seeds into ~/install/ when the runtime is created. Worth having:
-# the container's home is fresh after every `mpd --runtime-rebuild`, so
-# the download is otherwise paid again each time.
-#
-# Idempotent, and safe to call blindly during provisioning:
-#   - PhpStorm already installed -> no-op.
-#   - no archive to unpack       -> says so and exits 0.
+# The archive comes from `phpstorm-archive-app`, seeded into ~/install/
+# through the developer's mpd-virt overlay at runtime create.
+# Idempotent: exits 0 when PhpStorm is installed or no archive exists.
 set -euo pipefail
 
 APPS_DIR="$HOME/.local/share/JetBrains/Toolbox/apps"
@@ -61,8 +53,7 @@ EOF
     exit 0
 fi
 
-# A leftover directory without the backend launcher is a failed earlier
-# unpack, not an install. Clear it so tar starts from clean ground.
+# A directory without the backend launcher is a failed earlier unpack.
 if [ -e "${TARGET}" ]; then
     echo "Removing incomplete ${TARGET}"
     rm -rf "${TARGET}"
@@ -75,7 +66,7 @@ STAGE="$(mktemp -d "${APPS_DIR}/.${APP_NAME}.XXXXXX")"
 trap 'rm -rf "${STAGE}"' EXIT
 
 # Unpack beside the target and move into place, so an interrupted run
-# leaves no half-extracted backend for the next run to mistake for one.
+# leaves no half-extracted backend.
 tar -xzf "${ARCHIVE}" -C "${STAGE}"
 [ -x "${STAGE}/${APP_NAME}/bin/remote-dev-server.sh" ] || die "${ARCHIVE} has no ${APP_NAME}/bin/remote-dev-server.sh — re-make it with phpstorm-archive-app."
 

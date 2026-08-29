@@ -11,10 +11,6 @@ import (
 )
 
 // ApplyMutations writes each KEY=VALUE into an mpd.env file, in place.
-//
-// Called from the VM, which reaches /srv through the srv.mount bind and so
-// edits a project's mpd.env as an ordinary file. This used to shell into
-// the runtime to run a script; the container never had anything to add.
 func ApplyMutations(path string, muts []EnvMutation) error {
 	for _, m := range muts {
 		if err := SetEnvKey(path, m.Key, m.Value); err != nil {
@@ -24,16 +20,9 @@ func ApplyMutations(path string, muts []EnvMutation) error {
 	return nil
 }
 
-// SetEnvKey sets or unsets one key without moving it.
-//
-// Position is load-bearing in these files: every key sits under the comment
-// block that explains it, and a template ships each optional key as a
-// commented example. A writer that deleted the old line and appended a new
-// one — which is what this replaced — left the value stranded at the end of
-// the file, under a comment about something else, and left the comment
-// block that described it standing over nothing.
-//
-// Caller is expected to have run the key and value through ParseMutations.
+// SetEnvKey sets or unsets one key without moving it. Position is
+// load-bearing: every key sits under the comment block that explains it.
+// Caller must have run the key and value through ParseMutations.
 func SetEnvKey(path, key, value string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -46,8 +35,6 @@ func SetEnvKey(path, key, value string) error {
 	return srv.Write(path, setEnvKey(data, key, value), info.Mode().Perm())
 }
 
-// setEnvKey is the whole transform, kept separate from the filesystem so it
-// can be tested directly.
 func setEnvKey(data []byte, key, value string) []byte {
 	var (
 		setting  = key + "="       // KEY=…      an actual setting
@@ -57,10 +44,8 @@ func setEnvKey(data []byte, key, value string) []byte {
 		lastLine string
 	)
 
-	// An existing setting is rewritten where it stands; only when there is
-	// none does a commented example get taken over. Decided up front,
-	// because a file can hold both, in either order, and the real setting
-	// has to win.
+	// Decided up front: a file can hold a setting and a commented
+	// example in either order, and the real setting has to win.
 	hasSetting := false
 	sc := bufio.NewScanner(bytes.NewReader(data))
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -85,9 +70,8 @@ func setEnvKey(data []byte, key, value string) []byte {
 			if value != "" {
 				fmt.Fprintf(&out, "%s=%s\n", key, value)
 			} else {
-				// Commented out rather than removed. Unset either way —
-				// nothing reads a commented line — but the key keeps its
-				// place for the next time it is set.
+				// Commented out rather than removed, so the key keeps
+				// its place for the next set.
 				fmt.Fprintf(&out, "#%s\n", line)
 			}
 		case strings.HasPrefix(line, example) && !hasSetting && !done && value != "":
@@ -98,8 +82,7 @@ func setEnvKey(data []byte, key, value string) []byte {
 		}
 	}
 
-	// Not in the file at all, and there is a value to write: append it one
-	// blank line clear of whatever the file ended with.
+	// Not in the file at all: append, one blank line clear of the end.
 	if !done && value != "" {
 		if lastLine != "" {
 			out.WriteString("\n")

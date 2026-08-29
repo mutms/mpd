@@ -17,29 +17,19 @@ import (
 	"github.com/mutms/mpd/go/internal/srv"
 )
 
-// runtimeBackupsDir is where runtime backups land on the data volume —
-// visible at the same path on the VM and inside the runtime, which is
-// what lets VM-side Go orchestrate scripts that run in the container.
+// Backups live on /srv, so the VM and the runtime see the same path.
 var runtimeBackupsDir = filepath.Join(srv.Backups, "runtime")
 
-// backupManifest records what a backup run did, next to its files.
 type backupManifest struct {
 	CreatedAt string   `json:"createdAt"`
 	Scripts   []string `json:"scripts"`
 }
 
-// RuntimeBackup saves the developer's home directory inside the runtime
-// into a timestamped directory under /srv/backups/runtime/.
-//
-// A deny-list: everything under $HOME except regenerable caches and
-// installed binaries. Binaries are left out on purpose — a rebuilt
-// runtime gets fresh, current tools, and reinstalling one is a single
-// command — so config, dotfiles, IDE settings and shell history come
-// back but caches and binaries do not.
-//
-// The work is asset-side: every assets/runtime/backup.d/*.sh runs
-// inside the runtime as the dev user with the backup directory as $1.
-// Adding a topic means dropping a script there, no Go change.
+// RuntimeBackup saves the runtime home into a timestamped directory
+// under /srv/backups/runtime/. Caches and installed binaries are skipped
+// on purpose — a rebuilt runtime gets fresh tools. The work is
+// asset-side: every assets/runtime/backup.d/*.sh runs in the runtime as
+// the dev user with the backup directory as $1.
 func RuntimeBackup(ctx context.Context, out io.Writer, p *podman.Client,
 	o current.Observer, devUser string) error {
 
@@ -87,10 +77,9 @@ func RuntimeBackup(ctx context.Context, out io.Writer, p *podman.Client,
 	return nil
 }
 
-// RuntimeRestore replays the newest backup into the runtime: every
-// assets/runtime/restore.d/*.sh runs inside the runtime as the dev user
-// with the backup directory as $1. Each script no-ops when the backup
-// carries nothing for its topic.
+// RuntimeRestore replays the newest backup into the runtime via
+// assets/runtime/restore.d/*.sh, run as the dev user with the backup
+// directory as $1.
 func RuntimeRestore(ctx context.Context, out io.Writer, p *podman.Client,
 	o current.Observer, devUser string) error {
 
@@ -122,8 +111,8 @@ func RuntimeRestore(ctx context.Context, out io.Writer, p *podman.Client,
 	return nil
 }
 
-// hookScripts lists the *.sh files of one backup/restore layer, sorted —
-// the numeric-prefix convention (10-, 20-, …) is the ordering contract.
+// hookScripts sorts scripts by name; the numeric prefix (10-, 20-, …)
+// is the ordering contract.
 func hookScripts(layer string) ([]string, error) {
 	dir := filepath.Join(assets.Dir, assets.RuntimeDir, layer)
 	entries, err := os.ReadDir(dir)
@@ -144,9 +133,8 @@ func hookScripts(layer string) ([]string, error) {
 	return scripts, nil
 }
 
-// newestBackup picks the latest timestamped directory. The stamps are
-// UTC and lexicographically ordered by construction, so the newest is
-// simply the last name.
+// newestBackup relies on the UTC stamps sorting lexicographically, so
+// the newest is the last name.
 func newestBackup() (string, error) {
 	entries, err := os.ReadDir(runtimeBackupsDir)
 	if err != nil || len(entries) == 0 {

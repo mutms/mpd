@@ -1,9 +1,8 @@
 package vm
 
-// InfraService is one VM-integral piece of infrastructure: it runs on
-// the VM under systemd, always on, at the gateway address. Deliberately
-// distinct from the optional extra service containers (internal/service)
-// — "service" is reserved for those; these are infra.
+// InfraService is one VM-integral piece of infrastructure, run under
+// systemd on the VM. Distinct from the optional service containers
+// (internal/service).
 type InfraService struct {
 	// Name is the short display name ("dnsmasq", "portal").
 	Name string
@@ -14,8 +13,8 @@ type InfraService struct {
 }
 
 // InfraServices lists the VM-integral infrastructure, in display order.
-// (caddy and the bridge/firewall oneshots are deliberately absent: they
-// are plumbing below even this level, diagnosed via systemctl directly.)
+// caddy and the bridge/firewall oneshots are deliberately absent;
+// diagnose those via systemctl.
 func InfraServices() []InfraService {
 	return []InfraService{
 		{Name: "dnsmasq", Unit: DnsmasqUnit},

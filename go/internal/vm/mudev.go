@@ -13,19 +13,13 @@ import (
 	"github.com/mutms/mpd/go/internal/ui"
 )
 
-// MudevDir is the mudev source tree on the VM. A build artefact, not
-// content: delete it and the next `--vm-setup` reproduces it from a
-// public remote, which is why it lives beside the other /opt checkouts
-// rather than on the data volume.
+// MudevDir is the mudev source tree on the VM. A build artefact: delete
+// it and the next `--vm-setup` reproduces it from a public remote.
 const MudevDir = "/opt/mudev"
 
-// mudevRemote and catalogueRemotes are cloned over anonymous HTTPS.
-//
-// Never SSH: `--vm-setup` has to work on a fresh VM before the developer
-// has arranged agent forwarding or dropped a key, so every remote it
-// touches is public. Push access is the developer's own one-off
-// `git remote set-url`, and the private dev-recipes catalogue is a clone
-// they make themselves into /srv/extra, which is theirs to write.
+// mudevRemote and catalogueRemotes are cloned over anonymous HTTPS,
+// never SSH: `--vm-setup` must work on a fresh VM before any key or
+// agent forwarding exists.
 const mudevRemote = "https://github.com/mutms/mudev.git"
 
 var catalogueRemotes = map[string]string{
@@ -33,13 +27,12 @@ var catalogueRemotes = map[string]string{
 	"mdl-recipes": "https://github.com/mutms/mdl-recipes.git",
 }
 
-// MudevRemote and CatalogueRemotes expose what mpd itself clones, so the
-// upgrade path can tell its own checkouts from the developer's. A
-// checkout whose origin differs is not mpd's to move.
+// MudevRemote is the remote mpd itself clones, so the upgrade path can
+// tell mpd's checkouts from the developer's.
 func MudevRemote() string { return mudevRemote }
 
-// CatalogueRemotes returns a copy, so a caller iterating it cannot edit
-// the source of truth.
+// CatalogueRemotes returns a copy of the catalogue remotes, so a caller
+// cannot edit the source of truth.
 func CatalogueRemotes() map[string]string {
 	out := make(map[string]string, len(catalogueRemotes))
 	for k, v := range catalogueRemotes {
@@ -48,18 +41,9 @@ func CatalogueRemotes() map[string]string {
 	return out
 }
 
-// EnsureMudev clones and builds mudev, and clones the public catalogues
-// it reads into /srv/extra.
-//
-// Available before any runtime exists, which is the point: mudev
-// assembles a Moodle tree from a recipe, and that is work you do while
-// setting a project up, not something to install into a php runtime
-// afterwards.
-//
-// Idempotent. An existing checkout is left as it is — mpd provisions
-// mudev, it does not manage the developer's working copy, so a local
-// branch or uncommitted work survives `--vm-setup`. Updating is a `git
-// pull` plus `make install`.
+// EnsureMudev clones and builds mudev and clones the public catalogues
+// into /srv/extra. Idempotent: an existing checkout is left alone, so
+// local branches and uncommitted work survive `--vm-setup`.
 func EnsureMudev(ctx context.Context, out io.Writer) error {
 	if err := ensureMudevCheckout(ctx, out); err != nil {
 		return err
@@ -71,9 +55,8 @@ func EnsureMudev(ctx context.Context, out io.Writer) error {
 }
 
 // ensureMudevCheckout creates /opt/mudev owned by the dev user, then
-// clones into it. sudo only for the mkdir: /opt is root-owned, and
-// everything after this point — clone, build, rebuild — must be
-// unprivileged so the developer owns their own checkout.
+// clones into it. sudo only for the mkdir: the checkout itself must stay
+// unprivileged and developer-owned.
 func ensureMudevCheckout(ctx context.Context, out io.Writer) error {
 	if isGitCheckout(MudevDir) {
 		ui.OK(out, "mudev checkout present at %s.", MudevDir)
@@ -98,12 +81,9 @@ func ensureMudevCheckout(ctx context.Context, out io.Writer) error {
 }
 
 // buildMudev runs `make install`, which builds bin/mudev and symlinks it
-// into ~/.local/bin.
-//
-// GOTOOLCHAIN=local for the same reason mpd's own Makefile sets it:
-// Go's default would silently download a ~210 MB toolchain when a
-// go.mod asks for a newer version than Debian ships. Failing loudly is
-// the better outcome.
+// into ~/.local/bin. GOTOOLCHAIN=local: Go's default would silently
+// download a large toolchain when go.mod asks for a newer version than
+// Debian ships.
 func buildMudev(ctx context.Context, out io.Writer) error {
 	code, err := exec.Run(ctx, exec.Cmd{
 		Name: "make",
@@ -117,12 +97,9 @@ func buildMudev(ctx context.Context, out io.Writer) error {
 	return nil
 }
 
-// ensureCatalogues clones the public plugin and recipe catalogues into
-// /srv/extra, which mudev reads by default.
-//
-// Only the public ones. dev-recipes is private and deliberately absent:
-// /srv/extra is dev-user-owned, so cloning it is one ordinary `git
-// clone` by whoever has access, with nothing for mpd to prepare.
+// ensureCatalogues clones the public catalogues into /srv/extra. The
+// private dev-recipes catalogue is deliberately absent: the developer
+// clones that themselves.
 func ensureCatalogues(ctx context.Context, out io.Writer) error {
 	for _, name := range sortedNames(catalogueRemotes) {
 		dir := filepath.Join(srv.Extra, name)
@@ -145,8 +122,8 @@ func cloneInto(ctx context.Context, out io.Writer, remote, dir string) error {
 	ui.Step(out, "Cloning %s", remote)
 	code, err := exec.Run(ctx, exec.Cmd{
 		Name: "git",
-		// --progress: git's isatty check can misfire when its output is
-		// not a terminal, leaving a large clone apparently frozen.
+		// --progress: without it a large clone to a non-terminal looks
+		// frozen.
 		Args: []string{"clone", "--progress", remote, dir},
 	})
 	if err != nil || code != 0 {

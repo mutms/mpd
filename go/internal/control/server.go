@@ -16,31 +16,21 @@ import (
 	"github.com/mutms/mpd/go/internal/state"
 )
 
-// maxRequest caps a request. An argv and a path; anything larger is not one.
+// maxRequest caps a request; a valid one is a short argv and a path.
 const maxRequest = 64 << 10
 
-// expectedFDs is how many descriptors a client must send: stdin, stdout,
-// stderr. Exactly three — more or fewer means the peer is not our client,
-// and any extra would be a descriptor the daemon never asked for.
+// expectedFDs is the required descriptor count: stdin, stdout, stderr.
+// Any other count means the peer is not our client.
 const expectedFDs = 3
 
-// Serve listens on one socket per runtime and serves requests until ctx is
-// cancelled.
+// Serve listens on one socket per runtime and serves requests until ctx
+// is cancelled.
 //
-// # Why one socket per runtime
-//
-// The socket path is the caller's identity. Each socket is bind-mounted
-// into exactly one runtime, so a connection arriving on php's socket came
-// from the php runtime and cannot have come from anywhere else. The client
-// never states who it is, so it cannot lie.
-//
-// SO_PEERCRED is not an alternative here: every runtime runs the same
-// UID-matched dev user, so peer credentials are identical across all of
-// them and could not distinguish php from node. They remain useful as a
-// second layer — the socket's own mode and ownership are enforced by the
-// kernel across the container boundary — but not as identity.
-// base is the directory holding the per-runtime socket directories —
-// RunDir in production, a temporary directory in tests.
+// Each socket is bind-mounted into exactly one runtime, so the socket a
+// connection arrived on is the caller's identity; the client never
+// states who it is. SO_PEERCRED cannot do this job: every runtime runs
+// the same UID-matched dev user. base is RunDir in production, a
+// temporary directory in tests.
 func Serve(ctx context.Context, out io.Writer, runtimes []string, base string,
 	s state.Store, a assets.Tree) error {
 
@@ -54,7 +44,7 @@ func Serve(ctx context.Context, out io.Writer, runtimes []string, base string,
 		listener, err := listen(base, rt)
 		if err != nil {
 			// Close what is already up, or a failed start leaves live
-			// sockets behind with nothing serving them.
+			// sockets with nothing serving them.
 			for _, l := range listeners {
 				l.Close()
 			}
@@ -71,7 +61,7 @@ func Serve(ctx context.Context, out io.Writer, runtimes []string, base string,
 	}
 
 	<-ctx.Done()
-	// Closing the listeners is what unblocks the accept loops.
+	// Closing the listeners unblocks the accept loops.
 	for _, l := range listeners {
 		l.Close()
 	}
@@ -82,13 +72,11 @@ func Serve(ctx context.Context, out io.Writer, runtimes []string, base string,
 	return nil
 }
 
-// listen binds a runtime's socket, replacing any socket left by a previous
-// daemon.
-//
-// Unlinking first is required, not tidy: bind fails with EADDRINUSE on an
-// existing path even when nothing is listening. Rebinding is safe for
-// running containers because the directory is what is mounted, so the new
-// inode appears inside them immediately.
+// listen binds a runtime's socket, replacing any socket left by a
+// previous daemon. Unlinking first is required: bind fails with
+// EADDRINUSE on an existing path even when nothing is listening. The
+// directory is what is mounted, so the new inode appears inside running
+// containers immediately.
 func listen(base, rt string) (*net.UnixListener, error) {
 	dir := SocketDirIn(base, rt)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -103,9 +91,8 @@ func listen(base, rt string) (*net.UnixListener, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listening on %s: %w", path, err)
 	}
-	// The dev user owns both sides, so 0660 lets the runtime's UID-matched
-	// user connect and nothing else. Verified to be enforced across the
-	// container boundary: a different UID gets EACCES.
+	// 0660 lets the runtime's UID-matched dev user connect and nothing
+	// else; the kernel enforces it across the container boundary.
 	if err := os.Chmod(path, 0o660); err != nil {
 		l.Close()
 		return nil, fmt.Errorf("chmod %s: %w", path, err)
@@ -124,10 +111,8 @@ func acceptLoop(ctx context.Context, out io.Writer, l *net.UnixListener, g Guard
 			fmt.Fprintf(out, "accept on the '%s' socket failed: %v\n", g.Runtime, err)
 			continue
 		}
-		// Serialised per runtime rather than per connection: a developer
-		// runs one command at a time in a terminal, and the alternative
-		// invites two concurrent creates from the same runtime racing for
-		// the state lock the child takes anyway.
+		// Serialised per runtime: concurrent requests from one runtime
+		// would only race for the state lock the child takes anyway.
 		handle(ctx, out, conn, g)
 	}
 }
@@ -137,8 +122,8 @@ func handle(ctx context.Context, out io.Writer, conn *net.UnixConn, g Guard) {
 	defer conn.Close()
 
 	req, files, err := receive(conn)
-	// Close the received descriptors however this turns out; they are this
-	// process's copies of the caller's terminal.
+	// The received descriptors are this process's copies of the caller's
+	// terminal; close them however this turns out.
 	defer func() {
 		for _, f := range files {
 			if f != nil {
@@ -154,9 +139,8 @@ func handle(ctx context.Context, out io.Writer, conn *net.UnixConn, g Guard) {
 
 	decision, err := g.Check(req)
 	if err != nil {
-		// Refused before anything ran. The message goes back over the
-		// socket rather than to the caller's stderr, so the client owns how
-		// it is presented and the daemon's journal keeps a copy.
+		// The refusal goes back over the socket, so the client owns the
+		// presentation and the daemon's journal keeps a copy.
 		fmt.Fprintf(out, "'%s' refused %v: %v\n", g.Runtime, req.Argv, err)
 		reply(conn, response{Exit: 1, Error: err.Error()})
 		return
@@ -173,27 +157,12 @@ func handle(ctx context.Context, out io.Writer, conn *net.UnixConn, g Guard) {
 
 // run spawns mpd with the caller's descriptors as its own stdio.
 //
-// A child process rather than an in-process call, which buys three things
-// at the cost of one fork:
-//
-//   - Every child of that mpd — podman, asset scripts, hooks — inherits the
-//     caller's real descriptors, so their output reaches the caller's
-//     terminal. Threading writers through the 40-odd exec.Run call sites
-//     would have been the alternative, and process stdio would still have
-//     been wrong for grandchildren.
-//   - The forwarded verb is an ordinary mpd invocation, so it cannot drift
-//     from the same verb typed in a VM terminal.
-//   - A panic or an os.Exit inside a verb cannot take the daemon down.
-//
-// This is not "run what the client asked for": the binary is fixed and the
-// argv has already been through Guard.Check. exec resolves "mpd" through
-// its own absolute-path allow-list, so even the binary is not a string
-// from here.
-//
-// The daemon deliberately does not hold the state lock across this call.
-// The child takes it at its own entry point, exactly as a VM terminal
-// does; a lock held here would be a different file description, and the
-// child would wait on its parent forever.
+// A child process, not an in-process call: every descendant inherits
+// the caller's real descriptors, and a panic or os.Exit in a verb
+// cannot take the daemon down. The binary is fixed and the argv has
+// been through Guard.Check, so this never runs what the client named.
+// The daemon must not hold the state lock here: the child takes it at
+// its own entry point and would wait on its parent forever.
 func run(ctx context.Context, d Decision, req Request, files []*os.File) (int, error) {
 	cmd := exec.Cmd{
 		Name: "mpd",
@@ -242,8 +211,8 @@ func parseFDs(oob []byte) ([]*os.File, error) {
 	for _, m := range messages {
 		got, err := syscall.ParseUnixRights(&m)
 		if err != nil {
-			// Not an SCM_RIGHTS message; nothing else is expected, but a
-			// stray control message is not worth failing over.
+			// Not SCM_RIGHTS; a stray control message is not worth
+			// failing over.
 			continue
 		}
 		fds = append(fds, got...)

@@ -1,14 +1,6 @@
 // Package vm holds the operations mpd performs on the VM itself, as
-// opposed to on containers.
-//
-// Everything here touches host state: /etc, the system trust store, the
-// dev user's home directory, systemd. It is the half of `mpd --vm-setup`
-// that podman knows nothing about. Container-side setup lives in
-// internal/service.
-//
-// Paths are absolute and VM-wide rather than derived from $HOME: the mpd
-// VM is a single-purpose appliance, so code, assets and state live in
-// FHS-standard system locations and the dev user simply owns them.
+// opposed to on containers. Everything here touches host state: /etc,
+// the trust stores, the dev user's home, systemd.
 package vm
 
 import (
@@ -51,10 +43,8 @@ const (
 	ServiceDir = ConfDir + "/service"
 	TempDir    = ConfDir + "/temp"
 
-	// DnsmasqConfPath is the resolver's configuration, rendered by
-	// --vm-setup. Under ConfDir with the CA rather than under StateDir:
-	// it is mpd's own configuration of the VM, not operational state, and
-	// nothing rebuilds it from observation.
+	// DnsmasqConfPath is the resolver's configuration. Under ConfDir, not
+	// StateDir: it is mpd's configuration of the VM, not operational state.
 	DnsmasqConfPath = ConfDir + "/dnsmasq.conf"
 	// CACertPath is the trust anchor: the certificate every trust store on
 	// this VM is told about. CAKeyPath is its private key, which is present
@@ -62,31 +52,21 @@ const (
 	CACertPath = CARootDir + "/rootCA.pem"
 	CAKeyPath  = CARootDir + "/rootCA-key.pem"
 
-	// SigningCertPath and SigningKeyPath are the CA this VM actually signs
-	// leaf certificates with, which is not necessarily the anchor.
-	//
-	// A VM provisioned by mpd-virt gets an intermediate constrained to its
-	// own zone (`permitted;DNS:<NNN>.mpd.test`) and never sees the root's
-	// private key at all, so a compromised VM can mint certificates for its
-	// own names and nothing else. A sandbox VM (no orchestrator) generates
-	// a self-signed CA and writes it to both paths, making anchor and
-	// signer the same certificate and the chain one long.
-	//
-	// cert.Signer resolves which case a given VM is in.
+	// SigningCertPath and SigningKeyPath are the CA this VM signs leaf
+	// certificates with — not necessarily the anchor; see
+	// docs/security.md. cert.Signer resolves which case a VM is in.
 	SigningCertPath = CARootDir + "/vmCA.pem"
 	SigningKeyPath  = CARootDir + "/vmCA-key.pem"
 
-	// LanHostsPath holds names for machines on the local network that are
-	// not mpd VMs, in hosts(5) format, pushed in by `mpd-virt server sync`.
-	// Under ConfDir rather than StateDir: it is configuration handed to
-	// this VM from outside, not state the VM derives or rebuilds.
+	// LanHostsPath holds hosts(5) names for non-mpd machines on the LAN,
+	// pushed in by `mpd-virt server sync`.
 	LanHostsPath = ConfDir + "/lan-hosts"
 
 	// TrustStorePath is where the CA lands in the system trust store.
 	TrustStorePath = "/usr/local/share/ca-certificates/mpd-local.crt"
 
 	// BinaryPath is the installed binary, hardcoded into the rendered
-	// systemd unit so `cat mpd.service` shows the real path.
+	// systemd units.
 	BinaryPath = BinDir + "/mpd"
 
 	// Label names the execution environment in setup output.
@@ -102,9 +82,8 @@ type Identity struct {
 	UID  string
 }
 
-// DetectIdentity reports the invoking user. mpd always runs as the dev
-// user (never root, never via sudo -u — see AGENTS.md §"Mandatory
-// privilege rule"), so this is simply who we are.
+// DetectIdentity reports the invoking user; mpd always runs as the dev
+// user (see AGENTS.md, "Mandatory privilege rule").
 func DetectIdentity() Identity {
 	id := Identity{UID: fmt.Sprint(os.Getuid())}
 	if u, err := user.Current(); err == nil {
@@ -113,9 +92,7 @@ func DetectIdentity() Identity {
 	return id
 }
 
-// Home is the dev user's home directory. Used only for genuinely
-// per-user concerns — SSH keys, shell config, systemd user units.
-// Nothing mpd-owned lives here.
+// Home is the dev user's home directory; nothing mpd-owned lives here.
 func Home() string {
 	if h, err := os.UserHomeDir(); err == nil {
 		return h
@@ -123,9 +100,8 @@ func Home() string {
 	return ""
 }
 
-// AssetsPath returns the assets directory, failing loudly if the
-// checkout looks incomplete rather than letting a missing path surface
-// later as a confusing container error.
+// AssetsPath returns the assets directory, failing loudly when the
+// checkout looks incomplete.
 func AssetsPath() (string, error) {
 	if _, err := os.Stat(AssetsDir + "/runtime"); err != nil {
 		return "", fmt.Errorf("Assets not found at %s — clone mpd to /opt/mpd.", AssetsDir)
@@ -134,13 +110,9 @@ func AssetsPath() (string, error) {
 }
 
 // Fingerprint is a short content hash of a file, used as a container
-// label so a changed CA forces the service containers that embedded it
-// to be rebuilt. Empty for a missing or unreadable file, which callers
-// treat as "no opinion" rather than as a mismatch.
-//
-// 16 hex characters of SHA-256: this is a change detector, not a
-// security boundary, and a label that fits on one line is easier to read
-// in `podman inspect`.
+// label so a changed CA forces dependent containers to rebuild. Empty
+// for an unreadable file, which callers treat as "no opinion". 16 hex
+// characters: a change detector, not a security boundary.
 func Fingerprint(ctx context.Context, path string) string {
 	if _, err := os.Stat(path); err != nil {
 		return ""
@@ -157,9 +129,7 @@ func Fingerprint(ctx context.Context, path string) string {
 }
 
 // EnsureDir creates a directory (and parents) with the given mode,
-// refusing when the path exists as something other than a directory —
-// a symlink or stray file there would otherwise fail much later, inside
-// a container, with a far less obvious message.
+// refusing a path that exists as something other than a directory.
 func EnsureDir(path string, mode os.FileMode) error {
 	if info, err := os.Stat(path); err == nil {
 		if !info.IsDir() {

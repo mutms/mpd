@@ -1,17 +1,6 @@
 // Command mpd is the mpd control plane, run inside the mpd VM.
-//
-// Two grammars, deliberately:
-//
-//   - Project work is verb-first — `mpd start myproject`, `mpd init
-//     myproject --type=moodle`. It reads like git and is what a developer
-//     types dozens of times a day.
-//   - Everything that acts on the VM or its infrastructure is a flag —
-//     `mpd --vm-setup`, `mpd --runtime-rebuild`, `mpd --db-start`.
-//
-// The split exists so `mpd stop myproject` and `mpd --vm-stop` can never
-// be confused for each other. A bare `mpd stop` acting on the VM next to
-// `mpd stop <project>` acting on a project is exactly the ambiguity the
-// `--vm-` prefix removes.
+// Project work is verb-first; VM actions take `--vm-`-prefixed flags.
+// See docs/cli-behavior.md.
 package main
 
 import (
@@ -41,8 +30,7 @@ import (
 // version is stamped at build time via -ldflags.
 var version = "dev"
 
-// projectCommands is the verb-first half of the CLI: everything that
-// acts on one project.
+// projectCommands lists the project verbs for help output.
 const projectCommands = `  status     [projectname] [--json]            project details (--json for scripts)
   init       [projectname] [--type=<type>]     scaffold a new project (default type: moodle)
   start      [projectname] [KEY=VALUE ...]     configure + start (e.g. MPD_DB=postgres:18,
@@ -59,8 +47,7 @@ const projectCommands = `  status     [projectname] [--json]            project 
 The project name is optional: inside /srv/projects/<name>/ (or any
 subdirectory) it defaults to that project.`
 
-// otherCommands are the read-only queries that are neither a project
-// verb nor a VM action.
+// otherCommands lists the read-only queries for help output.
 const otherCommands = `  list       [projects|services|infra|dbs|network]  (default: projects; alias: ls)`
 
 // usage is the short form shown when a command is misspelled.
@@ -71,10 +58,8 @@ const usage = `Usage:
 Project commands:
 ` + projectCommands
 
-// helpTemplate replaces cobra's default, which lists every command in one
-// undifferentiated block — including its own `completion` and `help`
-// entries — and buries the flags that are most of mpd's surface. The two
-// halves of the CLI are named instead: project verbs, then VM flags.
+// helpTemplate replaces cobra's default so project verbs and VM flags
+// are listed as separate groups.
 const helpTemplate = `mpd — Moodle Plugin Development Environment
 
 Usage:
@@ -90,8 +75,7 @@ Other commands:
 Flags:
 {{.LocalFlags.FlagUsages}}`
 
-// flags holds every global option. One struct rather than package-level
-// vars so the dispatch below reads as a single decision.
+// flags holds every global option.
 type flags struct {
 	vmSetup   bool
 	vmUpgrade bool
@@ -121,30 +105,21 @@ type flags struct {
 	yes     bool
 	debug   bool
 
-	// json belongs to `show`, not to the root — it is registered on that
-	// command only.
+	// json is registered on the status command only, not the root.
 	json bool
 }
 
 func main() {
-	// `--complete` short-circuits before cobra: it is invoked on every Tab
-	// press by the shell shims, must never fail, and must not pay for
-	// building the command tree.
+	// --complete short-circuits before cobra: it runs on every Tab press
+	// and must not pay for building the command tree.
 	if len(os.Args) >= 3 && os.Args[1] == "--complete" {
 		cli.CompleteFromArgs(os.Stdout, os.Args[2:], state.New(), assets.New())
 		cli.ExitCompletion()
 	}
 
-	// Inside a runtime container there is no control plane to run against:
-	// /var/lib/mpd/conf and /var/lib/mpd/state are deliberately not
-	// mounted, and there is no podman socket. So the command goes to the
-	// VM, which runs it and writes back through this terminal.
-	//
-	// Before cobra, because building the command tree here would only
-	// produce handlers that cannot work — every one of them starts by
-	// resolving the VM's identity. Forwarding the raw argv also means the
-	// VM parses it with its own command tree, which is the only one that
-	// should decide what a verb means.
+	// Inside a runtime there is no state or podman socket, so the raw
+	// argv is forwarded to the VM before cobra parses it. The VM's own
+	// command tree decides what a verb means.
 	if _, inRuntime := control.RuntimeName(); inRuntime && !runsLocallyInRuntime(os.Args[1:]) {
 		code, err := control.Forward(os.Args[1:])
 		if err != nil {
@@ -166,22 +141,14 @@ func main() {
 		},
 	}
 
-	// Enables the `--version` / `-v` flags (cobra rejects them as unknown
-	// flags otherwise, before any RunE dispatch can see them). The template
-	// drops cobra's default "mpd version X" prefix so both print just the
-	// bare version string. There is deliberately no `version` subcommand.
-	// runsLocallyInRuntime already answers these in the runtime instead of
-	// forwarding to the VM.
+	// Enables --version/-v; the template prints the bare version string.
+	// There is deliberately no `version` subcommand.
 	root.Version = version
 	root.SetVersionTemplate("{{.Version}}\n")
 
-	// Declaration order, not alphabetical: the help then reads as the
-	// groups below — VM lifecycle, runtimes, databases, modifiers —
-	// instead of interleaving them.
+	// Declaration order, not alphabetical, so the help keeps the groups.
 	root.Flags().SortFlags = false
 
-	// VM lifecycle. The `--vm-` prefix names what they act on, so none of
-	// them can be mistaken for the project verb of the same name.
 	root.Flags().BoolVar(&f.vmSetup, "vm-setup", false,
 		"Idempotent VM setup. Safe to run repeatedly. Adopts the current VM.")
 	root.Flags().BoolVar(&f.vmUpgrade, "vm-upgrade", false,
@@ -229,8 +196,7 @@ func main() {
 	root.Flags().BoolVar(&f.debug, "debug", false, "Print debug information.")
 
 	root.SetHelpTemplate(helpTemplate)
-	// cobra's generated `completion` command is noise here: mpd ships its
-	// own shims under assets/completions/, installed by --vm-setup.
+	// mpd ships its own completion shims under assets/completions/.
 	root.CompletionOptions.DisableDefaultCmd = true
 
 	root.AddCommand(listCmd())
@@ -238,9 +204,9 @@ func main() {
 	root.SetHelpCommand(helpCmd())
 
 	if err := root.Execute(); err != nil {
-		// A forwarded command's exit status is passed through untouched
-		// and silently: the child already reported whatever failed, and
-		// `mpd run` adding its own line would corrupt piped output.
+		// A forwarded command's exit status passes through silently: the
+		// child already reported the failure, and an extra line would
+		// corrupt piped output.
 		var exit cli.ExitError
 		if errors.As(err, &exit) {
 			os.Exit(exit.Code)
@@ -250,25 +216,20 @@ func main() {
 	}
 }
 
-// dispatch runs whichever global flag was given.
-//
-// Order matches the flag groups above; at most one flag is acted on, and
-// a bare `mpd` with no flags falls through to status — a more useful
-// answer for someone who just typed `mpd` than usage text would be.
+// dispatch acts on the first global flag given; with none it shows status.
 func dispatch(c *cobra.Command, args []string, f *flags) error {
 	ctx := c.Context()
 	out := c.OutOrStdout()
 
-	// A leftover positional here is a project verb typo or an unknown
-	// name; saying so beats silently printing status.
+	// A leftover positional is a verb typo or an unknown name; say so
+	// instead of silently printing status.
 	if len(args) > 0 {
 		return fmt.Errorf("unknown command %q\n\n%s", args[0], usage)
 	}
 
 	switch {
 	case f.web:
-		// Long-running, unlike every other flag here: the process is the
-		// service, so it blocks until the context is cancelled.
+		// Long-running: blocks until the context is cancelled.
 		n, err := net.Current()
 		if err != nil {
 			return err
@@ -284,14 +245,10 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 			Version:    version,
 		})
 	case f.control:
-		// Long-running, like --web. Deliberately does NOT take the state
-		// lock: each request spawns a child mpd that takes it itself, and a
-		// lock held here would be a different file description that the
-		// child would then wait on forever.
-		//
-		// One socket for the one runtime. Bound up front, so a runtime
-		// rebuilt later already has its endpoint — nothing reconciles
-		// sockets against runtime lifecycle.
+		// Long-running. Takes no state lock: each request spawns a child
+		// mpd that takes it, and a lock held here would block that child
+		// forever. The socket is bound up front, so a rebuilt runtime
+		// already has its endpoint.
 		runtimes := []string{runtime.Name}
 		if err := control.PruneSockets(runtimes); err != nil {
 			return err
@@ -300,12 +257,8 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 	case f.vmSetup:
 		return withLock(ctx, out, state.New(), func() error { return cli.Setup(ctx, out) })
 	case f.vmUpgrade:
-		// No lock: the upgrade mutates the checkout and bin/mpd. The
-		// state-mutating part is the `mpd --vm-setup` child it spawns at
-		// the end — which takes the lock itself, and would wait forever on
-		// a lock held here (same trap as --control). The one state write
-		// of its own, stamping the upgrade into config.json, happens after
-		// that child has finished and released the lock.
+		// No lock: the `mpd --vm-setup` child it spawns takes the lock
+		// itself and would block forever on one held here.
 		return cli.Upgrade(ctx, out, state.New())
 	case f.vmStart:
 		d, err := projectDeps()
@@ -322,9 +275,8 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 	case f.vmRestart:
 		return withLock(ctx, out, state.New(), func() error { return cli.Restart(ctx, out, state.Dir) })
 	case f.vmDiag:
-		// No lock: every probe is a read, a lookup or a dial, so a diag
-		// must stay runnable while another mpd command holds the lock —
-		// that is exactly when someone reaches for it.
+		// No lock: probes are read-only and must run while another
+		// command holds the lock.
 		n, err := net.Current()
 		if err != nil {
 			return err
@@ -386,14 +338,9 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 	return nil
 }
 
-// runsLocallyInRuntime reports whether a command should be answered inside
-// the runtime instead of forwarded to the VM.
-//
-// Only things that are true of the binary itself. `--version`/`-v` report
-// the build of the binary being asked, and /opt/mpd is the same checkout
-// on both sides, so answering locally is both correct and faster.
-// Everything else needs state, podman or the network, none of which exist
-// here.
+// runsLocallyInRuntime reports whether a command is answered in the
+// runtime instead of forwarded. Only facts about the binary itself
+// qualify; everything else needs state, podman or the network.
 func runsLocallyInRuntime(args []string) bool {
 	if len(args) == 0 {
 		return false
@@ -405,18 +352,10 @@ func runsLocallyInRuntime(args []string) bool {
 	return false
 }
 
-// withLock runs fn under mpd's exclusive mutation lock.
-//
-// Every mutating entry point goes through here and nothing else does.
-// flock is per open file description, so a second acquire inside the same
-// process blocks on itself forever — which is why the lock is taken in
-// this file, at the boundary, and never from inside a cli handler. A
-// handler that needs it already has it. See state.Store.Acquire.
-//
-// Read-only paths (show, list, status, --vm-status) are deliberately
-// absent: the atomic rename in writeJSON means a reader sees either the
-// old file or the new one, so blocking them behind a long create would
-// cost real waiting to prevent nothing.
+// withLock runs fn under mpd's exclusive mutation lock. flock is per
+// open file description, so the lock is taken only here at the boundary;
+// a second acquire in the same process would block forever. Read-only
+// paths skip it — atomic renames keep readers safe. See state.Store.Acquire.
 func withLock(ctx context.Context, out io.Writer, s state.Store, fn func() error) error {
 	release, err := s.Acquire(ctx, out)
 	if err != nil {
@@ -464,7 +403,6 @@ func dbAction(ctx context.Context, out interface{ Write([]byte) (int, error) },
 	if err != nil {
 		return err
 	}
-	// Every db action mutates — there is no --db-show.
 	return withLock(ctx, out, s, func() error {
 		switch {
 		case f.dbCreate != "":
@@ -479,10 +417,8 @@ func dbAction(ctx context.Context, out interface{ Write([]byte) (int, error) },
 	})
 }
 
-// helpCmd replaces cobra's built-in `help`, because `mpd help
-// <project>` is a project verb: it prints that project's verb reference.
-// With no argument it falls back to the normal command help, so `mpd
-// help` still does what every CLI's `help` does.
+// helpCmd replaces cobra's built-in help: `mpd help <project>` prints
+// that project's verb reference; with no argument it shows normal help.
 func helpCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "help [project]",
@@ -502,14 +438,8 @@ func helpCmd() *cobra.Command {
 	}
 }
 
-// listCmd is the read-only inspection surface. `network` sits here with
-// the collections rather than as its own top-level verb: everything a
-// developer inspects is then under one command, and `mpd list <TAB>`
-// offers it — a top-level `mpd net` was findable only by knowing it
-// existed.
-//
-// It reports this VM's addressing, which is the diagnostic to reach for
-// when a name resolves to the wrong place.
+// listCmd is the read-only inspection surface; `network` sits here so
+// everything a developer inspects is under one command.
 func listCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:       "list [projects|services|infra|dbs|network]",
@@ -543,8 +473,7 @@ func listCmd() *cobra.Command {
 				fmt.Fprintf(out, "vm id       %s\n", n.VMID())
 				fmt.Fprintf(out, "zone        %s\n", n.Zone())
 				fmt.Fprintf(out, "subnet      %s\n", n.Subnet())
-				// The VM's own address, which is the one NOT on the
-				// container subnet — and the one you need to get back in.
+				// The VM's own address, not on the container subnet.
 				// Empty on sandbox VMs, which take a DHCP lease.
 				host, _ := os.Hostname()
 				if vmIP := vm.PrimaryIP(); vmIP != "" {
@@ -568,23 +497,14 @@ func listCmd() *cobra.Command {
 	return cmd
 }
 
-// projectVerbCmds builds the verb-first project grammar, one cobra
-// command per verb, each taking the project name as its first argument:
-// `mpd start myproject`.
-//
-// They are registered on the root command, so the verb is what cobra
-// resolves — which is why a project may never be named after one. The
-// verb set is reserved at create time (see cli.ProjectVerbs).
+// projectVerbCmds builds one cobra command per project verb. Verbs are
+// registered on the root, so a project may never be named after one
+// (see cli.ProjectVerbs).
 func projectVerbCmds(f *flags) []*cobra.Command {
 	verbs := []*cobra.Command{}
 
-	// The project argument is optional throughout: omitted, it is the
-	// project whose directory the caller is standing in (cli.ProjectArg).
-	//
-	// lock says whether the verb mutates. Passed explicitly rather than
-	// inferred, because getting it wrong is silent in both directions: a
-	// mutating verb without the lock races, and a read-only verb with it
-	// waits for no reason.
+	// lock says whether the verb mutates. Explicit, because getting it
+	// wrong is silent in both directions.
 	build := func(use, short string, lock bool,
 		run func(context.Context, *cobra.Command, string, cli.ProjectDeps) error) *cobra.Command {
 
@@ -618,9 +538,8 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 		return build(use, short, true, run)
 	}
 
-	// start is not built with `build` above: it takes KEY=VALUE settings in
-	// addition to an optional project name, so it parses its args with
-	// SplitStartArgs rather than ProjectArg. It configures then starts.
+	// start takes KEY=VALUE settings besides the optional project name,
+	// so it parses its args with SplitStartArgs rather than ProjectArg.
 	startCmd := &cobra.Command{
 		Use:   "start [project] [KEY=VALUE ...]",
 		Short: "Configure and start a project (default: the one you are in)",
@@ -647,10 +566,8 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 			}),
 	)
 
-	// status carries the one verb-level flag in the set. --json is what
-	// in-runtime tools read instead of opening /srv/meta themselves, so it
-	// has to reach them: `status` is forwarded over the control socket, and
-	// a verb flag rides along with it.
+	// --json is what in-runtime tools read instead of opening /srv/meta;
+	// the flag rides along when status is forwarded over the control socket.
 	statusCmd := simple("status [project]", "Show project details (default: the one you are in)",
 		func(ctx context.Context, c *cobra.Command, name string, d cli.ProjectDeps) error {
 			if f.json {
@@ -662,11 +579,8 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 	statusCmd.Flags().BoolVar(&f.json, "json", false, "print the project's status as JSON")
 	verbs = append(verbs, statusCmd)
 
-	// reset DOES infer from the working directory, unlike delete. The reason
-	// delete refuses — it removes the directory you are standing in — does
-	// not apply here: reset keeps the source tree, so the inferred project
-	// is still a directory that exists afterwards. The typed-name prompt is
-	// what guards the destructive part.
+	// reset infers from the working directory, unlike delete: it keeps
+	// the source tree, so the inferred directory still exists afterwards.
 	resetCmd := mutating("reset [project]",
 		"Reset a project: destroy its data, keep the code (default: the one you are in)",
 		func(ctx context.Context, c *cobra.Command, name string, d cli.ProjectDeps) error {
@@ -675,10 +589,8 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 	resetCmd.Flags().BoolVar(&f.yes, "yes", false, "Skip the confirmation prompt")
 	verbs = append(verbs, resetCmd)
 
-	// The one verb that does NOT infer its project from the working
-	// directory: it removes the source tree, so the inferred answer would
-	// routinely be the directory the caller is standing in. Deleting that
-	// by omission is too easy; naming it is one word.
+	// delete never infers its project: it removes the source tree, which
+	// would routinely be the directory the caller is standing in.
 	deleteCmd := &cobra.Command{
 		Use:     "delete <project>",
 		Aliases: []string{"rm"},
@@ -733,9 +645,8 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 	runCmd := &cobra.Command{
 		Use:   "run [--] <command> [args...]",
 		Short: "Run a command in the runtime of the project you are in",
-		// The only verb whose second argument is not a project: the
-		// project comes from the working directory, everything after
-		// `run` is the command to forward.
+		// The project comes from the working directory; everything
+		// after `run` is the command to forward.
 		Args:               cobra.MinimumNArgs(1),
 		DisableFlagParsing: true,
 		RunE: func(c *cobra.Command, args []string) error {

@@ -1,51 +1,26 @@
 #!/bin/bash
 # Tool: project-aware PHP version dispatcher.
 #
-# Registered with Debian's alternatives system as the `php` alternative at a
-# priority far above the Sury packages, so the Debian-standard interpreter
-# path resolves to it:
+# Registered as the Debian `php` alternative at high priority, so
+# /usr/bin/php resolves here and IDE interpreter probes see one stable path.
 #
-#     /usr/bin/php -> /etc/alternatives/php -> this script
+# Version resolution order:
+#   0. $MPD_PHP_FORCE_VERSION — explicit override for a tool that resolved
+#      its version but runs php outside the project tree. Independent of $PWD.
+#   1. $MPD_PHP_VERSION — already exported by a tool chain that sourced
+#      mpd.env; no extra fork.
+#   2. Inside /srv/projects/<name>: source the layered mpd.env.
+#   3. MPD_PHP_FALLBACK_VERSION below — pinned, so `php -v` outside a
+#      project always answers the same thing.
 #
-# That is the whole point of the alternatives registration: IDEs (PhpStorm in
-# particular) probe /usr/bin/php the way they would on any Debian box and get
-# a single, stable interpreter path. Older runtimes shimmed this in as
-# /usr/local/bin/php, which shadowed /usr/bin/php on PATH and left the two
-# paths reporting different versions.
-#
-# Lives at /opt/mpd/assets/runtime/bin/php (bind-mounted live, so edits
-# on the VM take effect inside every runtime immediately).
-#
-# Version resolution:
-#   0. $MPD_PHP_FORCE_VERSION if exported — an explicit override set by a tool
-#      that already resolved the version it wants, and now runs php from
-#      somewhere the cwd-gate below cannot see the project (mudev's production
-#      export installs composer deps in a /tmp staging tree). Checked first and
-#      independent of $PWD.
-#   1. $MPD_PHP_VERSION if already exported — a tool chain that already
-#      sourced mpd.env (e.g. phpunit-init → phpunit) short-circuits here with
-#      no extra fork.
-#   2. Inside /srv/projects/<name>: source the layered mpd.env (runtime
-#      defaults → type defaults → VM-wide → project). Costs ~one jq + 4 file
-#      reads (~30ms), paid only by bare CLI invocations.
-#   3. Outside a project tree, or when the configured version isn't
-#      installed: MPD_PHP_FALLBACK_VERSION below — a pinned fallback.
-#      Deliberately a fixed version rather than "whatever the system default
-#      is", so `php -v` from $HOME always answers the same thing.
-#
-# NEVER exec /usr/bin/php from here — it points back at this script through
-# the alternatives link. Always exec the versioned /usr/bin/phpX.Y.
+# Never exec /usr/bin/php from here — the alternatives link points it back
+# at this script. Always exec the versioned /usr/bin/phpX.Y.
 
-# The runtime-wide default PHP version — used when no layer of mpd.env sets
-# MPD_PHP_VERSION (there is no shipped defaults file; the developer may set a
-# default in ~/.mpd-virt/runtime.env). Keep in sync with lib/php-configure.sh.
+# Used when no mpd.env layer sets MPD_PHP_VERSION. Keep in sync with
+# lib/php-configure.sh.
 MPD_PHP_FALLBACK_VERSION=8.3
 
-# An explicit force override, checked first and independent of $PWD. Set by a
-# tool that already resolved the version it wants but runs php from outside a
-# project tree (mudev's production export installs composer deps in a /tmp
-# staging dir). An uninstalled version falls through to normal resolution
-# rather than failing here.
+# An uninstalled forced version falls through to normal resolution.
 if [[ -n "${MPD_PHP_FORCE_VERSION:-}" ]] && [[ -x "/usr/bin/php${MPD_PHP_FORCE_VERSION}" ]]; then
     exec "/usr/bin/php${MPD_PHP_FORCE_VERSION}" "$@"
 fi

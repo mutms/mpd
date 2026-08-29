@@ -13,15 +13,13 @@ import (
 	"github.com/mutms/mpd/go/internal/vm"
 )
 
-// serviceFilter selects the extra service containers. Note this is a
-// compose label rather than mpd.managed — kept as-is so this and the
-// other listings see exactly the same set.
+// serviceFilter selects the extra service containers. Every listing must
+// use this same filter so they all see the same set.
 const serviceFilter = "label=com.docker.compose.project=mpd-service"
 
-// ListServices renders the `list services` table — the OPTIONAL extra
-// service containers, with their persisted intent joined against a
-// single `podman ps` snapshot (per-service inspects race a service
-// restarting mid-listing).
+// ListServices renders the `list services` table of optional extra
+// service containers. It joins persisted intent against one `podman ps`
+// snapshot; per-service inspects would race a restarting service.
 func ListServices(ctx context.Context, out io.Writer, n net.Net, p *podman.Client, s state.Store) {
 	live := map[string]string{}
 	for _, item := range p.Ps(ctx, serviceFilter) {
@@ -55,18 +53,17 @@ func ListServices(ctx context.Context, out io.Writer, n net.Net, p *podman.Clien
 	}
 }
 
-// ListInfra renders the `list infra` table — the runtime container plus
-// the VM-integral systemd pieces (dnsmasq, portal), always on, distinct
-// from the optional services. unitActive is passed in so the listing
-// stays testable without a systemd on the other end.
+// ListInfra renders the `list infra` table: the runtime container plus
+// the VM's systemd pieces (dnsmasq, portal). unitActive is injected so
+// tests need no systemd.
 func ListInfra(ctx context.Context, out io.Writer, n net.Net, p *podman.Client,
 	unitActive func(context.Context, string, bool) bool) {
 
 	fmt.Fprintln(out, Col("INFRA", colService)+Col("STATUS", colStatus)+"ACCESS")
 	fmt.Fprintln(out, Rule(72))
 
-	// The runtime is a container, not a unit; no access column — how to
-	// reach it is the host-side orchestrator's business.
+	// No access column for the runtime — reaching it is the host-side
+	// orchestrator's business.
 	rtStatus := "missing (run mpd --vm-setup)"
 	for _, item := range p.Ps(ctx, "label=mpd.runtime") {
 		if item.Label("mpd.name") != runtime.Name {

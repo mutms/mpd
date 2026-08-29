@@ -8,8 +8,7 @@ import (
 	"testing"
 )
 
-// testExec runs a command and returns 0 on success, non-zero otherwise, so
-// a fixture can be built with the same openssl production signs with.
+// testExec runs a command and returns 0 on success, non-zero otherwise.
 func testExec(t *testing.T, name string, args ...string) int {
 	t.Helper()
 	if err := osexec.Command(name, args...).Run(); err != nil {
@@ -18,8 +17,7 @@ func testExec(t *testing.T, name string, args ...string) int {
 	return 0
 }
 
-// write puts content at dir/name, failing the test rather than the code
-// under test if the fixture itself cannot be created.
+// write puts content at dir/name.
 func write(t *testing.T, dir, name, content string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
@@ -29,10 +27,7 @@ func write(t *testing.T, dir, name, content string) string {
 	return path
 }
 
-// TestResolveSigner covers the four states a caroot directory can be in.
-// Which certificate signs — and whether it has to travel with the leaf —
-// is the whole security property of per-VM CAs, and every case here
-// corresponds to a real provisioning path.
+// TestResolveSigner covers the states a caroot directory can be in.
 func TestResolveSigner(t *testing.T) {
 	const (
 		anchorPEM = "-----BEGIN CERTIFICATE-----\nanchor\n-----END CERTIFICATE-----\n"
@@ -58,9 +53,7 @@ func TestResolveSigner(t *testing.T) {
 	})
 
 	t.Run("self-signed VM has anchor and signer as one cert", func(t *testing.T) {
-		// A sandbox VM writes the same certificate to both paths. The
-		// chain is one long, so appending it to every leaf would
-		// ship the trust anchor to clients that already have it.
+		// A sandbox VM writes the same certificate to both paths.
 		dir := t.TempDir()
 		write(t, dir, "rootCA.pem", anchorPEM)
 		write(t, dir, "vmCA.pem", anchorPEM)
@@ -76,8 +69,8 @@ func TestResolveSigner(t *testing.T) {
 	})
 
 	t.Run("pre-migration VM still signs with the root", func(t *testing.T) {
-		// Every VM provisioned before per-VM intermediates. It must keep
-		// working untouched until `mpd-virt refresh-ca` moves it on.
+		// A VM provisioned before per-VM intermediates must keep working
+		// until `mpd-virt refresh-ca` migrates it.
 		dir := t.TempDir()
 		write(t, dir, "rootCA.pem", anchorPEM)
 		write(t, dir, "rootCA-key.pem", "key")
@@ -96,8 +89,7 @@ func TestResolveSigner(t *testing.T) {
 
 	t.Run("interrupted migration prefers the intermediate", func(t *testing.T) {
 		// Both keys present: refresh-ca pushed the intermediate but died
-		// before deleting the root key. Preferring the root here would
-		// silently undo the migration on the next --vm-setup.
+		// before deleting the root key. The root must not win here.
 		dir := t.TempDir()
 		write(t, dir, "rootCA.pem", anchorPEM)
 		write(t, dir, "rootCA-key.pem", "root-key")
@@ -114,8 +106,7 @@ func TestResolveSigner(t *testing.T) {
 	})
 
 	t.Run("empty caroot has no signer", func(t *testing.T) {
-		// The caller's answer is to generate a CA, not to fail, so this
-		// must be reported as absence rather than as an error.
+		// Absence, not an error: the caller's answer is to generate a CA.
 		if _, ok := resolveSignerIn(t.TempDir()); ok {
 			t.Error("expected no signer in an empty directory")
 		}
@@ -130,17 +121,11 @@ func TestResolveSigner(t *testing.T) {
 	})
 }
 
-// TestLeafDays covers the rule that nothing outlives its issuer.
-//
-// The regression this pins down was real: a per-VM intermediate capped at
-// the root's remaining ~300 days signed leaves for a flat 397, so every
-// leaf outlived its own CA by three months and the whole chain would have
-// failed on the intermediate's date while the leaves still read as valid.
+// TestLeafDays pins the rule that a leaf never outlives its issuer.
+// Regression: leaves once got a flat 397 days and outlived a short CA.
 func TestLeafDays(t *testing.T) {
 	dir := t.TempDir()
 
-	// A CA with a known remaining lifetime, in PEM, is easiest to make by
-	// asking openssl for one — the same tool that signs in production.
 	makeCA := func(name string, days int) string {
 		key := filepath.Join(dir, name+"-key.pem")
 		crt := filepath.Join(dir, name+".pem")
@@ -182,22 +167,14 @@ func TestLeafDays(t *testing.T) {
 	})
 }
 
-// TestSelfSignedInstallPath covers what a VM with no CA material does —
-// a sandbox VM, or any VM that runs --vm-setup before anything is pushed
-// in.
-//
-// Such a VM has no orchestrator to hand it an intermediate, so
-// --vm-setup generates one CA and uses it as both anchor and signer. The
-// property that matters is Chain == false: appending the signer to every
-// leaf would ship the trust anchor to clients that already have it, and a
-// self-signed certificate is not an intermediate.
+// TestSelfSignedInstallPath covers a VM with no CA material: --vm-setup
+// generates one CA as both anchor and signer, and Chain must be false.
 func TestSelfSignedInstallPath(t *testing.T) {
 	dir := t.TempDir()
 	signerCert := filepath.Join(dir, filepath.Base(SigningCertPath))
 	signerKey := filepath.Join(dir, filepath.Base(SigningKeyPath))
 	anchor := filepath.Join(dir, filepath.Base(CACertPath))
 
-	// Empty caroot: no signer at all, which is the caller's cue to make one.
 	if _, ok := resolveSignerIn(dir); ok {
 		t.Fatal("expected no signer before generation")
 	}
@@ -224,16 +201,13 @@ func TestSelfSignedInstallPath(t *testing.T) {
 	if got.Chain {
 		t.Error("Chain = true, but anchor and signer are the same self-signed certificate")
 	}
-	// And it must still be usable as a signer: leaves get a real lifetime.
 	days, err := leafDays(got.CertPath)
 	if err != nil || days <= 0 {
 		t.Errorf("leafDays = %d, %v; want a positive lifetime", days, err)
 	}
 }
 
-// TestAppendChain checks the leaf comes first. TLS requires the
-// end-entity certificate at the head of the chain the server sends, and
-// getting it backwards fails in clients rather than at write time.
+// TestAppendChain checks the leaf comes first, as TLS requires.
 func TestAppendChain(t *testing.T) {
 	dir := t.TempDir()
 	leaf := write(t, dir, "cert.pem", "LEAF")
@@ -246,8 +220,8 @@ func TestAppendChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The leaf fixture deliberately lacks a trailing newline: PEM blocks
-	// concatenated without one produce a file openssl cannot parse.
+	// The leaf fixture lacks a trailing newline on purpose: PEM blocks
+	// concatenated without one cannot be parsed.
 	if string(got) != "LEAF\nCA\n" {
 		t.Errorf("chain = %q, want leaf then CA with a separating newline", got)
 	}

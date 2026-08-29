@@ -1,14 +1,8 @@
 #!/bin/bash
 # project-setup.sh <project-name>
-# Run by `mpd start <project>` for an mdl-demo project.
-#
-# Prints. That is the whole job.
-#
-# An mdl-demo project is the source tree of the mdl-demo tool. mpd publishes
-# the front door (configure.sh: caddy vhosts, certificate, DNS for the
-# console and the site) and stops there: it does not build or run the demo
-# container. The developer does that from the project's Makefile — on the
-# VM, where podman is.
+# Run by `mpd start <project>` for an mdl-demo project. Prints guidance
+# only: mpd publishes the front door (configure.sh) and does not build
+# or run the demo container.
 set -euo pipefail
 
 PROJECT_NAME="$1"

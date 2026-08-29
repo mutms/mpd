@@ -1,14 +1,9 @@
 #!/bin/sh
-# Apple `container` look-alike backed by rootful podman, so scripts written
-# for macOS (mdl-demo's launcher, for one) can be tried on the VM unchanged:
-#
-#   MDL_DEMO_IMAGE=localhost/mdl-demo /srv/projects/mdl-demo/launcher/mdl-demo create 7777
-#
-# Only the everyday verbs are covered — run, start, stop, rm, inspect, exec,
-# logs, ls — which podman shares verb-for-verb. `ls` is rendered with the
-# name first, as Apple container prints it, so column-based filters agree.
-# Anything image/system-level (`container image push`, `container system
-# start`) is not translated; use podman directly for that.
+# container — Apple `container` look-alike backed by rootful podman, so
+# macOS scripts (mdl-demo's launcher) run on the VM unchanged.
+# Covers only the everyday verbs, which podman shares verb-for-verb.
+# `ls` prints the name first, as Apple container does, so column filters agree.
+# Image- and system-level subcommands are not translated; use podman directly.
 verb="$1"; shift
 case "$verb" in
     ls) exec sudo podman ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}' "$@" ;;

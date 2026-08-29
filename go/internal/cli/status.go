@@ -16,13 +16,9 @@ import (
 	"github.com/mutms/mpd/go/internal/vm"
 )
 
-// Status prints a context-aware overview: the projects, plus the two
-// kinds of thing that need the developer's attention — a runtime that is
-// not up, and project directories on the volume that mpd does not know
-// about.
-//
-// The runtime is infrastructure, so it earns no line of its own when
-// healthy — connection details are the host-side orchestrator's job.
+// Status prints the project overview plus what needs attention: a
+// runtime that is not up, and unregistered project directories. A
+// healthy runtime gets no line of its own.
 func Status(ctx context.Context, out io.Writer, s state.Store, p *podman.Client, n net.Net, uid string) {
 	if _, err := os.Stat(vm.VarLibDir); err != nil {
 		fmt.Fprint(out, "mpd is not set up on this machine.\n\n"+
@@ -40,11 +36,8 @@ func Status(ctx context.Context, out io.Writer, s state.Store, p *podman.Client,
 		fmt.Fprintln(out, "  No projects yet — mpd init <name>")
 	}
 	for _, pr := range projects {
-		// The project's own URL, not one composed from its name: a type
-		// is free to publish something else in urls.json, and this line
-		// should show what was actually published. Shown for a stopped
-		// project too — configure published the vhost, cert and DNS, and
-		// stop does not withdraw them.
+		// Show the published URL, not one composed from the name. A
+		// stopped project keeps its URL — stop does not withdraw it.
 		url := ""
 		if u := pr.MainURL(); u != "" {
 			url = "   " + u
@@ -82,10 +75,6 @@ func Status(ctx context.Context, out io.Writer, s state.Store, p *podman.Client,
 
 // UnregisteredProjectDirs lists directories under /srv/projects/ that no
 // registered project claims.
-//
-// They are real work someone did — a clone that never got registered, or
-// a project whose state entry was lost — so status names them and the
-// command that adopts them rather than ignoring them.
 func UnregisteredProjectDirs(known map[string]bool) []string {
 	var out []string
 	for _, line := range srv.ListProjects() {

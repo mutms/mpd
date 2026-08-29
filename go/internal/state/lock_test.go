@@ -29,7 +29,6 @@ func TestAcquireUncontendedIsSilent(t *testing.T) {
 	}
 }
 
-// Release must make the lock available again, including when called twice.
 func TestReleaseIsIdempotentAndFrees(t *testing.T) {
 	s := NewAt(t.TempDir())
 
@@ -47,12 +46,9 @@ func TestReleaseIsIdempotentAndFrees(t *testing.T) {
 	second()
 }
 
-// A cancelled context must abandon the wait rather than block forever.
-//
-// The lock is held on a second file descriptor over the same file, which
-// contends exactly as another process would: flock is per open file
-// description, not per process. That is also the reason Acquire must never
-// be nested — this test is the executable form of that warning.
+// A second descriptor over the same file contends exactly as another
+// process would: flock is per open file description. That is also why
+// Acquire must never be nested.
 func TestAcquireHonoursContextWhenContended(t *testing.T) {
 	dir := t.TempDir()
 	s := NewAt(dir)
@@ -81,7 +77,6 @@ func TestAcquireHonoursContextWhenContended(t *testing.T) {
 	}
 }
 
-// Once the holder lets go, a waiting Acquire succeeds.
 func TestAcquireSucceedsAfterHolderReleases(t *testing.T) {
 	dir := t.TempDir()
 	s := NewAt(dir)

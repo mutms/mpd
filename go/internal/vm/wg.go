@@ -9,11 +9,9 @@ import (
 	"github.com/mutms/mpd/go/internal/ui"
 )
 
-// wg0 is the VM's WireGuard endpoint: the developer's Mac (via mpd-proxy) peers
-// with it to reach this VM's 10.163.<NNN>.x services over an encrypted tunnel.
-// vm-setup provisions the VM's half — the key, the interface, ip_forward — and
-// the peer (the Mac) is added by mpd-virt, which alone knows mpd-proxy's key,
-// and persisted with `wg-quick save`. wireguard-tools comes from bootstrap/20 (checked by RequirePackages).
+// wg0 is the VM's WireGuard endpoint; see docs/networking.md. vm-setup
+// provisions the VM's half; the peer is added by mpd-virt and persisted
+// with `wg-quick save`.
 const (
 	wgInterface = "wg0"
 	wgListen    = 51820
@@ -22,15 +20,14 @@ const (
 	fwdSysctl   = "/etc/sysctl.d/99-mpd-forwarding.conf"
 )
 
-// EnsureWireGuard guarantees ip_forward, generates the VM's key if absent,
-// writes the wg0 [Interface] — only when missing, so the host-added peer that
-// `wg-quick save` persists is never clobbered on a re-run — and enables wg0 at
-// boot.
+// EnsureWireGuard guarantees ip_forward, generates the key if absent,
+// writes the wg0 [Interface] only when missing — so the host-added peer
+// is never clobbered on a re-run — and enables wg0 at boot.
 func EnsureWireGuard(ctx context.Context, out io.Writer, octet int) error {
 	ui.Step(out, "WireGuard endpoint (%s)", wgInterface)
 
-	// Persist ip_forward in Go so every provisioning path has it — packets
-	// arriving on wg0 for 10.163.<NNN>.x must be forwarded to the bridge.
+	// Packets arriving on wg0 for 10.163.<NNN>.x must be forwarded to the
+	// bridge.
 	if _, err := WriteRootOwnedFile(ctx, fwdSysctl, "net.ipv4.ip_forward = 1\n"); err != nil {
 		return err
 	}

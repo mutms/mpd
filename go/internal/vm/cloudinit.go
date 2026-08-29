@@ -9,24 +9,10 @@ import (
 	"github.com/mutms/mpd/go/internal/ui"
 )
 
-// cloud-init on an adopted box.
-//
-// Its first boot may run everything; after mpd is set up the VM
-// identity is fixed — hostname, dev user, the SSH host keys mpd-virt
-// pinned, and /etc/hosts, which holds mpd's DNS records. cloud-init
-// would keep touching all of it: update_etc_hosts rewrites /etc/hosts on
-// every boot (the seed says `manage_etc_hosts: true`, which Proxmox
-// always writes and user-data outranks anything under /etc/cloud/), and
-// Proxmox issues a new instance-id whenever its cloud-init tab is edited,
-// which re-runs every per-instance module on the next boot — hostname,
-// users, and ssh, which regenerates the host keys.
-//
-// cloud-init's own override for module lists is the fix: a cloud.cfg.d
-// drop-in that restates a stage's list replaces it wholesale, and
-// user-data never sets one. The drop-in is a static asset — mpd supports
-// one distro — leaving only growpart + resizefs, so enlarging the disk in
-// the hypervisor still works; network config is not a module and keeps
-// applying, so fixing the IP there works too.
+// cloud-init would keep rewriting the VM's fixed identity on later boots:
+// /etc/hosts, hostname, users, and the SSH host keys. The drop-in
+// replaces every stage's module list, leaving only growpart and resizefs.
+// See docs/debugging.md.
 const (
 	cloudInitDir        = "/etc/cloud"
 	cloudInitDropInPath = cloudInitDir + "/cloud.cfg.d/99-mpd.cfg"
