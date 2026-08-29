@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -170,8 +171,8 @@ func TestContainerPathMatchesHostPath(t *testing.T) {
 		t.Fatalf("got %d scripts", len(got))
 	}
 	want := filepath.Join(dir, "runtime/hooks/project-post-start.d/10-x.sh")
-	if got[0].ContainerPath != want {
-		t.Errorf("ContainerPath = %q, want %q", got[0].ContainerPath, want)
+	if got[0].Path != want {
+		t.Errorf("Path = %q, want %q", got[0].Path, want)
 	}
 }
 
@@ -191,8 +192,8 @@ func TestDiscoveryFollowsTheContainerNotTheEvent(t *testing.T) {
 	if len(pg) != 1 || pg[0].Basename != "90-graceful-stop.sh" {
 		t.Fatalf("postgres container discovered %+v", pg)
 	}
-	if !strings.Contains(pg[0].ContainerPath, "/databases/postgres/") {
-		t.Errorf("postgres container got %q — wrong engine's assets", pg[0].ContainerPath)
+	if !strings.Contains(pg[0].Path, "/databases/postgres/") {
+		t.Errorf("postgres container got %q — wrong engine's assets", pg[0].Path)
 	}
 
 	maria := find(ev, AudienceDatabase, map[string]string{"mpd.db.engine": "mariadb"})
@@ -200,8 +201,8 @@ func TestDiscoveryFollowsTheContainerNotTheEvent(t *testing.T) {
 		t.Fatalf("mariadb container discovered %+v", maria)
 	}
 	for _, s := range maria {
-		if !strings.Contains(s.ContainerPath, "/databases/mariadb/") {
-			t.Errorf("mariadb container got %q — wrong engine's assets", s.ContainerPath)
+		if !strings.Contains(s.Path, "/databases/mariadb/") {
+			t.Errorf("mariadb container got %q — wrong engine's assets", s.Path)
 		}
 	}
 }
@@ -217,5 +218,113 @@ func TestGracefulStopSortsLast(t *testing.T) {
 		map[string]string{"mpd.db.engine": "postgres"})
 	if len(got) != 2 || got[0].Basename != "50-dump.sh" || got[1].Basename != "90-graceful-stop.sh" {
 		t.Fatalf("order = %+v, want the dump before the shutdown", got)
+	}
+}
+
+// The VM audience reads its own layer and only its own. assets/vm is the
+// VM's side of the tree, so a runtime hook must not leak into a VM firing
+// (and the reverse) — the two run on opposite sides of the container
+// boundary, with different tools on PATH.
+func TestVMAudienceReadsTheVMLayer(t *testing.T) {
+	withAssets(t, map[string]string{
+		"vm/hooks/mpd-post-setup.d/50-vm.sh":           "",
+		"runtime/hooks/mpd-post-setup.d/50-runtime.sh": "",
+	})
+	ev := Event{Name: EventMpdPostSetup}
+
+	got := find(ev, AudienceVM, nil)
+	if len(got) != 1 || got[0].Basename != "50-vm.sh" {
+		t.Errorf("vm audience = %+v, want just 50-vm.sh", got)
+	}
+	rt := find(ev, AudienceRuntime, map[string]string{"mpd.name": "php"})
+	if len(rt) != 1 || rt[0].Basename != "50-runtime.sh" {
+		t.Errorf("runtime audience = %+v, want just 50-runtime.sh", rt)
+	}
+}
+
+// There is exactly one VM, so the dispatcher does not ask the event which
+// one to fire into: whatever Containers says, the VM audience resolves to
+// the single fixed target. An event author cannot get this wrong.
+func TestVMTargetIgnoresTheEventsContainers(t *testing.T) {
+	ev := Event{
+		Name:       EventMpdPostSetup,
+		Containers: func(AudienceKind) []string { return []string{"wrong", "alsowrong"} },
+	}
+	got := ev.targets(AudienceVM)
+	if len(got) != 1 || got[0] != VMTarget {
+		t.Errorf("targets(AudienceVM) = %v, want [%s]", got, VMTarget)
+	}
+	if rt := ev.targets(AudienceRuntime); len(rt) != 2 {
+		t.Errorf("targets(AudienceRuntime) = %v, want the event's own list", rt)
+	}
+}
+
+// A runtime hook must run as the dev user: that is where the home, the
+// tools and the privilege rule live. Database hooks must not — those
+// containers are stock images with no such user, and their hooks signal
+// PID 1.
+func TestUserAppliesToRuntimeOnly(t *testing.T) {
+	ev := Event{Name: EventMpdPostSetup, User: "dev"}
+	if got := execOptions(ev, AudienceRuntime, nil); !containsPair(got, "--user", "dev") {
+		t.Errorf("runtime opts = %v, want --user dev", got)
+	}
+	if got := execOptions(ev, AudienceDatabase, nil); containsPair(got, "--user", "dev") {
+		t.Errorf("database opts = %v, want no --user", got)
+	}
+	if got := execOptions(Event{Name: EventMpdPreStop}, AudienceRuntime, nil); containsPair(got, "--user", "") {
+		t.Errorf("opts with no user set = %v, want no --user", got)
+	}
+}
+
+func containsPair(list []string, flag, value string) bool {
+	for i := 0; i+1 < len(list); i++ {
+		if list[i] == flag && list[i+1] == value {
+			return true
+		}
+	}
+	return false
+}
+
+// End-to-end for the VM audience: no podman involved, the script really
+// runs on this host, and it must see the standard MPD_HOOK_* contract.
+func TestVMHookRunsAndSeesItsEnvironment(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "seen")
+	withAssets(t, map[string]string{
+		"vm/hooks/mpd-post-setup.d/50-probe.sh": "printf '%s %s %s %s\\n' " +
+			"\"$MPD_HOOK_EVENT\" \"$MPD_HOOK_REVISION\" \"$MPD_HOOK_VERB\" \"$MPD_HOOK_RUNTIME\" > " + out + "\n",
+	})
+	ev := Event{
+		Name: EventMpdPostSetup, Revision: 1,
+		Audiences: []AudienceKind{AudienceVM},
+		OnFailure: Continue,
+		Env:       map[string]string{"RUNTIME": "mpd-1-runtime"},
+	}
+	if err := Fire(context.Background(), io.Discard, ev, "vm-setup", nil); err != nil {
+		t.Fatalf("Fire: %v", err)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("hook did not run: %v", err)
+	}
+	if want := "mpd-post-setup 1 vm-setup mpd-1-runtime\n"; string(got) != want {
+		t.Errorf("hook environment = %q, want %q", got, want)
+	}
+}
+
+// A failing VM hook is reported to the caller of Fire under Abort, and
+// swallowed under Continue — same contract as a container hook.
+func TestVMHookFailureFollowsTheFailureMode(t *testing.T) {
+	withAssets(t, map[string]string{
+		"vm/hooks/mpd-post-setup.d/50-fail.sh": "exit 3\n",
+	})
+	base := Event{Name: EventMpdPostSetup, Audiences: []AudienceKind{AudienceVM}}
+
+	base.OnFailure = Continue
+	if err := Fire(context.Background(), io.Discard, base, "vm-setup", nil); err != nil {
+		t.Errorf("Continue mode returned %v, want nil", err)
+	}
+	base.OnFailure = Abort
+	if err := Fire(context.Background(), io.Discard, base, "vm-setup", nil); err == nil {
+		t.Error("Abort mode returned nil, want an error")
 	}
 }

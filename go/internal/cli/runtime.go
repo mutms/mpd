@@ -13,6 +13,7 @@ import (
 	"github.com/mutms/mpd/go/internal/db"
 	"github.com/mutms/mpd/go/internal/dnsmasq"
 	"github.com/mutms/mpd/go/internal/exec"
+	"github.com/mutms/mpd/go/internal/hooks"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/project"
@@ -335,6 +336,17 @@ func RuntimeCreate(ctx context.Context, out io.Writer, p *podman.Client,
 	}
 	if err := waitForSSHD(ctx, out, runtimeIP); err != nil {
 		return err
+	}
+
+	// A new container has a new home, so whatever was installed into the
+	// last one is gone. This is the one place that covers every way a
+	// runtime comes into existence — `--runtime-rebuild`, `--vm-setup`,
+	// and the on-demand create in the first `mpd start` — so the hooks
+	// that put an IDE backend back fire from here rather than from each
+	// caller. Failure is reported, never fatal: the runtime is up.
+	ev := hooks.MpdPostSetup(ctx, container, devUser, p).Only(hooks.AudienceRuntime)
+	if err := hooks.Fire(ctx, out, ev, "runtime-create", p); err != nil {
+		fmt.Fprintf(out, "  ⚠ %v\n", err)
 	}
 
 	fmt.Fprintln(out, "")

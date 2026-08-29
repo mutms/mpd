@@ -38,6 +38,7 @@ type CatalogueEntry struct {
 // introduced, or their hook directories will be reported as orphans.
 func Catalogue() []CatalogueEntry {
 	return []CatalogueEntry{
+		{EventMpdPostSetup, 1, []AudienceKind{AudienceVM, AudienceRuntime}},
 		{EventMpdPreStop, 1, []AudienceKind{AudienceDatabase}},
 		{EventProjectPreStart, 1, []AudienceKind{AudienceDatabase}},
 		{EventProjectPreStop, 1, []AudienceKind{AudienceRuntime}},
@@ -121,6 +122,10 @@ func walkHookDirs() []foundDir {
 	found = append(found, scanLayer(
 		filepath.Join(assetsDir, "runtime", "hooks"),
 		"assets/runtime/hooks", AudienceRuntime)...)
+
+	found = append(found, scanLayer(
+		filepath.Join(assetsDir, "vm", "hooks"),
+		"assets/vm/hooks", AudienceVM)...)
 
 	typesDir := filepath.Join(assetsDir, "runtime", "project_types")
 	for _, ty := range subdirs(typesDir) {

@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mutms/mpd/go/internal/exec"
 	"github.com/mutms/mpd/go/internal/podman"
 )
 
@@ -50,6 +51,12 @@ const DefaultTimeout = 30 * time.Second
 // legitimately takes longer than a normal hook.
 const StopTimeout = 120 * time.Second
 
+// SetupTimeout bounds mpd-post-setup. Setup hooks install things — the
+// shipped ones unpack multi-gigabyte IDE tarballs — and a limit that cuts
+// one off mid-unpack would be worse than no limit, because the hook keeps
+// running inside its container regardless (see DefaultTimeout's caveat).
+const SetupTimeout = 10 * time.Minute
+
 // AudienceKind selects which containers an event fires into.
 type AudienceKind int
 
@@ -60,7 +67,18 @@ const (
 	AudienceDatabase
 	// AudienceService: a named always-on service container.
 	AudienceService
+	// AudienceVM: the VM itself, not a container. Its hooks run as the
+	// dev user on the VM host, from assets/vm/hooks/<event>.d/. The one
+	// audience that is not a container, because some work has no
+	// container to do it in — installing something onto the VM, touching
+	// a systemd unit, reading a path containers never see.
+	AudienceVM
 )
+
+// VMTarget is the name printed for AudienceVM in hook output, where the
+// other audiences print a container name. Not a container: nothing looks
+// it up, and the dispatcher never passes it to podman.
+const VMTarget = "vm"
 
 // FailureMode decides what a failing hook does to the firing verb.
 type FailureMode int
@@ -96,6 +114,16 @@ type Event struct {
 	Containers func(AudienceKind) []string
 	// ServiceName scopes AudienceService to one service's assets.
 	ServiceName string
+	// User is the identity runtime hooks run as. Empty means the
+	// container's default, which is root.
+	//
+	// Applied to AudienceRuntime only, and that is the whole point: a
+	// runtime is a host with a dev user and passwordless sudo, where
+	// AGENTS.md's privilege rule says every asset script runs as that
+	// user and sudo's the individual privileged commands. Database and
+	// service containers are stock images with no such user — their
+	// hooks signal PID 1 and must stay root.
+	User string
 }
 
 // Fire runs every hook for an event, honouring its failure mode.
@@ -108,7 +136,7 @@ func Fire(ctx context.Context, out io.Writer, ev Event, verb string, p *podman.C
 	var aborted error
 
 	for _, audience := range ev.Audiences {
-		for _, container := range ev.Containers(audience) {
+		for _, container := range ev.targets(audience) {
 			err := fireOne(ctx, out, ev, audience, container, verb, p)
 			if err == nil {
 				continue
@@ -126,6 +154,17 @@ func Fire(ctx context.Context, out io.Writer, ev Event, verb string, p *podman.C
 	return aborted
 }
 
+// targets resolves an audience to the things to fire into. Containers
+// for every audience but AudienceVM, which is always the one VM this mpd
+// runs on — asking the event for that would let an event author get it
+// wrong, and there is only one right answer.
+func (ev Event) targets(a AudienceKind) []string {
+	if a == AudienceVM {
+		return []string{VMTarget}
+	}
+	return ev.Containers(a)
+}
+
 func fireOne(ctx context.Context, out io.Writer, ev Event, audience AudienceKind,
 	container, verb string, p *podman.Client) error {
 
@@ -134,26 +173,9 @@ func fireOne(ctx context.Context, out io.Writer, ev Event, audience AudienceKind
 		return nil
 	}
 
-	env := map[string]string{
-		"MPD_HOOK_EVENT":    ev.Name,
-		"MPD_HOOK_REVISION": fmt.Sprint(ev.Revision),
-		"MPD_HOOK_VERB":     verb,
-	}
-	for k, v := range ev.Env {
-		env["MPD_HOOK_"+k] = v
-	}
-	// Sorted so the podman command line is deterministic — otherwise two
-	// identical fires produce different argv, which makes debugging and
-	// output comparison needlessly hard.
-	keys := make([]string, 0, len(env))
-	for k := range env {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	var opts []string
-	for _, k := range keys {
-		opts = append(opts, "--env", k+"="+env[k])
-	}
+	env := hookEnv(ev, verb)
+	opts := execOptions(ev, audience, env)
+	envList := hookEnvList(ev, verb)
 
 	timeout := ev.Timeout
 	if timeout == 0 {
@@ -168,7 +190,18 @@ func fireOne(ctx context.Context, out io.Writer, ev Event, audience AudienceKind
 		// otherwise hang the verb that fired it — and for mpd-pre-stop,
 		// hang VM shutdown.
 		runCtx, cancel := context.WithTimeout(ctx, timeout)
-		code, err := p.ExecWithOptions(runCtx, container, opts, "bash", script.ContainerPath)
+		var code int
+		var err error
+		if audience == AudienceVM {
+			// Same shape as the podman path: bash runs the script, the
+			// MPD_HOOK_* values are the environment, output streams to
+			// the terminal. Only the executor differs.
+			code, err = exec.Run(runCtx, exec.Cmd{
+				Name: "bash", Args: []string{script.Path}, Env: envList,
+			})
+		} else {
+			code, err = p.ExecWithOptions(runCtx, container, opts, "bash", script.Path)
+		}
 		timedOut := runCtx.Err() == context.DeadlineExceeded
 		cancel()
 
@@ -188,10 +221,70 @@ func fireOne(ctx context.Context, out io.Writer, ev Event, audience AudienceKind
 	return nil
 }
 
+// hookEnv is the MPD_HOOK_* environment one firing hands its scripts:
+// the standard three plus the event's own values, prefixed.
+func hookEnv(ev Event, verb string) map[string]string {
+	env := map[string]string{
+		"MPD_HOOK_EVENT":    ev.Name,
+		"MPD_HOOK_REVISION": fmt.Sprint(ev.Revision),
+		"MPD_HOOK_VERB":     verb,
+	}
+	for k, v := range ev.Env {
+		env["MPD_HOOK_"+k] = v
+	}
+	return env
+}
+
+// hookEnvList renders that environment as KEY=VALUE, for the VM audience,
+// which runs bash directly rather than through podman.
+func hookEnvList(ev Event, verb string) []string {
+	env := hookEnv(ev, verb)
+	var list []string
+	for _, k := range sortedKeys(env) {
+		list = append(list, k+"="+env[k])
+	}
+	return list
+}
+
+// execOptions renders the podman exec flags for one firing: the
+// environment, plus the identity for a runtime audience.
+//
+// Sorted so the podman command line is deterministic — otherwise two
+// identical fires produce different argv, which makes debugging and
+// output comparison needlessly hard.
+func execOptions(ev Event, audience AudienceKind, env map[string]string) []string {
+	if env == nil {
+		env = hookEnv(ev, "")
+	}
+	var opts []string
+	for _, k := range sortedKeys(env) {
+		opts = append(opts, "--env", k+"="+env[k])
+	}
+	// The dev user owns the home a runtime hook works in, and the
+	// privilege rule puts asset scripts there. Without this a hook lands
+	// in /root and quietly does the wrong thing.
+	if audience == AudienceRuntime && ev.User != "" {
+		opts = append(opts, "--user", ev.User)
+	}
+	return opts
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // Script is one discovered hook.
 type Script struct {
-	Basename      string
-	ContainerPath string
+	Basename string
+	// Path is where the script lives. The same string on both sides for a
+	// container audience — /opt/mpd/assets is bind-mounted at the same
+	// path — and a plain VM path for AudienceVM.
+	Path string
 }
 
 // discover finds the hook scripts for an event on one audience, in
@@ -226,6 +319,12 @@ func discover(ctx context.Context, p *podman.Client, ev Event, audience Audience
 		if ev.ServiceName != "" {
 			dirs = append(dirs, filepath.Join(assetsDir, "services", ev.ServiceName, "hooks", ev.Name+".d"))
 		}
+	case AudienceVM:
+		// The VM layer, sibling of the runtime one: assets/vm holds what
+		// belongs to the VM host (its tools, its shell include), so its
+		// hooks live there too.
+		dirs = append(dirs,
+			filepath.Join(assetsDir, "vm", "hooks", ev.Name+".d"))
 	}
 
 	var scripts []Script
@@ -244,8 +343,8 @@ func discover(ctx context.Context, p *podman.Client, ev Event, audience Audience
 		sort.Strings(names)
 		for _, n := range names {
 			scripts = append(scripts, Script{
-				Basename:      n,
-				ContainerPath: filepath.Join(dir, n),
+				Basename: n,
+				Path:     filepath.Join(dir, n),
 			})
 		}
 	}

@@ -223,7 +223,9 @@ The binary is Go, built from `go/` into `bin/mpd` by `make install`:
 
 Runtime/project-type behavior + service container assets live under `assets/`:
 - `assets/vm/` — VM-level assets deployed to the mpd VM itself: `bin/` (the
-  VM tools, the sibling of `runtime/bin`), `lib/bashrc-include.sh` (the mpd
+  VM tools, the sibling of `runtime/bin`), `hooks/<event>.d/` (the VM
+  audience of the hook system — scripts that run on the VM host rather
+  than in a container; see [`docs/hooks.md`](docs/hooks.md)), `lib/bashrc-include.sh` (the mpd
   part of the dev user's shell — PATH, the developer's `vm.env`, and the
   prompt — sourced by one managed line bootstrap injects near the top of
   `~/.bashrc`; read live from `/opt/mpd`, so mpd never re-edits the user's

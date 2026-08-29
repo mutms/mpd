@@ -99,3 +99,23 @@ func TestDiagnoseSurvivesMissingAssetTree(t *testing.T) {
 		t.Errorf("warnings with no asset tree: %v", w)
 	}
 }
+
+// The VM layer is diagnosed like any other: a hook there for an event
+// that does not fire on the VM is silently dead, so it must be reported.
+func TestVMLayerIsDiagnosed(t *testing.T) {
+	withAssets(t, map[string]string{
+		"vm/hooks/project-post-start.d/10-x.sh": "",
+	})
+	w := Diagnose(nil, t.TempDir())
+	if !hasWarning(w, "no longer fires on this audience") {
+		t.Errorf("warnings = %v, want an audience warning for the vm layer", w)
+	}
+
+	withAssets(t, map[string]string{
+		"vm/hooks/mpd-post-setup.d/50-x.sh":      "",
+		"runtime/hooks/mpd-post-setup.d/50-y.sh": "",
+	})
+	if w := Diagnose(nil, t.TempDir()); len(w) != 0 {
+		t.Errorf("warnings for correctly-placed mpd-post-setup hooks: %v", w)
+	}
+}

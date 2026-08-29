@@ -239,7 +239,11 @@ func Setup(ctx context.Context, out io.Writer) error {
 	// leaves the VM fully usable. Everything it needs exists by now —
 	// the CA (certificates step), /srv (volume mount), DNS (just
 	// verified) — and reconcileCaches has just adopted any existing entry.
-	if err := setupRuntime(ctx, out, p, s, m, n, user); err != nil {
+	// createdRuntime: RuntimeCreate has already fired the runtime side of
+	// mpd-post-setup into the new container, so the fire at the end of
+	// this function narrows itself to the VM.
+	createdRuntime, err := setupRuntime(ctx, out, p, s, m, n, user)
+	if err != nil {
 		return err
 	}
 
@@ -292,6 +296,20 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 	ui.OK(out, "~/.config/systemd/user/mpd.service installed and enabled.")
+
+	// Last, because the contract of this event is "the VM is ready": a
+	// hook may install onto the VM or into the runtime, and both must be
+	// fully configured before it runs. Failures are reported, never
+	// fatal — see hooks.MpdPostSetup.
+	ui.Step(out, "Setup hooks (mpd-post-setup)")
+	postSetup := hooks.MpdPostSetup(ctx,
+		current.NewObserver(n.VMID(), p).RuntimeContainer(runtime.Name), user.User, p)
+	if createdRuntime {
+		postSetup = postSetup.Only(hooks.AudienceVM)
+	}
+	if err := hooks.Fire(ctx, out, postSetup, "vm-setup", p); err != nil {
+		ui.Warn(out, "%v", err)
+	}
 
 	// Silent in the happy path; warns only when a hook directory is
 	// orphaned, misfiled, or newly stale after an event revision bump.
@@ -652,8 +670,11 @@ func reconcileCaches(ctx context.Context, out io.Writer, p *podman.Client, s sta
 // start it when stopped, leave it alone when running. Clean break from
 // the pod era — legacy per-language runtime pods are reported loudly
 // rather than migrated.
+// setupRuntime ensures the runtime exists and is configured, reporting
+// whether it had to CREATE one — which tells the caller that
+// RuntimeCreate has already fired mpd-post-setup into it.
 func setupRuntime(ctx context.Context, out io.Writer, p *podman.Client, s state.Store,
-	m dnsmasq.Manager, n net.Net, user vm.Identity) error {
+	m dnsmasq.Manager, n net.Net, user vm.Identity) (bool, error) {
 
 	ui.Step(out, "Runtime container")
 
@@ -672,19 +693,19 @@ func setupRuntime(ctx context.Context, out io.Writer, p *podman.Client, s state.
 	container := o.RuntimeContainer(runtime.Name)
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return err
+		return false, err
 	}
 	switch {
 	case !p.Exists(ctx, container):
-		return RuntimeCreate(ctx, out, p, s, m, o, n, user.User, user.UID, home)
+		return true, RuntimeCreate(ctx, out, p, s, m, o, n, user.User, user.UID, home)
 	case !p.Running(ctx, container):
-		return RuntimeStart(ctx, out, p, s, m, o, n, user.User, user.UID)
+		return false, RuntimeStart(ctx, out, p, s, m, o, n, user.User, user.UID)
 	}
 	ui.OK(out, "runtime is running (%s).", container)
 	// Configuration only (no apt): asset-level changes — units, php.ini,
 	// the php dispatcher — reach an existing runtime on every setup.
 	// Packages move with `mpd --vm-upgrade`.
-	return runtime.Configure(ctx, out, container, user.User, p)
+	return false, runtime.Configure(ctx, out, container, user.User, p)
 }
 
 func readTrimmed(path string) string {

@@ -320,6 +320,7 @@ func hookProject(entry state.Project, container string, d ProjectDeps) hooks.Pro
 		RuntimeContainer: container,
 		DBEngine:         entry.DatabaseEngine,
 		DBVersion:        entry.DatabaseVersion,
+		DevUser:          d.DevUser,
 	}
 }
 

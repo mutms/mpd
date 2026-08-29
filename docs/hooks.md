@@ -2,7 +2,7 @@
 
 API reference for mpd's hook system: typed Go `Event` values fire
 at well-defined lifecycle points; bash scripts under
-`hooks/<event-name>.d/` in container assets observe them.
+`hooks/<event-name>.d/` in the asset tree observe them.
 
 Familiar shape: Debian's `cron.daily/`, systemd's `*.d/` drop-ins, git
 hooks, NetworkManager's `dispatcher.d/`. `run-parts`-style.
@@ -14,10 +14,11 @@ Three nouns, no overlap:
 - **Event** — Go struct value. The *thing that happens*. A verb handler
   constructs an event with typed context and fires it.
 - **Hook** — bash script. The *observer*. Lives on disk under
-  `hooks/<event-name>.d/`, runs inside a container.
-- **Audience** — list of container kinds an event reaches. Each event
-  declares its audiences; the dispatcher delivers the event to every
-  running container of those kinds.
+  `hooks/<event-name>.d/`, runs where its audience is.
+- **Audience** — where an event is delivered. Usually a container kind:
+  the dispatcher fires into every running container of that kind. One
+  audience is not a container at all — `AudienceVM` is the VM host
+  itself, whose hooks run there as the dev user.
 
 Events publish, hooks subscribe, audiences receive.
 
@@ -72,10 +73,43 @@ project needs, without touching its `Autostart` flag) and `mpd --gc`
 
 | Event                   | Audience            | Failure    | Timeout | Fires                                                                |
 |-------------------------|---------------------|------------|---------|----------------------------------------------------------------------|
+| `EventMpdPostSetup`     | `AudienceVM`, `AudienceRuntime` | `Continue` | 600 s | once at the end of `mpd --vm-setup`, after everything is configured |
 | `EventMpdPreStop`       | `AudienceDatabase`  | `Continue` | 120 s   | once during `mpd --vm-stop`, before container teardown                  |
 | `EventProjectPreStart`  | `AudienceDatabase`  | `Abort`    | 30 s    | per `mpd <p> start`, after runtime + DB are up, before project-setup |
 | `EventProjectPreStop`   | `AudienceRuntime`   | `Continue` | 30 s    | per `mpd <p> stop`, while project is still running                   |
 | `EventProjectPostStart` | `AudienceRuntime`   | `Continue` | 30 s    | per `mpd <p> start`, after project is recorded as running            |
+
+### `EventMpdPostSetup`
+
+Fires once at the end of `mpd --vm-setup`, after the VM, its runtime and
+every unit are configured. The moment "this VM is ready" becomes true —
+which is what makes it the place to install something onto a VM that is
+finally able to hold it.
+
+- **Audience**: the VM itself, then its runtime container — the same
+  event on both sides of the boundary, because setup work lands on both.
+- **Failure**: `Continue` — setup has already done its work; a
+  developer's install script failing does not make the VM unconfigured.
+- **Timeout**: 600 s. Setup hooks install things, and the shipped ones
+  unpack multi-gigabyte IDE tarballs. A limit that cut one off mid-unpack
+  would be worse than none, because the hook keeps running regardless
+  (see "Limitations").
+- **Env vars** (in addition to the standard set):
+  - `MPD_HOOK_RUNTIME` — the runtime's container name
+
+Shipped scripts:
+- `assets/vm/hooks/mpd-post-setup.d/50-goland-install.sh`
+- `assets/runtime/hooks/mpd-post-setup.d/50-phpstorm-install.sh`
+
+Both are one `exec` of the matching `*-install-app` tool, which no-ops
+unless the developer has seeded a tarball through their mpd-virt overlay
+*and* the IDE is not already installed. That is the pattern to copy:
+**put the conditions in the tool, not in the hook** — a hook that fires
+on every setup has to be cheap and silent when there is nothing to do.
+
+The runtime side earns its place twice over: `mpd --runtime-rebuild`
+gives the container a new home, and the next `--vm-setup` puts the IDE
+backend back without a download.
 
 ### `EventMpdPreStop`
 
@@ -157,6 +191,7 @@ Hook scripts live under `hooks/<event-name>.d/` in the layer that
 matches their audience kind:
 
 ```
+assets/vm/hooks/<event>.d/                   # → VM audience (runs on the VM host)
 assets/runtime/hooks/<event>.d/              # → runtime audience
 assets/databases/<dbtype>/hooks/<event>.d/   # → database audience, per engine
 assets/services/<svc>/hooks/<event>.d/       # → service audience (named service)
@@ -195,10 +230,28 @@ kebab-case the rest. Examples:
 
 ## Hook script contract
 
-A hook is a `*.sh` script in `hooks/<event-name>.d/`, run inside the
-audience container as that container's default user. mpd invokes it as
-`bash <path>`, so the executable bit is not required — but the `.sh`
+A hook is a `*.sh` script in `hooks/<event-name>.d/`, invoked as
+`bash <path>` — so the executable bit is not required, but the `.sh`
 suffix is.
+
+Where it runs, and as whom, follows the audience:
+
+| Audience             | Runs                     | As                        |
+|----------------------|--------------------------|---------------------------|
+| `AudienceVM`         | on the VM host           | the dev user (the identity mpd itself runs as) |
+| `AudienceRuntime`    | in the runtime container | the dev user              |
+| `AudienceDatabase` / `AudienceService` | in that container | the container's default user (root) |
+
+The runtime and VM rows are the privilege rule in `AGENTS.md`: those are
+hosts with a dev user and passwordless sudo, so a script runs as that
+user and `sudo`s the individual privileged commands. Database and service
+containers are stock images with no such user — their hooks signal PID 1
+and stay root.
+
+A VM hook is the escape hatch for work that has no container to do it in:
+installing onto the VM, touching a systemd unit, reading a path
+containers never see. It has the VM's PATH, so `assets/vm/bin` tools are
+reachable by bare name.
 
 **Standard env vars** provided to every hook:
 
@@ -239,13 +292,20 @@ type Event struct {
     Env        map[string]string         // exported as MPD_HOOK_<KEY>
     Containers func(AudienceKind) []string // audience → container names
     ServiceName string                   // scopes AudienceService
+    User        string                   // identity for AudienceRuntime
 }
 ```
 
 Constants: audiences are `AudienceRuntime`, `AudienceDatabase`,
-`AudienceService`; failure modes are `Abort` and `Continue`; timeouts
-default to `DefaultTimeout` (30 s), with `StopTimeout` (120 s) used by
-`mpd-pre-stop`.
+`AudienceService` and `AudienceVM`; failure modes are `Abort` and
+`Continue`; timeouts default to `DefaultTimeout` (30 s), with
+`StopTimeout` (120 s) for `mpd-pre-stop` and `SetupTimeout` (600 s) for
+`mpd-post-setup`.
+
+`Containers` is not consulted for `AudienceVM`: there is exactly one VM,
+so the dispatcher resolves that audience to the fixed `VMTarget` ("vm",
+which is also what the output labels print) and an event author cannot
+get it wrong.
 
 Add an event by writing a constructor in `events.go` that returns a
 populated `Event`:

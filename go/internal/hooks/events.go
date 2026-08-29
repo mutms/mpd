@@ -15,6 +15,7 @@ import (
 // are a public contract: renaming one silently stops every subscribing
 // hook, because a directory matching no event is simply never scanned.
 const (
+	EventMpdPostSetup     = "mpd-post-setup"
 	EventMpdPreStop       = "mpd-pre-stop"
 	EventProjectPreStart  = "project-pre-start"
 	EventProjectPreStop   = "project-pre-stop"
@@ -38,6 +39,8 @@ type Project struct {
 	// Empty engine means the project has none, so database-audience
 	// events fire nowhere — normal, not an error.
 	DBEngine, DBVersion string
+	// DevUser is who runtime hooks run as. See Event.User.
+	DevUser string
 }
 
 func (pr Project) env() map[string]string {
@@ -75,6 +78,47 @@ func ProjectPostStart(ctx context.Context, pr Project, p *podman.Client) Event {
 		[]AudienceKind{AudienceRuntime}, Continue)
 }
 
+// MpdPostSetup fires at the end of `mpd --vm-setup`, once the VM and its
+// runtime are fully configured. It is the point where "this VM is ready"
+// becomes true, so a hook can install onto a VM that is finally able to
+// hold the thing being installed.
+//
+// Audiences are the VM and its runtime, in that order — the same event on
+// both sides of the boundary, because the developer's setup work lands on
+// both (an IDE on the VM, an IDE backend in the runtime).
+//
+// Failure never aborts: setup has already done its work by the time this
+// fires, and a developer's install script failing is not a reason to
+// report the VM as unconfigured. The timeout is minutes, not seconds —
+// see SetupTimeout.
+func MpdPostSetup(ctx context.Context, runtimeContainer, devUser string, p *podman.Client) Event {
+	return Event{
+		Name:      EventMpdPostSetup,
+		Revision:  1,
+		Audiences: []AudienceKind{AudienceVM, AudienceRuntime},
+		OnFailure: Continue,
+		Timeout:   SetupTimeout,
+		User:      devUser,
+		Env:       map[string]string{"RUNTIME": runtimeContainer},
+		Containers: func(a AudienceKind) []string {
+			if a != AudienceRuntime {
+				return nil
+			}
+			return running(ctx, p, runtimeContainer)
+		},
+	}
+}
+
+// Only narrows an event to a subset of its declared audiences, for a
+// caller that has already covered the rest. mpd-post-setup uses it in
+// both directions: a freshly created runtime is fired into by
+// RuntimeCreate, so the `--vm-setup` that created it fires the VM side
+// only, and each new runtime sees the event exactly once.
+func (ev Event) Only(audiences ...AudienceKind) Event {
+	ev.Audiences = audiences
+	return ev
+}
+
 // MpdPreStop fires before the VM stops, on every running database, so
 // engines shut down cleanly rather than being killed with pending IO.
 // Failure never blocks a stop.
@@ -109,6 +153,7 @@ func projectEvent(ctx context.Context, name string, pr Project, p *podman.Client
 		Revision:  1,
 		Audiences: audiences,
 		OnFailure: onFailure,
+		User:      pr.DevUser,
 		Env:       pr.env(),
 		Containers: func(a AudienceKind) []string {
 			switch a {
