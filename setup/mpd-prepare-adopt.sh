@@ -206,9 +206,8 @@ if sudo systemctl enable --now avahi-daemon >/dev/null 2>&1; then
 else
     warn "avahi-daemon could not be enabled — pass the IP to adopt explicitly"
 fi
-# Gate on the device, never attempt-and-catch: without the device, the
-# unit's BindsTo= .device dependency has no job timeout, so
-# `systemctl start` blocks forever instead of failing.
+# Gate on the device: starting without it blocks forever; see
+# docs/debugging.md "systemctl start qemu-guest-agent blocks forever".
 if [ -e /dev/virtio-ports/org.qemu.guest_agent.0 ]; then
     sudo systemctl start qemu-guest-agent >/dev/null 2>&1 \
         && ok "qemu-guest-agent running" \
