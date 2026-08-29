@@ -491,6 +491,8 @@ Stack-independent ones first:
 |------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `claude-install` | Idempotent install of Claude Code (Anthropic's CLI) to `~/.local/bin/claude` via the upstream `curl \| bash` installer. Re-runs no-op.                                                                                       |
 | `node-install`   | Idempotent install of nvm + Node.js (LTS by default) into `$HOME/.nvm/` (upstream-standard). After install, `nvm`/`node`/`npm` are on PATH for new login shells; `nvm install <ver>` then works without sudo. Re-runs no-op. |
+| `phpstorm-archive-app` | Pack this runtime's Toolbox-installed PhpStorm backend into `~/install/phpstorm.tgz`, and print the `scp` line that seeds it into every future runtime through your mpd-virt overlay.                                        |
+| `phpstorm-install-app` | Unpack `~/install/phpstorm.tgz` into the Toolbox apps directory, so a fresh runtime skips the three-gigabyte backend download. No-ops when PhpStorm is already there or the tarball is not.                                  |
 
 **Runtime-level, same directory:**
 
@@ -670,7 +672,11 @@ and installed binaries — so config, dotfiles, IDE settings, SSH
 `known_hosts` and shell history come back, but caches and binaries do not.
 Binaries are left out on purpose: a rebuilt runtime gets fresh, current
 tools, and reinstalling one (e.g. `claude-install`) is a single command,
-so nothing stale is ever copied back in:
+so nothing stale is ever copied back in. A Toolbox-installed IDE backend
+under `~/.local/share/JetBrains/Toolbox/apps/` counts as a binary and is
+skipped too — it is gigabytes, and `phpstorm-install-app` puts it back in
+seconds — as do the tarballs in `~/install/` those tools unpack, which
+arrive from your mpd-virt overlay anyway:
 
 ```bash
 mpd --runtime-backup       # → /srv/backups/runtime/<UTC-timestamp>/ + manifest.json

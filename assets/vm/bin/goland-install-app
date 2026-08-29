@@ -88,10 +88,8 @@ echo
 echo "GoLand installed at ${TARGET} (${BUILD})"
 cat <<EOF
 
-Start it with:
+Point JetBrains Toolbox at that path to use it as an existing
+installation instead of downloading GoLand again. The launcher itself is:
 
     ${TARGET}/bin/${APP_NAME}
-
-It needs a desktop — run 'gnome-start' first on a headless VM. JetBrains
-Toolbox, if you install it later, picks this copy up as an existing app.
 EOF

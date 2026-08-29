@@ -31,6 +31,13 @@ EXCLUDES=(
     "go/pkg"
     ".vscode-server"
     ".cursor-server"
+    # Toolbox-installed IDE backends — gigabytes each, and reinstalled
+    # rather than restored: `phpstorm-install-app` unpacks one in seconds
+    # from ~/install. Toolbox's own settings and channels stay in.
+    ".local/share/JetBrains/Toolbox/apps"
+    # The tarballs those tools unpack. Seeded from the developer's mpd-virt
+    # overlay on every runtime create, so a copy here would be dead weight.
+    "install"
 )
 
 args=()
