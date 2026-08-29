@@ -265,3 +265,34 @@ mpd name in there is the snapshot.
 **Fix.** Recreate the container: `mpd --runtime-rebuild` for the runtime,
 `mpd --db-delete` + `mpd start <project>` for a database, `mpd
 --service-uninstall` + `--service-start` for a service.
+
+## `sudo cat DIR/*` fails on a root-owned 0700 directory
+
+**Symptom.** A command that reads mpd's private state comes back with the
+glob unexpanded, and no `sudo` prompt or permission error to explain it:
+
+```
+$ sudo -n cat /var/lib/mpd/state/runtime-ssh/ssh_host_*_key.pub
+cat: '/var/lib/mpd/state/runtime-ssh/ssh_host_*_key.pub': No such file or directory
+```
+
+The variant that hurts more is silent: `sudo rm -f DIR/*` on such a
+directory removes nothing and reports success.
+
+**Cause.** The shell expands the glob *before* `sudo` runs, as the dev
+user. `/var/lib/mpd/state/runtime-ssh/` is root-owned 0700, so that user
+cannot read the directory, the pattern matches nothing, and bash passes it
+through literally.
+
+**Diagnose.** `sudo ls -ld <dir>` — if it is `drwx------ root root` and
+you are not root, any glob you write against it in an unprivileged shell
+is dead.
+
+**Fix.** Expand inside a root shell:
+
+```bash
+sudo -n bash -c 'cat /var/lib/mpd/state/runtime-ssh/ssh_host_*_key.pub'
+```
+
+Same over ssh, where the remote login shell does the expanding. Where the
+file names are already known, name them instead of globbing.
