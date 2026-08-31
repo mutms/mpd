@@ -81,14 +81,12 @@ func ensureMudevCheckout(ctx context.Context, out io.Writer) error {
 }
 
 // buildMudev runs `make install`, which builds bin/mudev and symlinks it
-// into ~/.local/bin. GOTOOLCHAIN=local: Go's default would silently
-// download a large toolchain when go.mod asks for a newer version than
-// Debian ships.
+// into ~/.local/bin. GOTOOLCHAIN=auto for the reason MakeInstall gives.
 func buildMudev(ctx context.Context, out io.Writer) error {
 	code, err := exec.Run(ctx, exec.Cmd{
 		Name: "make",
 		Args: []string{"-C", MudevDir, "install"},
-		Env:  []string{"GOTOOLCHAIN=local"},
+		Env:  []string{"GOTOOLCHAIN=auto"},
 	})
 	if err != nil || code != 0 {
 		return fmt.Errorf("Failed to build mudev in %s (make install).", MudevDir)

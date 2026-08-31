@@ -14,8 +14,8 @@ GO_DIR := $(CURDIR)/go
 VERSION := $(shell git -C $(CURDIR) describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X main.version=$(VERSION)
 
-# Build with the Go that Debian Trixie ships (golang-go, currently
-# 1.24.x) and nothing else.
+# Go comes from upstream, not Debian: bootstrap/30-mpd-build.sh installs a
+# pinned release into /usr/local/go as the seed.
 #
 # The `go` directive in go/go.mod picks the compiler: the go command
 # fetches that toolchain itself when the installed one is older

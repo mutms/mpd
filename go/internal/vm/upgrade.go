@@ -101,13 +101,14 @@ or an unreachable remote. Sort it out there and re-run:
 	return nil
 }
 
-// MakeInstall builds a checkout with its own Makefile. GOTOOLCHAIN=local:
-// Go's default would silently download a large toolchain when go.mod
-// asks for a newer version than Debian ships.
+// MakeInstall builds a checkout with its own Makefile. GOTOOLCHAIN=auto
+// is set explicitly, not left to the default: the go.mod directive picks
+// the compiler and /usr/local/go is only a seed, so an upgrade that
+// raises the directive must be able to fetch the toolchain it names.
 func MakeInstall(ctx context.Context, dir string) error {
 	code, err := exec.Run(ctx, exec.Cmd{
 		Name: "make", Args: []string{"-C", dir, "install"},
-		Env: []string{"GOTOOLCHAIN=local"},
+		Env: []string{"GOTOOLCHAIN=auto"},
 	})
 	if err != nil || code != 0 {
 		return fmt.Errorf("make install failed in %s.", dir)
