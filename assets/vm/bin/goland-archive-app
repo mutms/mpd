@@ -1,8 +1,8 @@
 #!/bin/bash
 # goland-archive-app — pack this VM's Toolbox-installed GoLand into
 # ~/install/goland.tgz. Copy the file into your host-side overlay
-# (~/.mpd-virt/assets/vm/home/default/install/) and every new VM gets it
-# seeded into ~/install/, where `goland-install-app` unpacks it.
+# (~/.mpd-virt/assets/jetbrains/) and every VM reads it from
+# /opt/mpd/assets/jetbrains/, where `goland-install-app` unpacks it.
 # Re-runs replace the archive.
 set -euo pipefail
 
@@ -66,7 +66,7 @@ echo "Wrote ${DEST} ($(du -h "${DEST}" | cut -f1), ${BUILD})"
 # SC2088: the tilde stays literal — the string is printed for the
 # developer's workstation, not expanded here.
 # shellcheck disable=SC2088
-OVERLAY="~/.mpd-virt/assets/vm/home/default/install"
+OVERLAY="~/.mpd-virt/assets/jetbrains"
 cat <<EOF
 
 To seed it into every future VM, run this on your workstation:

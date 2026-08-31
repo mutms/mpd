@@ -492,7 +492,7 @@ Stack-independent ones first:
 | `claude-install` | Idempotent install of Claude Code (Anthropic's CLI) to `~/.local/bin/claude` via the upstream `curl \| bash` installer. Re-runs no-op.                                                                                       |
 | `node-install`   | Idempotent install of nvm + Node.js (LTS by default) into `$HOME/.nvm/` (upstream-standard). After install, `nvm`/`node`/`npm` are on PATH for new login shells; `nvm install <ver>` then works without sudo. Re-runs no-op. |
 | `phpstorm-archive-app` | Pack this runtime's Toolbox-installed PhpStorm backend into `~/install/phpstorm.tgz`, and print the `scp` line that seeds it into every future runtime through your mpd-virt overlay.                                        |
-| `phpstorm-install-app` | Unpack `~/install/phpstorm.tgz` into the Toolbox apps directory, so a fresh runtime skips the three-gigabyte backend download. No-ops when PhpStorm is already there or the tarball is not.                                  |
+| `phpstorm-install-app` | Unpack `/opt/mpd/assets/jetbrains/phpstorm.tgz` (or `~/install/phpstorm.tgz`) into the Toolbox apps directory, so a fresh runtime skips the three-gigabyte backend download. Read from the read-only mount, never copied into the home. No-ops when PhpStorm is already there or neither tarball is. |
 
 **Runtime-level, same directory:**
 
@@ -675,8 +675,8 @@ tools, and reinstalling one (e.g. `claude-install`) is a single command,
 so nothing stale is ever copied back in. A Toolbox-installed IDE backend
 under `~/.local/share/JetBrains/Toolbox/apps/` counts as a binary and is
 skipped too — it is gigabytes, and `phpstorm-install-app` puts it back in
-seconds — as do the tarballs in `~/install/` those tools unpack, which
-arrive from your mpd-virt overlay anyway:
+seconds from `/opt/mpd/assets/jetbrains/`, which is your mpd-virt
+overlay and not the runtime's to back up:
 
 ```bash
 mpd --runtime-backup       # → /srv/backups/runtime/<UTC-timestamp>/ + manifest.json
@@ -792,10 +792,11 @@ goland-install-app               # unpack that tarball on a new VM instead of do
 
 `goland-archive-app` / `goland-install-app` are the fast path for the
 in-VM IDE. Archive once on a VM that has GoLand, copy the tarball to
-`~/.mpd-virt/assets/vm/home/default/install/` on your workstation, and
-every VM mpd-virt adopts or creates from then on carries it in
-`~/install/` — `goland-install-app` unpacks it in seconds. Both no-op
-when there is nothing to do.
+`~/.mpd-virt/assets/jetbrains/` on your workstation, and every VM
+mpd-virt adopts or creates from then on reads it at
+`/opt/mpd/assets/jetbrains/goland.tgz` — `goland-install-app` unpacks it
+in seconds. The archive stays in the assets tree; it is never copied into
+a home. Both no-op when there is nothing to do.
 
 ## Updating mpd
 

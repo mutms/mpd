@@ -65,9 +65,15 @@ sudo systemctl restart mpd-caddy.service || true
 # project-setup.sh creates subdirs here; setgid + world-writable.
 chmod 02777 /srv/data
 
-# forced/ home files are mpd's, re-applied on every converge. Overwrite,
-# never delete — this must not lose data. default/ is seeded once by
-# 50-user.sh.
+# Home overlay, re-applied on every converge so a file the developer adds
+# after the runtime was created still lands. Neither branch deletes — this
+# must not lose data.
+#
+# default/ is seeded: -n keeps an existing file, so in-runtime edits
+# survive. forced/ is mpd's and overwrites.
+if [ -d /opt/mpd/assets/runtime/home/default ]; then
+    cp -aTn /opt/mpd/assets/runtime/home/default "${HOME}"
+fi
 if [ -d /opt/mpd/assets/runtime/home/forced ]; then
     cp -aT /opt/mpd/assets/runtime/home/forced "${HOME}"
 fi

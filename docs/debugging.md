@@ -377,3 +377,35 @@ but `auto` in the failing command's environment is the whole story.
 than leaving it to the default: /usr/local/go is a seed, and the go.mod
 directive is what picks the compiler. Anything in mpd that builds a
 checkout must do the same.
+
+## An overlay file added after runtime create never reaches the runtime
+
+**Symptom.** A file you put in your mpd-virt overlay under
+`assets/runtime/home/default/` is visible on the VM and inside the
+runtime at `/opt/mpd/assets/...`, but not in the runtime's home, and the
+tool that wants it says it is missing:
+
+```
+$ ls /opt/mpd/assets/runtime/home/default/install/phpstorm.tgz
+/opt/mpd/assets/runtime/home/default/install/phpstorm.tgz
+$ phpstorm-install-app
+No /home/skodak/install/phpstorm.tgz — nothing to unpack.
+```
+
+**Cause.** `default/` used to be seeded only by `50-user.sh`, which runs
+once, at runtime create. `70-configure-runtime.sh` re-applied `forced/`
+alone. A VM adopted before the file existed therefore never picked it up,
+and no converge fixed it — unlike the VM's own home, which
+`vm.EnsureHome` re-seeds on every `mpd --vm-setup`.
+
+**Diagnose.** The file under `/opt/mpd/assets/runtime/home/default/` but
+not under `~` inside the runtime, on a runtime older than the file.
+
+**Fix.** `70-configure-runtime.sh` now seeds `default/` too (`cp -aTn`,
+so an edited file in the runtime still wins), matching the VM side. A
+runtime created before this needs one `mpd --vm-setup`.
+
+**Related.** Do not put a large payload in a `home/` overlay at all: it is
+pushed to the VM and then copied into every home. IDE archives belong in
+`assets/jetbrains/`, which the install tools read directly from the
+read-only `/opt/mpd` mount, VM and runtime alike.

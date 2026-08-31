@@ -1,6 +1,9 @@
 #!/bin/bash
-# goland-install-app — unpack ~/install/goland.tgz (made by
+# goland-install-app — unpack a GoLand archive (made by
 # `goland-archive-app`) into the JetBrains Toolbox apps directory.
+#
+# Read from /opt/mpd/assets, never copied into the home: a 1 GB tarball
+# has no business being duplicated. ~/install/ is the local fallback.
 # Idempotent and safe to call blindly during provisioning: exits 0 when
 # GoLand is already installed or there is no archive.
 set -euo pipefail
@@ -8,7 +11,15 @@ set -euo pipefail
 APPS_DIR="$HOME/.local/share/JetBrains/Toolbox/apps"
 APP_NAME="goland"
 TARGET="${APPS_DIR}/${APP_NAME}"
-ARCHIVE="$HOME/install/${APP_NAME}.tgz"
+OVERLAY_ARCHIVE="/opt/mpd/assets/jetbrains/${APP_NAME}.tgz"
+LOCAL_ARCHIVE="$HOME/install/${APP_NAME}.tgz"
+ARCHIVE=""
+for candidate in "${OVERLAY_ARCHIVE}" "${LOCAL_ARCHIVE}"; do
+    if [ -f "${candidate}" ]; then
+        ARCHIVE="${candidate}"
+        break
+    fi
+done
 
 die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
@@ -16,8 +27,9 @@ usage() {
     cat <<'EOF'
 Usage: goland-install-app
 
-Unpack ~/install/goland.tgz into ~/.local/share/JetBrains/Toolbox/apps/.
-No-op if GoLand is already installed or the archive is not there.
+Unpack goland.tgz into ~/.local/share/JetBrains/Toolbox/apps/. Reads
+/opt/mpd/assets/jetbrains/goland.tgz, or ~/install/goland.tgz. No-op if
+GoLand is already installed or neither archive is there.
 Make the archive with `goland-archive-app`.
 EOF
 }
@@ -36,17 +48,20 @@ if [ -x "${TARGET}/bin/${APP_NAME}" ]; then
     exit 0
 fi
 
-if [ ! -f "${ARCHIVE}" ]; then
+if [ -z "${ARCHIVE}" ]; then
     cat <<EOF
-No ${ARCHIVE} — nothing to unpack.
+No archive to unpack. Looked in:
+
+    ${OVERLAY_ARCHIVE}
+    ${LOCAL_ARCHIVE}
 
 Make one on a VM that has GoLand:
 
     goland-archive-app
 
 then copy it on your workstation to
-~/.mpd-virt/assets/vm/home/default/install/goland.tgz so mpd-virt seeds
-it into every VM it adopts or creates.
+~/.mpd-virt/assets/jetbrains/goland.tgz. mpd-virt pushes that to every VM
+it adopts or creates.
 EOF
     exit 0
 fi

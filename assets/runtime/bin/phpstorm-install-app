@@ -1,16 +1,25 @@
 #!/bin/bash
-# phpstorm-install-app — unpack ~/install/phpstorm.tgz into the JetBrains
-# Toolbox apps directory, so a runtime skips the backend download.
+# phpstorm-install-app — unpack a PhpStorm backend archive into the
+# JetBrains Toolbox apps directory, so a runtime skips the download.
 #
-# The archive comes from `phpstorm-archive-app`, seeded into ~/install/
-# through the developer's mpd-virt overlay at runtime create.
+# Read straight from the read-only /opt/mpd mount, never copied into the
+# home: a 1 GB tarball has no business being duplicated per runtime.
+# ~/install/ is the fallback, for an archive made on this box.
 # Idempotent: exits 0 when PhpStorm is installed or no archive exists.
 set -euo pipefail
 
 APPS_DIR="$HOME/.local/share/JetBrains/Toolbox/apps"
 APP_NAME="phpstorm"
 TARGET="${APPS_DIR}/${APP_NAME}"
-ARCHIVE="$HOME/install/${APP_NAME}.tgz"
+OVERLAY_ARCHIVE="/opt/mpd/assets/jetbrains/${APP_NAME}.tgz"
+LOCAL_ARCHIVE="$HOME/install/${APP_NAME}.tgz"
+ARCHIVE=""
+for candidate in "${OVERLAY_ARCHIVE}" "${LOCAL_ARCHIVE}"; do
+    if [ -f "${candidate}" ]; then
+        ARCHIVE="${candidate}"
+        break
+    fi
+done
 
 die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
@@ -18,8 +27,9 @@ usage() {
     cat <<'EOF'
 Usage: phpstorm-install-app
 
-Unpack ~/install/phpstorm.tgz into ~/.local/share/JetBrains/Toolbox/apps/.
-No-op if PhpStorm is already installed or the archive is not there.
+Unpack phpstorm.tgz into ~/.local/share/JetBrains/Toolbox/apps/. Reads
+/opt/mpd/assets/jetbrains/phpstorm.tgz, or ~/install/phpstorm.tgz.
+No-op if PhpStorm is already installed or neither archive is there.
 Make the archive with `phpstorm-archive-app`.
 EOF
 }
@@ -38,17 +48,20 @@ if [ -x "${TARGET}/bin/remote-dev-server.sh" ]; then
     exit 0
 fi
 
-if [ ! -f "${ARCHIVE}" ]; then
+if [ -z "${ARCHIVE}" ]; then
     cat <<EOF
-No ${ARCHIVE} — nothing to unpack.
+No archive to unpack. Looked in:
+
+    ${OVERLAY_ARCHIVE}
+    ${LOCAL_ARCHIVE}
 
 Make one in a runtime that has PhpStorm:
 
     phpstorm-archive-app
 
 then copy it on your workstation to
-~/.mpd-virt/assets/runtime/home/default/install/phpstorm.tgz so mpd-virt
-seeds it into every runtime.
+~/.mpd-virt/assets/jetbrains/phpstorm.tgz. mpd-virt pushes that to every
+VM, and every runtime reads it from there.
 EOF
     exit 0
 fi

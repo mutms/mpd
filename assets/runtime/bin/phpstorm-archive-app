@@ -2,9 +2,9 @@
 # phpstorm-archive-app — pack this runtime's Toolbox-installed PhpStorm
 # into a tarball at ~/install/phpstorm.tgz.
 #
-# Every runtime create otherwise re-downloads the ~3 GB backend. Seed the
-# tarball via ~/.mpd-virt/assets/runtime/home/default/install/ and
-# `phpstorm-install-app` unpacks it. Re-runs replace the archive.
+# Every runtime create otherwise re-downloads the ~3 GB backend. Copy the
+# tarball to ~/.mpd-virt/assets/jetbrains/ and `phpstorm-install-app` reads
+# it from the /opt/mpd mount. Re-runs replace the archive.
 set -euo pipefail
 
 APPS_DIR="$HOME/.local/share/JetBrains/Toolbox/apps"
@@ -68,7 +68,7 @@ RUNTIME_HOST="$(hostname)"
 # SC2088: the tilde stays literal — the string is printed for the
 # developer to run on their workstation.
 # shellcheck disable=SC2088
-OVERLAY="~/.mpd-virt/assets/runtime/home/default/install"
+OVERLAY="~/.mpd-virt/assets/jetbrains"
 cat <<EOF
 
 To seed it into every future runtime, run this on your workstation:
@@ -76,8 +76,9 @@ To seed it into every future runtime, run this on your workstation:
     mkdir -p ${OVERLAY}
     scp ${RUNTIME_HOST%-runtime}:${DEST/#"${HOME}"/\~} ${OVERLAY}/
 
-mpd-virt pushes that overlay on adopt and update; a runtime picks it up
-when it is created, and then:
+mpd-virt pushes that overlay on adopt and update. It lands at
+/opt/mpd/assets/jetbrains/, which every runtime mounts read-only — no
+copy into the runtime's home. Then:
 
     phpstorm-install-app
 EOF
