@@ -4,6 +4,12 @@
 {
     # No public-CA HTTPS certs — mpd's CA signs everything internally.
     auto_https off
+
+    # The apex caddy (caddy.service) holds caddy's default admin
+    # endpoint, localhost:2019. Two caddies on one host would otherwise
+    # share it, and a reload meant for one would load into the other —
+    # leaving whichever lost with an empty config and no listeners.
+    admin localhost:2020
 }
 
 (deny_sensitive) {

@@ -745,7 +745,11 @@ deliberately distinct from the optional extra *services* below):
   Two caddies, not one, because the two jobs have different exposure: the
   apex is mpd's own status page on the gateway, project vhosts are
   untrusted code on an address of their own. Each pins its listener with
-  `bind`, so neither is reachable on the VM's LAN address.
+  `bind`, so neither is reachable on the VM's LAN address, and each takes
+  its own admin endpoint — the apex keeps caddy's default `localhost:2019`,
+  the project frontdoor declares `admin localhost:2020`. Sharing one would
+  let a reload load into the wrong instance; see
+  [`debugging.md`](debugging.md).
 - Project URLs are project-type-driven (via `configure.sh` writing
   `urls.json`, each URL carrying a `kind` and a backend: php-fpm,
   reverse-proxy, redirect) — the control-plane Go code never hard-codes

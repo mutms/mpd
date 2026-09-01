@@ -154,6 +154,36 @@ sudo -n bash -c 'cat /srv/dbs/postgres-18/pgdata/*.conf'
 Same over ssh, where the remote login shell does the expanding. Where the
 file names are already known, name them instead of globbing.
 
+## Both caddies run, nothing listens on :443
+
+**Symptom.** `systemctl is-active caddy mpd-caddy` says `active` for
+both, but `ss -lntp | grep :443` is empty and every URL — the portal and
+every project — refuses the connection. No error in either journal; both
+logs end with a cheerful `load complete`.
+
+**Cause.** Caddy's admin API defaults to `localhost:2019`, and mpd runs
+two caddies on the VM: `caddy.service` for the zone apex on `.1`, and
+`mpd-caddy.service` for the project vhosts on `.2`. Both bind that same
+admin socket — the kernel allows it — and `caddy reload` POSTs to
+whichever answers. One instance's reload then loads into the other,
+replacing its config wholesale. The loser ends up serving the empty
+config `{}`: still running, still `active`, listening on nothing.
+
+**Diagnose.** Two owners on one admin port, and an empty live config:
+
+```bash
+sudo ss -lntp | grep 2019          # two caddy pids on 127.0.0.1:2019
+curl -s localhost:2019/config/     # {}
+```
+
+**Fix.** The project caddy takes its own endpoint: `admin localhost:2020`
+in the global block of `assets/vm/caddy/templates/header.caddyfile`, and
+`mpd-caddy.sh` passes `--address` to `caddy reload` so the reload reaches
+the instance it belongs to. The apex keeps the default 2019.
+
+Change one and you must change the other — a reload aimed at the wrong
+endpoint is silent, and looks exactly like this symptom.
+
 ## HTTPS serves a superseded certificate after rotation
 
 **Symptoms.** After a certificate rotation (CA change, `mpd start`

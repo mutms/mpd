@@ -11,6 +11,9 @@ set -euo pipefail
 CADDYFILE="${CADDYFILE:-/run/mpd-caddy/Caddyfile}"
 META_DIR="${META_DIR:-/srv/meta}"
 GEN="${GEN:-/opt/mpd/assets/vm/caddy/gen-caddyfile.sh}"
+# Must match `admin` in templates/header.caddyfile: reload talks to the
+# admin API, and the default 2019 belongs to the apex caddy.
+ADMIN="${MPD_CADDY_ADMIN:-localhost:2020}"
 
 regenerate() {
     "$GEN" > "${CADDYFILE}.new"
@@ -43,7 +46,7 @@ inotifywait -m -r -e close_write,delete,moved_to,moved_from "$META_DIR" 2>/dev/n
             # --force is required after cert rotation; see
             # docs/debugging.md "HTTPS serves a superseded certificate".
             caddy reload --config "${CADDYFILE}" --adapter caddyfile --force \
-                >/dev/null 2>&1 || true
+                --address "${ADMIN}" >/dev/null 2>&1 || true
         fi
     done &
 
