@@ -22,7 +22,6 @@ import (
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/project"
-	"github.com/mutms/mpd/go/internal/runtime"
 	"github.com/mutms/mpd/go/internal/service"
 	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
@@ -83,7 +82,7 @@ func ProjectStart(ctx context.Context, out io.Writer, name string, settings []st
 func startProject(ctx context.Context, out io.Writer, name string, settings []string,
 	d ProjectDeps) (string, error) {
 
-	// Configure first; it leaves the runtime up, which the start tail
+	// Configure first; it writes the URLs the start tail
 	// below needs.
 	if err := reconcileProject(ctx, out, name, settings, d); err != nil {
 		return "", err
@@ -93,10 +92,9 @@ func startProject(ctx context.Context, out io.Writer, name string, settings []st
 	if !found {
 		return "", fmt.Errorf("Project '%s' not found after configure.", name)
 	}
-	container := d.Observer.RuntimeContainer(entry.RuntimeName)
-	ev := hookProject(entry, container, d)
+	ev := hookProject(entry, d)
 
-	// Pre-start: runtime and DB are up, project setup has not run.
+	// Pre-start: the DB is up, project setup has not run.
 	// Failure aborts — a failed precondition should not come up.
 	if err := hooks.Fire(ctx, out, hooks.ProjectPreStart(ctx, ev, d.Podman), "start", d.Podman); err != nil {
 		return "", err
@@ -106,9 +104,9 @@ func startProject(ctx context.Context, out io.Writer, name string, settings []st
 	// setup script.
 	cfg, hasType := d.Assets.ProjectTypeConfig(entry.Type)
 	if hasType && d.Assets.HasTypeFile(cfg.AssetsType, "project-setup.sh") {
-		fmt.Fprintf(out, "\n\033[1m==> Setting up '%s' in the runtime\033[0m\n", name)
+		fmt.Fprintf(out, "\n\033[1m==> Setting up '%s'\033[0m\n", name)
 		script := assets.TypeScript(cfg.AssetsType, "project-setup.sh")
-		code, err := project.Exec(ctx, d.Podman, container, d.DevUser, "bash", script, name)
+		code, err := project.Exec(ctx, "bash", script, name)
 		if err != nil || code != 0 {
 			return "", fmt.Errorf("project-setup.sh failed.")
 		}
@@ -140,7 +138,7 @@ func markStopped(out io.Writer, s state.Store, name string) {
 }
 
 // waitForURL blocks until the project's main URL answers, up to ~30s.
-// The frontdoor updates out of band (the in-runtime caddy watches
+// The frontdoor updates out of band (the project caddy watches
 // /srv/meta by inotify), so without this wait mpd prints "is running"
 // while the URL still 502s. Last and non-fatal: everything mpd owns is
 // already done and persisted, so Ctrl-C or a timeout here loses nothing.
@@ -208,7 +206,7 @@ func trustingClient() (*http.Client, error) {
 	}, nil
 }
 
-// ProjectStop takes a project down. It stops neither the runtime nor
+// ProjectStop takes a project down. It stops neither the frontdoor nor
 // the database — mpd is demand-driven (see docs/hooks.md), and
 // reclaiming idle resources is `mpd --gc`'s job.
 func ProjectStop(ctx context.Context, out io.Writer, name string, d ProjectDeps) error {
@@ -219,8 +217,7 @@ func ProjectStop(ctx context.Context, out io.Writer, name string, d ProjectDeps)
 
 	// Idempotent: every step is best-effort, and the project ends up
 	// recorded stopped either way.
-	container := d.Observer.RuntimeContainer(entry.RuntimeName)
-	ev := hookProject(entry, container, d)
+	ev := hookProject(entry, d)
 
 	// Pre-stop: still live, so hooks can drain work or flush caches.
 	// Failure logs, never blocks — you cannot fail to stop.
@@ -232,10 +229,8 @@ func ProjectStop(ctx context.Context, out io.Writer, name string, d ProjectDeps)
 	// Optional and best-effort: the project ends up stopped regardless.
 	if cfg, ok := d.Assets.ProjectTypeConfig(entry.Type); ok &&
 		d.Assets.HasTypeFile(cfg.AssetsType, "project-stop.sh") {
-		if d.Podman.Running(ctx, container) {
-			script := assets.TypeScript(cfg.AssetsType, "project-stop.sh")
-			_, _ = project.Exec(ctx, d.Podman, container, d.DevUser, "bash", script, name)
-		}
+		script := assets.TypeScript(cfg.AssetsType, "project-stop.sh")
+		_, _ = project.Exec(ctx, "bash", script, name)
 	}
 
 	entry.Autostart = false
@@ -259,15 +254,12 @@ func findProject(s state.Store, name string) (state.Project, bool) {
 }
 
 // hookProject builds the hook-facing view of a project. No project-type
-// fields: hook discovery reads the container's labels.
-func hookProject(entry state.Project, container string, d ProjectDeps) hooks.Project {
+// fields.
+func hookProject(entry state.Project, d ProjectDeps) hooks.Project {
 	return hooks.Project{
-		Name:             entry.Name,
-		Runtime:          entry.RuntimeName,
-		RuntimeContainer: container,
-		DBEngine:         entry.DatabaseEngine,
-		DBVersion:        entry.DatabaseVersion,
-		DevUser:          d.DevUser,
+		Name:      entry.Name,
+		DBEngine:  entry.DatabaseEngine,
+		DBVersion: entry.DatabaseVersion,
 	}
 }
 
@@ -281,19 +273,12 @@ func ProjectDelete(ctx context.Context, out io.Writer, in io.Reader, name string
 	if !found {
 		return fmt.Errorf("Project '%s' not found.", name)
 	}
-	container := d.Observer.RuntimeContainer(entry.RuntimeName)
-
 	typeStr := entry.Type
 	if typeStr == "" {
 		typeStr = "(not detected)"
 	}
-	runtimeStr := entry.RuntimeName
-	if runtimeStr == "" {
-		runtimeStr = "(none)"
-	}
 	fmt.Fprintf(out, "Project:  %s\n", name)
 	fmt.Fprintf(out, "Type:     %s\n", typeStr)
-	fmt.Fprintf(out, "Runtime:  %s\n", runtimeStr)
 	fmt.Fprintf(out, "Source:   /srv/projects/%s/\n", name)
 	fmt.Fprintln(out, "This will remove the DB, dataroot, source tree, and all config files.")
 	fmt.Fprintf(out, "To keep the code and start over instead, use `mpd reset %s`.\n", name)
@@ -303,19 +288,17 @@ func ProjectDelete(ctx context.Context, out io.Writer, in io.Reader, name string
 		return nil
 	}
 
-	// Stop first so the type's stop path runs while its runtime is still
-	// up — after removal there is nothing left to stop cleanly.
+	// Stop first so the type's stop path runs before its files go.
 	if entry.Autostart {
 		if err := ProjectStop(ctx, out, name, d); err != nil {
 			fmt.Fprintf(out, "Warning: stop failed, continuing with delete: %v\n", err)
 		}
 	}
 
-	// The type's own teardown — only possible while the runtime runs.
-	if entry.RuntimeName != "" && d.Podman.Running(ctx, container) {
+	if entry.Configured {
 		if cfg, ok := d.Assets.ProjectTypeConfig(entry.Type); ok {
 			script := assets.TypeScript(cfg.AssetsType, "project-delete.sh")
-			_, _ = project.Exec(ctx, d.Podman, container, d.DevUser, "bash", script, name)
+			_, _ = project.Exec(ctx, "bash", script, name)
 		}
 	}
 
@@ -366,8 +349,6 @@ func ProjectReset(ctx context.Context, out io.Writer, in io.Reader, name string,
 	if !found {
 		return fmt.Errorf("Project '%s' not found.", name)
 	}
-	container := d.Observer.RuntimeContainer(entry.RuntimeName)
-
 	dbStr := entry.DatabaseID
 	if dbStr == "" {
 		dbStr = "(none)"
@@ -384,8 +365,8 @@ func ProjectReset(ctx context.Context, out io.Writer, in io.Reader, name string,
 		return nil
 	}
 
-	// Stop while the runtime is still up, so the type's stop path and
-	// pre-stop hooks run against a live project.
+	// Stop first, so the type's stop path and pre-stop hooks run
+	// against a live project.
 	if entry.Autostart {
 		if err := ProjectStop(ctx, out, name, d); err != nil {
 			fmt.Fprintf(out, "Warning: stop failed, continuing with reset: %v\n", err)
@@ -394,10 +375,10 @@ func ProjectReset(ctx context.Context, out io.Writer, in io.Reader, name string,
 
 	// The type's teardown: reset is a re-scaffold, so tear down as
 	// completely as delete would — configure.sh builds it all back.
-	if entry.RuntimeName != "" && d.Podman.Running(ctx, container) {
+	if entry.Configured {
 		if cfg, ok := d.Assets.ProjectTypeConfig(entry.Type); ok {
 			script := assets.TypeScript(cfg.AssetsType, "project-delete.sh")
-			_, _ = project.Exec(ctx, d.Podman, container, d.DevUser, "bash", script, name)
+			_, _ = project.Exec(ctx, "bash", script, name)
 		}
 	}
 
@@ -448,7 +429,7 @@ func ProjectReset(ctx context.Context, out io.Writer, in io.Reader, name string,
 // reconcileProject is the configure half of `mpd start`. The order is a
 // data dependency chain: mutations land in mpd.env, configure.sh emits
 // effective.json + urls.json, dbTag from effective.json provisions the
-// database, URLs drive cert and DNS. It leaves the runtime running for
+// database, URLs drive cert and DNS. It leaves the frontdoor up for
 // the start tail.
 func reconcileProject(ctx context.Context, out io.Writer, name string, args []string,
 	d ProjectDeps) error {
@@ -472,23 +453,8 @@ func reconcileProject(ctx context.Context, out io.Writer, name string, args []st
 		return fmt.Errorf("Project type is not set for '%s'.\n"+
 			"Create a new project to choose a type (default: moodle).", name)
 	}
-	// RuntimeName is a JSON contract with shell/jq consumers; there is
-	// one runtime, so it is pinned rather than resolved.
-	entry.RuntimeName = runtime.Name
+	entry.Configured = true
 
-	container := d.Observer.RuntimeContainer(entry.RuntimeName)
-	if !d.Podman.Exists(ctx, container) {
-		return fmt.Errorf("The runtime does not exist. Run: mpd --vm-setup")
-	}
-	if !d.Podman.Running(ctx, container) {
-		if err := RuntimeStart(ctx, out, d.Podman, d.State,
-			d.Dnsmasq, d.Observer, d.Net, d.DevUser, d.UID); err != nil {
-			return err
-		}
-	}
-
-	// Written from the VM directly; a podman exec per key would buy
-	// nothing.
 	if len(mutations) > 0 {
 		fmt.Fprintf(out, "\n\033[1m==> Updating /srv/projects/%s/mpd.env\033[0m\n", name)
 		if err := project.ApplyMutations("/srv/projects/"+name+"/mpd.env", mutations); err != nil {
@@ -496,8 +462,8 @@ func reconcileProject(ctx context.Context, out io.Writer, name string, args []st
 		}
 	}
 
-	// Write project.json first: source-mpd-env.sh reads runtime and
-	// type from it to locate the mpd-defaults.env layers.
+	// Write project.json first: source-mpd-env.sh reads the type from
+	// it to locate the mpd-defaults.env layers.
 	if err := project.WriteMeta(ctx, d.Podman, d.UID, entry); err != nil {
 		return err
 	}
@@ -505,7 +471,7 @@ func reconcileProject(ctx context.Context, out io.Writer, name string, args []st
 	cfg, hasType := d.Assets.ProjectTypeConfig(entry.Type)
 	if hasType {
 		script := assets.TypeScript(cfg.AssetsType, "scripts/configure.sh")
-		code, err := project.Exec(ctx, d.Podman, container, d.DevUser, "bash", script, name)
+		code, err := project.Exec(ctx, "bash", script, name)
 		if err != nil || code != 0 {
 			return fmt.Errorf("configure.sh failed for project '%s'.", name)
 		}
@@ -577,8 +543,7 @@ func reconcileProject(ctx context.Context, out io.Writer, name string, args []st
 		return err
 	}
 
-	// The runtime stays up for the start tail; reclaiming an idle
-	// runtime is `mpd --gc`'s job.
+	// Reclaiming an idle database is `mpd --gc`'s job.
 	return nil
 }
 
@@ -668,10 +633,9 @@ var projectVerbs = map[string]bool{
 }
 
 // reservedNames are names a project may not take because they live
-// directly under the project DNS namespace (runtime, svc, db, vm
-// records).
+// directly under the project DNS namespace (svc, db, vm records).
 var reservedNames = map[string]bool{
-	"runtime": true, "svc": true, "db": true, "vm": true,
+	"svc": true, "db": true, "vm": true,
 }
 
 var validProjectName = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
@@ -727,35 +691,26 @@ func ProjectCreate(ctx context.Context, out io.Writer, name string, opts CreateO
 		typeName = "moodle"
 	}
 
-	// Start the runtime before touching any project state, so a failure
-	// here leaves nothing half-created.
-	if err := ensureRuntime(ctx, out, d, home); err != nil {
-		return err
-	}
-	container := d.Observer.RuntimeContainer(runtime.Name)
-
 	fmt.Fprintf(out, "\n\033[1m==> Ensuring /srv/projects/%s/\033[0m\n", name)
-	if code, err := project.Exec(ctx, d.Podman, container, d.DevUser,
-		"mkdir", "-p", "/srv/projects/"+name); err != nil || code != 0 {
-		return fmt.Errorf("Failed to create /srv/projects/%s in the runtime.", name)
+	if err := srv.MkdirAll(srv.ProjectDir(name)); err != nil {
+		return fmt.Errorf("Failed to create /srv/projects/%s: %v", name, err)
 	}
 
 	// The type's own scaffolding; optional — types without the script
 	// skip.
 	if cfg, ok := d.Assets.ProjectTypeConfig(typeName); ok {
 		if d.Assets.HasFile(fmt.Sprintf("%s/project_types/%s/project-create.sh",
-			assets.RuntimeDir, cfg.AssetsType)) {
+			assets.VMDir, cfg.AssetsType)) {
 			script := assets.TypeScript(cfg.AssetsType, "project-create.sh")
 			fmt.Fprintf(out, "\n\033[1m==> Scaffolding project from %s template\033[0m\n", typeName)
-			if code, err := project.Exec(ctx, d.Podman, container, d.DevUser,
-				"bash", script, name); err != nil || code != 0 {
+			if code, err := project.Exec(ctx, "bash", script, name); err != nil || code != 0 {
 				return fmt.Errorf("project-create.sh failed for project '%s'.", name)
 			}
 		}
 	}
 
 	// Register only after scaffolding succeeds; a failure leaves the
-	// directory for the developer to inspect. No RuntimeName and no
+	// directory for the developer to inspect. Not Configured and not
 	// Autostart: Status reports "not initialised" until the first start.
 	if err := d.State.UpsertProject(state.Project{
 		Name: name, Type: typeName,
@@ -767,21 +722,6 @@ func ProjectCreate(ctx context.Context, out io.Writer, name string, opts CreateO
 	Ok(out, "Project '%s' scaffolded.", name)
 	fmt.Fprintf(out, "  Edit /srv/projects/%s/mpd.env if needed, then:\n", name)
 	fmt.Fprintf(out, "    mpd start %s\n", name)
-	return nil
-}
-
-// ensureRuntime creates the runtime if absent, starts it if stopped.
-func ensureRuntime(ctx context.Context, out io.Writer, d ProjectDeps, home string) error {
-	container := d.Observer.RuntimeContainer(runtime.Name)
-	switch {
-	case !d.Podman.Exists(ctx, container):
-		fmt.Fprintln(out, "No runtime yet — creating...")
-		return RuntimeCreate(ctx, out, d.Podman, d.State, d.Dnsmasq, d.Observer,
-			d.Net, d.DevUser, d.UID, home)
-	case !d.Podman.Running(ctx, container):
-		return RuntimeStart(ctx, out, d.Podman, d.State, d.Dnsmasq, d.Observer,
-			d.Net, d.DevUser, d.UID)
-	}
 	return nil
 }
 
@@ -804,9 +744,6 @@ func ShowHelp(out io.Writer, project string, n net.Net) {
 	fmt.Fprintln(out, "  mpd start        mpd start KEY=VALUE        mpd status")
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "Project-type-specific operations (mdl-cron, phpunit, composer, …) are tools,")
-	fmt.Fprintln(out, "not host-side verbs. SSH into the runtime and run them on PATH:")
-	fmt.Fprintf(out, "  ssh user@%s\n", n.RuntimeFQDN())
-	fmt.Fprintln(out, "")
-	fmt.Fprintln(out, "Or forward one from the VM, from inside the project directory:")
-	fmt.Fprintf(out, "  cd /srv/projects/%s && mpd run <command> [args...]\n", project)
+	fmt.Fprintln(out, "not verbs. They are on PATH — run them from the project directory:")
+	fmt.Fprintf(out, "  cd /srv/projects/%s && mdl-cron\n", project)
 }

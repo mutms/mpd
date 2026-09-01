@@ -18,16 +18,16 @@ Laptop (macOS — primary)      reaches the VM by IP; needs only :22 + :51820
   │
 VM (Debian Trixie)   hostname mpd-<NNN>;  LAN IP exposes ONLY sshd + wg
   │
-  │  Static bridge:  mpdbr0  10.163.<NNN>.1/24
-  │    Two VM processes bind this address (nothing binds the LAN IP):
-  │      dnsmasq :53   — DNS for *.test
-  │      caddy   :443  — the zone apex only (the portal, mpd --web), HTTPS
+  │  Static bridge:  mpdbr0  — two VM addresses (nothing binds the LAN IP)
+  │    10.163.<NNN>.1   dnsmasq   :53  — DNS for *.test
+  │                     caddy     :443 — the zone apex only (the portal)
+  │    10.163.<NNN>.2   mpd-caddy :443 — every project vhost
   │
   `mpd-internal` Podman network    10.163.<NNN>.0/24  (podman DNS disabled)
     │   SEALED from the LAN by an nft firewall (mpd-firewall.service);
-    │   only mpdbr0 and wg0 may route in
-    +-- mpd-<NNN>-runtime       10.163.<NNN>.2     (in-runtime caddy :443
-    │                            terminates project HTTPS; SSH ProxyJump)
+    │   only mpdbr0 and wg0 may route in, on both the forward and the
+    │   input hook — the VM holds .1 and .2 itself, and those arrive on
+    │   input, which the forward chain never sees
     +-- DB containers           10.163.<NNN>.10–.99
     +-- extra service containers 10.163.<NNN>.100–.199  (plain HTTP:
                                  mailpit .100, adminer .102, selenium .103)
@@ -59,9 +59,9 @@ chain at all. See "The container-subnet firewall" below.
 
 ## How the laptop reaches the VM
 
-The laptop reaches the whole container subnet — project HTTPS at the
-runtime's `.2`, databases, service containers, plus dnsmasq and the
-portal's caddy on the gateway `.1`. What is sealed is the *LAN/public*
+The laptop reaches the whole container subnet — project HTTPS on the
+VM's `.2`, databases, service containers, plus dnsmasq and the portal's
+caddy on the gateway `.1`. What is sealed is the *LAN/public*
 side of the VM, not the laptop's paths in. There are two host-side
 paths, both set up by `mpd-virt`:
 
@@ -132,11 +132,12 @@ VM run safely anywhere reachable by IP.
 as the last octet of the VM's static IP). It is the discriminator in
 **both** halves of
 the addressing: the third octet of the container subnet, and the first
-label of the DNS zone. Nothing else varies: the runtime is always `.2`,
-databases take `.10–.99`, extra service containers `.100–.199` (each
-service pins its own octet: mailpit `.100`, adminer `.102`, selenium
-`.103`), and both the resolver and the status page answer on the
-gateway `.1` because they run on the VM rather than in a container.
+label of the DNS zone. Nothing else varies: the project frontdoor is
+always `.2`, databases take `.10–.99`, extra service containers
+`.100–.199` (each service pins its own octet: mailpit `.100`, adminer
+`.102`, selenium `.103`), and the resolver and the status page answer on
+the gateway `.1`. Both `.1` and `.2` are the VM itself — the container
+IPAM range starts at `.10` so netavark can never hand either out.
 
 ```
 VM 150:  10.163.150.0/24   zone 150.mpd.test   moodle45.150.mpd.test
@@ -149,14 +150,13 @@ composes them all):
 | Name                          | Points at                                     |
 | ----------------------------- | --------------------------------------------- |
 | `<NNN>.mpd.test` (apex)       | `.1` — the portal, via the VM's caddy         |
-| `<project>.<NNN>.mpd.test`    | `.2` — the runtime's caddy serves the project |
-| `runtime.<NNN>.mpd.test`      | `.2` — the runtime container itself           |
+| `<project>.<NNN>.mpd.test`    | `.2` — the project caddy serves the project   |
 | `<name>.db.<NNN>.mpd.test`    | `.10–.99` — a database container              |
 | `<name>.svc.<NNN>.mpd.test`   | `.100–.199` — an extra service container      |
 | `vm.<NNN>.mpd.test`           | the VM's own LAN IP (diagnostic — see below)  |
 
-(`runtime`, `svc` and `vm` are reserved project names so a project can
-never shadow these records.)
+(`svc` and `vm` are reserved project names so a project can never shadow
+these records.)
 
 This is what makes **several VMs reachable at the same time**. The host
 holds one route and one resolver entry per VM; the routes are to
@@ -187,7 +187,6 @@ Every name mpd publishes is a line in one managed block in the VM's
 # BEGIN mpd
 # DNS records for 200.mpd.test, managed by mpd. Edits are overwritten.
 10.163.200.1 200.mpd.test
-10.163.200.2 runtime.200.mpd.test runtime
 10.1.10.200 vm.200.mpd.test
 10.163.200.103 selenium.svc.200.mpd.test
 10.163.200.2 docs.200.mpd.test
@@ -341,7 +340,7 @@ immediately.
 
 ## Diagnostic record: `vm.<NNN>.mpd.test`
 
-In addition to the runtime / service / project records, the block carries
+In addition to the service and project records, the block carries
 one special record ("vm" is a reserved project name for this reason):
 
 ```
@@ -364,51 +363,25 @@ reply from `10.163.<NNN>.1` can only be that VM's resolver, so this is
 now a confirmation rather than a disambiguation — but it is cheap and it
 catches registry IP drift on the host side.
 
-## SSH access to the runtime container
+## SSH access
 
-From the laptop, **via SSH ProxyJump through the VM** — it rides plain
-SSH to the VM's sshd, which reaches the runtime over the internal
-bridge, so it needs no overlay or SOCKS and works even when mpd-proxy
-is down.
+From the laptop, straight to the VM's sshd over plain SSH — no overlay,
+no SOCKS, and no second hop: PHP, the tools, the IDE backend and the AI
+agent all run on the VM.
 
 ```
 # ~/.ssh/config (written automatically by mpd-virt):
-Host mpd-<NNN>
-    HostName runtime.<NNN>.mpd.test
-    User user
-    ProxyJump mpd-<NNN>-vm
-
-Host mpd-<NNN>-vm
+Host mpd-<NNN> mpd-<NNN>-vm <the VM's address>
     HostName <the VM's address>
     User user
 ```
 
-The bare name is the runtime because that is where the work happens; the
-VM that manages the containers takes the `-vm` suffix. IDEs (PHPStorm
-Gateway, VS Code Remote-SSH) configure ProxyJump the same way.
+The bare name is the machine you work on; `-vm` is a synonym for it.
+IDEs (PHPStorm Gateway, VS Code Remote-SSH) need no ProxyJump.
 
-**From a terminal inside the VM** — `mpd --vm-setup` writes
-`mpd-<NNN>-runtime` into the VM's own `~/.ssh/config`, minus the
-ProxyJump (the runtime subnet is directly attached there); the bare
-`runtime` and the FQDN also answer. The short host-side spelling cannot
-be reused here: in the VM `mpd-<NNN>` is that machine's own hostname.
-What is consistent instead is the *prompt* — the runtime's reads
-`mpd-<NNN>` and the VM's `mpd-<NNN>-vm`, matching the host-side aliases,
-without either hostname being changed. Details in
-[`usage.md`](usage.md#ssh-into-the-runtime).
+Inside the VM there is nothing to alias: you are already there.
 
-The bare `runtime` is the one short name that is a real record: it is an
-alias on the runtime's line in the `/etc/hosts` block
-(`10.163.<NNN>.2 runtime.<NNN>.mpd.test runtime`), so libc on the VM
-resolves it with no search domain involved. It exists for SSH clients that
-offer a jump host but no `~/.ssh/config`: ProxyJump has the *jump host*
-resolve the target through libc, so an ssh alias cannot help there and a
-resolvable name must. jump = the VM, host = `runtime`. Containers see the
-same alias through dnsmasq; nothing in them wants that name, so nothing
-collides.
-
-mpd assumes your laptop user, VM user, and runtime user share the same
-name — that's what makes the bare jump-host form work without explicit
-`user@`. Set up the VM with the same account name as your laptop login.
+mpd assumes your laptop user and VM user share the same name. Set up the
+VM with the same account name as your laptop login.
 
 See also: [README.md](README.md), [security.md](security.md)

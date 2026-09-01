@@ -39,12 +39,12 @@ func block(t *testing.T, records ...Record) string {
 func TestRenderIsExactMatchHostsLines(t *testing.T) {
 	body := block(t,
 		Record{IP: "10.163.200.1", Names: []string{"200.mpd.test"}},
-		Record{IP: "10.163.200.2", Names: []string{"runtime.200.mpd.test", "runtime"}},
+		Record{IP: "10.163.200.2", Names: []string{"m45.200.mpd.test", "m45"}},
 	)
 	for _, want := range []string{
 		BlockStart + "\n",
 		"\n10.163.200.1 200.mpd.test\n",
-		"\n10.163.200.2 runtime.200.mpd.test runtime\n",
+		"\n10.163.200.2 m45.200.mpd.test m45\n",
 		BlockEnd + "\n",
 	} {
 		if !strings.Contains(body, want) {
@@ -192,17 +192,14 @@ func testManager(t *testing.T) Manager {
 	return m
 }
 
-// The fixed records come first: apex, runtime with its bare alias, the
-// VM's own address only when it has one.
+// The fixed records come first: apex, then the VM's own address only
+// when it has one.
 func TestRecordsFixedSet(t *testing.T) {
 	m := testManager(t)
 
 	got := m.Records(context.Background(), nil, "")
 	if got[0].IP != "10.163.200.1" || got[0].Names[0] != "200.mpd.test" {
 		t.Errorf("apex record wrong: %+v", got[0])
-	}
-	if got[1].IP != "10.163.200.2" || strings.Join(got[1].Names, " ") != "runtime.200.mpd.test runtime" {
-		t.Errorf("runtime record wrong: %+v", got[1])
 	}
 	for _, r := range got {
 		if r.Names[0] == "vm.200.mpd.test" {
@@ -211,12 +208,12 @@ func TestRecordsFixedSet(t *testing.T) {
 	}
 
 	withIP := m.Records(context.Background(), nil, "10.1.10.200")
-	if withIP[2].IP != "10.1.10.200" || withIP[2].Names[0] != "vm.200.mpd.test" {
+	if withIP[1].IP != "10.1.10.200" || withIP[1].Names[0] != "vm.200.mpd.test" {
 		t.Errorf("vm record missing for a VM with an address: %+v", withIP)
 	}
 }
 
-// Projects contribute every in-zone host at the runtime's address;
+// Projects contribute every in-zone host at the project address;
 // mail URLs and other VMs' hosts do not. Databases contribute their
 // pinned address whether running or not.
 func TestRecordsFromState(t *testing.T) {

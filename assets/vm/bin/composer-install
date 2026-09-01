@@ -1,0 +1,41 @@
+#!/bin/bash
+# Tool: install Composer phar to /usr/local/bin/composer.
+# Idempotent; sudo only for the write into /usr/local/bin/.
+set -euo pipefail
+
+TARGET="/usr/local/bin/composer"
+
+# Composer warns when COMPOSER_HOME is group- or world-writable, and Debian's
+# login umask 002 makes a self-created one land 0775. Pre-create and
+# re-tighten it before the idempotency check, so existing VM get fixed.
+if [ -n "${COMPOSER_HOME:-}" ]; then
+    HOME_DIR="$COMPOSER_HOME"
+elif [ -d "$HOME/.composer" ]; then
+    HOME_DIR="$HOME/.composer"          # legacy location wins if it exists
+else
+    HOME_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/composer"
+fi
+mkdir -p "$HOME_DIR"
+chmod go-w "$HOME_DIR"
+
+if [ -x "$TARGET" ]; then
+    echo "Composer already installed at $TARGET — skipping."
+    exit 0
+fi
+
+# php8.2 is pinned because the installer.sig check is reliable on it; the
+# installed phar runs on any installed PHP version.
+EXPECTED_CHECKSUM="$(php8.2 -r 'copy("https://composer.github.io/installer.sig", "php://stdout");')"
+TMPDIR="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR"' EXIT
+
+php8.2 -r "copy('https://getcomposer.org/installer', '$TMPDIR/composer-setup.php');"
+ACTUAL_CHECKSUM="$(php8.2 -r "echo hash_file('sha384', '$TMPDIR/composer-setup.php');")"
+
+if [ "$EXPECTED_CHECKSUM" != "$ACTUAL_CHECKSUM" ]; then
+    echo "ERROR: Composer installer checksum mismatch" >&2
+    exit 1
+fi
+
+sudo php8.2 "$TMPDIR/composer-setup.php" --quiet --install-dir=/usr/local/bin --filename=composer
+echo "Composer installed at $TARGET"

@@ -1,6 +1,0 @@
-#!/bin/bash
-# Tool: run Moodle cron for the current project (one cycle).
-set -euo pipefail
-source /opt/mpd/assets/runtime/project_types/moodle/scripts/mpd-env.sh
-
-moodle_run admin/cli/cron.php "$@"

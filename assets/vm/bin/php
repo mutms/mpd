@@ -1,0 +1,43 @@
+#!/bin/bash
+# Tool: project-aware PHP version dispatcher.
+#
+# Registered as the Debian `php` alternative at high priority, so
+# /usr/bin/php resolves here and IDE interpreter probes see one stable path.
+#
+# Version resolution order:
+#   0. $MPD_PHP_FORCE_VERSION — explicit override for a tool that resolved
+#      its version but runs php outside the project tree. Independent of $PWD.
+#   1. $MPD_PHP_VERSION — already exported by a tool chain that sourced
+#      mpd.env; no extra fork.
+#   2. Inside /srv/projects/<name>: source the layered mpd.env.
+#   3. MPD_PHP_FALLBACK_VERSION below — pinned, so `php -v` outside a
+#      project always answers the same thing.
+#
+# Never exec /usr/bin/php from here — the alternatives link points it back
+# at this script. Always exec the versioned /usr/bin/phpX.Y.
+
+# Used when no mpd.env layer sets MPD_PHP_VERSION. Keep in sync with
+# lib/php-configure.sh.
+MPD_PHP_FALLBACK_VERSION=8.3
+
+# An uninstalled forced version falls through to normal resolution.
+if [[ -n "${MPD_PHP_FORCE_VERSION:-}" ]] && [[ -x "/usr/bin/php${MPD_PHP_FORCE_VERSION}" ]]; then
+    exec "/usr/bin/php${MPD_PHP_FORCE_VERSION}" "$@"
+fi
+
+if [[ -z "${MPD_PHP_VERSION:-}" ]] && [[ "$PWD" =~ ^/srv/projects/([^/]+) ]]; then
+    PROJECT_NAME="${BASH_REMATCH[1]}"
+    # shellcheck source=/dev/null
+    source /opt/mpd/assets/vm/lib/source-mpd-env.sh
+fi
+
+if [[ -n "${MPD_PHP_VERSION:-}" ]] && [[ -x "/usr/bin/php${MPD_PHP_VERSION}" ]]; then
+    exec "/usr/bin/php${MPD_PHP_VERSION}" "$@"
+fi
+
+if [[ -x "/usr/bin/php${MPD_PHP_FALLBACK_VERSION}" ]]; then
+    exec "/usr/bin/php${MPD_PHP_FALLBACK_VERSION}" "$@"
+fi
+
+echo "php: no usable interpreter — neither /usr/bin/php${MPD_PHP_VERSION:-<unset>} nor the fallback /usr/bin/php${MPD_PHP_FALLBACK_VERSION} is executable." >&2
+exit 127

@@ -41,11 +41,8 @@ func New(n net.Net, p *podman.Client, s state.Store) Manager {
 // within each group. services come from the caller; vmIP is the VM's
 // LAN address, or "" when it has none.
 func (m Manager) Records(ctx context.Context, services []Record, vmIP string) []Record {
-	// The bare `runtime` alias makes `ssh runtime` work without a
-	// search domain.
 	records := []Record{
 		{IP: m.n.Gateway(), Names: []string{m.n.Zone()}},
-		{IP: m.n.IP(net.HostRuntime), Names: []string{m.n.RuntimeFQDN(), "runtime"}},
 	}
 	// vm.<zone> answers with the VM's own address so the orchestrator
 	// can confirm which VM's resolver replied. Skipped when the VM has
@@ -67,14 +64,14 @@ func sorted(records []Record) []Record {
 }
 
 // projectRecords lists every in-zone host of every registered project,
-// at the runtime's address. A configured project stays addressable even
-// when stopped.
+// at the project frontdoor address. A configured project stays
+// addressable even when stopped.
 func (m Manager) projectRecords() []Record {
-	runtimeIP := m.n.IP(net.HostRuntime)
+	projectsIP := m.n.IP(net.HostProjects)
 	var records []Record
 	for _, pr := range m.s.Projects() {
 		for _, host := range project.Hosts(pr.URLs, m.n) {
-			records = append(records, Record{IP: runtimeIP, Names: []string{host}})
+			records = append(records, Record{IP: projectsIP, Names: []string{host}})
 		}
 	}
 	return records

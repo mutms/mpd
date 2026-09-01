@@ -179,11 +179,6 @@ func (c *Client) Stop(ctx context.Context, name string) (int, error) {
 	return c.stream(ctx, []string{"stop", name})
 }
 
-// Restart restarts a container.
-func (c *Client) Restart(ctx context.Context, name string) (int, error) {
-	return c.stream(ctx, []string{"restart", name})
-}
-
 // UpdateRestartPolicy changes an existing container's restart policy
 // ("always", "no"). This is what makes --service-stop stick across
 // reboots: podman-restart.service resurrects anything left on "always".
@@ -218,23 +213,6 @@ func (c *Client) ExecQuietly(ctx context.Context, container string, command ...s
 // absolute path inside a container, so /opt/mpd/assets/... resolves
 // identically on both sides.
 var OptMountRO = []string{"-v", "/opt/mpd:/opt/mpd:ro"}
-
-// MudevMountRO shares the VM's mudev build with every runtime, at the
-// same path. Read-only: the VM builds mudev, a runtime only consumes
-// it. Add it only when the source directory exists — podman would
-// create a missing one root-owned, which stops vm.EnsureMudev cloning
-// into it later.
-var MudevMountRO = []string{"-v", vmMudevDir + ":" + vmMudevDir + ":ro"}
-
-// vmMudevDir mirrors vm.MudevDir. Duplicated, not imported: importing
-// internal/vm here would invert the dependency direction.
-const vmMudevDir = "/opt/mudev"
-
-// MudevPresent reports whether the VM has a mudev build to share.
-func MudevPresent() bool {
-	info, err := os.Stat(vmMudevDir)
-	return err == nil && info.IsDir()
-}
 
 // Pull fetches an image, streaming layer progress so a first,
 // hundreds-of-megabytes pull is visible.
@@ -297,10 +275,15 @@ func (c *Client) NetworkExists(ctx context.Context, name string) bool {
 // podman's own DNS turned off (see docs/networking.md for why).
 // iface pins the bridge name: mpd's resolver names that interface in
 // its config, and podman's own podman0/podman1 counter is not stable.
-func (c *Client) NetworkCreate(ctx context.Context, name, iface, subnet string) (int, error) {
+//
+// ipRange keeps netavark's IPAM off the low octets the VM holds itself
+// (the gateway and the project address). Without it a container created
+// with no pinned address takes one of them and breaks the frontdoor.
+func (c *Client) NetworkCreate(ctx context.Context, name, iface, subnet, ipRange string) (int, error) {
 	res, err := c.run(ctx, []string{
 		"network", "create",
 		"--subnet", subnet,
+		"--ip-range", ipRange,
 		"--interface-name", iface,
 		"--disable-dns",
 		name,
@@ -382,17 +365,6 @@ func (c *Client) ExecAsUser(ctx context.Context, container, user string, command
 	return c.stream(ctx, args)
 }
 
-// ExecAttached runs a command inside a container with the caller's
-// stdin, stdout and stderr connected — for interactive children, which
-// ExecWithOptions cannot serve.
-func (c *Client) ExecAttached(ctx context.Context, container string, options []string,
-	command ...string) (int, error) {
-	args := append([]string{"exec"}, options...)
-	args = append(args, container)
-	args = append(args, command...)
-	return c.attach(ctx, args)
-}
-
 // ExecWithOptions runs a command inside a container with extra podman
 // options before the container name (--env, --user, …), streaming output.
 func (c *Client) ExecWithOptions(ctx context.Context, container string, options []string,
@@ -452,54 +424,4 @@ func sortedKeys(m map[string]string) []string {
 func (c *Client) ExecCapture(ctx context.Context, container string, command ...string) (exec.Result, error) {
 	args := append([]string{"exec", container}, command...)
 	return c.run(ctx, args)
-}
-
-var (
-	// EnvMountRO carries the developer's own env overrides. A DIRECTORY
-	// mount, not a file: atomic-rename writes on the VM must propagate
-	// into running containers, and a file mount would pin the old inode.
-	EnvMountRO = []string{"-v", "/var/lib/mpd/env:/var/lib/mpd/env:ro"}
-	// HomeOverrideMountRO carries user-managed dotfile defaults for new runtimes.
-	HomeOverrideMountRO = []string{"-v", "/var/lib/mpd/home:/var/lib/mpd/home:ro"}
-)
-
-// RuntimeSSHDir keeps the runtime's sshd host keys, so a rebuilt
-// container answers with the key known_hosts already trusts.
-const RuntimeSSHDir = "/var/lib/mpd/state/runtime-ssh"
-
-// RuntimeSSHMount gives that directory to the runtime alone.
-// Read-write: 50-user.sh saves the keys it generates back out.
-var RuntimeSSHMount = []string{"-v", RuntimeSSHDir + ":" + RuntimeSSHDir}
-
-// ControlRunDir mirrors control.RunDir. Duplicated, not imported:
-// internal/control sits above this package. Exported because
-// internal/cli needs the path and cannot import internal/control either.
-const ControlRunDir = "/var/lib/mpd/run"
-
-// ControlMountRO gives one runtime its control socket and nothing else.
-//
-// Only <rt>'s own directory is mounted, so the socket a container can
-// reach is the socket that identifies it; a shared mount would forfeit
-// that. Read-only suffices: connect() needs write permission on the
-// socket inode, not the directory. A DIRECTORY mount, not the socket
-// file, so the daemon's rebound socket is visible in running containers.
-func ControlMountRO(runtime string) []string {
-	dir := ControlDir(runtime)
-	return []string{"-v", dir + ":" + dir + ":ro"}
-}
-
-// ControlDir is the VM-side directory ControlMountRO shares with a
-// runtime. The provisioner must create it, dev-user-owned, BEFORE
-// podman runs: podman creates a missing bind-mount source as root, and
-// the daemon cannot bind its socket in a root-owned directory.
-func ControlDir(runtime string) string { return ControlRunDir + "/" + runtime }
-
-// Copy copies between host and container (`podman cp`); either side may
-// be `container:/path`.
-func (c *Client) Copy(ctx context.Context, src, dst string) (int, error) {
-	res, err := c.run(ctx, []string{"cp", src, dst})
-	if err != nil {
-		return -1, err
-	}
-	return res.Code, nil
 }

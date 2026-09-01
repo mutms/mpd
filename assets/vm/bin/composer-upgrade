@@ -1,0 +1,16 @@
+#!/bin/bash
+# Tool: re-install Composer phar to /usr/local/bin/composer.
+# Use instead of `composer self-update`: the phar is root-owned, so
+# self-update cannot write it. Runs composer-install's verified flow
+# without its idempotency short-circuit.
+set -euo pipefail
+
+TARGET="/usr/local/bin/composer"
+
+if [ ! -x "$TARGET" ]; then
+    echo "Composer not installed yet — run composer-install first." >&2
+    exit 1
+fi
+
+sudo rm -f "$TARGET"
+exec /opt/mpd/assets/vm/bin/composer-install

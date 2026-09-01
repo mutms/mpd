@@ -52,13 +52,13 @@ func withAssets(t *testing.T, files map[string]string) string {
 // Anything that is not *.sh would otherwise be handed to bash.
 func TestOnlyShFilesAreDiscovered(t *testing.T) {
 	withAssets(t, map[string]string{
-		"runtime/hooks/project-post-start.d/10-real.sh":    "#!/bin/bash\n",
-		"runtime/hooks/project-post-start.d/20-noext":      "#!/bin/bash\n",
-		"runtime/hooks/project-post-start.d/30-old.sh.bak": "#!/bin/bash\n",
-		"runtime/hooks/project-post-start.d/40-vim.sh~":    "#!/bin/bash\n",
-		"runtime/hooks/project-post-start.d/README.md":     "# docs\n",
+		"vm/hooks/project-post-start.d/10-real.sh":    "#!/bin/bash\n",
+		"vm/hooks/project-post-start.d/20-noext":      "#!/bin/bash\n",
+		"vm/hooks/project-post-start.d/30-old.sh.bak": "#!/bin/bash\n",
+		"vm/hooks/project-post-start.d/40-vim.sh~":    "#!/bin/bash\n",
+		"vm/hooks/project-post-start.d/README.md":     "# docs\n",
 	})
-	got := find(Event{Name: EventProjectPostStart}, AudienceRuntime, map[string]string{"mpd.name": "php"})
+	got := find(Event{Name: EventProjectPostStart}, AudienceVM, map[string]string{"mpd.name": "php"})
 	if len(got) != 1 {
 		names := []string{}
 		for _, s := range got {
@@ -75,11 +75,11 @@ func TestOnlyShFilesAreDiscovered(t *testing.T) {
 // mean anything.
 func TestScriptsAreOrderedWithinALayer(t *testing.T) {
 	withAssets(t, map[string]string{
-		"runtime/hooks/project-post-start.d/90-last.sh":  "",
-		"runtime/hooks/project-post-start.d/10-first.sh": "",
-		"runtime/hooks/project-post-start.d/50-mid.sh":   "",
+		"vm/hooks/project-post-start.d/90-last.sh":  "",
+		"vm/hooks/project-post-start.d/10-first.sh": "",
+		"vm/hooks/project-post-start.d/50-mid.sh":   "",
 	})
-	got := find(Event{Name: EventProjectPostStart}, AudienceRuntime, map[string]string{"mpd.name": "php"})
+	got := find(Event{Name: EventProjectPostStart}, AudienceVM, map[string]string{"mpd.name": "php"})
 	want := []string{"10-first.sh", "50-mid.sh", "90-last.sh"}
 	if len(got) != len(want) {
 		t.Fatalf("got %d scripts, want %d", len(got), len(want))
@@ -91,15 +91,15 @@ func TestScriptsAreOrderedWithinALayer(t *testing.T) {
 	}
 }
 
-// There is deliberately no project-type layer for runtime-audience
+// There is deliberately no project-type layer for VM-audience
 // events; the type directory below exists to prove it is ignored.
 func TestLayerOrderExcludesProjectType(t *testing.T) {
 	withAssets(t, map[string]string{
-		"runtime/hooks/project-post-start.d/10-runtime.sh":                   "",
-		"runtime/project_types/moodle/hooks/project-post-start.d/10-type.sh": "",
+		"vm/hooks/project-post-start.d/10-vm.sh":                        "",
+		"vm/project_types/moodle/hooks/project-post-start.d/10-type.sh": "",
 	})
-	got := find(Event{Name: EventProjectPostStart}, AudienceRuntime, map[string]string{"mpd.name": "php"})
-	want := []string{"10-runtime.sh"}
+	got := find(Event{Name: EventProjectPostStart}, AudienceVM, map[string]string{"mpd.name": "php"})
+	want := []string{"10-vm.sh"}
 	if len(got) != len(want) {
 		t.Fatalf("got %d scripts, want %d", len(got), len(want))
 	}
@@ -111,18 +111,18 @@ func TestLayerOrderExcludesProjectType(t *testing.T) {
 }
 
 // Audiences are per-event: a database-audience event must not pick up
-// runtime hooks.
+// VM hooks.
 func TestAudienceSelectsDifferentAssetTrees(t *testing.T) {
 	withAssets(t, map[string]string{
-		"runtime/hooks/project-pre-start.d/10-runtime.sh":       "",
+		"vm/hooks/project-pre-start.d/10-vm.sh":                 "",
 		"databases/postgres/hooks/project-pre-start.d/10-db.sh": "",
 	})
 	ev := Event{Name: EventProjectPreStart}
 	labels := map[string]string{"mpd.name": "php", "mpd.db.engine": "postgres"}
 
-	rt := find(ev, AudienceRuntime, labels)
-	if len(rt) != 1 || rt[0].Basename != "10-runtime.sh" {
-		t.Errorf("runtime audience = %+v", rt)
+	rt := find(ev, AudienceVM, labels)
+	if len(rt) != 1 || rt[0].Basename != "10-vm.sh" {
+		t.Errorf("vm audience = %+v", rt)
 	}
 	dbs := find(ev, AudienceDatabase, labels)
 	if len(dbs) != 1 || dbs[0].Basename != "10-db.sh" {
@@ -143,7 +143,7 @@ func TestNoEngineMeansNoDatabaseHooks(t *testing.T) {
 
 func TestMissingDirectoryIsNotAnError(t *testing.T) {
 	withAssets(t, map[string]string{})
-	if got := find(Event{Name: EventProjectPostStart}, AudienceRuntime, map[string]string{"mpd.name": "php"}); len(got) != 0 {
+	if got := find(Event{Name: EventProjectPostStart}, AudienceVM, map[string]string{"mpd.name": "php"}); len(got) != 0 {
 		t.Errorf("got %d scripts, want 0", len(got))
 	}
 }
@@ -152,13 +152,13 @@ func TestMissingDirectoryIsNotAnError(t *testing.T) {
 // host-side scan must yield the identical executable path.
 func TestContainerPathMatchesHostPath(t *testing.T) {
 	dir := withAssets(t, map[string]string{
-		"runtime/hooks/project-post-start.d/10-x.sh": "",
+		"vm/hooks/project-post-start.d/10-x.sh": "",
 	})
-	got := find(Event{Name: EventProjectPostStart}, AudienceRuntime, map[string]string{"mpd.name": "php"})
+	got := find(Event{Name: EventProjectPostStart}, AudienceVM, map[string]string{"mpd.name": "php"})
 	if len(got) != 1 {
 		t.Fatalf("got %d scripts", len(got))
 	}
-	want := filepath.Join(dir, "runtime/hooks/project-post-start.d/10-x.sh")
+	want := filepath.Join(dir, "vm/hooks/project-post-start.d/10-x.sh")
 	if got[0].Path != want {
 		t.Errorf("Path = %q, want %q", got[0].Path, want)
 	}
@@ -208,21 +208,18 @@ func TestGracefulStopSortsLast(t *testing.T) {
 	}
 }
 
-// The VM audience reads its own layer and only its own.
+// The VM audience reads the vm layer, and a database layer for the same
+// event does not leak into it.
 func TestVMAudienceReadsTheVMLayer(t *testing.T) {
 	withAssets(t, map[string]string{
-		"vm/hooks/mpd-post-setup.d/50-vm.sh":           "",
-		"runtime/hooks/mpd-post-setup.d/50-runtime.sh": "",
+		"vm/hooks/mpd-post-setup.d/50-vm.sh":                 "",
+		"databases/postgres/hooks/mpd-post-setup.d/50-db.sh": "",
 	})
 	ev := Event{Name: EventMpdPostSetup}
 
 	got := find(ev, AudienceVM, nil)
 	if len(got) != 1 || got[0].Basename != "50-vm.sh" {
 		t.Errorf("vm audience = %+v, want just 50-vm.sh", got)
-	}
-	rt := find(ev, AudienceRuntime, map[string]string{"mpd.name": "php"})
-	if len(rt) != 1 || rt[0].Basename != "50-runtime.sh" {
-		t.Errorf("runtime audience = %+v, want just 50-runtime.sh", rt)
 	}
 }
 
@@ -236,32 +233,9 @@ func TestVMTargetIgnoresTheEventsContainers(t *testing.T) {
 	if len(got) != 1 || got[0] != VMTarget {
 		t.Errorf("targets(AudienceVM) = %v, want [%s]", got, VMTarget)
 	}
-	if rt := ev.targets(AudienceRuntime); len(rt) != 2 {
-		t.Errorf("targets(AudienceRuntime) = %v, want the event's own list", rt)
+	if db := ev.targets(AudienceDatabase); len(db) != 2 {
+		t.Errorf("targets(AudienceDatabase) = %v, want the event's own list", db)
 	}
-}
-
-// A runtime hook runs as the dev user; a database hook must not.
-func TestUserAppliesToRuntimeOnly(t *testing.T) {
-	ev := Event{Name: EventMpdPostSetup, User: "dev"}
-	if got := execOptions(ev, AudienceRuntime, nil); !containsPair(got, "--user", "dev") {
-		t.Errorf("runtime opts = %v, want --user dev", got)
-	}
-	if got := execOptions(ev, AudienceDatabase, nil); containsPair(got, "--user", "dev") {
-		t.Errorf("database opts = %v, want no --user", got)
-	}
-	if got := execOptions(Event{Name: EventMpdPreStop}, AudienceRuntime, nil); containsPair(got, "--user", "") {
-		t.Errorf("opts with no user set = %v, want no --user", got)
-	}
-}
-
-func containsPair(list []string, flag, value string) bool {
-	for i := 0; i+1 < len(list); i++ {
-		if list[i] == flag && list[i+1] == value {
-			return true
-		}
-	}
-	return false
 }
 
 // End-to-end for the VM audience: the script really runs and sees the
@@ -270,13 +244,13 @@ func TestVMHookRunsAndSeesItsEnvironment(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "seen")
 	withAssets(t, map[string]string{
 		"vm/hooks/mpd-post-setup.d/50-probe.sh": "printf '%s %s %s %s\\n' " +
-			"\"$MPD_HOOK_EVENT\" \"$MPD_HOOK_REVISION\" \"$MPD_HOOK_VERB\" \"$MPD_HOOK_RUNTIME\" > " + out + "\n",
+			"\"$MPD_HOOK_EVENT\" \"$MPD_HOOK_REVISION\" \"$MPD_HOOK_VERB\" \"$MPD_HOOK_PROJECT\" > " + out + "\n",
 	})
 	ev := Event{
 		Name: EventMpdPostSetup, Revision: 1,
 		Audiences: []AudienceKind{AudienceVM},
 		OnFailure: Continue,
-		Env:       map[string]string{"RUNTIME": "mpd-1-runtime"},
+		Env:       map[string]string{"PROJECT": "m45"},
 	}
 	if err := Fire(context.Background(), io.Discard, ev, "vm-setup", nil); err != nil {
 		t.Fatalf("Fire: %v", err)
@@ -285,7 +259,7 @@ func TestVMHookRunsAndSeesItsEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hook did not run: %v", err)
 	}
-	if want := "mpd-post-setup 1 vm-setup mpd-1-runtime\n"; string(got) != want {
+	if want := "mpd-post-setup 1 vm-setup m45\n"; string(got) != want {
 		t.Errorf("hook environment = %q, want %q", got, want)
 	}
 }

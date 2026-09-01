@@ -61,8 +61,7 @@ chmod 644 "${DEST}"
 echo
 echo "Wrote ${DEST} ($(du -h "${DEST}" | cut -f1), ${BUILD})"
 
-# The host-side ssh alias is the hostname plus -vm; the bare mpd-<NNN>
-# reaches the runtime container instead.
+# The host-side ssh alias is the hostname.
 # SC2088: the tilde stays literal — the string is printed for the
 # developer's workstation, not expanded here.
 # shellcheck disable=SC2088
@@ -72,7 +71,7 @@ cat <<EOF
 To seed it into every future VM, run this on your workstation:
 
     mkdir -p ${OVERLAY}
-    scp $(hostname)-vm:${DEST/#"${HOME}"/\~} ${OVERLAY}/
+    scp $(hostname):${DEST/#"${HOME}"/\~} ${OVERLAY}/
 
 mpd-virt pushes that overlay on adopt and create; new VMs then run
 

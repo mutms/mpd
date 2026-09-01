@@ -20,7 +20,7 @@ func hasWarning(warnings []string, substr string) bool {
 func TestCleanTreeProducesNoWarnings(t *testing.T) {
 	withAssets(t, map[string]string{
 		"databases/postgres/hooks/mpd-pre-stop.d/10-graceful-stop.sh": "",
-		"runtime/hooks/project-post-start.d/10-warm.sh":               "",
+		"vm/hooks/project-post-start.d/10-warm.sh":                    "",
 	})
 	if w := Diagnose(nil, t.TempDir()); len(w) != 0 {
 		t.Errorf("warnings on a clean tree: %v", w)
@@ -31,7 +31,7 @@ func TestCleanTreeProducesNoWarnings(t *testing.T) {
 // silently never run — the diagnostic is what surfaces it.
 func TestUnknownEventIsReported(t *testing.T) {
 	withAssets(t, map[string]string{
-		"runtime/hooks/project-pre-launch.d/10-x.sh": "",
+		"vm/hooks/project-pre-launch.d/10-x.sh": "",
 	})
 	w := Diagnose(nil, t.TempDir())
 	if !hasWarning(w, "unknown event 'project-pre-launch'") {
@@ -40,10 +40,10 @@ func TestUnknownEventIsReported(t *testing.T) {
 }
 
 // project-pre-start fires on the DATABASE, so a copy under
-// runtime/hooks does nothing at all.
+// an empty hooks tree does nothing at all.
 func TestWrongAudienceIsReported(t *testing.T) {
 	withAssets(t, map[string]string{
-		"runtime/hooks/project-pre-start.d/10-x.sh": "",
+		"vm/hooks/project-pre-start.d/10-x.sh": "",
 	})
 	w := Diagnose(nil, t.TempDir())
 	if !hasWarning(w, "no longer fires on this audience") {
@@ -101,7 +101,7 @@ func TestDiagnoseSurvivesMissingAssetTree(t *testing.T) {
 // The VM layer is diagnosed like any other.
 func TestVMLayerIsDiagnosed(t *testing.T) {
 	withAssets(t, map[string]string{
-		"vm/hooks/project-post-start.d/10-x.sh": "",
+		"vm/hooks/mpd-pre-stop.d/10-x.sh": "",
 	})
 	w := Diagnose(nil, t.TempDir())
 	if !hasWarning(w, "no longer fires on this audience") {
@@ -109,8 +109,8 @@ func TestVMLayerIsDiagnosed(t *testing.T) {
 	}
 
 	withAssets(t, map[string]string{
-		"vm/hooks/mpd-post-setup.d/50-x.sh":      "",
-		"runtime/hooks/mpd-post-setup.d/50-y.sh": "",
+		"vm/hooks/mpd-post-setup.d/50-x.sh": "",
+		"vm/hooks/mpd-post-setup.d/50-y.sh": "",
 	})
 	if w := Diagnose(nil, t.TempDir()); len(w) != 0 {
 		t.Errorf("warnings for correctly-placed mpd-post-setup hooks: %v", w)

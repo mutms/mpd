@@ -22,7 +22,6 @@ type ProjectStatus struct {
 	Configured bool               `json:"configured"`
 	Status     string             `json:"status"`
 	Autostart  bool               `json:"autostart"`
-	Runtime    string             `json:"runtime"`
 	Directory  string             `json:"directory"`
 	DataDir    string             `json:"dataDir"`
 	Zone       string             `json:"zone"`
@@ -59,7 +58,6 @@ func ShowProjectJSON(ctx context.Context, out io.Writer, name string, s state.St
 		Type:      entry.Type,
 		Status:    entry.Status(),
 		Autostart: entry.Autostart,
-		Runtime:   entry.RuntimeName,
 		Directory: srv.ProjectDir(entry.Name),
 		DataDir:   srv.DataDir(entry.Name),
 		Zone:      n.Zone(),

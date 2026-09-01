@@ -10,8 +10,8 @@ import (
 )
 
 // Caddy is the VM's TLS frontdoor for VM-level names, installed as an apt
-// package. It is distinct from the in-runtime caddy, which terminates TLS
-// for project URLs; see docs/networking.md.
+// package. It is distinct from mpd-caddy.service, which terminates TLS
+// for project URLs on .2; see docs/networking.md.
 const (
 	CaddyUnit     = "caddy.service"
 	CaddyfilePath = "/etc/caddy/Caddyfile"

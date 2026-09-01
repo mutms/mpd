@@ -10,15 +10,14 @@ import (
 
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
-	"github.com/mutms/mpd/go/internal/runtime"
 	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
 	"github.com/mutms/mpd/go/internal/vm"
 )
 
 // Status prints the project overview plus what needs attention: a
-// runtime that is not up, and unregistered project directories. A
-// healthy runtime gets no line of its own.
+// project frontdoor that is not up, and unregistered project
+// directories. A healthy frontdoor gets no line of its own.
 func Status(ctx context.Context, out io.Writer, s state.Store, p *podman.Client, n net.Net, uid string) {
 	if _, err := os.Stat(vm.VarLibDir); err != nil {
 		fmt.Fprint(out, "mpd is not set up on this machine.\n\n"+
@@ -45,18 +44,8 @@ func Status(ctx context.Context, out io.Writer, s state.Store, p *podman.Client,
 		fmt.Fprintf(out, "  %s   %s%s\n", pr.Name, pr.Status(), url)
 	}
 
-	runtimeExists, runtimeUp := false, false
-	for _, item := range p.Ps(ctx, "label=mpd.runtime") {
-		if item.Label("mpd.name") == runtime.Name {
-			runtimeExists = true
-			runtimeUp = item.State == "running"
-		}
-	}
-	switch {
-	case !runtimeExists:
-		fmt.Fprintln(out, "\nThe runtime is missing — run: mpd --vm-setup")
-	case !runtimeUp:
-		fmt.Fprintln(out, "\nThe runtime is stopped — run: mpd --vm-start")
+	if !vm.UnitActive(ctx, vm.ProjectCaddyUnitName, false) {
+		fmt.Fprintln(out, "\nThe project frontdoor is not running — run: mpd --vm-start")
 	}
 
 	known := map[string]bool{}

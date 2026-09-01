@@ -23,10 +23,18 @@ const (
 	// HostGateway is the podman bridge: the VM itself. The resolver,
 	// caddy and `mpd --web` answer here.
 	HostGateway = 1
-	// HostRuntime is the unified runtime container. Octets 3-6 are
+	// HostProjects is the VM's second address on the bridge, where the
+	// project caddy serves every project vhost. Kept off the gateway so
+	// project traffic never reaches the infra ports. Octets 3-6 are
 	// unassigned.
-	HostRuntime = 2
+	HostProjects = 2
 )
+
+// AllocRange is the slice of the subnet podman's IPAM may hand out. It
+// starts above the octets the VM holds on the bridge itself.
+func (n Net) AllocRange() string {
+	return fmt.Sprintf("%s.%s.%d/24", SubnetPrefix, n.label, DBHostFirst)
+}
 
 // DB containers take the lowest free octet in this range, pinned at
 // create time; vacated slots are reusable.
@@ -121,7 +129,7 @@ func (n Net) Subnet() string {
 }
 
 // IP composes a container address from its host octet.
-// e.g. IP(HostRuntime) on VM 150 → "10.163.150.2".
+// e.g. IP(HostProjects) on VM 150 → "10.163.150.2".
 func (n Net) IP(host int) string {
 	return fmt.Sprintf("%s.%d.%d", SubnetPrefix, n.octet, host)
 }
@@ -165,17 +173,6 @@ func (n Net) Host(name string) string { return name + "." + n.Zone() }
 // Service names an extra service container:
 // Service("adminer") → "adminer.svc.<zone>".
 func (n Net) Service(name string) string { return n.Host(name + ".svc") }
-
-// RuntimeFQDN is the runtime container's DNS name:
-// "runtime.<zone>". ("runtime" is a reserved project name for this
-// reason.)
-func (n Net) RuntimeFQDN() string { return n.Host("runtime") }
-
-// RuntimeAlias is the short SSH alias for the runtime, e.g.
-// "mpd-130-runtime". Not a DNS name; vm.EnsureSSHConfig writes it into
-// ~/.ssh/config. It matches the runtime container's name by convention,
-// not by dependency.
-func (n Net) RuntimeAlias() string { return "mpd-" + n.label + "-runtime" }
 
 // DB names a database container: DB("pg17") → "pg17.db.<zone>".
 func (n Net) DB(name string) string { return n.Host(name + ".db") }

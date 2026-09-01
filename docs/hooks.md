@@ -50,12 +50,11 @@ understanding *when* events fire:
 
 | Resource | Persisted lifecycle intent                                                                  | Live state (`current`)                |
 |----------|---------------------------------------------------------------------------------------------|---------------------------------------|
-| Runtime  | `Requested`, written by the internals of `--vm-setup`/`--vm-start`/`--vm-stop` and `--runtime-rebuild` (no lifecycle flags of its own) | Computed from podman every query      |
-| Project  | `Autostart` bool — true after `mpd start`, false after `mpd stop`                           | Derived from runtime + project record |
+| Project  | `Autostart` bool — true after `mpd start`, false after `mpd stop`                           | `Configured` joined with `Autostart`  |
 | Database | `Autostart` bool — set by `mpd --db-start` / `--db-stop` (sticky across reboot)             | Computed from podman                  |
 | Service  | `Autostart` bool — sticky boot intent set by `mpd --service-start` / `--service-stop`; a project's `MPD_REQUIRE_SERVICES` starts one on demand without it | Computed from podman |
 
-Reconciliation: `mpd --vm-start` starts the runtime, then the databases
+Reconciliation: `mpd --vm-start` starts the databases
 that should autostart, then restores every project whose `Autostart` is
 set — including re-creating enabled service containers. Stopping mpd or
 rebooting the VM preserves this intent; `mpd --vm-start` (or the systemd
@@ -64,7 +63,7 @@ rebooting the VM preserves this intent; `mpd --vm-start` (or the systemd
 
 A database's `Autostart` makes an explicitly-started engine come back on
 its own after a reboot even when no project needs it. Beyond that, DB
-lifecycle is driven by runtime start (which starts the autostart
+lifecycle is driven by VM start (which starts the autostart
 databases), project start (which re-creates or starts the database a
 project needs, without touching its `Autostart` flag) and `mpd --gc`
 (planned reclamation).
@@ -73,21 +72,20 @@ project needs, without touching its `Autostart` flag) and `mpd --gc`
 
 | Event                   | Audience            | Failure    | Timeout | Fires                                                                |
 |-------------------------|---------------------|------------|---------|----------------------------------------------------------------------|
-| `EventMpdPostSetup`     | `AudienceVM`, `AudienceRuntime` | `Continue` | 600 s | once at the end of `mpd --vm-setup`, after everything is configured |
+| `EventMpdPostSetup`     | `AudienceVM`        | `Continue` | 600 s   | once at the end of `mpd --vm-setup`, after everything is configured  |
 | `EventMpdPreStop`       | `AudienceDatabase`  | `Continue` | 120 s   | once during `mpd --vm-stop`, before container teardown                  |
-| `EventProjectPreStart`  | `AudienceDatabase`  | `Abort`    | 30 s    | per `mpd <p> start`, after runtime + DB are up, before project-setup |
-| `EventProjectPreStop`   | `AudienceRuntime`   | `Continue` | 30 s    | per `mpd <p> stop`, while project is still running                   |
-| `EventProjectPostStart` | `AudienceRuntime`   | `Continue` | 30 s    | per `mpd <p> start`, after project is recorded as running            |
+| `EventProjectPreStart`  | `AudienceDatabase`  | `Abort`    | 30 s    | per `mpd <p> start`, after the DB is up, before project-setup        |
+| `EventProjectPreStop`   | `AudienceVM`        | `Continue` | 30 s    | per `mpd <p> stop`, while project is still running                   |
+| `EventProjectPostStart` | `AudienceVM`        | `Continue` | 30 s    | per `mpd <p> start`, after project is recorded as running            |
 
 ### `EventMpdPostSetup`
 
-Fires once at the end of `mpd --vm-setup`, after the VM, its runtime and
+Fires once at the end of `mpd --vm-setup`, after the dev stack and
 every unit are configured. The moment "this VM is ready" becomes true —
 which is what makes it the place to install something onto a VM that is
 finally able to hold it.
 
-- **Audience**: the VM itself, then its runtime container — the same
-  event on both sides of the boundary, because setup work lands on both.
+- **Audience**: the VM.
 - **Failure**: `Continue` — setup has already done its work; a
   developer's install script failing does not make the VM unconfigured.
 - **Timeout**: 600 s. Setup hooks install things, and the shipped ones
@@ -95,11 +93,10 @@ finally able to hold it.
   would be worse than none, because the hook keeps running regardless
   (see "Limitations").
 - **Env vars** (in addition to the standard set):
-  - `MPD_HOOK_RUNTIME` — the runtime's container name
 
 Shipped scripts:
 - `assets/vm/hooks/mpd-post-setup.d/50-goland-install.sh`
-- `assets/runtime/hooks/mpd-post-setup.d/50-phpstorm-install.sh`
+- `assets/vm/hooks/mpd-post-setup.d/50-phpstorm-install.sh`
 
 Both are one `exec` of the matching `*-install-app` tool, which no-ops
 unless the developer has seeded a tarball through their mpd-virt overlay
@@ -107,9 +104,8 @@ unless the developer has seeded a tarball through their mpd-virt overlay
 **put the conditions in the tool, not in the hook** — a hook that fires
 on every setup has to be cheap and silent when there is nothing to do.
 
-The runtime side earns its place twice over: `mpd --runtime-rebuild`
-gives the container a new home, and the next `--vm-setup` puts the IDE
-backend back without a download.
+A re-adopted or re-imaged VM gets its IDE backend back on the next
+`--vm-setup`, without a download.
 
 ### `EventMpdPreStop`
 
@@ -135,8 +131,8 @@ reports `✓` if the SIGTERM signal was sent.
 
 ### `EventProjectPreStart`
 
-Fires per project start, after the runtime + project's DB are
-ensured up but before the project's `project-setup.sh` runs.
+Fires per project start, after the project's DB is ensured up but
+before the project's `project-setup.sh` runs.
 
 - **Audience**: the project's DB container only.
 - **Failure**: `Abort` — pre-conditions should stop the verb if they
@@ -144,7 +140,6 @@ ensured up but before the project's `project-setup.sh` runs.
 - **Timeout**: 30 s.
 - **Env vars** (in addition to the standard set):
   - `MPD_HOOK_PROJECT` — project name
-  - `MPD_HOOK_RUNTIME` — runtime name
   - `MPD_HOOK_DB_ENGINE` — `postgres` / `mariadb` / `mysql`
   - `MPD_HOOK_DB_VERSION` — e.g. `latest`, `17`, `10.6`
 
@@ -154,16 +149,16 @@ custom DB roles.
 
 ### `EventProjectPreStop`
 
-Fires per project stop, while the project's runtime is still running.
+Fires per project stop, while the project is still serving.
 
-- **Audience**: the project's runtime container only.
+- **Audience**: the VM.
 - **Failure**: `Continue` — stops must always complete.
 - **Timeout**: 30 s.
-- **Env vars**: same as `EventProjectPreStart` (project, runtime,
-  DB engine + version).
+- **Env vars**: same as `EventProjectPreStart` (project, DB engine +
+  version).
 
 Use cases: drain in-flight work, flush per-project caches, graceful
-shutdown of project-specific services running inside the runtime.
+shutdown of project-specific services.
 
 Not to be confused with a project type's own `project-stop.sh`, which
 `mpd stop` runs right after this event: hooks are the *developer's*
@@ -176,7 +171,7 @@ print how to stop the dev server.
 Fires per project start, after the project is recorded as running and
 its URL is live.
 
-- **Audience**: the project's runtime container only.
+- **Audience**: the VM.
 - **Failure**: `Continue` — the project is already started; a hook
   failure shouldn't undo that.
 - **Timeout**: 30 s.
@@ -192,13 +187,13 @@ matches their audience kind:
 
 ```
 assets/vm/hooks/<event>.d/                   # → VM audience (runs on the VM host)
-assets/runtime/hooks/<event>.d/              # → runtime audience
+assets/vm/hooks/<event>.d/              # → VM audience
 assets/databases/<dbtype>/hooks/<event>.d/   # → database audience, per engine
 assets/services/<svc>/hooks/<event>.d/       # → service audience (named service)
 ```
 
-There is deliberately **no project-type layer** for runtime-audience
-events: `assets/runtime/project_types/<type>/hooks/` is not scanned by
+There is deliberately **no project-type layer** for VM-audience
+events: `assets/vm/project_types/<type>/hooks/` is not scanned by
 the dispatcher (a pinning test in `go/internal/hooks/` proves it), so
 type-scoped behavior belongs in the type's scripts and tools, not in
 hooks.
@@ -211,7 +206,7 @@ helper execs it from a one-line wrapper.
 
 Numeric prefixes (`10-`, `90-`) order scripts within a directory
 (run-parts style). Cross-layer order: strictly by layer
-(base → runtime), then alphabetical within each.
+then alphabetical within each.
 
 **Pick the number by what the hook does to its container.** A hook that
 terminates the service it runs in must sort last, because everything
@@ -239,10 +234,10 @@ Where it runs, and as whom, follows the audience:
 | Audience             | Runs                     | As                        |
 |----------------------|--------------------------|---------------------------|
 | `AudienceVM`         | on the VM host           | the dev user (the identity mpd itself runs as) |
-| `AudienceRuntime`    | in the runtime container | the dev user              |
+| `AudienceVM`         | on the VM                | the dev user              |
 | `AudienceDatabase` / `AudienceService` | in that container | the container's default user (root) |
 
-The runtime and VM rows are the privilege rule in `AGENTS.md`: those are
+The VM row is the privilege rule in `AGENTS.md`: that is
 hosts with a dev user and passwordless sudo, so a script runs as that
 user and `sudo`s the individual privileged commands. Database and service
 containers are stock images with no such user — their hooks signal PID 1
@@ -292,11 +287,10 @@ type Event struct {
     Env        map[string]string         // exported as MPD_HOOK_<KEY>
     Containers func(AudienceKind) []string // audience → container names
     ServiceName string                   // scopes AudienceService
-    User        string                   // identity for AudienceRuntime
 }
 ```
 
-Constants: audiences are `AudienceRuntime`, `AudienceDatabase`,
+Constants: audiences are `AudienceVM`, `AudienceDatabase`,
 `AudienceService` and `AudienceVM`; failure modes are `Abort` and
 `Continue`; timeouts default to `DefaultTimeout` (30 s), with
 `StopTimeout` (120 s) for `mpd-pre-stop` and `SetupTimeout` (600 s) for
@@ -317,7 +311,7 @@ func XxxYyy(ctx context.Context, pr Project, p *podman.Client) Event {
     return Event{
         Name:      EventXxxYyy,
         Revision:  1,
-        Audiences: []AudienceKind{AudienceRuntime},
+        Audiences: []AudienceKind{AudienceVM},
         OnFailure: Continue,
         // Keys are prefixed with MPD_HOOK_ by the dispatcher.
         Env: map[string]string{"PROJECT": pr.Name},
@@ -341,7 +335,7 @@ The dispatcher:
 
 1. Resolves the audience containers via the event's `Containers`
    function (running containers matching each audience kind, scoped to
-   the project's runtime/DB for project-level events).
+   the project's DB for project-level events).
 2. For each container, walks the layered hook directories, sorts by
    layer + numeric-prefix order, and execs each script via
    `podman exec` with `MPD_HOOK_*` env vars set.
@@ -411,7 +405,7 @@ Plus `loginctl enable-linger <devuser>` so the user systemd manager
 runs at boot and survives logout.
 
 **At boot**: user systemd starts → `default.target` → `mpd.service`
-ExecStart fires `mpd --vm-start`, which reconciles the runtime, every
+ExecStart fires `mpd --vm-start`, which reconciles every
 autostart project, and every enabled extra service back to live
 containers (and starts the autostart databases). The dev user can SSH in
 seconds later and find the env already up.
@@ -455,7 +449,7 @@ What's deferred from v1, called out so hook authors aren't surprised:
   Deliberately not solved with a `pkill -f <script>` sweep: that means
   running pattern-matched kills as root inside a container to recover
   from a rare case, and the recovery mpd already has is blunter and
-  safer — restart the runtime, or the VM. Revisit only if a runaway hook
+  safer — restart the affected unit, or the VM. Revisit only if a runaway hook
   turns out to be a real recurring problem rather than a theoretical one.
 
 - **No `--verbose` streaming.** Hook stdout/stderr is captured and
@@ -468,13 +462,13 @@ or hook script needs to be updated to pick up the improvement.
 ## Adding a new event
 
 1. **Decide the audience and failure mode.** Audiences are
-   `AudienceRuntime`, `AudienceDatabase`, `AudienceService`. Failure
+   `AudienceVM`, `AudienceDatabase`, `AudienceService`. Failure
    mode is `Abort` for pre-conditions, `Continue` for cleanup-style or
    post-state.
 2. **Add the event name constant and a constructor** returning a
    `hooks.Event` in `go/internal/hooks/events.go` — environment-wide
    events are named `Mpd*`, project-scoped ones `Project*`,
-   runtime-scoped ones `Runtime*`.
+   VM-scoped ones `Vm*`.
 3. **Register in the catalogue.** Add a `CatalogueEntry` to
    `hooks.Catalogue()` in `go/internal/hooks/diagnose.go` so the
    diagnostic engine knows about it.

@@ -46,7 +46,7 @@ fmt-check:
 	@echo "gofmt clean"
 
 # Every shell script mpd ships, identified by content rather than by
-# extension: the in-runtime tools are deliberately extensionless
+# extension: the in-VM tools are deliberately extensionless
 # (composer-install, phpunit, the php wrapper).
 SHELL_FILES = $$(find bootstrap bin assets setup -type f -exec file --mime-type {} + | grep x-shellscript | cut -d: -f1)
 

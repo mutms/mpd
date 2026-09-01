@@ -8,7 +8,7 @@ the same instructions.
 ## What mpd is
 
 `mpd` (Moodle Plugin Development) is a local development environment for
-Moodle plugin work, built around a reproducible runtime container, local DNS,
+Moodle plugin work, built around a reproducible VM, local DNS,
 and HTTPS endpoints. It has two user-facing modes, distinguished by where
 the user sits and where `mpd` runs:
 
@@ -33,7 +33,7 @@ the user sits and where `mpd` runs:
   the mpd-proxy WireGuard overlay or a SOCKS-over-SSH tunnel + CA
   trust; host terminal SSHes into the VM to use the `mpd` CLI, and the
   IDE works over remote SSH (PhpStorm Gateway, VS Code Remote-SSH —
-  `ssh mpd-<NNN>` lands in the runtime).
+  `ssh mpd-<NNN>` lands where the work is).
 
 `mpd` itself is a single Linux binary that runs **inside the VM**. The
 host-side orchestrator (`mpd-virt`, macOS and Linux hosts) lives in a
@@ -45,7 +45,7 @@ at runtime — same code paths, same hostname-derived identity (mpd-<NNN>,
 via `net.Current`). They differ only in *setup*: a sandbox generates its
 own self-signed CA in the VM, a managed VM gets a CA pushed by the
 host-side `mpd-virt`. A sandbox can be adopted as a managed VM later with
-no runtime change.
+no change at run time.
 
 `README.md` is deliberately terse; this file carries the depth. Keep the
 long-form background here, not in README.
@@ -76,7 +76,7 @@ with snapshot/revert as the safety net for letting an agent rip.
   server with table prefixes).
 - One-verb reset: `mpd reset <project>` drops the DB, wipes the dataroots and
   clears the generated state — keeps the source tree, `mpd.env` and
-  `config.php`. Works from a VM terminal or from inside the runtime.
+  `config.php`.
 - Optional per-VM services (a project lists them in `MPD_REQUIRE_SERVICES` and
   mpd starts them on demand, like its database; `mpd --service-start=<name>`
   drives one directly; nothing installed by default): Mailpit
@@ -89,20 +89,19 @@ with snapshot/revert as the safety net for letting an agent rip.
   breakage.
 
 **The IDE/agent workflow.** The IDE (VS Code Remote-SSH, PhpStorm Gateway)
-connects to the runtime container over SSH — the IDE process stays on the
-host; language server, Xdebug, and terminal execute inside. The AI agent is
-installed inside the runtime (`claude-install`) and runs as a process in the
-container, sharing the same files and tools the IDE edits. SSH is the clean
-integration point — no filesystem-mount layer papering over the network.
-(When the work is on mpd itself — Go sources, asset scripts — the agent runs
-in the VM instead, where the checkout and toolchain live.)
+connects to the VM over SSH — the IDE process stays on the host; language
+server, Xdebug, and terminal execute in the VM. The AI agent is installed
+there too (`claude-install`), sharing the same files and tools the IDE
+edits. SSH is the clean integration point — no filesystem-mount layer
+papering over the network. Work on mpd itself, on Moodle projects, and the
+agent all happen on one machine, reached by one name.
 
 **Coming from other tooling:** vs. Homebrew-native PHP+MariaDB — per-project
 containers instead of a shared stack; tradeoff is a few seconds of container
 startup vs. millisecond-fast native invocation. Vs.
 [moodle-docker](https://github.com/moodlehq/moodle-docker) — same
 daily-driver pattern plus per-project URLs with real HTTPS, one-command
-Mailpit, automatic Behat/Selenium wiring, the SSH-into-runtime endpoint, and
+Mailpit, automatic Behat/Selenium wiring, one SSH endpoint, and
 the VM boundary. Vs. [DDEV](https://ddev.com/) / [Lando](https://lando.dev/)
 — the Moodle-specific cousin of the same per-project-URL + auto-TLS
 philosophy, hardened with a VM boundary and shaped around AI agents as a
@@ -120,14 +119,14 @@ mpd port authenticated by a password rather than a key; see
 `docs/security.md`.
 
 **Timing expectations:** first-time VM bootstrap 5–15 min (image download,
-apt, Go toolchain, build); first `mpd --vm-setup` (includes the runtime
-build) 3–5 min;
+apt, Go toolchain, build); first `mpd --vm-setup` (installs and configures
+PHP, Composer and Node) 3–5 min;
 subsequent `mpd start <project>` a few seconds; assembling a fresh Moodle
 tree with `mudev clone <recipe>` then `mpd start` a few minutes the first
 time, seconds on re-runs; VM resume from suspend, seconds.
 
 **Top-level repo layout:** `bin/` (just the built `bin/mpd`), `go/`
-(control plane), `assets/` (runtime/service definitions and shell, plus the
+(control plane), `assets/` (VM/service definitions and shell, plus the
 VM tools under `assets/vm/bin/`: `claude-install`, `gnome-install`,
 `gnome-start`/`gnome-stop`, `rdp-start`/`rdp-stop`,
 `goland-archive-app`/`goland-install-app` — seed a Toolbox GoLand into new
@@ -135,7 +134,7 @@ VMs as a tarball instead of re-downloading it, `libvirt-install` — make
 this VM a libvirt/KVM host for mpd-virt's libvirt backend), `bootstrap/`
 (VM bring-up steps), `setup/` (the in-VM sandbox and adoption-prep
 scripts), `docs/`.
-Runtime state lives at `/var/lib/mpd/` (see Fixed in-VM paths below).
+Operational state lives at `/var/lib/mpd/` (see Fixed in-VM paths below).
 
 ## Fixed in-VM paths
 
@@ -150,26 +149,12 @@ chowns), all enforced at runtime — do not propose alternates.
   own signing CA + service cert. PRIVATE — never bind-mounted into
   containers.
 - `/var/lib/mpd/env/` — the developer's own general environment, shared across
-  every VM they run: `runtime.env` (sourced into every runtime shell by the
-  runtime's `~/.bashrc` — bind-mounted RO into the container, directory
-  mount so atomic-rename writes propagate) and `vm.env` (sourced into the VM's
-  own shells only, never into a runtime). Ambient env, not part of the mpd.env
-  config layering. Both pushed in from the Mac's `~/.mpd-virt/{runtime,vm}.env`
-  by mpd-virt (hand-written in-VM on a sandbox).
-- `/var/lib/mpd/home/` — user-managed dotfile overrides for the runtime
-  container. Like `/etc/skel/` but for an existing account: contents are copied
-  into `/home/<user>/` at runtime create, layered on top of the shipped
-  `assets/runtime/home/`. Empty by default; user populates as
-  needed (`.gitconfig`, `.ssh/known_hosts` additions, `.ssh/config`,
-  etc.). Last-write-wins: VM-host home overrides shipped home files. (The VM's
-  own dev home is seeded the analogous way — from `assets/vm/home/`, via
-  `mpd --vm-setup`; see EnsureHome.)
+  every VM they run: `vm.env`, sourced into every shell by `~/.bashrc`.
+  Ambient env, not part of the mpd.env config layering. Pushed in from the
+  Mac's `~/.mpd-virt/vm.env` by mpd-virt (hand-written in-VM on a sandbox).
 - `/var/lib/mpd/state/` — mpd-managed operational state. `projects.json`,
   `databases.json`, `services.json`, `current-state.json`,
-  `hooks-state.json`, `runtimes/runtime/` (the single runtime's entry),
-  `runtime-ssh/` (the runtime container's own sshd host keys — the one
-  thing here bind-mounted into a container, read-write, into the runtime
-  and nothing else; see `docs/security.md`).
+  `hooks-state.json`.
   Wipe to reset. DNS records are not here: they are a managed block in
   the VM's `/etc/hosts`, recomputed from this state on every change.
 - `/srv/` — the Podman data volume, bind-mounted onto the VM at `/srv` by
@@ -177,7 +162,7 @@ chowns), all enforced at runtime — do not propose alternates.
   so `/srv/projects/<name>` means the same thing on both sides. Holds
   per-project trees (projects/, data/, meta/), the database state (dbs/),
   third-party index repos (extra/), and backups (backups/ —
-  `mpd --runtime-backup` writes `backups/runtime/<timestamp>/`). mpd reads and writes it as ordinary files
+  project backup tools write here). mpd reads and writes it as ordinary files
   from the VM; removal goes through `go/internal/srv`, which needs root
   because database engines own their data files.
 
@@ -195,16 +180,12 @@ The binary is Go, built from `go/` into `bin/mpd` by `make install`:
   CA trust stores, the resolver unit, the cloud-init drop-in, motd,
   shutdown unit) plus the infra descriptors (`InfraServices`: dnsmasq +
   portal, systemd units on the VM)
-- `go/internal/runtime/` — runtime provisioning and its state cache
 - `go/internal/project/` — project scaffolding, env mutation, certs, rescan
 - `go/internal/service/` — optional extra service containers (mailpit,
   adminer, selenium): registry + lifecycle
 - `go/internal/web/` — the status page `mpd --web` serves, behind the
   VM's caddy
 - `go/internal/db/` — DB containers: tags, images, allocation, lifecycle
-- `go/internal/control/` — `mpd` run from inside the runtime: the
-  runtime's Unix socket, the FD-passing client/daemon, and the guard
-  that decides what the runtime may ask the VM to do
 - `go/internal/hooks/` — typed `Event` lifecycle hooks + asset-side
   `hooks/<event>.d/` dispatch
 - `go/internal/srv/` — the data volume at `/srv`: reads, atomic writes,
@@ -224,9 +205,9 @@ The binary is Go, built from `go/` into `bin/mpd` by `make install`:
   self-signed CA that is its own anchor); leaves carry their chain
 - `go/internal/ui/` — the step/ok/warn output shapes
 
-Runtime/project-type behavior + service container assets live under `assets/`:
+VM/project-type behavior + service container assets live under `assets/`:
 - `assets/vm/` — VM-level assets deployed to the mpd VM itself: `bin/` (the
-  VM tools, the sibling of `runtime/bin`), `hooks/<event>.d/` (the VM
+  VM tools), `hooks/<event>.d/` (the VM
   audience of the hook system — scripts that run on the VM host rather
   than in a container; see [`docs/hooks.md`](docs/hooks.md)), `lib/bashrc-include.sh` (the mpd
   part of the dev user's shell — PATH, the developer's `vm.env`, and the
@@ -239,27 +220,21 @@ Runtime/project-type behavior + service container assets live under `assets/`:
   step). Neither ever deletes — a file removed from the source stays in the
   home, so it can't lose data. mpd ships nothing here; it is where a developer
   overlays their own dotfiles (`.vimrc`, `.gitconfig`, forge
-  `.ssh/known_hosts`) through mpd-virt. The runtime home works the same way
-  (`assets/runtime/home/{default,forced}`, applied at create and by
-  `70-configure-runtime.sh`). The developer's own env (`vm.env`, `runtime.env`)
+  `.ssh/known_hosts`) through mpd-virt. The developer's own `vm.env`
   is not seeded from here —
   it is pushed in by mpd-virt or hand-written on a sandbox; an optional
   `mpd-defaults.env` the developer overlays here becomes the mpd.env config's
   lowest layer (see §8)
-- `assets/runtime/...` — the runtime definition: `Containerfile` (the
-  published pre-baked image), `bootstrap/` (`50-user.sh` root,
-  `60-install-software.sh` apt, `70-configure-runtime.sh` config — see
-  `assets/runtime/README.md`), `github-publish.sh`,
-  `mpd-defaults.env`, `home/`, `bin/`, `lib/`,
-  `caddy/` (the in-runtime TLS frontdoor), `backup.d/`/`restore.d/`
-  (`--runtime-backup`/`--runtime-restore` hooks),
+- `assets/vm/...` — the dev stack: `configure-stack.sh` (PHP config, the
+  php dispatcher, Composer, Node — run by `mpd --vm-setup`),
+  `home/`, `bin/`, `lib/`, `caddy/` (the project TLS frontdoor),
   `project_types/{moodle,astro,mdl-demo}/`
 - `assets/services/<n>/...` — built service images (adminer's
   Containerfile; the other extras pull upstream images)
 - `assets/completions/` — shell completion shims
-- *defaults* live in the per-type `assets/runtime/project_types/<type>/mpd-defaults.env`
-  (there is no shipped runtime-wide defaults file; a developer who wants
-  runtime-wide defaults overlays an optional `assets/vm/mpd-defaults.env`)
+- *defaults* live in the per-type `assets/vm/project_types/<type>/mpd-defaults.env`
+  (there is no shipped VM-wide defaults file; a developer who wants
+  VM-wide defaults overlays an optional `assets/vm/mpd-defaults.env`)
 
 ## Canonical docs map
 
@@ -273,8 +248,8 @@ across docs.
 - `docs/hooks.md` — typed `Event` lifecycle hooks: events, audiences, asset-side `hooks/<event>.d/` scripts
 - *(Host-side design notes for the `mpd-virt` orchestrator live in
   that repo's own `docs/`.)*
-- `docs/usage.md` — day-to-day workflow (bootstrap → first project → SSH-into-runtime)
-- `docs/debugging.md` — symptom catalogue: real runtime/IDE failures, the diagnostic that confirms each, and the fix
+- `docs/usage.md` — day-to-day workflow (bootstrap → first project → SSH in)
+- `docs/debugging.md` — symptom catalogue: real IDE and stack failures, the diagnostic that confirms each, and the fix
 - `docs/networking.md` — networking model (WireGuard overlay / SOCKS via mpd-virt + mpd-proxy)
 - `docs/security.md` — security model
 - Host-side automation (macOS: Parallels / UTM / Apple container; Linux: libvirt/KVM; either: Proxmox, generic) lives in the sibling `mpd-virt` repo: <https://github.com/mutms/mpd-virt>
@@ -284,14 +259,15 @@ across docs.
 
 `go/internal/podman` is the single shared gateway for container
 operations, and `go/internal/exec` is the only package permitted to run a
-host command at all. Every other package (cli, runtime, project, service,
+host command at all. Every other package (cli, project, service,
 vm) must not shell out directly — they ask one of those two. Full rule +
 review checklist in `docs/architecture.md` §"Mandatory Constraint".
 
 ## Mandatory privilege rule
 
-Applies to runtime containers and the mpd VM — anywhere mpd ships
-shell code for a host with a dev user plus passwordless sudo.
+Applies to the mpd VM and to the database and service containers —
+anywhere mpd ships shell code for a host with a dev user plus
+passwordless sudo.
 
 1. **Scripts run as the dev user.** Every shell asset under
    `assets/` and `mpd-virt/` is invoked as the dev user. The
@@ -323,22 +299,15 @@ shell code for a host with a dev user plus passwordless sudo.
    group yet); the same one-shot/root-only pattern as `sudo bash -c`
    from inside the script.
 
-**Single bootstrap exception.** The dev user must exist before
-rule (1) can hold. Exactly one root-context script,
-`assets/runtime/bootstrap/50-user.sh`, runs before the dev user exists
-and creates it (along with sudoers, sshd, /etc/mpd identity, /srv
-layout). The orchestrator (the `go/internal/runtime` provisioning
-step) is the only caller. After it returns, `60-install-software.sh`
-and `70-configure-runtime.sh` run as the dev user via
-`podman exec -u <user>`. Nothing else may invoke a script as root
-(the Containerfile runs 60 as root at image build, which is an image
-build, not a VM or container).
+**No bootstrap exception.** Every script mpd ships runs as the dev
+user. The dev user is created by the VM's own installer, before any
+mpd code runs, so nothing here needs a root-context script.
 
 ## Change discipline
 
 - Keep changes scoped to the requested task. No drive-by refactors.
 - Update affected docs when moving/renaming files.
-- Prefer additive asset changes for runtime/project-type behavior; reserve
+- Prefer additive asset changes for project-type behavior; reserve
   Go edits for control-plane, state, networking, and orchestration.
 - Prefer deterministic behavior over convenience fallbacks.
 - **The `go` directive in `go/go.mod` picks the compiler.** Go comes
@@ -448,8 +417,8 @@ Right:  // Signer picks this VM's signing CA. Trust anchor and signer
 ## Authoring verbs and tools
 
 Verbs (host-side, surfaced as `mpd <verb> <project>`) and tools
-(in-runtime, on PATH) are the extension surface for runtime + project-
-type functionality. The contract — what a verb is vs. a tool, naming
+(on PATH in the VM) are the extension surface for project-type
+functionality. The contract — what a verb is vs. a tool, naming
 conventions, PATH precedence, privilege model, idempotency — lives in
 [`docs/architecture.md` §7](docs/architecture.md). Read that first;
 this section is the "how to write one" follow-up.
@@ -457,19 +426,15 @@ this section is the "how to write one" follow-up.
 ### Decide: verb or tool?
 
 > A capability is a **verb** if and only if it does work that the
-> runtime container can't do for itself. Otherwise it's a **tool**.
+> control plane must do for itself. Otherwise it's a **tool**.
 
 Almost everything is a tool. The verb set is fixed and small — `init`,
 `start`, `stop`, `reset`, `run`, `delete`, `status`, `help`
 — all Go, all in the control plane. `start` configures and starts in one
 step; there is no separate `configure` verb. Project-type-specific functionality (cron, phpunit,
-composer, …) is exposed inside the runtime container where SSH sessions
-and AI agents run; you reach it via PATH after `ssh mpd-<NNN>` from the
-workstation, or `ssh mpd-<NNN>-runtime` / `ssh runtime` from inside the
-VM (the aliases `mpd --vm-setup` writes into the VM's `~/.ssh/config`;
-the long form `ssh user@runtime.<NNN>.mpd.test` is equivalent). In the VM
-the bare `mpd-<NNN>` is that machine's own hostname, which is why the
-short form is host-side only.
+composer, …) is on PATH in the VM, where SSH sessions and AI agents run;
+you reach it after `ssh mpd-<NNN>` from the workstation, or in any VM
+terminal.
 
 If you find yourself writing a verb whose body is essentially
 `podman exec <container> <tool>`, you're writing a redundant verb.
@@ -508,18 +473,15 @@ same name. Add it to `globalFlags` in `go/internal/cli/complete.go` too.
 A tool is a single executable script under one of two locations,
 chosen by scope:
 
-- `assets/runtime/bin/` — runtime-wide, independent of project type.
+- `assets/vm/bin/` — VM-wide, independent of project type.
   Examples: `claude-install`, `node-install`, `composer-install`, the
   `php` wrapper.
-- `assets/runtime/project_types/<type>/bin/` — the project types,
-  highest on PATH, so a type tool wins over a runtime tool of the same
+- `assets/vm/project_types/<type>/bin/` — the project types,
+  highest on PATH, so a type tool wins over a VM tool of the same
   name.
 
-(A VM-level tool — one that runs on the VM, not inside a runtime — goes in
-`assets/vm/bin/` instead; it is on the dev user's PATH via `~/.bashrc`.)
-
-Both are put on PATH by `runtime/lib/bashrc-include.sh` (sourced from the
-runtime's `~/.bashrc`) reading the assets tree directly at `/opt/mpd/assets/...`.
+Both are put on PATH by `assets/vm/lib/bashrc-include.sh`, sourced from the
+dev user's `~/.bashrc`.
 Nothing is copied or symlinked into `/srv`.
 
 Template (either location):
@@ -528,7 +490,7 @@ Template (either location):
 #!/bin/bash
 set -euo pipefail
 # Tool: <one-line description>.
-# Runs as the dev user inside the runtime. May use sudo freely
+# Runs as the dev user on the VM. May use sudo freely
 # (see architecture.md §7 "Privilege model").
 
 # Find the project root: nearest parent with mpd.env.
@@ -544,15 +506,15 @@ fi
 # Load the layered MPD_* config; parsing is whitelisted, mpd.env cannot
 # inject code (see docs/architecture.md §8).
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
-. /opt/mpd/assets/runtime/lib/source-mpd-env.sh
+. /opt/mpd/assets/vm/lib/source-mpd-env.sh
 
 # Do the work. Idempotent if -install or -init.
 ...
 ```
 
-Tools are bind-mounted at `/opt/mpd/assets/...` and put on
-PATH from there by the runtime's `~/.bashrc`. Edits on the VM are immediately
-visible inside the runtime — no rebuild, nothing to re-link.
+Tools are read straight out of `/opt/mpd/assets/...` and put on PATH from
+there by `~/.bashrc`. An edit takes effect in the next shell — nothing to
+rebuild or re-link.
 
 #### Ask mpd, don't read its files
 
@@ -569,19 +531,15 @@ DBHOST=$(printf '%s' "$STATUS" | jq -r '.database.host')
 
 The Moodle type wraps this in `scripts/mpd-env.sh` as `moodle_status`,
 `moodle_status_field` and `moodle_configured`, fetched once per script —
-the call is ~0.2s over the runtime's control socket, fine once and too
-much in a loop.
+the call is cheap once and too much in a loop.
 
 The rule exists because those files are mpd's, and a script that opens
-them is a copy of mpd's schema written where nothing can check it. It
-became possible only when `mpd` started working from inside a runtime;
-before that the files were the sole channel, which is why older tools
-read them.
+them is a copy of mpd's schema written where nothing can check it.
 
 Two exceptions, both of which run *inside* the command that produces the
 answer and so cannot ask for it: a project type's `configure.sh` and
 `project-setup.sh` (they write `effective.json`, so they read it), and
-the caddy watcher (`assets/runtime/caddy/`), which reacts to `/srv/meta`
+the caddy watcher (`assets/vm/caddy/`), which reacts to `/srv/meta`
 changing via inotify.
 
 #### Naming
@@ -591,8 +549,8 @@ changing via inotify.
 - **`mdl-` prefix** for Moodle-specific operations whose bare name
   would collide with system commands or be too generic (`mdl-cron`,
   `mdl-cache-purge`, `mdl-install`).
-- **`-install` suffix** for "fetch the binary itself" (runtime-wide,
-  one-shot, idempotent). Drops the binary into runtime FS — typically
+- **`-install` suffix** for "fetch the binary itself" (VM-wide,
+  one-shot, idempotent). Drops the binary into the VM's filesystem — typically
   `/usr/local/bin/` — never under `/srv/`.
 - **`-init` suffix** for "ready a project for the tool"
   (project-scoped, idempotent, may run many times across projects).
@@ -619,7 +577,7 @@ if mysql -u root -e "USE phpu_${PROJECT}_db" 2>/dev/null; then exit 0; fi
 #### Wrapper tools — avoid PATH recursion
 
 Tools whose bare name overrides a system binary (e.g.
-`assets/runtime/bin/php` shadowing `/usr/bin/php`) must `exec` the
+`assets/vm/bin/php` shadowing `/usr/bin/php`) must `exec` the
 upstream binary by absolute path. Otherwise the wrapper recurses into itself:
 
 ```bash
@@ -658,9 +616,8 @@ found." Internal sudo on specific operations is the right shape.
 
 #### Testing checklist for a new tool
 
-1. Rebuild the runtime: `mpd --runtime-rebuild` (prompts; `--yes`
-   skips it, running projects are restored afterwards).
-2. SSH in: `ssh mpd-<NNN>` (or `ssh runtime` from inside the VM).
+1. Open a new shell, so `~/.bashrc` re-reads the tool dirs.
+2. Or SSH in: `ssh mpd-<NNN>`.
 3. `which <new-tool>` resolves to the expected path under
    `/opt/mpd/assets/`.
 4. Run with no project context (negative test) — should fail
@@ -669,13 +626,13 @@ found." Internal sudo on specific operations is the right shape.
 6. **Re-run immediately** (the idempotent path). Exits 0, no
    duplication.
 7. For `-install` tools: confirm the binary lands under `/usr/local/bin/`
-   or similar runtime FS, never `/srv/`.
+   or similar, never `/srv/`.
 
 #### What to update when adding a tool
 
 - The tool itself (executable, `chmod +x`).
 - If the tool deserves dev-facing mention: add a one-line entry under
-  "Tools available inside the runtime" in `docs/usage.md`.
+  "Tools available in the VM" in `docs/usage.md`.
 - If it replaces an existing verb (verb→tool migration): delete the
   obsolete verb files and update any host-side callers that referenced
   the verb by name.

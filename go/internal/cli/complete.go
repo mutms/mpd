@@ -34,18 +34,12 @@ func IsProjectVerb(token string) bool {
 
 // GlobalFlags is every long flag mpd accepts. It mirrors the flag set in
 // cmd/mpd/main.go — add new entries in both places.
-// control.TestEveryGlobalFlagClassified pins the runtime denylist
-// against this list.
 var GlobalFlags = []string{
 	"--vm-setup",
 	"--vm-upgrade",
 	"--vm-start",
 	"--vm-stop",
 	"--vm-restart",
-	"--runtime-rebuild",
-	"--runtime-upgrade",
-	"--runtime-backup",
-	"--runtime-restore",
 	"--service-start",
 	"--service-stop",
 	"--service-uninstall",
@@ -57,7 +51,6 @@ var GlobalFlags = []string{
 	"--vm-status",
 	"--vm-diag",
 	"--web",
-	"--control",
 	"--yes",
 	"--debug",
 	"--help",

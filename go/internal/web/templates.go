@@ -74,13 +74,12 @@ const projectsHTML = `{{define "projects"}}
   {{if .Projects}}
   <table>
     <tr><th>Project</th><th>Status</th><th>Type</th>
-        <th>Runtime</th><th>Database</th><th>URL</th></tr>
+        <th>Database</th><th>URL</th></tr>
     {{range .Projects}}
     <tr>
       <td class="name">{{.Name}}</td>
       <td><span class="badge {{if .Running}}on{{end}}">{{.Status}}</span></td>
       <td class="meta">{{.Type}}</td>
-      <td class="meta">{{.Runtime}}</td>
       <td class="meta">{{if .DBHost}}{{.DBHost}}<br>
           <span class="cred">{{.DBUser}} / {{.DBPass}}</span>
           {{range .Links}}<br><a href="{{.URL}}">{{.Label}}</a>{{end}}{{else}}—{{end}}</td>

@@ -46,10 +46,8 @@ const SetupTimeout = 10 * time.Minute
 type AudienceKind int
 
 const (
-	// AudienceRuntime: the project's runtime container.
-	AudienceRuntime AudienceKind = iota
 	// AudienceDatabase: the project's database container.
-	AudienceDatabase
+	AudienceDatabase AudienceKind = iota
 	// AudienceService: a named always-on service container.
 	AudienceService
 	// AudienceVM: the VM host itself, for work no container can do.
@@ -91,9 +89,6 @@ type Event struct {
 	Containers func(AudienceKind) []string
 	// ServiceName scopes AudienceService to one service's assets.
 	ServiceName string
-	// User is who runtime hooks run as; empty means root. AudienceRuntime
-	// only — DB and service containers have no dev user.
-	User string
 }
 
 // Fire runs every hook for an event, honouring its failure mode.
@@ -217,10 +212,6 @@ func execOptions(ev Event, audience AudienceKind, env map[string]string) []strin
 	for _, k := range sortedKeys(env) {
 		opts = append(opts, "--env", k+"="+env[k])
 	}
-	// Without --user a runtime hook lands in /root, not the dev's home.
-	if audience == AudienceRuntime && ev.User != "" {
-		opts = append(opts, "--user", ev.User)
-	}
 	return opts
 }
 
@@ -252,11 +243,6 @@ func discover(ctx context.Context, p *podman.Client, ev Event, audience Audience
 	var dirs []string
 
 	switch audience {
-	case AudienceRuntime:
-		// Deliberately no project-type layer here: firing one would
-		// break the v1 hook contract (docs/hooks.md).
-		dirs = append(dirs,
-			filepath.Join(assetsDir, "runtime", "hooks", ev.Name+".d"))
 	case AudienceDatabase:
 		// Per-engine only; DB images are stock, so there is no base layer.
 		if engine := containerLabel(ctx, p, container, "mpd.db.engine"); engine != "" {
@@ -267,6 +253,8 @@ func discover(ctx context.Context, p *podman.Client, ev Event, audience Audience
 			dirs = append(dirs, filepath.Join(assetsDir, "services", ev.ServiceName, "hooks", ev.Name+".d"))
 		}
 	case AudienceVM:
+		// Deliberately no project-type layer here: firing one would
+		// break the v1 hook contract (docs/hooks.md).
 		dirs = append(dirs,
 			filepath.Join(assetsDir, "vm", "hooks", ev.Name+".d"))
 	}

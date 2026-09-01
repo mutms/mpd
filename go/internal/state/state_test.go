@@ -30,9 +30,6 @@ func TestMissingFilesAreEmptyNotAnError(t *testing.T) {
 	if got := s.Databases(); len(got) != 0 {
 		t.Errorf("Databases() = %d, want 0", len(got))
 	}
-	if _, ok := s.Runtime("php"); ok {
-		t.Error("Runtime() = ok for a missing file")
-	}
 }
 
 func TestMalformedJSONIsEmptyNotAPanic(t *testing.T) {
@@ -44,9 +41,9 @@ func TestMalformedJSONIsEmptyNotAPanic(t *testing.T) {
 
 func TestProjectsAreSortedByName(t *testing.T) {
 	s := storeWith(t, map[string]string{"projects.json": `{"projects":[
-		{"name":"zeta","runtimeName":"php","requested":"running"},
-		{"name":"alpha","runtimeName":"php","requested":"stopped"},
-		{"name":"mid","runtimeName":"node","requested":"running"}
+		{"name":"zeta","configured":true},
+		{"name":"alpha","configured":true},
+		{"name":"mid","configured":true}
 	]}`})
 	got := s.Projects()
 	want := []string{"alpha", "mid", "zeta"}
@@ -66,10 +63,10 @@ func TestProjectStatus(t *testing.T) {
 		p    Project
 		want string
 	}{
-		{"fresh init: no runtime", Project{Name: "a"}, "not initialised"},
-		{"configured and started", Project{Name: "a", RuntimeName: "runtime", Autostart: true}, "started"},
-		{"configured and stopped", Project{Name: "a", RuntimeName: "runtime", Autostart: false}, "stopped"},
-		{"autostart without a runtime is still not initialised",
+		{"fresh init: unconfigured", Project{Name: "a"}, "not initialised"},
+		{"configured and started", Project{Name: "a", Configured: true, Autostart: true}, "started"},
+		{"configured and stopped", Project{Name: "a", Configured: true, Autostart: false}, "stopped"},
+		{"autostart while unconfigured is still not initialised",
 			Project{Name: "a", Autostart: true}, "not initialised"},
 	}
 	for _, tc := range cases {
@@ -82,7 +79,7 @@ func TestProjectStatus(t *testing.T) {
 }
 
 func TestMainURL(t *testing.T) {
-	running := Project{RuntimeName: "php", Autostart: true}
+	running := Project{Configured: true, Autostart: true}
 
 	// kind "web" wins.
 	p := running
@@ -113,45 +110,32 @@ func TestMainURL(t *testing.T) {
 // A stopped project keeps its URL: stop does not withdraw the vhost,
 // cert or DNS record.
 func TestMainURLSurvivesStop(t *testing.T) {
-	p := Project{RuntimeName: "php", Autostart: false,
+	p := Project{Configured: true, Autostart: false,
 		URLs: []ProjectURL{{Kind: "web", URL: "https://web/"}}}
 	if got := p.MainURL(); got != "https://web/" {
 		t.Errorf("MainURL() = %q for a stopped project, want the web URL", got)
 	}
 }
 
-// No runtime means no address to publish under.
-func TestMainURLSuppressedWithoutRuntime(t *testing.T) {
-	p := Project{RuntimeName: "", Autostart: true,
+// An unconfigured project has no address to publish under.
+func TestMainURLSuppressedWhenUnconfigured(t *testing.T) {
+	p := Project{Autostart: true,
 		URLs: []ProjectURL{{Kind: "web", URL: "https://web/"}}}
 	if got := p.MainURL(); got != "" {
-		t.Errorf("MainURL() = %q with no runtime, want empty", got)
+		t.Errorf("MainURL() = %q when unconfigured, want empty", got)
 	}
 }
 
 func TestGroupings(t *testing.T) {
 	projects := []Project{
-		{Name: "b", RuntimeName: "php", DatabaseID: "postgres-latest"},
-		{Name: "a", RuntimeName: "php", DatabaseID: "postgres-latest"},
-		{Name: "c", RuntimeName: "node"},
-		{Name: "d"}, // no runtime, no db — must not be counted anywhere
+		{Name: "b", Configured: true, DatabaseID: "postgres-latest"},
+		{Name: "a", Configured: true, DatabaseID: "postgres-latest"},
+		{Name: "c", Configured: true},
+		{Name: "d"}, // unconfigured, no db — must not be counted anywhere
 	}
 	byDB := ProjectNamesByDatabase(projects)
 	got := byDB["postgres-latest"]
 	if len(got) != 2 || got[0] != "a" || got[1] != "b" {
 		t.Errorf("ProjectNamesByDatabase() = %v, want sorted [a b]", got)
-	}
-}
-
-func TestRuntimeMeta(t *testing.T) {
-	s := storeWith(t, map[string]string{
-		"runtimes/php/meta.json": `{"name":"php","runtime":"php","ip":"10.163.150.100","requested":"running"}`,
-	})
-	r, ok := s.Runtime("php")
-	if !ok {
-		t.Fatal("Runtime(\"php\") not found")
-	}
-	if r.IP != "10.163.150.100" || r.Requested != "running" {
-		t.Errorf("Runtime() = %+v", r)
 	}
 }

@@ -28,12 +28,9 @@ const (
 	// ConfDir holds the CA and the service cert. PRIVATE — never
 	// bind-mounted into a container.
 	ConfDir = VarLibDir + "/conf"
-	// EnvDir holds the developer's own env — vm.env (VM shells) and
-	// runtime.env (runtimes) — pushed in from the Mac by mpd-virt.
+	// EnvDir holds the developer's own env — vm.env — pushed in from the
+	// Mac by mpd-virt.
 	EnvDir = VarLibDir + "/env"
-	// HomeOverrideDir holds user-managed dotfiles overlaid onto new runtimes'
-	// home, on top of the shipped assets/runtime/home defaults.
-	HomeOverrideDir = VarLibDir + "/home"
 	// StateDir holds mpd-managed operational state.
 	StateDir = VarLibDir + "/state"
 
@@ -103,7 +100,7 @@ func Home() string {
 // AssetsPath returns the assets directory, failing loudly when the
 // checkout looks incomplete.
 func AssetsPath() (string, error) {
-	if _, err := os.Stat(AssetsDir + "/runtime"); err != nil {
+	if _, err := os.Stat(AssetsDir + "/vm"); err != nil {
 		return "", fmt.Errorf("Assets not found at %s — clone mpd to /opt/mpd.", AssetsDir)
 	}
 	return AssetsDir, nil

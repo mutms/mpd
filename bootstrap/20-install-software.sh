@@ -2,10 +2,15 @@
 # bootstrap/20-install-software.sh
 #
 # Step 2 of 3, wgettable and self-contained: bring the OS current and
-# install every package mpd needs. This is the ONE package list —
-# `mpd --vm-setup` only verifies the binaries exist
-# (go/internal/vm/host.go) and never installs anything; a new run-time
-# dependency goes here and into that table.
+# install the packages mpd needs. Debian packages only — the one
+# exception in the whole bootstrap is upstream Go, in step 3.
+#
+# Two things are deliberately NOT here, because this script runs before
+# the repo is cloned and so cannot read it:
+#   - the PHP package matrix, whose single source of truth is
+#     assets/vm/lib/php-configure.sh (apt-installed by --vm-setup);
+#   - Composer and Node, which are upstream fetches, not packages.
+# Both are handled by assets/vm/configure-stack.sh. See bootstrap/README.md.
 #
 # No hostname gate: this also runs at OCI image build, where the
 # hostname is random and step 1 has already validated a VM.
@@ -58,6 +63,20 @@ apt_get update -qq
 apt_get dist-upgrade -y -qq
 ok "operating system current"
 
+# Sury for every PHP version Debian does not ship. PGDG because Debian's
+# postgresql-client is older than mpd's default server and pg_dump
+# refuses a newer one.
+step "Third-party repositories (Sury PHP, PGDG)"
+apt_get install -y -qq --no-install-recommends apt-transport-https ca-certificates curl gnupg2 lsb-release
+curl -fsSL https://packages.sury.org/php/apt.gpg | sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/sury-php.gpg
+echo "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" \
+    | sudo tee /etc/apt/sources.list.d/sury-php.list >/dev/null
+curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/pgdg.gpg
+echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt/ $(lsb_release -sc)-pgdg main" \
+    | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+apt_get update -qq
+ok "sury-php + pgdg configured"
+
 # Base tooling and build needs. bind9-dnsutils, not dnsutils: the latter
 # is virtual and dpkg -s always reports it not-installed. Go is not
 # here: 30-mpd-build.sh installs upstream Go. libnss3-tools provides
@@ -68,7 +87,7 @@ BASE_PKGS=(
     jq build-essential pkg-config make libnss3-tools
 )
 
-# What mpd needs at run time.
+# What mpd's control plane needs at run time.
 # catatonit + uidmap: podman needs them but does not pull them in under
 #   --no-install-recommends. Deliberately no aardvark-dns: mpd's network
 #   uses --disable-dns, and podman's resolver would take port 53 on the
@@ -79,16 +98,26 @@ BASE_PKGS=(
 #   second unit reading /etc/dnsmasq.conf, the sysadmin's file.
 # vim, not vim-tiny: vim-tiny starts in compatible mode, where arrow
 #   keys insert ABCD.
-RUNTIME_PKGS=(
+CONTROL_PKGS=(
     podman catatonit uidmap nftables
     wireguard-tools wireguard-go
     dnsmasq-base caddy vim
+)
+
+# The dev stack's Debian half: DB clients for every engine mpd runs, and
+# inotify-tools for the project caddy's watcher. PHP itself comes from
+# --vm-setup (see the header).
+STACK_PKGS=(
+    postgresql-client mariadb-client default-mysql-client
+    inotify-tools
 )
 
 # Tools for AI agents working on the VM. Deliberately no `gh`: it needs
 # `gh auth login`, which stores a token, and mpd keeps no credentials.
 AGENT_PKGS=(
     shellcheck shfmt ripgrep tree
+    bash-completion bc file htop mc nano net-tools netcat-openbsd patch
+    rsync screen socat strace time tmux unzip whois zip
 )
 
 # avahi-daemon advertises <hostname>.local over mDNS, which is how
@@ -99,7 +128,7 @@ GUEST_PKGS=(
     avahi-daemon qemu-guest-agent
 )
 
-ALL_PKGS=("${BASE_PKGS[@]}" "${RUNTIME_PKGS[@]}" "${AGENT_PKGS[@]}" "${GUEST_PKGS[@]}")
+ALL_PKGS=("${BASE_PKGS[@]}" "${CONTROL_PKGS[@]}" "${STACK_PKGS[@]}" "${AGENT_PKGS[@]}" "${GUEST_PKGS[@]}")
 
 step "Package set (${#ALL_PKGS[@]} packages)"
 missing=()

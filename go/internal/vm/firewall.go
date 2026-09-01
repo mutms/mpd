@@ -55,6 +55,17 @@ table inet %[1]s {
 		# unaffected.
 		ip daddr %[2]s iifname != { "%[3]s", "wg0" } ct state new drop
 	}
+	chain input {
+		type filter hook input priority -10; policy accept;
+		# The VM holds subnet addresses itself (the gateway, and the project
+		# address the project caddy binds). Those arrive on the INPUT hook,
+		# which the forward chain above never sees, and Linux's weak host
+		# model accepts them on any interface. Without this a LAN host that
+		# routes %[2]s at the VM reaches the resolver, the portal and every
+		# project URL.
+		ct state established,related accept
+		ip daddr %[2]s iifname != { "%[3]s", "wg0", "lo" } ct state new drop
+	}
 }
 `, firewallTable, subnet, BridgeName, nftBin)
 }

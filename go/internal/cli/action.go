@@ -10,18 +10,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mutms/mpd/go/internal/assets"
+	"github.com/mutms/mpd/go/internal/db"
+	"github.com/mutms/mpd/go/internal/dnsmasq"
 	"github.com/mutms/mpd/go/internal/exec"
 	"github.com/mutms/mpd/go/internal/hooks"
+	"github.com/mutms/mpd/go/internal/project"
 	"github.com/mutms/mpd/go/internal/srv"
 
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
-	"github.com/mutms/mpd/go/internal/runtime"
 	"github.com/mutms/mpd/go/internal/state"
 	"github.com/mutms/mpd/go/internal/vm"
 )
 
-// Start brings the VM's mpd environment up: services, then the runtime.
+// Start brings the VM's mpd environment up: services, then the projects.
 // It starts what exists and reports what does not; creating things is
 // `--vm-setup`'s job.
 func Start(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) error {
@@ -60,18 +63,20 @@ func Start(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) e
 	}
 	verifyDNS(ctx, out, d.Net)
 
-	// Start the runtime whenever it exists, whatever the projects want.
-	// Failure warns rather than aborts; --vm-setup is the repair.
-	container := d.Observer.RuntimeContainer(runtime.Name)
-	switch {
-	case !d.Podman.Exists(ctx, container):
-		fmt.Fprintln(out, "\n  No runtime container yet — run: mpd --vm-setup")
-	case !d.Podman.Running(ctx, container):
-		fmt.Fprintln(out, "\n\033[1m==> Restoring the runtime\033[0m")
-		if err := RuntimeStart(ctx, out, d.Podman, d.State, d.Dnsmasq,
-			d.Observer, d.Net, d.DevUser, d.UID); err != nil {
-			fmt.Fprintf(out, "  Warning: could not restore the runtime: %v\n", err)
-		}
+	// The project frontdoor is a systemd unit, so systemd has already
+	// started it; nudge it only when it is down.
+	if !vm.UnitActive(ctx, vm.ProjectCaddyUnitName, false) {
+		fmt.Fprintf(out, "\n  Project frontdoor is down — start it with: sudo systemctl start %s\n",
+			vm.ProjectCaddyUnitName)
+	}
+
+	ensureAutostartDatabases(ctx, out, d.Podman, d.State, d.Net, d.UID)
+	if err := db.RebuildStateCache(ctx, d.Podman, d.State); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to refresh database cache: %v\n", err)
+	}
+	if err := restoreRunningProjects(ctx, out, d.Podman, d.State,
+		d.Dnsmasq, d.Net, d.UID); err != nil {
+		fmt.Fprintf(out, "  Warning: could not restore projects: %v\n", err)
 	}
 
 	if err := d.Observer.Refresh(ctx, stateDir, d.State, time.Now()); err != nil {
@@ -99,7 +104,6 @@ func verifyDNS(ctx context.Context, out io.Writer, n net.Net) {
 	// caddy, not a container with an address of its own.
 	checks := []struct{ host, want string }{
 		{n.Zone(), n.Gateway()},
-		{n.RuntimeFQDN(), n.IP(net.HostRuntime)},
 	}
 	// vm.<zone> answers with the VM's own LAN address. Skipped when
 	// there is no live address to compare (a DHCP-less sandbox mid-boot).
@@ -142,7 +146,7 @@ func verifyDNS(ctx context.Context, out io.Writer, n net.Net) {
 	fmt.Fprintf(out, "DNS check: the resolver answers for %s but cannot resolve %s.\n",
 		n.Zone(), vm.UpstreamProbeName)
 	fmt.Fprintln(out, "  Names in the zone are served locally, so they work regardless — but")
-	fmt.Fprintln(out, "  containers resolve through this resolver, so apt inside the runtime")
+	fmt.Fprintln(out, "  containers resolve through this resolver, so apt in a container")
 	fmt.Fprintln(out, "  will fail. dnsmasq forwards to the servers in the VM's own")
 	fmt.Fprintln(out, "  /etc/resolv.conf. Inspect:")
 	fmt.Fprintln(out, "    cat /etc/resolv.conf")
@@ -164,7 +168,7 @@ func writeVMMeta(ctx context.Context, d ProjectDeps) error {
 	return VMMeta(ctx, d.Podman, d.Net, state.Dir)
 }
 
-// VMMeta publishes this VM's addressing to both readers: runtime
+// VMMeta publishes this VM's addressing to both readers: VM-side
 // containers via /srv/meta/vm.json, the portal via the state dir's
 // vm.json.
 func VMMeta(ctx context.Context, p *podman.Client, n net.Net, stateDir string) error {
@@ -258,4 +262,57 @@ func Restart(ctx context.Context, out io.Writer, stateDir string) error {
 		return fmt.Errorf("Failed to reboot VM (sudo systemctl reboot returned %d).", code)
 	}
 	return nil
+}
+
+// restoreRunningProjects re-establishes each autostart project: refresh
+// its URLs, reissue the cert if the host set moved, run the project
+// type's setup script, then publish DNS once for all of them.
+func restoreRunningProjects(ctx context.Context, out io.Writer,
+	p *podman.Client, s state.Store, dns dnsmasq.Manager, n net.Net, uid string) error {
+
+	var projects []state.Project
+	for _, proj := range s.Projects() {
+		if proj.Autostart {
+			projects = append(projects, proj)
+		}
+	}
+	if len(projects) == 0 {
+		return nil
+	}
+
+	fmt.Fprintf(out, "\n\033[1m==> Restoring %d project(s)\033[0m\n", len(projects))
+	for _, proj := range projects {
+		fmt.Fprintf(out, "  Restoring '%s'...\n", proj.Name)
+
+		// Same refresh-and-check as ProjectStart: the cert and DNS record
+		// come from proj.URLs, and the cached copy may be stale. A project
+		// configured for another VM is skipped, not fatal.
+		urls := proj.URLs
+		if fresh, ok := project.ReadURLs(proj.Name); ok {
+			urls = fresh
+		}
+		if err := project.CheckConfigured(proj.Name, urls, n); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: skipping '%s': %v\n", proj.Name, err)
+			continue
+		}
+		if !sameURLs(urls, proj.URLs) {
+			proj.URLs = urls
+			if err := s.UpsertProject(proj); err != nil {
+				return err
+			}
+		}
+
+		if err := project.EnsureCert(ctx, out, proj.Name, proj.URLs, n, p, uid); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: cert for '%s': %v\n", proj.Name, err)
+		}
+
+		if cfg, ok := assets.New().ProjectTypeConfig(proj.Type); ok {
+			script := assets.TypeScript(cfg.AssetsType, "project-setup.sh")
+			if _, err := project.Exec(ctx, "bash", script, proj.Name); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: project-setup for '%s': %v\n", proj.Name, err)
+			}
+		}
+	}
+	// One publish after the loop covers every project.
+	return PublishDNS(ctx, out, dns, n, s, false)
 }

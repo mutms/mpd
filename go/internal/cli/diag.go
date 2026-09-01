@@ -23,7 +23,6 @@ import (
 	"github.com/mutms/mpd/go/internal/exec"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
-	"github.com/mutms/mpd/go/internal/runtime"
 	"github.com/mutms/mpd/go/internal/service"
 	"github.com/mutms/mpd/go/internal/state"
 	"github.com/mutms/mpd/go/internal/ui"
@@ -44,10 +43,6 @@ type DiagDeps struct {
 	Podman   *podman.Client
 	State    state.Store
 	Observer current.Observer
-	// ControlSocket is passed in rather than derived: internal/control
-	// imports this package, so naming its path here closes an import
-	// cycle.
-	ControlSocket string
 	// Version is the running binary's stamped version, from main.
 	Version string
 }
@@ -61,7 +56,7 @@ func Diag(ctx context.Context, out io.Writer, d DiagDeps) error {
 	diagIdentity(ctx, r, d)
 	diagNetwork(ctx, r, d)
 	diagTLS(ctx, r, d)
-	diagRuntime(ctx, r, d)
+	diagProjects(ctx, r, d)
 	diagDesktop(ctx, r)
 	diagData(ctx, r, d)
 
@@ -287,7 +282,7 @@ func diagNetwork(ctx context.Context, r *diagRun, d DiagDeps) {
 // RFC1918 space sends container traffic into its own interface, and
 // every project URL times out while state files look healthy.
 func diagSubnetRoute(ctx context.Context, r *diagRun, d DiagDeps) {
-	target := d.Net.IP(net.HostRuntime)
+	target := d.Net.IP(net.HostProjects)
 	res, err := exec.Capture(ctx, exec.Cmd{Name: "ip", Args: []string{"route", "get", target}})
 	if err != nil || res.Failed() {
 		r.fail("no route to the container subnet (%s)", d.Net.Subnet())
@@ -386,43 +381,27 @@ func diagTLS(ctx context.Context, r *diagRun, d DiagDeps) {
 		certs[0].Issuer.CommonName)
 }
 
-func diagRuntime(ctx context.Context, r *diagRun, d DiagDeps) {
-	r.step("Runtime")
+func diagProjects(ctx context.Context, r *diagRun, d DiagDeps) {
+	r.step("Project frontdoor")
 
-	container := d.Observer.RuntimeContainer(runtime.Name)
-	switch d.Observer.Runtime(ctx, runtime.Name) {
-	case current.Missing:
-		r.fail("runtime container %s does not exist — run `mpd --vm-setup`", container)
-		return
-	case current.Stopped:
-		r.fail("runtime container %s is stopped — run `mpd --vm-start`", container)
-		return
-	default:
-		r.ok("runtime container %s running", container)
+	want := d.Net.IP(net.HostProjects)
+	res, err := exec.Capture(ctx, exec.Cmd{Name: "ip", Args: []string{"-brief", "address", "show", vm.BridgeName}})
+	if err != nil || res.Failed() || !strings.Contains(res.Stdout, want+"/") {
+		r.fail("%s is not on %s — project URLs cannot answer; run `mpd --vm-setup`", want, vm.BridgeName)
+	} else {
+		r.ok("project address %s held by %s", want, vm.BridgeName)
 	}
 
-	want := d.Net.IP(net.HostRuntime)
-	if got := d.Podman.ContainerIP(ctx, container, "mpd-internal"); got != want {
-		r.fail("runtime is at %q, expected %s", got, want)
+	if vm.UnitActive(ctx, vm.ProjectCaddyUnitName, false) {
+		r.ok("project caddy running (%s)", vm.ProjectCaddyUnitName)
 	} else {
-		r.ok("runtime addressed at %s", want)
+		r.fail("project caddy not running (%s) — no project URL will answer", vm.ProjectCaddyUnitName)
 	}
 
-	if diagDial(want, "22") {
-		r.ok("runtime sshd reachable (ssh %s)", d.Net.RuntimeAlias())
+	if diagDial(want, "443") {
+		r.ok("project frontdoor listening on %s:443", want)
 	} else {
-		r.fail("runtime sshd not reachable at %s:22 — IDE and `ssh` sessions will fail", want)
-	}
-
-	// The control socket is how `mpd` inside the runtime reaches the VM;
-	// its absence is invisible until a tool in the container tries.
-	sock := d.ControlSocket
-	if _, err := os.Stat(sock); err != nil {
-		r.fail("control socket missing at %s — `mpd` inside the runtime will not work", sock)
-	} else if !diagDialUnix(sock) {
-		r.fail("control socket at %s is not accepting connections (%s)", sock, vm.ControlUnitName)
-	} else {
-		r.ok("control socket accepting connections")
+		r.fail("nothing listening on %s:443", want)
 	}
 }
 
@@ -641,15 +620,6 @@ func diagData(ctx context.Context, r *diagRun, d DiagDeps) {
 
 func diagDial(host, port string) bool {
 	c, err := gonet.DialTimeout("tcp", gonet.JoinHostPort(host, port), diagTimeout)
-	if err != nil {
-		return false
-	}
-	c.Close()
-	return true
-}
-
-func diagDialUnix(path string) bool {
-	c, err := gonet.DialTimeout("unix", path, diagTimeout)
 	if err != nil {
 		return false
 	}

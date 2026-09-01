@@ -1,0 +1,82 @@
+#!/bin/bash
+# phpstorm-archive-app — pack this VM's Toolbox-installed PhpStorm into
+# ~/install/phpstorm.tgz. Copy the file into your host-side overlay
+# (~/.mpd-virt/assets/jetbrains/) and every VM reads it from
+# /opt/mpd/assets/jetbrains/, where `phpstorm-install-app` unpacks it.
+# Re-runs replace the archive.
+set -euo pipefail
+
+APPS_DIR="$HOME/.local/share/JetBrains/Toolbox/apps"
+APP_NAME="phpstorm"
+SRC="${APPS_DIR}/${APP_NAME}"
+DEST_DIR="$HOME/install"
+DEST="${DEST_DIR}/${APP_NAME}.tgz"
+
+die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
+
+usage() {
+    cat <<'EOF'
+Usage: phpstorm-archive-app
+
+Pack ~/.local/share/JetBrains/Toolbox/apps/phpstorm into
+~/install/phpstorm.tgz. Unpack it on another VM with
+`phpstorm-install-app`.
+EOF
+}
+
+case "${1:-}" in
+    -h | --help)
+        usage
+        exit 0
+        ;;
+    "") ;;
+    *) die "Unknown argument: $1 (takes none)" ;;
+esac
+
+[ -d "${SRC}" ] || die "No PhpStorm backend at ${SRC} — connect once with PhpStorm Gateway, or install it with the Toolbox CLI, first."
+[ -x "${SRC}/bin/remote-dev-server.sh" ] || die "${SRC} has no bin/remote-dev-server.sh — the install looks incomplete."
+
+BUILD="unknown build"
+if [ -f "${SRC}/build.txt" ]; then
+    BUILD="$(cat "${SRC}/build.txt")"
+fi
+
+mkdir -p "${DEST_DIR}"
+
+# Write to a temp file and rename, so an interrupted run leaves no
+# half-written archive for phpstorm-install-app to unpack.
+TMP="$(mktemp "${DEST}.XXXXXX")"
+trap 'rm -f "${TMP}"' EXIT
+
+echo "Archiving ${SRC} (${BUILD})"
+echo "This takes a few minutes — gzip over about three gigabytes."
+
+# -C keeps a single top-level phpstorm/ in the archive. A running backend
+# makes tar warn "file changed"; suppress only that so tar can still exit 0.
+tar --warning=no-file-changed -czf "${TMP}" -C "${APPS_DIR}" "${APP_NAME}"
+
+mv -f "${TMP}" "${DEST}"
+trap - EXIT
+chmod 644 "${DEST}"
+
+echo
+echo "Wrote ${DEST} ($(du -h "${DEST}" | cut -f1), ${BUILD})"
+
+# The host-side ssh alias is the hostname.
+# SC2088: the tilde stays literal — the string is printed for the
+# developer to run on their workstation.
+# shellcheck disable=SC2088
+OVERLAY="~/.mpd-virt/assets/jetbrains"
+cat <<EOF
+
+To seed it into every future VM, run this on your workstation:
+
+    mkdir -p ${OVERLAY}
+    scp $(hostname):${DEST/#"${HOME}"/\~} ${OVERLAY}/
+
+mpd-virt pushes that overlay on adopt and update. It lands at
+/opt/mpd/assets/jetbrains/, read directly from there — no copy into the
+home. Then:
+
+    phpstorm-install-app
+EOF

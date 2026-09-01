@@ -1,0 +1,34 @@
+#!/bin/bash
+# behat — run Behat tests for the current project.
+# All arguments are passed through to vendor/bin/behat.
+set -euo pipefail
+
+source /opt/mpd/assets/vm/project_types/moodle/scripts/mpd-env.sh
+
+# Behat must be enabled at the mpd level, which publishes the behat
+# vhost and TLS cert. Otherwise Moodle's reachability check fails with
+# an opaque "site is not available".
+if [ "${MPD_MOODLE_BEHAT:-0}" != "1" ]; then
+    echo "Error: Behat is not enabled for project '${PROJECT}' in mpd." >&2
+    echo "The behat.${PROJECT}.${MPD_ZONE} site is not published. Enable it from" >&2
+    echo "the VM host (or over SSH to the VM), then re-run behat-init:" >&2
+    echo >&2
+    echo "    mpd start ${PROJECT} MPD_MOODLE_BEHAT=1" >&2
+    exit 1
+fi
+
+cd "${PROJECT_DIR}"
+
+BEHAT_CONFIG="/srv/data/${PROJECT}/dataroot_behat/behatrun/behat/behat.yml"
+
+if [ ! -f "vendor/bin/behat" ]; then
+    echo "Error: vendor/bin/behat not found — run 'behat-init' first" >&2
+    exit 1
+fi
+
+if [ ! -f "${BEHAT_CONFIG}" ]; then
+    echo "Error: ${BEHAT_CONFIG} not found — run 'behat-init' first" >&2
+    exit 1
+fi
+
+exec php vendor/bin/behat --config "${BEHAT_CONFIG}" "$@"

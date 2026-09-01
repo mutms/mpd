@@ -1,0 +1,24 @@
+#!/bin/bash
+# grunt — run grunt for the current project, from the project root or
+# any subdirectory. Grunt keeps the cwd: Moodle's Gruntfile.js detects
+# the subplugin from it. All arguments pass through to grunt.
+set -euo pipefail
+
+source /opt/mpd/assets/vm/project_types/moodle/scripts/mpd-env.sh
+
+source /opt/mpd/assets/vm/lib/nvm-env.sh
+
+if [[ ! "$PWD" =~ ^/srv/projects/${PROJECT} ]]; then
+    cd "${PROJECT_DIR}"
+fi
+
+if [ ! -d "${PROJECT_DIR}/node_modules" ]; then
+    echo "Installing node_modules..."
+    (cd "${PROJECT_DIR}" && npm install)
+fi
+
+if [ -x "${PROJECT_DIR}/node_modules/.bin/grunt" ]; then
+    exec "${PROJECT_DIR}/node_modules/.bin/grunt" "$@"
+else
+    exec npx grunt "$@"
+fi

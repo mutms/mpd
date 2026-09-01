@@ -17,7 +17,7 @@ const showLabelWidth = 16
 // ShowProject renders `mpd status <project>`. A started project gets the
 // full detail; a stopped or uninitialised one gets the short form plus
 // the next command — the long form would list URLs nothing serves. The
-// single runtime is the same for every project, so it is not shown.
+// project frontdoor is the same for every project, so it is not shown.
 func ShowProject(out io.Writer, name string, s state.Store, n net.Net) {
 	var entry state.Project
 	found := false
@@ -44,14 +44,13 @@ func ShowProject(out io.Writer, name string, s state.Store, n net.Net) {
 	fmt.Fprintln(out, field("Status:", entry.Status()))
 
 	// Not initialised: no addresses to show yet, just the command to run.
-	if entry.RuntimeName == "" {
+	if !entry.Configured {
 		fmt.Fprintf(out, "\n  mpd start %s\n", name)
 		return
 	}
 
 	if entry.Autostart {
 		writeURLs(out, entry.URLs)
-		fmt.Fprintln(out, field("SSH:", "ssh "+n.RuntimeAlias()))
 		fmt.Fprintln(out, field("Directory:", "/srv/projects/"+name))
 		writeSettings(out, name)
 		return

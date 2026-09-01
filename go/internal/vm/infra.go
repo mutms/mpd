@@ -13,11 +13,12 @@ type InfraService struct {
 }
 
 // InfraServices lists the VM-integral infrastructure, in display order.
-// caddy and the bridge/firewall oneshots are deliberately absent;
-// diagnose those via systemctl.
+// The apex caddy and the bridge/firewall oneshots are deliberately
+// absent; diagnose those via systemctl.
 func InfraServices() []InfraService {
 	return []InfraService{
 		{Name: "dnsmasq", Unit: DnsmasqUnit},
 		{Name: "portal", Unit: WebUnitName, UnitUser: true},
+		{Name: "projects", Unit: ProjectCaddyUnitName},
 	}
 }

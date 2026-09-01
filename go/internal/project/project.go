@@ -1,6 +1,5 @@
-// Package project holds per-project operations that runtime and project
-// verbs share: TLS certs, DNS records, and running scripts inside a
-// project's runtime.
+// Package project holds per-project operations the project verbs share:
+// TLS certs, DNS records, and running a project type's scripts.
 package project
 
 import (
@@ -14,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/mutms/mpd/go/internal/cert"
+	"github.com/mutms/mpd/go/internal/exec"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/srv"
@@ -101,20 +101,23 @@ func EnsureCert(ctx context.Context, out io.Writer, name string, urls []state.Pr
 	return srv.Write(srv.MetaFile(name, "cert.sans"), []byte(signature), 0o644)
 }
 
-// Exec runs a project script inside its runtime as the dev user.
-func Exec(ctx context.Context, p *podman.Client, container, user string, command ...string) (int, error) {
-	return p.ExecAsUser(ctx, container, user, command...)
+// Exec runs a project script on the VM. mpd already runs as the dev
+// user, so the script inherits that identity and sudo's what it needs.
+func Exec(ctx context.Context, command ...string) (int, error) {
+	if len(command) == 0 {
+		return 1, fmt.Errorf("no command")
+	}
+	return exec.Run(ctx, exec.Cmd{Name: command[0], Args: command[1:]})
 }
 
 // WriteMeta writes /srv/meta/<project>/project.json, the project
 // identity readable from inside containers. It must run before a type's
-// configure.sh, which reads runtime and type from it; it runs again
+// configure.sh, which reads the type from it; it runs again
 // afterwards with the URLs and DB fields configure.sh produced.
 func WriteMeta(ctx context.Context, p *podman.Client, uid string, entry state.Project) error {
 	meta := map[string]any{
 		"name":            entry.Name,
 		"type":            entry.Type,
-		"runtime":         entry.RuntimeName,
 		"databaseId":      entry.DatabaseID,
 		"databaseEngine":  entry.DatabaseEngine,
 		"databaseVersion": entry.DatabaseVersion,

@@ -21,29 +21,22 @@ const (
 // Project describes the project an event concerns.
 type Project struct {
 	Name string
-	// Runtime is the runtime's short name, used to scope asset
-	// discovery; RuntimeContainer is the container hooks execute in.
-	Runtime          string
-	RuntimeContainer string
 	// DBEngine and DBVersion identify the project's database, if any.
 	// Empty engine means database-audience events fire nowhere — normal.
 	DBEngine, DBVersion string
-	// DevUser is who runtime hooks run as. See Event.User.
-	DevUser string
 }
 
 func (pr Project) env() map[string]string {
 	return map[string]string{
 		"PROJECT":    pr.Name,
-		"RUNTIME":    pr.Runtime,
 		"DB_ENGINE":  pr.DBEngine,
 		"DB_VERSION": pr.DBVersion,
 	}
 }
 
-// ProjectPreStart fires before a project starts: runtime and database
-// are up, but no project setup has run. It fires on the project's
-// DATABASE, not its runtime, and failure aborts the start.
+// ProjectPreStart fires before a project starts: the database is up,
+// but no project setup has run. It fires on the DATABASE, and failure
+// aborts the start.
 func ProjectPreStart(ctx context.Context, pr Project, p *podman.Client) Event {
 	return projectEvent(ctx, EventProjectPreStart, pr, p,
 		[]AudienceKind{AudienceDatabase}, Abort)
@@ -53,32 +46,25 @@ func ProjectPreStart(ctx context.Context, pr Project, p *podman.Client) Event {
 // blocks a stop.
 func ProjectPreStop(ctx context.Context, pr Project, p *podman.Client) Event {
 	return projectEvent(ctx, EventProjectPreStop, pr, p,
-		[]AudienceKind{AudienceRuntime}, Continue)
+		[]AudienceKind{AudienceVM}, Continue)
 }
 
 // ProjectPostStart fires once the project is live and recorded running.
 func ProjectPostStart(ctx context.Context, pr Project, p *podman.Client) Event {
 	return projectEvent(ctx, EventProjectPostStart, pr, p,
-		[]AudienceKind{AudienceRuntime}, Continue)
+		[]AudienceKind{AudienceVM}, Continue)
 }
 
-// MpdPostSetup fires at the end of `mpd --vm-setup`, on the VM and its
-// runtime. Failure never aborts: setup is already done.
-func MpdPostSetup(ctx context.Context, runtimeContainer, devUser string, p *podman.Client) Event {
+// MpdPostSetup fires at the end of `mpd --vm-setup`. Failure never
+// aborts: setup is already done.
+func MpdPostSetup(ctx context.Context, p *podman.Client) Event {
 	return Event{
-		Name:      EventMpdPostSetup,
-		Revision:  1,
-		Audiences: []AudienceKind{AudienceVM, AudienceRuntime},
-		OnFailure: Continue,
-		Timeout:   SetupTimeout,
-		User:      devUser,
-		Env:       map[string]string{"RUNTIME": runtimeContainer},
-		Containers: func(a AudienceKind) []string {
-			if a != AudienceRuntime {
-				return nil
-			}
-			return running(ctx, p, runtimeContainer)
-		},
+		Name:       EventMpdPostSetup,
+		Revision:   1,
+		Audiences:  []AudienceKind{AudienceVM},
+		OnFailure:  Continue,
+		Timeout:    SetupTimeout,
+		Containers: func(AudienceKind) []string { return nil },
 	}
 }
 
@@ -123,12 +109,9 @@ func projectEvent(ctx context.Context, name string, pr Project, p *podman.Client
 		Revision:  1,
 		Audiences: audiences,
 		OnFailure: onFailure,
-		User:      pr.DevUser,
 		Env:       pr.env(),
 		Containers: func(a AudienceKind) []string {
 			switch a {
-			case AudienceRuntime:
-				return running(ctx, p, pr.RuntimeContainer)
 			case AudienceDatabase:
 				if pr.DBEngine == "" {
 					return nil

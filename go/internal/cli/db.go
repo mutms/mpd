@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 
@@ -187,4 +188,40 @@ func promptName(out io.Writer, in io.Reader, name, action string) bool {
 		return false
 	}
 	return strings.TrimSpace(line) == name
+}
+
+// ensureAutostartDatabases starts databases marked autostart plus those
+// an autostart project needs; one used only by a stopped project stays
+// down. Failures warn rather than abort.
+func ensureAutostartDatabases(ctx context.Context, out io.Writer,
+	p *podman.Client, s state.Store, n net.Net, uid string) {
+
+	// Distinct engine:version tags to start, deduplicated.
+	seen := map[string]bool{}
+	add := func(engine, version string) {
+		if engine == "" {
+			return
+		}
+		seen[engine+":"+version] = true
+	}
+	for _, d := range s.Databases() {
+		if d.Autostart {
+			add(d.Engine, d.Version)
+		}
+	}
+	for _, proj := range s.Projects() {
+		if proj.Autostart {
+			add(proj.DatabaseEngine, proj.DatabaseVersion)
+		}
+	}
+
+	for key := range seen {
+		ref, err := db.Resolve(ctx, key, p)
+		if err == nil {
+			err = db.Ensure(ctx, ref, p, n, uid, out)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to ensure DB '%s': %v\n", key, err)
+		}
+	}
 }

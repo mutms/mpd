@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
-	"github.com/mutms/mpd/go/internal/runtime"
 	"github.com/mutms/mpd/go/internal/service"
 	"github.com/mutms/mpd/go/internal/state"
 	"github.com/mutms/mpd/go/internal/vm"
@@ -39,7 +39,6 @@ type ProjectRow struct {
 	Status  string
 	Running bool
 	Type    string
-	Runtime string
 	URL     string
 	// Database connection details, derived from the project name;
 	// see docs/security.md.
@@ -51,7 +50,7 @@ type ProjectRow struct {
 	Links []service.Link
 }
 
-// InfraRow is one VM-integral infrastructure piece (runtime container,
+// InfraRow is one VM-integral infrastructure piece (
 // dnsmasq, portal) as the page shows it.
 type InfraRow struct {
 	Name    string
@@ -108,7 +107,6 @@ func projectRows(ctx context.Context, d Deps, projects []state.Project,
 			Status:  p.Status(),
 			Running: p.Status() == "started",
 			Type:    dash(p.Type),
-			Runtime: dash(p.RuntimeName),
 			URL:     p.MainURL(),
 			DBHost:  dbHost(d, p),
 			DBUser:  p.Name,
@@ -143,28 +141,6 @@ func projectLinks(d Deps, p state.Project, dbUp map[string]bool, live map[string
 	return links
 }
 
-// runtimeInfraRow is the runtime container as an Infra row.
-func runtimeInfraRow(ctx context.Context, d Deps) InfraRow {
-	row := InfraRow{
-		Name:   runtime.Name,
-		Status: "missing (run mpd --vm-setup)",
-		Access: "—",
-	}
-	// Filter on the presence of mpd.runtime: there is no
-	// mpd.type=runtime label to match a value against.
-	for _, item := range d.Podman.Ps(ctx, "label=mpd.runtime") {
-		if item.Label("mpd.name") != runtime.Name {
-			continue
-		}
-		row.Running = item.State == "running"
-		row.Status = "stopped"
-		if row.Running {
-			row.Status = "running"
-		}
-	}
-	return row
-}
-
 func databaseRows(ctx context.Context, d Deps, projects []state.Project) []DatabaseRow {
 	byDB := state.ProjectNamesByDatabase(projects)
 
@@ -196,10 +172,10 @@ func databaseRows(ctx context.Context, d Deps, projects []state.Project) []Datab
 	return rows
 }
 
-// infraRows lists the VM-integral infrastructure: the runtime container
-// plus the systemd units on the VM.
+// infraRows lists the VM-integral infrastructure: the systemd units on
+// the VM.
 func infraRows(ctx context.Context, d Deps) []InfraRow {
-	rows := []InfraRow{runtimeInfraRow(ctx, d)}
+	var rows []InfraRow
 	for _, inf := range vm.InfraServices() {
 		row := InfraRow{Name: inf.Name, Status: "stopped"}
 		switch inf.Name {
@@ -207,6 +183,8 @@ func infraRows(ctx context.Context, d Deps) []InfraRow {
 			row.Access = fmt.Sprintf("DNS resolver (%s:53)", d.Net.Gateway())
 		case "portal":
 			row.Access = fmt.Sprintf("https://%s/", d.Net.Zone())
+		case "projects":
+			row.Access = fmt.Sprintf("project HTTPS (%s:443)", d.Net.IP(net.HostProjects))
 		}
 		if d.UnitActive != nil && d.UnitActive(ctx, inf.Unit, inf.UnitUser) {
 			row.Running = true

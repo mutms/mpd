@@ -1,0 +1,13 @@
+{
+  "detect": {
+    "files": [
+      "astro.config.mjs",
+      "astro.config.mts",
+      "astro.config.ts",
+      "astro.config.js"
+    ]
+  },
+  "start": {
+    "waitForURL": false
+  }
+}

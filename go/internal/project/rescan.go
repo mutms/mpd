@@ -17,7 +17,6 @@ type metaJSON struct {
 	DatabaseEngine  string `json:"databaseEngine"`
 	DatabaseVersion string `json:"databaseVersion"`
 	DatabaseID      string `json:"databaseId"`
-	RuntimeName     string `json:"runtime"`
 }
 
 // Rescan rebuilds projects.json from the data volume, the authority on
@@ -61,15 +60,15 @@ func Rescan(ctx context.Context, out io.Writer, s state.Store) error {
 			projects = append(projects, known)
 			continue
 		}
-		// project.json exists only for configured projects, so the
-		// carried RuntimeName marks the project initialised.
+		// project.json exists only for configured projects, so finding
+		// one marks the project initialised.
 		projects = append(projects, state.Project{
 			Name:            e.Name,
 			Type:            e.Type,
 			DatabaseID:      e.DatabaseID,
 			DatabaseEngine:  e.DatabaseEngine,
 			DatabaseVersion: e.DatabaseVersion,
-			RuntimeName:     e.RuntimeName,
+			Configured:      true,
 			Autostart:       false,
 		})
 	}

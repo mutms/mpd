@@ -1,8 +1,0 @@
-#!/bin/bash
-# phpunit-util — PHPUnit utility commands for the current project.
-# Examples: phpunit-util --buildcomponentconfigs, phpunit-util --drop
-# All arguments are passed through to admin/tool/phpunit/cli/util.php.
-set -euo pipefail
-source /opt/mpd/assets/runtime/project_types/moodle/scripts/mpd-env.sh
-
-moodle_run admin/tool/phpunit/cli/util.php "$@"

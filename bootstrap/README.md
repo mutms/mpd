@@ -18,13 +18,25 @@ nothing. There is no orchestrator; callers list the steps.
 |---|---|---|
 | `10-passwordless-sudo.sh` | once (root password) | Hostname gate (`mpd-<NNN>`, or a `mpd-template[-<suffix>]` / `mpd-sandbox[-<suffix>]` staging name), Debian Trixie gate, refuses root. No-op if `sudo -n` already works; otherwise `su -c` installs sudo if missing and writes `/etc/sudoers.d/00-mpd-<user>`. |
 | `15-secure-ssh.sh` | no | Hardens a default Debian install's sshd with one drop-in (`/etc/ssh/sshd_config.d/10-mpd.conf`): root over SSH off, password + keyboard-interactive auth off, keys only. Refuses while your `~/.ssh/authorized_keys` holds no key (`ssh-copy-id` first); no-op without openssh-server. |
-| `20-install-software.sh` | no | `apt-get update` + `dist-upgrade`, then **the one package list**: build deps, networking diagnostics, everything mpd needs at run time (podman, dnsmasq-base, caddy, WireGuard, nftables, …), agent tooling, and avahi + qemu-guest-agent (enabled; started where systemd runs and the hypervisor device exists). No hostname gate — it also runs inside an image build. |
+| `20-install-software.sh` | no | `apt-get update` + `dist-upgrade`, adds the Sury and PGDG apt repos, then **the Debian package list**: build deps, networking diagnostics, everything the control plane needs at run time (podman, dnsmasq-base, caddy, WireGuard, nftables, …), the DB clients, agent tooling, and avahi + qemu-guest-agent (enabled; started where systemd runs and the hypervisor device exists). No hostname gate — it also runs inside an image build. |
 | `30-mpd-build.sh` | no | Creates `/opt/mpd` + `/var/lib/mpd` owned by the dev user; clones or fast-forwards the mpd repo; installs upstream Go into `/usr/local/go` when the VM has none; `make install`; puts `/opt/mpd/bin`, `assets/vm/bin` and `~/.local/bin` on PATH via `~/.bashrc`. |
 
-`mpd --vm-setup` installs nothing: its preflight verifies the binaries
-step 20 provides and names the missing packages plus the command to run
-(`go/internal/vm/host.go`). A new run-time dependency is added to step
-20 and to that verification table.
+The split with `mpd --vm-setup` is by *kind*, not by convenience.
+Bootstrap installs Debian packages only — upstream Go, in step 30, is the
+sole exception in the whole sequence. `--vm-setup` then runs
+`assets/vm/configure-stack.sh`, which apt-installs the PHP matrix and
+fetches Composer and Node.
+
+Two reasons the PHP matrix is not here. This script is wgettable and runs
+before the repo is cloned, so it cannot read `MPD_PHP_VERSIONS` from
+`assets/vm/lib/php-configure.sh` — and duplicating that list would leave
+two to keep in step. Composer and Node are `curl | bash` fetches rather
+than packages, which is the separate reason they are not apt's business.
+
+Everything else `--vm-setup` needs, it only verifies: its preflight
+checks the binaries step 20 provides and names the missing packages plus
+the command to run (`go/internal/vm/host.go`). A new run-time dependency
+is added to step 20 and to that verification table.
 
 There is no networking step: hostname, IP and the network stack are the
 platform's job (cloud-init on the automated platforms;

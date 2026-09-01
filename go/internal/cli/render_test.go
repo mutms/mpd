@@ -90,19 +90,17 @@ func TestListServices(t *testing.T) {
 func TestListInfra(t *testing.T) {
 	var buf bytes.Buffer
 	unitActive := func(context.Context, string, bool) bool { return true }
-	ps := `[{"Names":["mpd-150-runtime"],"State":"running","Labels":{"mpd.name":"runtime","mpd.runtime":"runtime"}}]`
-	ListInfra(context.Background(), &buf, testNet(t, 150), stubPodman(ps), unitActive)
+	ListInfra(context.Background(), &buf, testNet(t, 150), unitActive)
 	out := buf.String()
 
-	for _, want := range []string{"runtime", "dnsmasq", "portal", "https://150.mpd.test/", "running"} {
+	for _, want := range []string{"dnsmasq", "portal", "projects", "https://150.mpd.test/", "running"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("infra listing should contain %q:\n%s", want, out)
 		}
 	}
-	// The runtime row carries no access hint — reaching it is the
-	// host-side orchestrator's job.
-	runtimeLine := strings.Split(out, "\n")[2]
-	if strings.Contains(runtimeLine, "ssh") || strings.Contains(runtimeLine, "mpd.test") {
-		t.Errorf("runtime row must not show connection info: %q", runtimeLine)
+	// The project frontdoor advertises its address, not a name: project
+	// vhosts are per project, and no single one belongs on this row.
+	if !strings.Contains(out, "10.163.150.2:443") {
+		t.Errorf("projects row should name the frontdoor address:\n%s", out)
 	}
 }

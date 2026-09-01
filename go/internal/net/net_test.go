@@ -61,11 +61,8 @@ func TestNaming(t *testing.T) {
 	tests := map[string]string{
 		n.Host("moodle45"):   "moodle45.150.mpd.test",
 		n.Service("adminer"): "adminer.svc.150.mpd.test",
-		n.RuntimeFQDN():      "runtime.150.mpd.test",
 		n.DB("pg17"):         "pg17.db.150.mpd.test",
 		n.VMServiceRecord():  "vm.150.mpd.test",
-		// Not in the zone: an ssh alias, not a DNS name.
-		n.RuntimeAlias(): "mpd-150-runtime",
 	}
 	for got, want := range tests {
 		if got != want {
@@ -82,7 +79,7 @@ func TestIsInZone(t *testing.T) {
 		"150.mpd.test",
 		"moodle45.150.mpd.test",
 		"behat.moodle45.150.mpd.test",
-		"runtime.150.mpd.test",
+		"adminer.svc.150.mpd.test",
 	}
 	for _, name := range in {
 		if !n.IsInZone(name) {

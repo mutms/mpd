@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,12 +13,10 @@ import (
 
 	"github.com/mutms/mpd/go/internal/assets"
 	"github.com/mutms/mpd/go/internal/cli"
-	"github.com/mutms/mpd/go/internal/control"
 	"github.com/mutms/mpd/go/internal/current"
 	"github.com/mutms/mpd/go/internal/dnsmasq"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
-	"github.com/mutms/mpd/go/internal/runtime"
 	"github.com/mutms/mpd/go/internal/service"
 	"github.com/mutms/mpd/go/internal/state"
 	"github.com/mutms/mpd/go/internal/vm"
@@ -41,8 +38,6 @@ const projectCommands = `  status     [projectname] [--json]            project 
                                                leaves it not initialised
   delete     <projectname> [--yes]             (alias: rm; never inferred — name it explicitly)
   help       <projectname>                     verb reference for one project
-  run        <command> [args...]               run a command in the runtime of the
-                                               project you are standing in
 
 The project name is optional: inside /srv/projects/<name>/ (or any
 subdirectory) it defaults to that project.`
@@ -85,11 +80,6 @@ type flags struct {
 	vmStatus  bool
 	vmDiag    bool
 
-	runtimeRebuild bool
-	runtimeUpgrade bool
-	runtimeBackup  bool
-	runtimeRestore bool
-
 	dbCreate string
 	dbStart  string
 	dbStop   string
@@ -115,17 +105,6 @@ func main() {
 	if len(os.Args) >= 3 && os.Args[1] == "--complete" {
 		cli.CompleteFromArgs(os.Stdout, os.Args[2:], state.New(), assets.New())
 		cli.ExitCompletion()
-	}
-
-	// Inside a runtime there is no state or podman socket, so the raw
-	// argv is forwarded to the VM before cobra parses it. The VM's own
-	// command tree decides what a verb means.
-	if _, inRuntime := control.RuntimeName(); inRuntime && !runsLocallyInRuntime(os.Args[1:]) {
-		code, err := control.Forward(os.Args[1:])
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Error:", err)
-		}
-		os.Exit(code)
 	}
 
 	var f flags
@@ -162,16 +141,7 @@ func main() {
 	root.Flags().BoolVar(&f.vmStatus, "vm-status", false,
 		"Show context-aware status (text output).")
 	root.Flags().BoolVar(&f.vmDiag, "vm-diag", false,
-		"Probe this VM and report what works: certificates, DNS, routing, TLS, runtime, desktop. Read-only; exits non-zero on failure.")
-
-	root.Flags().BoolVar(&f.runtimeRebuild, "runtime-rebuild", false,
-		"Delete and re-provision the runtime container (prompts unless --yes).")
-	root.Flags().BoolVar(&f.runtimeUpgrade, "runtime-upgrade", false,
-		"Upgrade the running runtime in place: apt dist-upgrade + package set, then re-configure.")
-	root.Flags().BoolVar(&f.runtimeBackup, "runtime-backup", false,
-		"Back up the runtime's home directory (config, dotfiles, IDE settings, history; not caches or binaries) to /srv/backups/runtime/.")
-	root.Flags().BoolVar(&f.runtimeRestore, "runtime-restore", false,
-		"Restore the newest runtime backup into the (rebuilt) runtime; binaries are not restored — reinstall them.")
+		"Probe this VM and report what works: certificates, DNS, routing, TLS, project frontdoor, desktop. Read-only; exits non-zero on failure.")
 
 	root.Flags().StringVar(&f.dbCreate, "db-create", "", "Create (or start) a DB container, e.g. `postgres:17`.")
 	root.Flags().StringVar(&f.dbStart, "db-start", "", "Start a stopped DB container `name`.")
@@ -189,8 +159,6 @@ func main() {
 
 	root.Flags().BoolVar(&f.web, "web", false,
 		"Run the status web server in the foreground (systemd: mpd-web.service).")
-	root.Flags().BoolVar(&f.control, "control", false,
-		"Serve project commands sent from inside runtimes (systemd: mpd-control.service).")
 
 	root.Flags().BoolVar(&f.yes, "yes", false, "Skip confirmation prompts (for scripted use).")
 	root.Flags().BoolVar(&f.debug, "debug", false, "Print debug information.")
@@ -204,13 +172,6 @@ func main() {
 	root.SetHelpCommand(helpCmd())
 
 	if err := root.Execute(); err != nil {
-		// A forwarded command's exit status passes through silently: the
-		// child already reported the failure, and an extra line would
-		// corrupt piped output.
-		var exit cli.ExitError
-		if errors.As(err, &exit) {
-			os.Exit(exit.Code)
-		}
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
@@ -244,16 +205,6 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 			UnitActive: vm.UnitActive,
 			Version:    version,
 		})
-	case f.control:
-		// Long-running. Takes no state lock: each request spawns a child
-		// mpd that takes it, and a lock held here would block that child
-		// forever. The socket is bound up front, so a rebuilt runtime
-		// already has its endpoint.
-		runtimes := []string{runtime.Name}
-		if err := control.PruneSockets(runtimes); err != nil {
-			return err
-		}
-		return control.Serve(ctx, out, runtimes, control.RunDir, state.New(), assets.New())
 	case f.vmSetup:
 		return withLock(ctx, out, state.New(), func() error { return cli.Setup(ctx, out) })
 	case f.vmUpgrade:
@@ -283,44 +234,14 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 		}
 		p := podman.New()
 		return cli.Diag(ctx, out, cli.DiagDeps{
-			Net:           n,
-			Podman:        p,
-			State:         state.New(),
-			Observer:      current.NewObserver(n.VMID(), p),
-			ControlSocket: control.SocketPath(runtime.Name),
-			Version:       version,
+			Net:      n,
+			Podman:   p,
+			State:    state.New(),
+			Observer: current.NewObserver(n.VMID(), p),
+			Version:  version,
 		})
 	}
 
-	if f.runtimeRebuild {
-		n, p, s, dns, o, err := runtimeDeps()
-		if err != nil {
-			return err
-		}
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return err
-		}
-		return withLock(ctx, out, s, func() error {
-			return cli.RuntimeRebuild(ctx, out, c.InOrStdin(), p, s, dns, o, n,
-				devUser(), devUID(), home, f.yes)
-		})
-	}
-	if f.runtimeBackup || f.runtimeRestore || f.runtimeUpgrade {
-		_, p, s, _, o, err := runtimeDeps()
-		if err != nil {
-			return err
-		}
-		return withLock(ctx, out, s, func() error {
-			if f.runtimeUpgrade {
-				return cli.RuntimeUpgrade(ctx, out, p, o, devUser())
-			}
-			if f.runtimeBackup {
-				return cli.RuntimeBackup(ctx, out, p, o, devUser())
-			}
-			return cli.RuntimeRestore(ctx, out, p, o, devUser())
-		})
-	}
 	if name := firstNonEmpty(f.dbCreate, f.dbStart, f.dbStop, f.dbDelete); name != "" {
 		return dbAction(ctx, out, c, f, name)
 	}
@@ -336,20 +257,6 @@ func dispatch(c *cobra.Command, args []string, f *flags) error {
 	}
 	cli.Status(ctx, out, state.New(), podman.New(), n, devUID())
 	return nil
-}
-
-// runsLocallyInRuntime reports whether a command is answered in the
-// runtime instead of forwarded. Only facts about the binary itself
-// qualify; everything else needs state, podman or the network.
-func runsLocallyInRuntime(args []string) bool {
-	if len(args) == 0 {
-		return false
-	}
-	switch args[0] {
-	case "--version", "-v":
-		return true
-	}
-	return false
 }
 
 // withLock runs fn under mpd's exclusive mutation lock. flock is per
@@ -377,7 +284,7 @@ func firstNonEmpty(values ...string) string {
 func serviceAction(ctx context.Context, out interface{ Write([]byte) (int, error) },
 	f *flags, name string) error {
 
-	n, p, s, dns, _, err := runtimeDeps()
+	n, p, s, dns, _, err := vmDeps()
 	if err != nil {
 		return err
 	}
@@ -399,7 +306,7 @@ func serviceAction(ctx context.Context, out interface{ Write([]byte) (int, error
 func dbAction(ctx context.Context, out interface{ Write([]byte) (int, error) },
 	c *cobra.Command, f *flags, name string) error {
 
-	n, p, s, dns, _, err := runtimeDeps()
+	n, p, s, dns, _, err := vmDeps()
 	if err != nil {
 		return err
 	}
@@ -466,7 +373,7 @@ func listCmd() *cobra.Command {
 			case "services":
 				cli.ListServices(ctx, out, n, p, s)
 			case "infra":
-				cli.ListInfra(ctx, out, n, p, vm.UnitActive)
+				cli.ListInfra(ctx, out, n, vm.UnitActive)
 			case "dbs":
 				cli.ListDatabases(ctx, out, n, p, s)
 			case "network":
@@ -485,7 +392,7 @@ func listCmd() *cobra.Command {
 				fmt.Fprintf(out, "gateway     %s\n", n.Gateway())
 				fmt.Fprintf(out, "dnsmasq     %s (the VM itself: resolver for .test)\n", n.Gateway())
 				fmt.Fprintf(out, "portal      %s (the VM itself: mpd --web behind caddy)\n", n.Gateway())
-				fmt.Fprintf(out, "runtime     %s\n", n.IP(net.HostRuntime))
+				fmt.Fprintf(out, "projects    %s (the VM itself: project vhosts behind caddy)\n", n.IP(net.HostProjects))
 				fmt.Fprintf(out, "databases   %s-%d\n", n.IP(net.DBHostFirst), net.DBHostLast)
 				for _, svc := range service.All() {
 					fmt.Fprintf(out, "%-12s%s\n", svc.Name, svc.IP(n))
@@ -566,7 +473,7 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 			}),
 	)
 
-	// --json is what in-runtime tools read instead of opening /srv/meta;
+	// --json is what tools read instead of opening /srv/meta;
 	// the flag rides along when status is forwarded over the control socket.
 	statusCmd := simple("status [project]", "Show project details (default: the one you are in)",
 		func(ctx context.Context, c *cobra.Command, name string, d cli.ProjectDeps) error {
@@ -642,32 +549,15 @@ func projectVerbCmds(f *flags) []*cobra.Command {
 	}
 	initCmd.Flags().StringVar(&opts.Type, "type", "", "Project type (default: inferred, else moodle)")
 
-	runCmd := &cobra.Command{
-		Use:   "run [--] <command> [args...]",
-		Short: "Run a command in the runtime of the project you are in",
-		// The project comes from the working directory; everything
-		// after `run` is the command to forward.
-		Args:               cobra.MinimumNArgs(1),
-		DisableFlagParsing: true,
-		RunE: func(c *cobra.Command, args []string) error {
-			d, err := projectDeps()
-			if err != nil {
-				return err
-			}
-			return cli.Run(c.Context(), c.OutOrStdout(), d, args)
-		},
-	}
-
-	verbs = append(verbs, deleteCmd, initCmd, runCmd)
+	verbs = append(verbs, deleteCmd, initCmd)
 
 	return verbs
 }
 
-// devUID is the uid volume execs run as, so files written to the data
-// volume come out owned by the runtime user.
+// devUID is the uid mpd writes data-volume files as.
 func devUID() string { return strconv.Itoa(os.Getuid()) }
 
-// devUser is the account name project scripts run as inside a runtime.
+// devUser is the account name project scripts and hooks run as.
 func devUser() string {
 	if id := vm.DetectIdentity(); id.User != "" {
 		return id.User
@@ -678,7 +568,7 @@ func devUser() string {
 	return "user"
 }
 
-func runtimeDeps() (net.Net, *podman.Client, state.Store, dnsmasq.Manager, current.Observer, error) {
+func vmDeps() (net.Net, *podman.Client, state.Store, dnsmasq.Manager, current.Observer, error) {
 	n, err := net.Current()
 	if err != nil {
 		return net.Net{}, nil, state.Store{}, dnsmasq.Manager{}, current.Observer{}, err

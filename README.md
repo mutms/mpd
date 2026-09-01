@@ -1,8 +1,8 @@
 # mpd — Moodle plugin development environment
 
 The environment I use for my own daily Moodle work. Every dev tool — PHP,
-Composer, Postgres/MariaDB, Node, the AI coding agent — lives in a container
-inside a Linux VM, not on your laptop. Each project gets its own
+Composer, Postgres/MariaDB, Node, the AI coding agent — lives inside a
+Linux VM, not on your laptop. Each project gets its own
 `https://<project>.<NNN>.mpd.test/` URL with trusted TLS, its own PHP
 version and database, and Behat/Selenium wiring. You edit in your IDE over
 SSH; the host stays clean.
@@ -15,10 +15,10 @@ assistant at this repo and ask.
 
 | Repo                                            | Runs                    | Does                                                                     |
 |-------------------------------------------------|-------------------------|--------------------------------------------------------------------------|
-| **mpd** (this repo)                             | inside the VM           | the runtime, projects, DNS, TLS — the control plane                      |
+| **mpd** (this repo)                             | inside the VM           | the dev stack, projects, DNS, TLS — the control plane                    |
 | [mpd-virt](https://github.com/mutms/mpd-virt)   | on the host             | creates/adopts VMs, host reachability + CA trust                         |
 | [mpd-proxy](https://github.com/mutms/mpd-proxy) | on the host, as root    | optional: transparent `*.mpd.test` for every app via a WireGuard overlay |
-| [mudev](https://github.com/mutms/mudev)         | on the VM + in runtimes | assembles Moodle trees from recipes; the plugin/recipe catalogues        |
+| [mudev](https://github.com/mutms/mudev)         | on the VM               | assembles Moodle trees from recipes; the plugin/recipe catalogues        |
 | [mdl-demo](https://github.com/mutms/mdl-demo)   | any container host      | throwaway all-in-one Moodle demos — pick a version in its web UI         |
 
 ## Try it: Sandbox VM
@@ -49,7 +49,7 @@ mdl-install                             # install Moodle
 ## Daily driver: mpd VM
 
 Same VM, headless: your own browser opens `*.mpd.test`, your IDE connects
-over SSH (`ssh mpd-<NNN>` lands in the runtime).
+over SSH (`ssh mpd-<NNN>` lands where the work is).
 [mpd-virt](https://github.com/mutms/mpd-virt) creates or adopts the VM from
 a macOS or Linux host — UTM, Parallels, Apple container, libvirt/KVM,
 Proxmox, or any Debian VM it can reach. To adopt a sandbox, run
@@ -60,7 +60,7 @@ Proxmox, or any Debian VM it can reach. To adopt a sandbox, run
 
 - [docs/README.md](docs/README.md) — index, audience-shaped
 - [docs/usage.md](docs/usage.md) — day-to-day handbook (projects, SSH into
-  the runtime, tools, updating)
+  the VM, tools, updating)
 - [docs/architecture.md](docs/architecture.md) — under the hood
 - [AGENTS.md](AGENTS.md) — background, layout, and conventions, for AI
   agents and humans alike

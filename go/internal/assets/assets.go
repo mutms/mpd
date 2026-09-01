@@ -10,12 +10,11 @@ import (
 	"strings"
 )
 
-// Dir is the bind-mounted asset tree, identical on the VM and inside
-// every container.
+// Dir is the asset tree in the checkout.
 const Dir = "/opt/mpd/assets"
 
-// RuntimeDir is the unified runtime's asset directory under Dir.
-const RuntimeDir = "runtime"
+// VMDir is the VM's asset directory under Dir.
+const VMDir = "vm"
 
 // Tree reads one asset directory; the path is a field for tests.
 type Tree struct{ dir string }
@@ -28,7 +27,7 @@ func NewAt(dir string) Tree { return Tree{dir: dir} }
 
 // ProjectTypeConfig locates the assets that implement a project type.
 // `assetsType` lets a type reuse another's scripts, so callers must
-// resolve through here, never assume runtime/project_types/<type>/.
+// resolve through here, never assume vm/project_types/<type>/.
 type ProjectTypeConfig struct {
 	// AssetsType is the directory holding the type's scripts.
 	AssetsType string `json:"assetsType"`
@@ -95,16 +94,15 @@ func (t Tree) HasTypeFile(assetsType, rel string) bool {
 
 // typeFile is a path inside a project type's asset directory.
 func (t Tree) typeFile(typeName, rel string) string {
-	return filepath.Join(t.dir, RuntimeDir, "project_types", typeName, rel)
+	return filepath.Join(t.dir, VMDir, "project_types", typeName, rel)
 }
 
-// TypeScript is the in-container absolute path of a project-type script,
-// e.g. TypeScript("moodle", "scripts/configure.sh"). Callers pass the
+// TypeScript is the absolute path of a project-type script, e.g.
+// TypeScript("moodle", "scripts/configure.sh"). Callers pass the
 // resolved ProjectTypeConfig.AssetsType so `assetsType` delegation is
-// honoured. Always under Dir — the tree is bind-mounted at the same path
-// inside every container.
+// honoured.
 func TypeScript(assetsType, rel string) string {
-	return filepath.Join(Dir, RuntimeDir, "project_types", assetsType, rel)
+	return filepath.Join(Dir, VMDir, "project_types", assetsType, rel)
 }
 
 // HasFile reports whether a path exists under the asset tree.
@@ -116,7 +114,7 @@ func (t Tree) HasFile(rel string) bool {
 // AllProjectTypes lists every project type, sorted.
 func (t Tree) AllProjectTypes() []string {
 	var types []string
-	entries, err := os.ReadDir(filepath.Join(t.dir, RuntimeDir, "project_types"))
+	entries, err := os.ReadDir(filepath.Join(t.dir, VMDir, "project_types"))
 	if err != nil {
 		return nil
 	}

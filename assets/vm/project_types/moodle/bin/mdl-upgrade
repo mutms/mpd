@@ -1,0 +1,7 @@
+#!/bin/bash
+# Tool: run Moodle DB upgrade for the current project (admin/cli/upgrade.php).
+# Not a git-based code update — just the post-code-change DB upgrade step.
+set -euo pipefail
+source /opt/mpd/assets/vm/project_types/moodle/scripts/mpd-env.sh
+
+moodle_run admin/cli/upgrade.php --non-interactive "$@"

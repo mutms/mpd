@@ -12,7 +12,7 @@ func fixtureTree(t *testing.T, types map[string][]string) Tree {
 	t.Helper()
 	root := t.TempDir()
 	for name, files := range types {
-		dir := filepath.Join(root, RuntimeDir, "project_types", name)
+		dir := filepath.Join(root, VMDir, "project_types", name)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}

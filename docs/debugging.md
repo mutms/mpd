@@ -6,20 +6,20 @@ not here, the general shape is: reproduce it reliably, find the resource
 or limit being exhausted, then check whether it's the container, systemd
 inside the container, or the host.
 
-## A shell keeps the old environment after a runtime asset changes
+## A shell keeps the old environment after an asset changes
 
 **Symptoms.** An environment change that should be live — mpd ships or
-edits a `project_types/<type>/shellrc.sh`, or you edit the runtime's
-`~/.bashrc` — has no effect in the shell you are sitting in. The
-signature case is Astro answering
+edits a `project_types/<type>/shellrc.sh`, or you edit `~/.bashrc` —
+has no effect in the shell you are sitting in. The signature case is
+Astro answering
 
 ```
 Blocked request. This host ("<project>.<NNN>.mpd.test") is not allowed.
 ```
 
 because `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` is missing from the
-shell that started the dev server (see usage.md, "Tools available inside
-the runtime").
+shell that started the dev server (see usage.md, "Tools available in the
+VM").
 
 **Cause.** Bash reads `~/.bashrc` once, at session start. Nothing
 re-reads it, so a session that predates the change keeps the old
@@ -37,118 +37,15 @@ grep -c shellrc.sh ~/.bashrc                     # non-zero → the hook IS inst
 ```
 
 Those two disagreeing (hook installed, variable empty) is the
-confirmation. Check you are in the runtime and not the VM while you are
-there — `hostname` should end in `-runtime`; the VM does not source
-runtime assets and never will.
+confirmation.
 
 **Fix.** Start a new session. `exec bash` is enough for a plain shell.
 For JetBrains, **fully exit the IDE** and wait for its SSH session to
 drop before reconnecting — the IDE terminal's environment comes from the
 IDE's session, not from the tab.
 
-No `mpd --runtime-rebuild` is needed. A rebuild replaces `~/.bashrc` with
-the shipped home stub, which carries the same hook, but it also recreates the
-container — `~/.nvm` lives in that overlay and would need
-re-provisioning. Reconnecting is the cheap fix.
-
-## IDE / SSH sessions lock up: "Resource temporarily unavailable"
-
-**Symptoms.** After a while — often "every hour", or reliably a few
-minutes after connecting a heavy IDE — the runtime starts failing to
-create threads or processes:
-
-- JetBrains (PhpStorm Gateway / Remote Dev): `Error updating changes:
-  [host] unable to create threaded lstat: Resource temporarily
-  unavailable` (that message is `git status` failing to spawn its
-  parallel `lstat` thread pool).
-- Any interactive shell: `bash: fork: retry: Resource temporarily
-  unavailable`.
-- New `ssh` sessions hang or refuse; sometimes it clears on its own
-  (something exited and freed a slot), sometimes the runtime wedges.
-
-The common thread is `EAGAIN` from `fork`/`pthread_create` — the process
-wanted a new task and the kernel refused because a **task-count limit**
-was full.
-
-**Cause.** Two limits stacked on top of each other, and the smaller one
-bites first:
-
-1. The container's `pids` cgroup limit. Podman/Docker default it to
-   **2048**.
-2. systemd, running as PID 1 *inside* the runtime, derives
-   `DefaultTasksMax` = **15% of that** = **307**, and applies it to
-   *every* service — including `ssh.service`. Because logind isn't
-   carving each login into its own scope, **every** SSH session and
-   long-lived IDE daemon shares that one `ssh.service` budget. A modern
-   JetBrains backend (`jetbrainsd` + the `ijent` agent) alone runs
-   ~256 threads, and a persistent JetBrains Toolbox daemon holding the
-   SSH channel open keeps that floor high. Your interactive shell plus
-   git's `lstat` pool then tips the service past 307 → `EAGAIN`.
-
-The container-wide 2048 *looks* generous, so the real wall — a systemd
-default nobody set, sitting 6.7× lower — is easy to miss.
-
-**Diagnose.** From inside the VM (or `podman exec` into the runtime),
-one command tells you whether you're in the trap:
-
-```bash
-sudo systemctl show ssh.service -p TasksMax
-```
-
-- `TasksMax=307` → you're in the trap.
-- `TasksMax=infinity` → this ceiling is not your problem; look
-  elsewhere (container `pids.max`, host memory, `RLIMIT_NPROC`).
-
-To watch it happen, sample the service's live task count while the IDE
-is connected:
-
-```bash
-# leaf cgroup of the SSH session tree, and its usage vs. cap
-C=mpd-<NNN>-runtime
-sudo podman exec "$C" systemctl show ssh.service -p TasksMax -p TasksCurrent
-```
-
-`TasksCurrent` climbing toward `TasksMax` under load confirms it.
-
-**Fix.** Current mpd runtimes already ship the fix, so this mostly
-matters for an older runtime built before it, or for other
-systemd-in-container setups:
-
-- The base image bakes a systemd drop-in
-  (`/etc/systemd/system.conf.d/mpd-tasksmax.conf`) setting
-  `DefaultTasksMax=infinity`, so no service inherits the tiny cap.
-- The runtime container is created with `--pids-limit 32768`
-  (`runtime.PidsLimit`) — a generous but finite ceiling, so the outer
-  `pids` cgroup has room while a runaway fork bomb still hits a wall.
-
-Rebuild to pick both up: `mpd --runtime-rebuild`.
-
-If you need relief *without* a rebuild (or on an older runtime you don't
-want to recreate yet), apply it live — these persist across VM reboots
-and container restarts, and are lost only on a runtime recreate/rebuild:
-
-```bash
-C=mpd-<NNN>-runtime
-# lift systemd's per-service cap for all services
-sudo podman exec "$C" sh -c 'mkdir -p /etc/systemd/system.conf.d && \
-  printf "[Manager]\nDefaultTasksMax=infinity\n" \
-  > /etc/systemd/system.conf.d/mpd-tasksmax.conf'
-sudo podman exec "$C" systemctl daemon-reexec
-sudo podman exec "$C" systemctl set-property ssh.service TasksMax=infinity
-# raise the outer container pids cgroup
-sudo podman update --pids-limit 32768 "$C"
-```
-
-**Who else this bites.** Any systemd-in-container setup where the IDE
-backend lands in a systemd-managed cgroup — distrobox/toolbx with
-systemd, devcontainer images running systemd, Kubernetes sidecars — is
-exposed to the same 307 trap and most won't have set `DefaultTasksMax`
-either. Setups *without* systemd in the container (moodle-docker, DDEV,
-Lando, plain `docker exec`) don't have the per-service cap; their only
-ceiling is the container's `pids-limit`, which the IDE alone won't reach.
-The trigger is getting worse for everyone regardless: newer JetBrains
-backends burn more threads, so every setup now runs closer to whatever
-its ceiling is.
+Nothing needs reprovisioning: `bashrc-include.sh` is read live from
+`/opt/mpd`, so the next shell already has the change.
 
 ## RDP connects, authenticates, and shows a black screen
 
@@ -197,27 +94,6 @@ The two consistent pairs are `gnome-stop` + RDP (desktop reached
 remotely) and `gnome-start` + `rdp-stop` (desktop on the hypervisor
 console). Both owners at once is the broken state.
 
-## `apparmor="DENIED" operation="userns_create"` lines on the VM console
-
-**Symptoms.** Every runtime service start (sshd, journald, a shell) prints
-a kernel audit line `apparmor="DENIED" operation="userns_create"
-profile="containers-default-…"` on the VM console; nothing is broken.
-
-**Cause.** podman's default AppArmor profile confines the runtime
-container and refuses the user namespaces systemd inside it tries to
-create for its service sandboxing. The runtime created before mpd passed
-`--security-opt apparmor=unconfined` still runs under that profile —
-container flags apply at create only.
-
-**Diagnostic.** `sudo podman inspect mpd-<NNN>-runtime --format
-'{{.AppArmorProfile}}'` prints `containers-default-…` instead of
-`unconfined`.
-
-**Fix.** `mpd --runtime-backup && mpd --runtime-rebuild --yes &&
-mpd --runtime-restore`. The console noise from AppArmor profile loads at
-boot is separate and harmless; `mpd --vm-setup` sets `kernel.printk` so
-only warnings and errors reach the console.
-
 ## A `*.mpd.test` name stops resolving after a reboot
 
 **Symptoms.** Right after a reboot, `getent hosts <project>.<NNN>.mpd.test`
@@ -247,42 +123,23 @@ no cloud-init and never shows this; if its `/etc/hosts` loses the block,
 look for whatever else edits the file (`grep -rl /etc/hosts /etc/dhcp
 /lib/dhcpcd /etc/NetworkManager`).
 
-## A container resolves a database or LAN name to a stale address
-
-**Symptoms.** Inside the runtime, `getent hosts <id>.db.<NNN>.mpd.test`
-answers an address that is not what `grep <id> /etc/hosts` on the VM
-shows, and `dig @10.163.<NNN>.1 <name>` from the same container gives the
-right one.
-
-**Cause.** The container's own `/etc/hosts` carries a copy of the VM's
-from the moment it was created — podman's default base hosts file — and
-glibc's `files` lookup wins over DNS. Containers mpd creates now get
-`--hosts-file=none`, so only one created before that change can show this.
-
-**Diagnostic.** `podman exec <container> grep mpd.test /etc/hosts` — any
-mpd name in there is the snapshot.
-
-**Fix.** Recreate the container: `mpd --runtime-rebuild` for the runtime,
-`mpd --db-delete` + `mpd start <project>` for a database, `mpd
---service-uninstall` + `--service-start` for a service.
-
 ## `sudo cat DIR/*` fails on a root-owned 0700 directory
 
 **Symptom.** A command that reads mpd's private state comes back with the
 glob unexpanded, and no `sudo` prompt or permission error to explain it:
 
 ```
-$ sudo -n cat /var/lib/mpd/state/runtime-ssh/ssh_host_*_key.pub
-cat: '/var/lib/mpd/state/runtime-ssh/ssh_host_*_key.pub': No such file or directory
+$ sudo -n cat /srv/dbs/postgres-18/pgdata/*.conf
+cat: '/srv/dbs/postgres-18/pgdata/*.conf': No such file or directory
 ```
 
 The variant that hurts more is silent: `sudo rm -f DIR/*` on such a
 directory removes nothing and reports success.
 
 **Cause.** The shell expands the glob *before* `sudo` runs, as the dev
-user. `/var/lib/mpd/state/runtime-ssh/` is root-owned 0700, so that user
-cannot read the directory, the pattern matches nothing, and bash passes it
-through literally.
+user. A database engine owns its own data files, so directories under
+`/srv/dbs/` are root-owned and unreadable to that user: the pattern
+matches nothing and bash passes it through literally.
 
 **Diagnose.** `sudo ls -ld <dir>` — if it is `drwx------ root root` and
 you are not root, any glob you write against it in an unprivileged shell
@@ -291,7 +148,7 @@ is dead.
 **Fix.** Expand inside a root shell:
 
 ```bash
-sudo -n bash -c 'cat /var/lib/mpd/state/runtime-ssh/ssh_host_*_key.pub'
+sudo -n bash -c 'cat /srv/dbs/postgres-18/pgdata/*.conf'
 ```
 
 Same over ssh, where the remote login shell does the expanding. Where the
@@ -321,7 +178,7 @@ openssl x509 -in <certdir>/cert.pem -noout -serial
 Different serials with a correct file is the confirmation.
 
 **Fix.** Reload with `--force`, which skips the config comparison. The
-runtime's caddy watcher (`assets/runtime/caddy/mpd-caddy.sh`) already
+project caddy's watcher (`assets/vm/caddy/mpd-caddy.sh`) already
 does this on every regeneration — do not "optimize" the flag away. For a
 one-off recovery: `caddy reload --config <Caddyfile> --adapter caddyfile
 --force`.
@@ -377,35 +234,3 @@ but `auto` in the failing command's environment is the whole story.
 than leaving it to the default: /usr/local/go is a seed, and the go.mod
 directive is what picks the compiler. Anything in mpd that builds a
 checkout must do the same.
-
-## An overlay file added after runtime create never reaches the runtime
-
-**Symptom.** A file you put in your mpd-virt overlay under
-`assets/runtime/home/default/` is visible on the VM and inside the
-runtime at `/opt/mpd/assets/...`, but not in the runtime's home, and the
-tool that wants it says it is missing:
-
-```
-$ ls /opt/mpd/assets/runtime/home/default/install/phpstorm.tgz
-/opt/mpd/assets/runtime/home/default/install/phpstorm.tgz
-$ phpstorm-install-app
-No /home/skodak/install/phpstorm.tgz — nothing to unpack.
-```
-
-**Cause.** `default/` used to be seeded only by `50-user.sh`, which runs
-once, at runtime create. `70-configure-runtime.sh` re-applied `forced/`
-alone. A VM adopted before the file existed therefore never picked it up,
-and no converge fixed it — unlike the VM's own home, which
-`vm.EnsureHome` re-seeds on every `mpd --vm-setup`.
-
-**Diagnose.** The file under `/opt/mpd/assets/runtime/home/default/` but
-not under `~` inside the runtime, on a runtime older than the file.
-
-**Fix.** `70-configure-runtime.sh` now seeds `default/` too (`cp -aTn`,
-so an edited file in the runtime still wins), matching the VM side. A
-runtime created before this needs one `mpd --vm-setup`.
-
-**Related.** Do not put a large payload in a `home/` overlay at all: it is
-pushed to the VM and then copied into every home. IDE archives belong in
-`assets/jetbrains/`, which the install tools read directly from the
-read-only `/opt/mpd` mount, VM and runtime alike.

@@ -62,7 +62,7 @@ local=/test/
 
 # Upstream is the VM's own /etc/resolv.conf — again dnsmasq's default.
 # Whatever manages the VM's link (dhcpcd, NetworkManager, systemd-resolved,
-# a container runtime) keeps that file current and dnsmasq polls it, so
+# a container engine) keeps that file current and dnsmasq polls it, so
 # switching networks needs no restart. Forwarding to systemd-resolved's
 # 127.0.0.53 stub, where the VM runs it, cannot loop: local=/test/ means a
 # .test name is never forwarded at all, and nothing routes .test back here.
@@ -248,14 +248,14 @@ const resolvConfPath = "/etc/resolv.conf"
 // RequireDNSUpstream fails when the resolver has no upstream or cannot
 // forward. Two checks: an empty /etc/resolv.conf means the VM has no DNS
 // at all; a populated one that does not forward is a resolver problem.
-// Checked here rather than surfacing in the runtime's first apt-get.
+// Checked here rather than surfacing in the first apt-get.
 func RequireDNSUpstream(ctx context.Context, out io.Writer, resolverIP string) error {
 	servers := nameservers(resolvConfPath)
 	if len(servers) == 0 {
 		return fmt.Errorf(`the VM has no DNS upstream: %s lists no nameserver.
 
 dnsmasq forwards every name outside .test to the servers in that file, so
-nothing outside the zone resolves and the runtime's first apt-get will
+nothing outside the zone resolves and the first apt-get will
 fail. Fix the VM's own networking first (`+"`cat %s`"+`, then whatever
 manages the link: dhcpcd, NetworkManager, systemd-resolved), and re-run
 this command.`, resolvConfPath, resolvConfPath)

@@ -26,11 +26,11 @@ type CatalogueEntry struct {
 // hook directories are reported as orphans.
 func Catalogue() []CatalogueEntry {
 	return []CatalogueEntry{
-		{EventMpdPostSetup, 1, []AudienceKind{AudienceVM, AudienceRuntime}},
+		{EventMpdPostSetup, 1, []AudienceKind{AudienceVM}},
 		{EventMpdPreStop, 1, []AudienceKind{AudienceDatabase}},
 		{EventProjectPreStart, 1, []AudienceKind{AudienceDatabase}},
-		{EventProjectPreStop, 1, []AudienceKind{AudienceRuntime}},
-		{EventProjectPostStart, 1, []AudienceKind{AudienceRuntime}},
+		{EventProjectPreStop, 1, []AudienceKind{AudienceVM}},
+		{EventProjectPostStart, 1, []AudienceKind{AudienceVM}},
 	}
 }
 
@@ -107,18 +107,14 @@ func walkHookDirs() []foundDir {
 	var found []foundDir
 
 	found = append(found, scanLayer(
-		filepath.Join(assetsDir, "runtime", "hooks"),
-		"assets/runtime/hooks", AudienceRuntime)...)
-
-	found = append(found, scanLayer(
 		filepath.Join(assetsDir, "vm", "hooks"),
 		"assets/vm/hooks", AudienceVM)...)
 
-	typesDir := filepath.Join(assetsDir, "runtime", "project_types")
+	typesDir := filepath.Join(assetsDir, "vm", "project_types")
 	for _, ty := range subdirs(typesDir) {
 		found = append(found, scanLayer(
 			filepath.Join(typesDir, ty, "hooks"),
-			"assets/runtime/project_types/"+ty+"/hooks", AudienceRuntime)...)
+			"assets/vm/project_types/"+ty+"/hooks", AudienceVM)...)
 	}
 	for _, engine := range subdirs(filepath.Join(assetsDir, "databases")) {
 		found = append(found, scanLayer(

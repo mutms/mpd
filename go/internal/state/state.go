@@ -42,21 +42,23 @@ type ProjectURL struct {
 // fully succeed sets it back to false, keeping the flag honest in the
 // safe direction.
 type Project struct {
-	Name            string       `json:"name"`
-	Type            string       `json:"type"`
-	DatabaseID      string       `json:"databaseId"`
-	DatabaseEngine  string       `json:"databaseEngine"`
-	DatabaseVersion string       `json:"databaseVersion"`
-	RuntimeName     string       `json:"runtimeName"`
-	Autostart       bool         `json:"autostart"`
-	URLs            []ProjectURL `json:"urls"`
+	Name            string `json:"name"`
+	Type            string `json:"type"`
+	DatabaseID      string `json:"databaseId"`
+	DatabaseEngine  string `json:"databaseEngine"`
+	DatabaseVersion string `json:"databaseVersion"`
+	// Configured is set once `mpd start` has run a project type's
+	// configure.sh; before that a project has no URLs, DB or certs.
+	Configured bool         `json:"configured"`
+	Autostart  bool         `json:"autostart"`
+	URLs       []ProjectURL `json:"urls"`
 }
 
 // Status returns the single lifecycle word for a project: "not
-// initialised" until `mpd start` has configured a runtime, else
-// "started" or "stopped" from the Autostart intent.
+// initialised" until `mpd start` has configured it, else "started" or
+// "stopped" from the Autostart intent.
 func (p Project) Status() string {
-	if p.RuntimeName == "" {
+	if !p.Configured {
 		return "not initialised"
 	}
 	if p.Autostart {
@@ -67,13 +69,13 @@ func (p Project) Status() string {
 
 // MainURL is the URL to show for a project: the first entry whose kind
 // is "web" or whose label is "main", else the first; empty when the
-// project has no runtime or no URLs.
+// project is unconfigured or has no URLs.
 //
 // Deliberately not gated on the project running: the vhost, certificate
 // and DNS record survive a stop, so the address stays correct even when
 // nothing serves behind it.
 func (p Project) MainURL() string {
-	if p.RuntimeName == "" {
+	if !p.Configured {
 		return ""
 	}
 	for _, u := range p.URLs {
@@ -99,14 +101,6 @@ type Database struct {
 	ContainerName string `json:"containerName"`
 	Status        string `json:"status"`
 	Autostart     bool   `json:"autostart"`
-}
-
-// Runtime is one runtime's persisted intent, from runtimes/<name>/meta.json.
-type Runtime struct {
-	Name      string `json:"name"`
-	RuntimeID string `json:"runtime"`
-	IP        string `json:"ip"`
-	Requested string `json:"requested"`
 }
 
 // Service is one extra service container's persisted intent, as stored
@@ -138,32 +132,6 @@ func (s Store) Databases() []Database {
 	}
 	readJSON(filepath.Join(s.dir, "databases.json"), &wrapper)
 	return wrapper.Databases
-}
-
-// Runtime returns one runtime's persisted intent, and whether it exists.
-func (s Store) Runtime(name string) (Runtime, bool) {
-	var r Runtime
-	if !readJSON(filepath.Join(s.dir, "runtimes", name, "meta.json"), &r) {
-		return Runtime{}, false
-	}
-	return r, true
-}
-
-// RuntimeNames lists the runtimes that have a state directory, sorted.
-// This is mpd's cache, not podman; a cache rebuild reconciles the two.
-func (s Store) RuntimeNames() []string {
-	entries, err := os.ReadDir(filepath.Join(s.dir, "runtimes"))
-	if err != nil {
-		return nil
-	}
-	var names []string
-	for _, e := range entries {
-		if e.IsDir() {
-			names = append(names, e.Name())
-		}
-	}
-	sort.Strings(names)
-	return names
 }
 
 // Config is VM-wide operator config, detected once at `mpd --vm-setup`.
@@ -317,7 +285,7 @@ func (s Store) writeJSON(name string, v any) error {
 		return fmt.Errorf("creating %s: %w", filepath.Dir(path), err)
 	}
 	// Pattern must be a bare filename: CreateTemp rejects separators, and
-	// `name` may be a relative path like "runtimes/php/meta.json".
+	// `name` may be a relative path like "services/mailpit.json".
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(name)+".*")
 	if err != nil {
 		return fmt.Errorf("creating temp file for %s: %w", name, err)
@@ -336,20 +304,6 @@ func (s Store) writeJSON(name string, v any) error {
 		return fmt.Errorf("chmod %s: %w", name, err)
 	}
 	return os.Rename(tmpName, path)
-}
-
-// SaveRuntime writes one runtime's persisted intent.
-func (s Store) SaveRuntime(r Runtime) error {
-	return s.writeJSON(filepath.Join("runtimes", r.Name, "meta.json"), r)
-}
-
-// DeleteRuntime removes a runtime's state directory.
-func (s Store) DeleteRuntime(name string) error {
-	err := os.RemoveAll(filepath.Join(s.dir, "runtimes", name))
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
 }
 
 // UpsertProject replaces a project record by name, or appends it.

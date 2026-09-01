@@ -1,0 +1,8 @@
+{
+  "detect": {
+    "files": [
+      "version.php",
+      "public/version.php"
+    ]
+  }
+}

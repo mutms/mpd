@@ -40,7 +40,7 @@ runs, and they are meant to take the damage when it misbehaves.
 Two consequences follow:
 
 - **Relaxed settings inside the VM are intentional.** Passwordless sudo
-  in the runtime, dev-grade DB credentials, no isolation between
+  for the dev user, dev-grade DB credentials, no isolation between
   containers, one shared data volume. They make work easier inside a
   boundary that is already assumed to be hostile.
 - **The boundary that matters is VM → workstation.** It is one-way: the
@@ -53,11 +53,12 @@ Two consequences follow:
 
 Ranked, weakest first:
 
-1. **Podman containers — no security value.** The runtime has
-   passwordless sudo. Containers share one data volume and one network
-   with no isolation between them, and bootstrap scripts provision them
-   as root. Containers are here for reproducibility and convenience, not
-   confinement. Do not treat them as a security boundary. Hardening them
+1. **Podman containers — no security value.** The dev user has
+   passwordless sudo on the VM, and the containers that remain
+   (databases, extra services) share one data volume and one network
+   with no isolation between them. Containers are here for
+   reproducibility and convenience, not confinement. Do not treat them
+   as a security boundary. Hardening them
    would change nothing while sudo is passwordless by design.
 2. **The hypervisor VM — the basic protection.** Parallels, Apple
    Virtualization, UTM, KVM. This is the first boundary that matters. It
@@ -83,20 +84,22 @@ whether it "has network access to sensitive services", and concludes
 that "the amount of sensitive information in this environment should be
 kept to a minimum".
 
-Three things follow for mpd, because its runtime is long-lived and
-nothing resets it between projects:
+Three things follow for mpd, because its VM is long-lived and nothing
+resets it between projects:
 
-- **Assume persistent compromise.** A runtime that ran a malicious
-  postinstall keeps it, and so does the VM around it. If you suspect
-  one, throw the whole VM away and create a new one. Do not back
-  anything up from it unless it is truly irreplaceable — a backup
-  carries the compromise with it.
+- **Assume persistent compromise.** A VM that ran a malicious
+  postinstall keeps it. Dependencies now run as the dev user on the VM
+  itself, with passwordless sudo in reach, so there is no inner layer to
+  discard — if you suspect one, throw the whole VM away and create a new
+  one, or roll back to a snapshot taken before. Do not back anything up
+  from it unless it is truly irreplaceable — a backup carries the
+  compromise with it.
 - **Keep credentials out of the VM.** This is why the root CA private
   key stays on the workstation and the VM gets only a zone-limited
   intermediate. It is also why you should not put API tokens in
-  `runtime.env` for convenience.
+  `vm.env` for convenience.
 - **`ssh -A` is the one live credential path in.** Agent forwarding lets
-  anything running as the dev user in that container use your key for
+  anything running as the dev user on the VM use your key for
   the session — including a `git clone` you did not start. Do not
   forward it into a session where an AI agent works. Let the agent
   edit and test inside the VM without your key, and push from the host
@@ -114,7 +117,7 @@ asset that is designed to be thrown away.
 
 ```
 Laptop
-  │  always: SSH (tcp/22, key only) → management, ProxyJump into the runtime
+  │  always: SSH (tcp/22, key only) → the dev shell and management
   │    • optional SOCKS5 proxy (ssh -D) uses this SSH connection: it opens
   │      127.0.0.1:1080 on the laptop, nothing new on the VM
   │  optional: WireGuard overlay (udp/51820, mpd-proxy) → the whole container /24
@@ -123,14 +126,14 @@ Laptop
 VM host (Debian Trixie)     exposes :22 (sshd) + :51820 (wg, silent until a
   │                         peer is registered) on its LAN IP; :3389 only while RDP is on
   │
-  │  mpdbr0 bridge  10.163.<NNN>.1/24 — internal; nothing binds the LAN IP
-  │    dnsmasq :53  — resolver for .test (bound to .1 only)
-  │    caddy  :443  — TLS for the zone apex only → mpd --web (127.0.0.1)
+  │  mpdbr0 bridge — two VM addresses; nothing binds the LAN IP
+  │    10.163.<NNN>.1  dnsmasq :53 — resolver for .test
+  │                    caddy   :443 — TLS for the zone apex → mpd --web
+  │    10.163.<NNN>.2  mpd-caddy :443 — TLS for every project vhost
   │
   mpd-internal network (10.163.<NNN>.0/24) — sealed from the LAN (nft
-    │                         firewall; only the bridge and wg0 route in)
-    +-- mpd-<NNN>-runtime        (10.163.<NNN>.2 — in-runtime caddy
-    │                             terminates project HTTPS)
+    │                         firewall; only the bridge and wg0 route in,
+    │                         on both the forward and the input hook)
     +-- DB containers            (10.163.<NNN>.10–.99)
     +-- extra service containers (10.163.<NNN>.100–.199 — optional, plain
                                   HTTP: mailpit, adminer, selenium)
@@ -157,8 +160,8 @@ So the VM exposes **two ports, both cryptographically authenticated**:
   mpd-proxy is the only authorised peer; wg silently drops everything
   else, so without mpd-proxy the port answers nobody.
 
-Everything else — portal, project HTTPS, databases, extra services, the
-runtime — sits behind those two ports. Nothing is published on the VM's
+Everything else — portal, project HTTPS, databases, extra services —
+sits behind those two ports. Nothing is published on the VM's
 LAN address.
 
 **The optional third port: `tcp/3389` — RDP.** `rdp-start` installs
@@ -186,8 +189,8 @@ network, a VM is safe to run anywhere the laptop can reach it by IP:
   workstation entirely, and the small exposed surface makes that safe.
 
 **Who is trusted**: the developer. They have full access to everything:
-SSH into the runtime, read/write on all source code, admin access to all
-databases, root via passwordless sudo inside containers.
+SSH into the VM, read/write on all source code, admin access to all
+databases, root via passwordless sudo.
 
 **Who is not trusted**: anyone else, *and* everything the developer runs
 inside a VM. Project code, dependencies and agents are untrusted guests
@@ -216,8 +219,7 @@ untrusted network. Its only exposed ports are sshd and WireGuard, plus
 The portal at `https://<NNN>.mpd.test/` is a read-only status page
 rendered by `mpd --web` (`go/internal/web/`), a VM process listening on
 `127.0.0.1:8099`. caddy terminates TLS in front of it. It shows
-projects, the runtime, databases, infra and extra services, and accepts
-no input.
+projects, databases, infra and extra services, and accepts no input.
 
 It shows each project's **database connection details**. These are
 guessable anyway: `db.CreateFor` derives user, password and database
@@ -236,7 +238,7 @@ The package doc states these rules. They hold with or without
 authentication: a password would change who may look, not what the page
 may do. There is no authentication today. Anything that can reach the
 gateway `.1` can read it: the laptop over the overlay or the SOCKS
-tunnel, and project code running in a runtime. It is not reachable from
+tunnel, and project code running on the VM. It is not reachable from
 the LAN.
 
 ## TLS and the certificate authority
@@ -313,100 +315,44 @@ the VM at provisioning time.
 
 | Certificate | SAN                                                                        | Stored at                                    | Lifetime                                    |
 |-------------|----------------------------------------------------------------------------|----------------------------------------------|---------------------------------------------|
-| Per-project | `<project>.<NNN>.mpd.test` (+ `behat.<project>.<NNN>.mpd.test` for moodle) | `/srv/meta/<project>/cert.pem` (data volume) | Survives runtime recreation                 |
+| Per-project | `<project>.<NNN>.mpd.test` (+ `behat.<project>.<NNN>.mpd.test` for moodle) | `/srv/meta/<project>/cert.pem` (data volume) | Reissued when the CA changes                |
 | Service     | `<NNN>.mpd.test` (the zone apex — its single SAN)                          | `/var/lib/mpd/conf/service/`                 | Regenerated by `--vm-setup` when CA changes |
 
-The in-runtime caddy serves the per-project certs. Their keys are
-`0600` and dev-owned, which is why `mpd-caddy.service` runs as the dev
-user. The VM's caddy serves the service cert for the portal. Extra
+`mpd-caddy.service` on `.2` serves the per-project certs. Their keys are
+`0600` and dev-owned, which is why that unit runs as the dev user.
+`caddy.service` on `.1` serves the service cert for the portal. Extra
 service containers have no certificates: they are plain HTTP inside the
 trust boundary (see "Intentional compromises").
 
 The CA private key **never enters any container**. Certificates are
-signed inside the VM (in the `mpd` binary's host process) and written
-into the data volume or copied into containers.
+signed by the `mpd` binary on the VM and written into the data volume.
 
-### CA trust inside containers
-
-The runtime gets the CA public cert (`rootCA.pem`) installed into its
-system trust store during provisioning (`update-ca-certificates`). This
-allows:
-
-- `curl https://<project>.<NNN>.mpd.test/` from inside the runtime (no
-  `--insecure` needed)
-- Composer and npm HTTPS operations against `*.mpd.test` URLs
-
-## The runtime control socket
-
-`mpd` works from inside the runtime container: it forwards commands to
-the VM over a Unix socket and the VM runs them. This is a convenience,
-not a security feature. The runtime already has passwordless sudo and
-the whole data volume, so the socket adds nothing an attacker in the
-runtime could not reach anyway. The VM is the boundary (see "Where the
-isolation actually comes from"); run a separate VM per customer or
-trust level.
-
-What the socket refuses is there to block accidents, not attacks:
-
-- The VM lifecycle (`--vm-setup`, `--vm-upgrade`, `--vm-start`,
-  `--vm-stop`, `--vm-restart`), rebuilding or restoring the runtime you
-  are standing in (`--runtime-rebuild`, `--runtime-restore`), starting
-  the `--web` / `--control` daemons, and `run`. All of these would pull
-  the floor out from under the caller, or loop back to where it already
-  is. `--vm-status` is read-only and is forwarded.
-- A working directory outside `/srv` is replaced by `/srv`: `/srv` is
-  the one tree at the same path on both sides, while `/home/<user>` is
-  a different directory on the VM. Relative paths are refused.
-
-Everything else — projects, databases (`--db-*`), extra services
-(`--service-*`), runtime backups — is forwarded as is. Deleting a
-project from inside the runtime deletes it for real.
-
-The daemon (`mpd --control`, `mpd-control.service`) runs as a systemd
-user unit with no privileges of its own. A forwarded command gets
-privilege the same way a VM terminal does, with per-operation `sudo` in
-the child. The child takes the state lock itself, so commands from both
-sides serialise.
+The signing key sits behind the dev user's passwordless sudo, like
+everything else on the VM, so treat it as reachable by anything that runs
+there. The blast radius is small by construction: the per-VM CA is
+`pathlen:0` and name-constrained to `<NNN>.mpd.test`, a zone whose content
+that code already serves.
 
 ## Authentication
 
 ### SSH
 
-Two SSH endpoints, both pubkey-only:
+One SSH endpoint, pubkey-only:
 
-- **The VM** (`tcp/22` on its LAN IP) — management shell, the ProxyJump
-  base for the runtime, and the SOCKS fallback. Root login disabled.
-- **The runtime container** (`runtime.<NNN>.mpd.test`) — full dev shell,
-  passwordless sudo. The runtime has the same dev user as the VM (name
-  and uid, so `/srv` has one owner on both sides), with the VM's
-  `~/.ssh/authorized_keys` copied in. Root login disabled.
+- **The VM** (`tcp/22` on its LAN IP) — the dev shell, management, and
+  the SOCKS base. Root login disabled.
+
+`ssh mpd-<NNN>`, the single alias mpd-virt writes, lands there directly:
+there is no second hop, because PHP, the tools, the IDE backend and the
+agent all run on the VM. No published ports on the VM's LAN address.
 
 File transfer has no endpoint of its own. The data volume is mounted on
-the VM at `/srv`, so `/srv/backups/` is reached over the VM's own sshd,
-the connection the developer already has.
+the VM at `/srv`, so `/srv/backups/` is reached over that same sshd.
 
-The runtime is reached via SSH ProxyJump through the VM's sshd, using the
-single alias mpd-virt writes (`mpd-<NNN>`). The jump lands on the VM's
-sshd, which reaches the runtime over the internal bridge, so it needs no
-overlay. No published ports on the VM's LAN address.
-
-**The runtime's own host key is generated per runtime, never shipped.** A
-host key is a secret, so it cannot come from an image every VM pulls: the
-published image contains none (the Containerfile removes the set
-`openssh-server` generates at install), and `50-user.sh` makes this
-runtime its own at container create. The keys are kept on the VM at
-`/var/lib/mpd/state/runtime-ssh/` — root-owned 0600, bind-mounted
-read-write into the runtime and into no other container — so
-`mpd --runtime-rebuild` gives the same host identity back and a
-workstation that trusts `mpd-<NNN>-runtime` keeps trusting it. Wiping
-`/var/lib/mpd/state/` forfeits that, and the next connection is a
-changed-key warning.
-
-A rebuild deliberately will not replace the key — restoring the kept one
-is the whole point — so to retire a key, delete
-`/var/lib/mpd/state/runtime-ssh/` and rebuild the runtime. Your
-workstation then refuses the next connection until its old
-`mpd-<NNN>-runtime` entry is cleared with `ssh-keygen -R`.
+The VM's host key is generated by its own installer and pinned by
+`mpd-virt adopt` into `~/.mpd-virt/<NNN>/known_hosts`, which the managed
+ssh-config block points `UserKnownHostsFile` at. It is the only host key
+to manage.
 
 SSH agent forwarding (`ssh -A`) is optional, for sessions that need
 host-agent-backed git/auth inside the container. It passes the
@@ -462,11 +408,34 @@ ports are exposed on the VM's LAN address.
 | Root CA private key   | `~/.mpd-virt/conf/caroot/rootCA-key.pem` (host only)                                        | `0600`             |
 | Per-VM CA private key | `~/.mpd-virt/<NNN>/ca/vmCA-key.pem` (host) and `/var/lib/mpd/conf/caroot/vmCA-key.pem` (VM) | `0600`             |
 | Per-project TLS keys  | `/srv/meta/<project>/key.pem`                                                               | Inside data volume |
-| SSH authorized keys   | `/home/<user>/.ssh/authorized_keys`                                                         | Inside containers  |
+| SSH authorized keys   | `/home/<user>/.ssh/authorized_keys`                                                         | `0600`, read-only to mpd |
 
 The per-VM CA key is the one piece of CA material that is *meant* to
 travel. It is constrained to that VM's zone, so its blast radius is the
 VM it already lives on.
+
+### No SSH private key on the VM
+
+`mpd --vm-setup` creates `~/.ssh/` and an empty `authorized_keys`, and
+**generates no keypair**. Leaving it out is the point, not an omission.
+
+A passphrase-less private key in that home sits in the same place as the
+project code, its dependencies and the AI agent — all of which run as the
+dev user and can read it. That is a worse exposure than agent forwarding,
+which this document already cautions about: forwarding lives only as long
+as your session, a key on disk lives until someone deletes it.
+
+The consequence is what matters. "The VM is the blast radius" holds only
+while a compromise cannot reach off the box. Authorize one VM's key on
+another machine and one bad `postinstall` reaches that machine too — a
+whole test fleet is a fair trade if every VM in it is disposable, a
+hypervisor or a git forge is not.
+
+If you want VM→VM access anyway — driving a nested `mpd-virt` fleet, say
+— run `ssh-keygen` yourself, so it is your decision on your own reading
+of what the key can reach. Prefer a key dedicated to that fleet over one
+that opens anything else, and use agent forwarding (`ssh -A`) for a
+one-off instead, in a session where no AI agent is running.
 
 `mpd-virt uninstall` on the host stops the VMs (they are kept), removes
 the host-side state and ssh-config blocks, and tells you how to remove
@@ -481,11 +450,11 @@ All containers run under rootful Podman inside the VM. They share one
 Podman network (`mpd-internal`) and one data volume (`mpd-data-volume`,
 mounted at `/srv/`).
 
-**Containers are not isolated from each other.** Any container can reach
-any other container on `mpd-internal`, and the runtime mounts the whole
-data volume: a process in it can read and write every project's source,
-dataroot and backups. This is intentional for a single-developer
-environment.
+**Containers are not isolated from each other, or from the VM.** Any
+container can reach any other on `mpd-internal`, they all mount the whole
+data volume, and the dev user on the VM owns it outright: a process there
+can read and write every project's source, dataroot and backups. This is
+intentional for a single-developer environment.
 
 Container IPs are unreachable from the LAN: the in-VM firewall drops
 routing into `10.163.<NNN>.0/24` from every interface except the bridge
@@ -501,11 +470,12 @@ SOCKS/ProxyJump through sshd on the VM.
   container. mpd adds no sandbox *inside* the VM. The VM is the sandbox.
   Compared with running `composer install` directly on your workstation
   this is a large improvement. Compared with a hardened per-project jail
-  it is no protection at all. Assume anything that runs in a runtime
-  owns the whole VM.
-- **Compromised runtime containers**: containers have passwordless sudo
-  and network access. A compromised container can reach all other
-  containers and all data in the volume.
+  it is no protection at all. Assume anything that runs on the VM owns
+  the whole VM — the dev user's passwordless sudo is one command away,
+  and nothing stands between a postinstall script and root.
+- **Compromised database or service containers**: they have network
+  access and mount the data volume, so one can reach all the others and
+  all data in it.
 - **Physical access to the host**: anyone with access to
   `~/.mpd-virt/conf/` can read the CA key.
 
@@ -518,11 +488,11 @@ would be unacceptable in production.
 | Compromise                            | Rationale                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 |---------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Passwordless `sudo` inside containers | Dev needs root for package installs, service restarts, config changes. No security boundary between the dev user and root inside a container.                                                                                                                                                                                                                                                                                                                                     |
-| No web-server access control          | Every project is fully accessible through the in-runtime caddy: no auth, no IP restrictions. Access control is at the network level (the firewall seals the container subnet from the LAN; it is reached only over the developer's authenticated WireGuard/SSH), not at the web server.                                                                                                                                                                                           |
+| No web-server access control          | Every project is fully accessible through the project caddy: no auth, no IP restrictions. Access control is at the network level (the firewall seals the container subnet from the LAN; it is reached only over the developer's authenticated WireGuard/SSH), not at the web server.                                                                                                                                                                                           |
 | Extra services are plain HTTP         | mailpit, adminer and selenium serve unencrypted HTTP at their own container addresses (`http://<name>.svc.<NNN>.mpd.test:<port>/`). They are reachable only across the sealed subnet, over the developer's WireGuard overlay or SOCKS tunnel (both encrypted), so the plaintext hop exists only inside the trust boundary.                                                                                                                                                      |
 | PostgreSQL `synchronous_commit=off`   | Trades a little crash durability for speed: an unclean shutdown loses at most the last fraction of a second of commits. Bounded, and no corruption. `full_page_writes` stays ON on purpose: turning it off risks a torn page postgres cannot repair, and unclean shutdowns are routine here (an OOM'd VM never runs `mpd --vm-stop`, so the graceful-shutdown hooks never fire). Losing seconds of work is an acceptable dev tradeoff; losing the database is not.                |
 | Behat uses a separate subdomain       | Behat runs on `behat.<project>.<NNN>.mpd.test` (HTTPS, same cert). The selenium service is a stock upstream image without the mpd CA, so the generated behat config sets `acceptInsecureCerts` for its browser sessions.                                                                                                                                                                                                                                                        |
-| Shared data volume across containers  | The runtime and the DB containers mount `mpd-data-volume` at `/srv/`. A process in one container can read/write data belonging to another. This is the single-volume design: simplicity over isolation.                                                                                                                                                                                                                                                                           |
+| Shared data volume                    | The VM and every container see `mpd-data-volume` at `/srv/`. A process in one can read/write data belonging to another. This is the single-volume design: simplicity over isolation.                                                                                                                                                                                                                                                                           |
 | SSH agent forwarding                  | `ssh -A` passes the developer's key into the container. Any process running as the dev user inside the container can use the forwarded key for the duration of the session. Standard SSH risk, same as forwarding into any remote server.                                                                                                                                                                                                                                         |
 | RDP on `tcp/3389` (`rdp-start`)       | A third open port, and the only one authenticated by a password instead of a key (xrdp has PAM and nothing else). Off unless you run `rdp-start`, removed again by `rdp-stop`. `rdp-start` sets the dev user's password, then turns SSH password authentication off, so that password works for RDP and nothing more. Expose it on a host-only network or behind a bastion / zero-trust tunnel. The desktop behind it has the same full access to `/srv/` as any shell in the VM. |
 | Dev database credentials              | User, password and database name all equal the project name. Superuser passwords are `postgres`/`root`. See "Database credentials" above.                                                                                                                                                                                                                                                                                                                                         |
@@ -536,7 +506,7 @@ reachable from the developer's own machine. The project name as
 user/pass/db makes setup trivial.
 
 **Why a private CA instead of self-signed certs?** One CA trust
-operation, then every project and runtime gets a trusted certificate
+operation, then every project gets a trusted certificate
 automatically. No browser warnings, no `--insecure` flags, no per-cert
 trust clicks. The same root also signs certificates for other machines
 on the LAN (`mpd-virt server add`): a Proxmox host, a Forgejo, anything

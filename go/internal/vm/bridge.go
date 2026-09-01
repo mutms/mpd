@@ -28,7 +28,11 @@ const (
 
 // bridgeUnitBody renders the oneshot unit. It is ordered before the
 // resolver, and every step is idempotent, so re-runs are harmless.
-func bridgeUnitBody(gatewayCIDR string) string {
+//
+// The bridge carries two VM addresses: the gateway, where the resolver
+// and the apex caddy bind, and the project address, where the project
+// caddy binds. Both are VM-local; nothing on the bridge routes to them.
+func bridgeUnitBody(gatewayCIDR, projectsCIDR string) string {
 	return fmt.Sprintf(`[Unit]
 Description=mpd static container bridge (%[1]s)
 Documentation=file:///opt/mpd/docs/networking.md
@@ -38,21 +42,21 @@ Before=network.target %[2]s
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/bin/sh -c 'ip link show %[1]s >/dev/null 2>&1 || ip link add %[1]s type bridge; ip addr replace %[3]s dev %[1]s; ip link set %[1]s up'
+ExecStart=/bin/sh -c 'ip link show %[1]s >/dev/null 2>&1 || ip link add %[1]s type bridge; ip addr replace %[3]s dev %[1]s; ip addr replace %[4]s dev %[1]s; ip link set %[1]s up'
 
 [Install]
 WantedBy=multi-user.target
-`, BridgeName, DnsmasqUnit, gatewayCIDR)
+`, BridgeName, DnsmasqUnit, gatewayCIDR, projectsCIDR)
 }
 
 // EnsureBridge installs and starts the bridge oneshot so mpdbr0 is up
 // before the podman network and dnsmasq are configured.
-func EnsureBridge(ctx context.Context, out io.Writer, gatewayCIDR string) error {
+func EnsureBridge(ctx context.Context, out io.Writer, gatewayCIDR, projectsCIDR string) error {
 	ui.Step(out, "Static container bridge %s (systemd oneshot)", BridgeName)
 
 	_, _ = exec.Run(ctx, exec.Cmd{Name: "rm", Args: []string{"-f", legacyNetdevPath, legacyNetworkPath}, Sudo: true})
 
-	changed, err := WriteRootOwnedFile(ctx, bridgeUnitPath, bridgeUnitBody(gatewayCIDR))
+	changed, err := WriteRootOwnedFile(ctx, bridgeUnitPath, bridgeUnitBody(gatewayCIDR, projectsCIDR))
 	if err != nil {
 		return err
 	}
@@ -70,6 +74,6 @@ func EnsureBridge(ctx context.Context, out io.Writer, gatewayCIDR string) error 
 		return fmt.Errorf("systemctl restart %s failed — check `journalctl -u %s`", bridgeUnit, bridgeUnit)
 	}
 
-	ui.OK(out, "%s up at %s (systemd oneshot, at boot before podman)", BridgeName, gatewayCIDR)
+	ui.OK(out, "%s up at %s and %s (systemd oneshot, at boot before podman)", BridgeName, gatewayCIDR, projectsCIDR)
 	return nil
 }

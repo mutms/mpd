@@ -13,11 +13,11 @@ import (
 	"github.com/mutms/mpd/go/internal/current"
 	"github.com/mutms/mpd/go/internal/db"
 	"github.com/mutms/mpd/go/internal/dnsmasq"
+	"github.com/mutms/mpd/go/internal/exec"
 	"github.com/mutms/mpd/go/internal/hooks"
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/project"
-	"github.com/mutms/mpd/go/internal/runtime"
 	"github.com/mutms/mpd/go/internal/service"
 	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
@@ -65,8 +65,8 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 
-	ui.Step(out, "VM-local SSH key")
-	if err := vm.EnsureSSHKey(ctx, out); err != nil {
+	ui.Step(out, "SSH directory")
+	if err := vm.EnsureSSHDir(out); err != nil {
 		return err
 	}
 
@@ -77,12 +77,6 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 	ui.OK(out, "user=%s  uid=%s", user.User, user.UID)
-
-	// Must follow Configuration, which resolves the dev user's name.
-	ui.Step(out, "Runtime SSH aliases")
-	if err := vm.EnsureSSHConfig(out, user.User, runtimeSSHHosts(n)); err != nil {
-		return err
-	}
 
 	ui.Step(out, "Developer home files")
 	if err := vm.EnsureHome(out); err != nil {
@@ -98,6 +92,10 @@ func Setup(ctx context.Context, out io.Writer) error {
 	if err := setupHostTrust(ctx, out, n); err != nil {
 		return err
 	}
+	if err := refuseLegacyRuntime(ctx, out, p, n); err != nil {
+		return err
+	}
+
 	if err := setupNetworkAndVolume(ctx, out, p, n); err != nil {
 		return err
 	}
@@ -106,7 +104,7 @@ func Setup(ctx context.Context, out io.Writer) error {
 	// before dnsmasq and caddy bind the gateway, so it exists at boot
 	// and netavark only attaches containers to it. wg0 gives the host
 	// an encrypted path to the subnet (peer added by mpd-virt).
-	if err := vm.EnsureBridge(ctx, out, n.Gateway()+"/24"); err != nil {
+	if err := vm.EnsureBridge(ctx, out, n.Gateway()+"/24", n.IP(net.HostProjects)+"/24"); err != nil {
 		return err
 	}
 	if err := vm.EnsureWireGuard(ctx, out, n.Octet()); err != nil {
@@ -185,25 +183,22 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 
-	// Must run before the runtime build: apt in the container resolves
+	// Must run before the dev stack install: apt resolves
 	// through this resolver, and a resolver not answering yet fails the
 	// build minutes in with the cause several screens up.
 	ui.Step(out, "DNS resolution")
 	if err := vm.EnsureDnsmasqResolving(ctx, out, n.Gateway(), n.Zone()); err != nil {
 		return err
 	}
-	// Fatal, unlike verifyDNS's report: without an upstream the runtime
+	// Fatal, unlike verifyDNS's report: without an upstream the stack
 	// build below cannot install a single package.
 	if err := vm.RequireDNSUpstream(ctx, out, n.Gateway()); err != nil {
 		return err
 	}
 	verifyDNS(ctx, out, n)
 
-	// Create the runtime here, not lazily, so setup leaves the VM fully
-	// usable. createdRuntime: RuntimeCreate already fired mpd-post-setup
-	// into the new container, so the fire below narrows to the VM.
-	createdRuntime, err := setupRuntime(ctx, out, p, s, m, n, user)
-	if err != nil {
+	ui.Step(out, "Dev stack (PHP, Composer, Node)")
+	if err := configureStack(ctx, out); err != nil {
 		return err
 	}
 
@@ -225,17 +220,10 @@ func Setup(ctx context.Context, out io.Writer) error {
 	// running the previous binary would serve stale templates.
 	ui.OK(out, "%s restarted (listening on %s).", vm.WebUnitName, web.Addr)
 
-	ui.Step(out, "Control socket for runtimes (mpd --control)")
-	if err := vm.InstallControlUnit(ctx); err != nil {
-		return err
-	}
-	// Restarted on every run: this daemon carries the guard deciding
-	// what a runtime may ask for, so it must run the current rules.
-	ui.OK(out, "%s restarted (sockets under %s).", vm.ControlUnitName, podman.ControlRunDir)
-
-	ui.Step(out, "TLS frontdoor (caddy)")
-	// The VM's caddy serves only the zone apex; extra services are
-	// HTTP-only at their own addresses, inside the trust boundary.
+	ui.Step(out, "Apex TLS frontdoor (caddy)")
+	// This caddy serves only the zone apex, on the gateway. Project
+	// vhosts belong to the project frontdoor below, on its own address,
+	// so project traffic never reaches the infra ports.
 	sites := []vm.CaddySite{
 		{Host: n.Zone(), Upstream: web.Addr},
 	}
@@ -245,6 +233,12 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 
+	ui.Step(out, "Project TLS frontdoor (%s)", vm.ProjectCaddyUnitName)
+	if err := vm.InstallProjectCaddyUnit(ctx, user.User, n.IP(net.HostProjects)); err != nil {
+		return err
+	}
+	ui.OK(out, "project vhosts served on %s:443.", n.IP(net.HostProjects))
+
 	ui.Step(out, "Installing shutdown unit")
 	if err := vm.InstallShutdownUnit(ctx, user.User); err != nil {
 		return err
@@ -253,11 +247,7 @@ func Setup(ctx context.Context, out io.Writer) error {
 
 	// Last: the event means "the VM is ready".
 	ui.Step(out, "Setup hooks (mpd-post-setup)")
-	postSetup := hooks.MpdPostSetup(ctx,
-		current.NewObserver(n.VMID(), p).RuntimeContainer(runtime.Name), user.User, p)
-	if createdRuntime {
-		postSetup = postSetup.Only(hooks.AudienceVM)
-	}
+	postSetup := hooks.MpdPostSetup(ctx, p)
 	if err := hooks.Fire(ctx, out, postSetup, "vm-setup", p); err != nil {
 		ui.Warn(out, "%v", err)
 	}
@@ -402,17 +392,6 @@ func setupCertificates(ctx context.Context, out io.Writer, n net.Net) (certState
 	return state, nil
 }
 
-// runtimeSSHHosts builds the ~/.ssh/config entry for the runtime. The
-// VM-qualified alias comes first: in the VM the bare `mpd-<NNN>` is
-// this machine's own hostname, so it cannot mean the runtime here.
-func runtimeSSHHosts(n net.Net) []vm.RuntimeHost {
-	fqdn := n.RuntimeFQDN()
-	return []vm.RuntimeHost{{
-		Patterns: []string{n.RuntimeAlias(), runtime.Name, fqdn},
-		HostName: fqdn,
-	}}
-}
-
 // setupHostTrust covers the three trust stores on the VM that must
 // learn about mpd's CA.
 func setupHostTrust(ctx context.Context, out io.Writer, n net.Net) error {
@@ -445,13 +424,13 @@ That cannot be changed in place. Migrate — destroys containers, keeps the data
     sudo podman network rm %s
     mpd --vm-setup
 
-Then recreate runtimes and DB containers; /srv/ (projects, data, databases) is on the data volume and survives. No reboot needed — `+
+Then recreate the DB containers; /srv/ (projects, data, databases) is on the data volume and survives. No reboot needed — `+
 				"`podman rm -af`"+` stops the containers, and `+"`mpd --vm-setup`"+` rebuilds the network, records, and certs in place.`,
 				Network, reason, Network)
 		}
 		ui.OK(out, "Network '%s' already exists (%s).", Network, n.Subnet())
 	} else {
-		if code, err := p.NetworkCreate(ctx, Network, NetworkInterface, n.Subnet()); err != nil || code != 0 {
+		if code, err := p.NetworkCreate(ctx, Network, NetworkInterface, n.Subnet(), n.AllocRange()); err != nil || code != 0 {
 			return fmt.Errorf("Failed to create Podman network '%s'.", Network)
 		}
 		ui.OK(out, "Network '%s' created (%s, podman DNS off).", Network, n.Subnet())
@@ -487,16 +466,8 @@ func networkMismatch(ctx context.Context, p *podman.Client, n net.Net) string {
 // setupStateDirectories creates the directories and seed files mpd's own
 // state lives in, plus the two user-owned override slots.
 func setupStateDirectories(ctx context.Context, out io.Writer) error {
-	// Created empty on purpose: it is the bind-mount source for every
-	// runtime and tells the user where dotfile overrides go.
-	ui.Step(out, "Runtime home override directory (%s/)", vm.HomeOverrideDir)
-	if err := os.MkdirAll(vm.HomeOverrideDir, 0o755); err != nil {
-		return err
-	}
-	ui.OK(out, "%s/ ready.", vm.HomeOverrideDir)
-
 	ui.Step(out, "mpd data directories")
-	if err := os.MkdirAll(filepath.Join(state.Dir, "runtimes"), 0o755); err != nil {
+	if err := os.MkdirAll(state.Dir, 0o755); err != nil {
 		return err
 	}
 	// Seeded so every reader — including the portal, which cannot run
@@ -514,9 +485,8 @@ func setupStateDirectories(ctx context.Context, out io.Writer) error {
 	}
 	ui.OK(out, "%s/ ready.", state.Dir)
 
-	// The env dir must exist so the runtime's RO mount has a target and
-	// mpd-virt has somewhere to push vm.env / runtime.env. Nothing is
-	// seeded — there is no shipped template.
+	// The env dir must exist so mpd-virt has somewhere to push vm.env.
+	// Nothing is seeded — there is no shipped template.
 	ui.Step(out, "env dir")
 	if err := os.MkdirAll(vm.EnvDir, 0o755); err != nil {
 		return err
@@ -526,18 +496,13 @@ func setupStateDirectories(ctx context.Context, out io.Writer) error {
 }
 
 // reconcileCaches rebuilds every derived view from ground truth: the
-// data volume for projects, podman for runtimes and databases. It runs
+// data volume for projects, podman for databases. It runs
 // on every invocation to repair drift.
 func reconcileCaches(ctx context.Context, out io.Writer, p *podman.Client, s state.Store,
 	n net.Net, m dnsmasq.Manager, vmIP, uid string, caChanged bool) error {
 
 	ui.Step(out, "Rescanning data volume")
 	if err := project.Rescan(ctx, out, s); err != nil {
-		return err
-	}
-
-	ui.Step(out, "Probing existing runtime containers")
-	if err := runtime.RebuildStateCache(ctx, out, p, s); err != nil {
 		return err
 	}
 
@@ -559,57 +524,52 @@ func reconcileCaches(ctx context.Context, out io.Writer, p *podman.Client, s sta
 	if !caChanged {
 		return nil
 	}
+	// A new CA invalidates every leaf, so drop the old pair and reissue.
 	ui.Step(out, "Reconciling TLS certificates")
-	targets := make([]runtime.CertTarget, 0)
-	byName := map[string][]state.ProjectURL{}
 	for _, pr := range s.Projects() {
 		if pr.Name == "" {
 			continue
 		}
-		targets = append(targets, runtime.CertTarget{Name: pr.Name, Host: n.Host(pr.Name)})
-		byName[pr.Name] = pr.URLs
+		for _, f := range []string{"cert.pem", "key.pem", "cert.sans"} {
+			_ = os.Remove(srv.MetaFile(pr.Name, f))
+		}
+		if err := project.EnsureCert(ctx, out, pr.Name, pr.URLs, n, p, uid); err != nil {
+			ui.Warn(out, "cert for '%s': %v", pr.Name, err)
+		}
 	}
-	runtime.ReconcileCertificates(ctx, out, p, targets, func(name string) error {
-		return project.EnsureCert(ctx, out, name, byName[name], n, p, uid)
-	})
 	return nil
 }
 
-// setupRuntime converges the runtime — create when missing, start when
-// stopped, configure when running — and reports whether it created one.
-// Legacy per-language runtime pods are reported, never migrated.
-func setupRuntime(ctx context.Context, out io.Writer, p *podman.Client, s state.Store,
-	m dnsmasq.Manager, n net.Net, user vm.Identity) (bool, error) {
-
-	ui.Step(out, "Runtime container")
-
-	var legacy []string
+// refuseLegacyRuntime stops setup when a runtime container from before
+// this layout still holds the project address on the bridge. Two owners
+// of one address on one segment is an ARP conflict, so the container has
+// to go first. Refusing rather than removing keeps migration logic out
+// of the shipped path; mpd-virt's upgrade script does the removal.
+func refuseLegacyRuntime(ctx context.Context, out io.Writer, p *podman.Client, n net.Net) error {
+	var found []string
 	for _, item := range p.Ps(ctx, "label=mpd.runtime") {
-		if item.Label("mpd.name") != runtime.Name {
-			legacy = append(legacy, item.Name())
-		}
+		found = append(found, item.Name())
 	}
-	if len(legacy) > 0 {
-		ui.Warn(out, "legacy runtime container(s) found: %s", strings.Join(legacy, ", "))
-		ui.Warn(out, "this mpd uses a single unified runtime — remove them with: podman pod rm -f <name>")
+	if len(found) == 0 {
+		return nil
 	}
+	ui.Warn(out, "legacy runtime container(s): %s", strings.Join(found, ", "))
+	return fmt.Errorf("A runtime container still holds %s. Run mpd-virt's upgrade/03-remove-runtime.sh %s, then retry.",
+		n.IP(net.HostProjects), n.VMID())
+}
 
-	o := current.NewObserver(n.VMID(), p)
-	container := o.RuntimeContainer(runtime.Name)
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return false, err
+// configureStack runs the dev-stack converge: PHP config, the php
+// dispatcher, Composer and Node. Composer and Node are upstream
+// fetches, which is why they are here and not in bootstrap.
+func configureStack(ctx context.Context, out io.Writer) error {
+	code, err := exec.Run(ctx, exec.Cmd{
+		Name: "bash", Args: []string{"/opt/mpd/assets/vm/configure-stack.sh"},
+		Stdout: out, Stderr: out,
+	})
+	if err != nil || code != 0 {
+		return fmt.Errorf("configure-stack.sh failed.")
 	}
-	switch {
-	case !p.Exists(ctx, container):
-		return true, RuntimeCreate(ctx, out, p, s, m, o, n, user.User, user.UID, home)
-	case !p.Running(ctx, container):
-		return false, RuntimeStart(ctx, out, p, s, m, o, n, user.User, user.UID)
-	}
-	ui.OK(out, "runtime is running (%s).", container)
-	// Configuration only, no apt: asset-level changes reach an existing
-	// runtime on every setup; packages move with `mpd --vm-upgrade`.
-	return false, runtime.Configure(ctx, out, container, user.User, p)
+	return nil
 }
 
 func readTrimmed(path string) string {

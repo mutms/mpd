@@ -39,33 +39,10 @@ func fakePodman(containers map[string]bool) *podman.Client {
 	})
 }
 
-func TestRuntimeContainerName(t *testing.T) {
-	o := NewObserver("150", fakePodman(nil))
-	if got := o.RuntimeContainer("runtime"); got != "mpd-150-runtime" {
-		t.Errorf("RuntimeContainer() = %q", got)
-	}
-}
-
-func TestRuntime(t *testing.T) {
-	o := NewObserver("150", fakePodman(map[string]bool{
-		"mpd-150-runtime": true,
-		"mpd-150-other":   false,
-	}))
-	ctx := context.Background()
-	for name, want := range map[string]State{"runtime": Running, "other": Stopped, "util": Missing} {
-		if got := o.Runtime(ctx, name); got != want {
-			t.Errorf("Runtime(%q) = %q, want %q", name, got, want)
-		}
-	}
-}
-
-// A project's state derives from its runtime joined with its intent:
-// a running runtime only makes a project running when it was asked to run.
+// A project has no container of its own, so its state is its
+// configured-ness joined with the Autostart intent.
 func TestProjectDerivation(t *testing.T) {
-	o := NewObserver("150", fakePodman(map[string]bool{
-		"mpd-150-runtime": true,  // running
-		"mpd-150-other":   false, // stopped
-	}))
+	o := NewObserver("150", fakePodman(nil))
 	ctx := context.Background()
 
 	tests := []struct {
@@ -73,11 +50,9 @@ func TestProjectDerivation(t *testing.T) {
 		project state.Project
 		want    State
 	}{
-		{"no runtime assigned", state.Project{Autostart: true}, Missing},
-		{"runtime container gone", state.Project{RuntimeName: "gone", Autostart: true}, Missing},
-		{"runtime stopped", state.Project{RuntimeName: "other", Autostart: true}, Stopped},
-		{"runtime running and autostart", state.Project{RuntimeName: "runtime", Autostart: true}, Running},
-		{"runtime running but not autostart", state.Project{RuntimeName: "runtime", Autostart: false}, Stopped},
+		{"never configured", state.Project{Autostart: true}, Missing},
+		{"configured and started", state.Project{Configured: true, Autostart: true}, Running},
+		{"configured and stopped", state.Project{Configured: true, Autostart: false}, Stopped},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -85,16 +60,6 @@ func TestProjectDerivation(t *testing.T) {
 				t.Errorf("Project() = %q, want %q", got, tc.want)
 			}
 		})
-	}
-}
-
-// current must be an observation, not a copy of intent: a project with
-// Autostart set but a stopped runtime is observed stopped, not running.
-func TestCurrentIsObserved(t *testing.T) {
-	o := NewObserver("150", fakePodman(map[string]bool{"mpd-150-runtime": false}))
-	p := state.Project{RuntimeName: "runtime", Autostart: true}
-	if got := o.Project(context.Background(), p); got != Stopped {
-		t.Fatalf("Project() = %q, want stopped — current must be observed, not copied from Autostart", got)
 	}
 }
 

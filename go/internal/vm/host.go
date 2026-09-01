@@ -125,7 +125,7 @@ func EnablePodmanRestart(ctx context.Context, out io.Writer) error {
 	return nil
 }
 
-// DisableGitHooks stops git hooks running on the VM; runtimes keep their
+// DisableGitHooks stops git hooks running on the VM; containers keep their
 // own hooks.
 //
 // Two mechanisms: system core.hooksPath=/dev/null covers every git

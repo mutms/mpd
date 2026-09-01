@@ -16,7 +16,7 @@ In rough order of when you'll want them:
     hypervisor; run via the wget one-liner in the top-level README)
   - [`mpd-virt`](https://github.com/mutms/mpd-virt) (separate repo) — mpd VM from a macOS host (Parallels / UTM / Apple container) or a Linux host (libvirt/KVM), plus Proxmox and any reachable Debian VM
 - [`usage.md`](usage.md) — universal day-to-day handbook. Project
-  lifecycle, extra services, SSH into the runtime, tools list, git auth
+  lifecycle, extra services, SSH into the VM, tools list, git auth
   via agent forwarding, backups. Applies to both modes once setup
   has completed.
 - [`networking.md`](networking.md) — host ↔ VM ↔ container reachability
@@ -28,7 +28,7 @@ In rough order of when you'll want them:
   deciding whether to let an AI agent loose, or when something
   feels too privileged.
 - [`debugging.md`](debugging.md) — catalogue of real symptoms with
-  the diagnostic that confirms each and the fix. Read when the runtime
+  the diagnostic that confirms each and the fix. Read when the stack
   or IDE session misbehaves (lockups, thread/fork exhaustion, …).
 
 ## If you're working on mpd itself
@@ -56,21 +56,17 @@ Quick reference; full contract in [`architecture.md`](architecture.md).
   Owned by the dev user.
 - `/var/lib/mpd/conf/` — persistent identity: CA, service certs. PRIVATE — never bind-mounted
   into containers.
-- `/var/lib/mpd/env/{vm.env,runtime.env}` — the developer's own env,
-  shared across their VMs (pushed in from the Mac by mpd-virt). `runtime.env`
-  is bind-mounted RO into every runtime container; `vm.env` is sourced into
-  the VM's own shells only.
-- `/var/lib/mpd/home/` — optional user-managed dotfile defaults for
-  the runtime container (`/etc/skel/`-style). Empty by default.
+- `/var/lib/mpd/env/vm.env` — the developer's own env,
+  shared across their VMs (pushed in from the Mac by mpd-virt), sourced into
+  every shell.
 - `/var/lib/mpd/state/` — mpd-managed operational state
-  (projects.json, services.json, runtimes/ — the single runtime's
-  entry — etc.). Wipe to reset. DNS records live in the VM's
+  (projects.json, services.json, etc.). Wipe to reset. DNS records live in the VM's
   `/etc/hosts`, in a block mpd rewrites from this state.
 - `/srv/` — Podman data volume, mounted on the VM and in every
   container at the same path (projects/, data/, meta/, dbs/, extra/,
   backups/).
 
-Backups live in `/srv/backups/` on the data volume (`mpd
---runtime-backup` writes `backups/runtime/<timestamp>/`) and are
-expected to be copied off the VM manually with scp before wiping.
+Backups live in `/srv/backups/` on the data volume (the project backup
+tools write there) and are expected to be copied off the VM manually with
+scp before wiping.
 Full contract: [`architecture.md` §10](architecture.md#10-backup-persistence).
