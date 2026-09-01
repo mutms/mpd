@@ -371,7 +371,7 @@ agent all run on the VM.
 
 ```
 # ~/.ssh/config (written automatically by mpd-virt):
-Host mpd-<NNN> mpd-<NNN>-vm <the VM's address>
+Host mpd-<NNN> <the VM's address>
     HostName <the VM's address>
     User user
 ```

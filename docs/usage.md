@@ -318,8 +318,6 @@ the project tree at `/srv/projects/<project>/`. From there:
   so it cannot push: commit and push from the host (PhpStorm or a host
   terminal) yourself.
 
-`mpd-<NNN>-vm` is a spelled-out synonym for the same host.
-
 Anything you write *outside* mpd-virt's `# >>> mpd-<NNN> ... >>>` markers
 in `~/.ssh/config` is preserved across re-runs; anything inside them is
 regenerated.
@@ -554,7 +552,7 @@ just a restore whose bundle happens to come from another project.
 From your laptop, scp a bundle off the VM — `/srv` is mounted there:
 
 ```bash
-scp mpd-<NNN>-vm:/srv/backups/projects/<name>.tgz ~/Downloads/
+scp mpd-<NNN>:/srv/backups/projects/<name>.tgz ~/Downloads/
 ```
 
 Your dev environment needs no backup of its own. The home directory
