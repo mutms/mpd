@@ -20,6 +20,11 @@ const (
 	fwdSysctl   = "/etc/sysctl.d/99-mpd-forwarding.conf"
 )
 
+const fwdSysctlBody = `net.ipv4.ip_forward = 1
+net.ipv6.conf.all.forwarding = 0
+net.ipv6.conf.default.forwarding = 0
+`
+
 // EnsureWireGuard guarantees ip_forward, generates the key if absent,
 // writes the wg0 [Interface] only when missing — so the host-added peer
 // is never clobbered on a re-run — and enables wg0 at boot.
@@ -27,14 +32,15 @@ func EnsureWireGuard(ctx context.Context, out io.Writer, octet int) error {
 	ui.Step(out, "WireGuard endpoint (%s)", wgInterface)
 
 	// Packets arriving on wg0 for 10.163.<NNN>.x must be forwarded to the
-	// bridge.
-	if _, err := WriteRootOwnedFile(ctx, fwdSysctl, "net.ipv4.ip_forward = 1\n"); err != nil {
+	// bridge. IPv6 forwarding stays off: the firewall seals IPv4 subnets
+	// only, and no container network has IPv6.
+	if _, err := WriteRootOwnedFile(ctx, fwdSysctl, fwdSysctlBody); err != nil {
 		return err
 	}
 
 	unit := "wg-quick@" + wgInterface
 	script := fmt.Sprintf(`set -e
-sudo sysctl -w net.ipv4.ip_forward=1 >/dev/null
+sudo sysctl -w net.ipv4.ip_forward=1 net.ipv6.conf.all.forwarding=0 net.ipv6.conf.default.forwarding=0 >/dev/null
 sudo install -d -m 700 /etc/wireguard
 [ -f %[1]s ] || { umask 077; wg genkey | sudo tee %[1]s >/dev/null && sudo chmod 600 %[1]s; }
 if [ ! -f %[2]s ]; then

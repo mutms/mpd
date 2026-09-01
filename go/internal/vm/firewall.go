@@ -53,6 +53,14 @@ table inet %[1]s {
 		ct state established,related accept
 		ip daddr %[2]s iifname != { "%[3]s", "wg0", "lo" } ct state new drop
 	}
+	chain forward {
+		# The VM forwards nothing that arrives from the LAN, whatever podman
+		# network or published port it is aimed at. Container outbound
+		# arrives on a bridge; wg0 carries the laptop.
+		type filter hook forward priority -10; policy accept;
+		ct state established,related accept
+		iifname != { "%[3]s", "wg0", "podman*" } ct state new drop
+	}
 }
 `, firewallTable, subnet, BridgeName, nftBin)
 }

@@ -124,8 +124,15 @@ the subnet. So a container reaches out to the internet, the VM reaches
 its own containers, and the developer's laptop reaches the whole subnet
 through the WireGuard overlay — but nothing on the LAN or the public
 side can open a connection to a container IP or a subnet-bound port.
+A second chain on the forward hook drops every new connection that
+arrives on anything but a container bridge (`mpdbr0`, `podman*`) or
+`wg0`, whatever its destination: it covers podman's default
+`10.88.0.0/16` network, any network a script creates, and any port a
+container publishes, without naming their subnets. IPv6 forwarding is
+pinned off in `/etc/sysctl.d/99-mpd-forwarding.conf` because the
+subnet rule is IPv4 only and no container network carries IPv6.
 (SOCKS and ProxyJump are unaffected either way: they terminate at sshd
-and never traverse the hook.) Combined with caddy and dnsmasq binding only `.1` and
+and never traverse either hook.) Combined with caddy and dnsmasq binding only `.1` and
 `.2` (never the LAN address), the VM's whole external surface is
 `tcp/22` (sshd) + `udp/51820` (WireGuard), both cryptographic, plus
 avahi's mDNS responder (`udp/5353`, discovery only — see

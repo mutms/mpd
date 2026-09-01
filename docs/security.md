@@ -153,7 +153,11 @@ firewall (`mpd-firewall.service`, installed by `mpd --vm-setup`) drops
 any new connection into `10.163.<NNN>.0/24` from any interface other
 than the bridge and `wg0`. It runs on the prerouting hook ahead of
 netavark's DNAT, so a container port published on a subnet address is
-sealed too. Container→internet (masquerade) is not affected.
+sealed too. A second rule on the forward hook drops every new connection
+arriving from outside a container bridge or `wg0`, whatever its
+destination, so podman's default network and any published port are
+covered without naming them. Container→internet (masquerade) is not
+affected.
 
 So the VM exposes **two ports, both cryptographically authenticated**,
 plus one discovery responder that accepts no connections:
