@@ -81,10 +81,17 @@ ok "sury-php + pgdg configured"
 # is virtual and dpkg -s always reports it not-installed. Go is not
 # here: 30-mpd-build.sh installs upstream Go. libnss3-tools provides
 # certutil for the Chromium NSS trust DB `mpd --vm-setup` writes to.
+#
+# locales-all, not locale-gen: Moodle exercises locale-dependent
+# formatting and its tests name locales the developer never configured
+# (en_AU.UTF-8 among them). All of them, pre-generated, is the only set
+# that does not fail on the next one someone adds.
 BASE_PKGS=(
     sudo openssl bash coreutils git wget curl ca-certificates systemd
     iproute2 iputils-ping bind9-dnsutils traceroute tcpdump lsof less psmisc
     jq build-essential pkg-config make libnss3-tools
+    locales locales-all
+    bzip2 xz-utils man-db
 )
 
 # What mpd's control plane needs at run time.
