@@ -383,7 +383,7 @@ Stack-independent ones first:
 | `claude-install` | Idempotent install of Claude Code (Anthropic's CLI) to `~/.local/bin/claude` via the upstream `curl \| bash` installer. Re-runs no-op.                                                                                       |
 | `node-install`   | Idempotent install of nvm + Node.js (LTS by default) into `$HOME/.nvm/` (upstream-standard). After install, `nvm`/`node`/`npm` are on PATH for new login shells; `nvm install <ver>` then works without sudo. Re-runs no-op. |
 | `phpstorm-archive-app` | Pack this VM's Toolbox-installed PhpStorm backend into `~/install/phpstorm.tgz`, and print the `scp` line that seeds it into every future VM through your mpd-virt overlay.                                        |
-| `phpstorm-install-app` | Unpack `/opt/mpd/assets/jetbrains/phpstorm.tgz` (or `~/install/phpstorm.tgz`) into the Toolbox apps directory, so a fresh VM skips the three-gigabyte backend download. No-ops when PhpStorm is already there or neither tarball is. |
+| `phpstorm-install-app` | Unpack `/opt/mpd/assets/installers/phpstorm.tgz` (or `~/install/phpstorm.tgz`) into the Toolbox apps directory, so a fresh VM skips the three-gigabyte backend download. No-ops when PhpStorm is already there or neither tarball is. |
 
 **Same directory, the PHP stack:**
 
@@ -657,11 +657,16 @@ goland-install-app               # unpack that tarball on a new VM instead of do
 
 `goland-archive-app` / `goland-install-app` are the fast path for the
 in-VM IDE. Archive once on a VM that has GoLand, copy the tarball to
-`~/.mpd-virt/assets/jetbrains/` on your workstation, and every VM
-mpd-virt adopts or creates from then on reads it at
-`/opt/mpd/assets/jetbrains/goland.tgz` — `goland-install-app` unpacks it
-in seconds. The archive stays in the assets tree; it is never copied into
-a home. Both no-op when there is nothing to do.
+`~/.mpd-virt/installers/<arch>/` on your workstation — the archive tool
+prints the exact `scp`, with your VM's architecture already filled in —
+and mpd-virt pushes it to VMs of that architecture only, landing at
+`/opt/mpd/assets/installers/goland.tgz`. `goland-install-app` unpacks it
+in seconds. The archive is read where it lands; it is never copied into a
+home. Both no-op when there is nothing to do.
+
+The split by architecture is not optional: an IDE backend is a native
+binary, and an amd64 tarball on an arm64 VM installs without complaint
+and fails at launch.
 
 ## Updating mpd
 

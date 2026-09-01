@@ -1,8 +1,9 @@
 #!/bin/bash
 # goland-archive-app — pack this VM's Toolbox-installed GoLand into
 # ~/install/goland.tgz. Copy the file into your host-side overlay
-# (~/.mpd-virt/assets/jetbrains/) and every VM reads it from
-# /opt/mpd/assets/jetbrains/, where `goland-install-app` unpacks it.
+# (~/.mpd-virt/installers/<arch>/) and a VM of that architecture
+# reads it from /opt/mpd/assets/installers/, where `goland-install-app`
+# unpacks it.
 # Re-runs replace the archive.
 set -euo pipefail
 
@@ -65,15 +66,19 @@ echo "Wrote ${DEST} ($(du -h "${DEST}" | cut -f1), ${BUILD})"
 # SC2088: the tilde stays literal — the string is printed for the
 # developer's workstation, not expanded here.
 # shellcheck disable=SC2088
-OVERLAY="~/.mpd-virt/assets/jetbrains"
+# The arch this archive is for: an IDE backend is a native binary, so
+# it may only be pushed to VMs that can run it.
+ARCH="$(dpkg --print-architecture)"
+# shellcheck disable=SC2088
+OVERLAY="~/.mpd-virt/installers/${ARCH}"
 cat <<EOF
 
-To seed it into every future VM, run this on your workstation:
+To seed it into every future ${ARCH} VM, run this on your workstation:
 
     mkdir -p ${OVERLAY}
     scp $(hostname):${DEST/#"${HOME}"/\~} ${OVERLAY}/
 
-mpd-virt pushes that overlay on adopt and create; new VMs then run
+mpd-virt pushes it on adopt and update, to ${ARCH} VMs only; they run
 
     goland-install-app
 EOF

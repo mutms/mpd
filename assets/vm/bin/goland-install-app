@@ -11,7 +11,7 @@ set -euo pipefail
 APPS_DIR="$HOME/.local/share/JetBrains/Toolbox/apps"
 APP_NAME="goland"
 TARGET="${APPS_DIR}/${APP_NAME}"
-OVERLAY_ARCHIVE="/opt/mpd/assets/jetbrains/${APP_NAME}.tgz"
+OVERLAY_ARCHIVE="/opt/mpd/assets/installers/${APP_NAME}.tgz"
 LOCAL_ARCHIVE="$HOME/install/${APP_NAME}.tgz"
 ARCHIVE=""
 for candidate in "${OVERLAY_ARCHIVE}" "${LOCAL_ARCHIVE}"; do
@@ -28,7 +28,7 @@ usage() {
 Usage: goland-install-app
 
 Unpack goland.tgz into ~/.local/share/JetBrains/Toolbox/apps/. Reads
-/opt/mpd/assets/jetbrains/goland.tgz, or ~/install/goland.tgz. No-op if
+/opt/mpd/assets/installers/goland.tgz, or ~/install/goland.tgz. No-op if
 GoLand is already installed or neither archive is there.
 Make the archive with `goland-archive-app`.
 EOF
@@ -60,7 +60,7 @@ Make one on a VM that has GoLand:
     goland-archive-app
 
 then copy it on your workstation to
-~/.mpd-virt/assets/jetbrains/goland.tgz. mpd-virt pushes that to every VM
+~/.mpd-virt/installers/<arch>/goland.tgz. mpd-virt pushes the matching
 it adopts or creates.
 EOF
     exit 0
