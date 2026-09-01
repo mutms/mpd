@@ -292,5 +292,5 @@ restarted when the conf was just written. To recover a VM that already
 lost its peer: re-add it on the VM
 (`sudo wg set wg0 peer <laptop-pubkey> allowed-ips 10.163.0.1/32`,
 `sudo ip route replace 10.163.0.1/32 dev wg0`, `sudo wg-quick save wg0`)
-and give the host the VM's new public key, the way `mpd-virt adopt`
-does when it first registers the peer.
+then run `mpd-virt start <NNN>` on the host: it reads the VM's new
+public key and re-registers the peer in mpd-proxy.
