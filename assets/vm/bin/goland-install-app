@@ -94,10 +94,3 @@ fi
 
 echo
 echo "GoLand installed at ${TARGET} (${BUILD})"
-cat <<EOF
-
-Point JetBrains Toolbox at that path to use it as an existing
-installation instead of downloading GoLand again. The launcher itself is:
-
-    ${TARGET}/bin/${APP_NAME}
-EOF

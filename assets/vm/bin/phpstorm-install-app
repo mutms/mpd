@@ -93,11 +93,3 @@ fi
 
 echo
 echo "PhpStorm installed at ${TARGET} (${BUILD})"
-cat <<EOF
-
-Point JetBrains Toolbox or Gateway at that path to use it as an existing
-installation instead of downloading the backend again. The backend
-launcher itself is:
-
-    ${TARGET}/bin/remote-dev-server.sh
-EOF
