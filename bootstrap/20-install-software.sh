@@ -5,12 +5,12 @@
 # install the packages mpd needs. Debian packages only — the one
 # exception in the whole bootstrap is upstream Go, in step 3.
 #
-# Two things are deliberately NOT here, because this script runs before
-# the repo is cloned and so cannot read it:
-#   - the PHP package matrix, whose single source of truth is
-#     assets/vm/lib/php-configure.sh (apt-installed by --vm-setup);
-#   - Composer and Node, which are upstream fetches, not packages.
-# Both are handled by assets/vm/configure-stack.sh. See bootstrap/README.md.
+# The PHP matrix is installed here, so a template VM and the Apple
+# container image ship ready rather than apt-ing it at adopt time.
+#
+# Composer and Node are NOT here: they are upstream fetches, not Debian
+# packages, so assets/vm/configure-stack.sh does those at --vm-setup.
+# See bootstrap/README.md.
 #
 # No hostname gate: this also runs at OCI image build, where the
 # hostname is random and step 1 has already validated a VM.
@@ -112,12 +112,26 @@ CONTROL_PKGS=(
 )
 
 # The dev stack's Debian half: DB clients for every engine mpd runs, and
-# inotify-tools for the project caddy's watcher. PHP itself comes from
-# --vm-setup (see the header).
+# inotify-tools for the project caddy's watcher.
 STACK_PKGS=(
     postgresql-client mariadb-client default-mysql-client
     inotify-tools
 )
+
+# The PHP matrix, hardcoded so a template VM and the Apple container
+# image ship ready instead of apt-ing it at adopt time. This duplicates
+# MPD_PHP_VERSIONS in assets/vm/lib/php-configure.sh on purpose: this
+# script runs before the repo is cloned and cannot read it. Drift is
+# harmless — assets/vm/configure-stack.sh installs whatever is missing at
+# `mpd --vm-setup`, and `php-install 7.4` adds an EOL version on demand.
+PHP_VERSIONS="8.1 8.2 8.3 8.4 8.5"
+PHP_EXTS="cli fpm curl gd intl mbstring pgsql soap xml zip mysql"
+PHP_PKGS=()
+for VER in $PHP_VERSIONS; do
+    for EXT in $PHP_EXTS; do
+        PHP_PKGS+=("php${VER}-${EXT}")
+    done
+done
 
 # Tools for AI agents working on the VM. Deliberately no `gh`: it needs
 # `gh auth login`, which stores a token, and mpd keeps no credentials.
@@ -135,7 +149,7 @@ GUEST_PKGS=(
     avahi-daemon qemu-guest-agent
 )
 
-ALL_PKGS=("${BASE_PKGS[@]}" "${CONTROL_PKGS[@]}" "${STACK_PKGS[@]}" "${AGENT_PKGS[@]}" "${GUEST_PKGS[@]}")
+ALL_PKGS=("${BASE_PKGS[@]}" "${CONTROL_PKGS[@]}" "${STACK_PKGS[@]}" "${PHP_PKGS[@]}" "${AGENT_PKGS[@]}" "${GUEST_PKGS[@]}")
 
 step "Package set (${#ALL_PKGS[@]} packages)"
 missing=()
