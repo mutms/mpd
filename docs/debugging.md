@@ -264,3 +264,33 @@ but `auto` in the failing command's environment is the whole story.
 than leaving it to the default: /usr/local/go is a seed, and the go.mod
 directive is what picks the compiler. Anything in mpd that builds a
 checkout must do the same.
+
+## The WireGuard overlay dies after `mpd --vm-setup`
+
+**Symptom.** mpd-proxy on the laptop logs `Sending handshake initiation`
+forever and every `*.<NNN>.mpd.test` lookup ends in `SERVFAIL ... i/o
+timeout`. On the VM, `sudo wg show` lists no peer, and `ip route get
+10.163.0.1` goes out `eth0` instead of `wg0`. The rest of the VM is fine;
+SSH and SOCKS still work.
+
+**Cause.** The VM's WireGuard key was regenerated. `EnsureWireGuard`
+runs its script as the dev user, and `/etc/wireguard` is a root-only
+`0700` directory, so an unprivileged `[ -f /etc/wireguard/mpd.key ]` is
+false even when the file exists. The step then mints a new key and
+writes a fresh `wg0.conf` with no `[Peer]`, and the restart loads it.
+The peer's public key of the VM no longer matches, so the handshake never
+completes. This is the same 0700 trap as the glob entry above, in a
+different disguise.
+
+**Diagnose.** Compare `sudo wg show wg0 public-key` with the VM key the
+host holds. `sudo ls -la --time-style=full-iso /etc/wireguard/` shows
+both files rewritten at the moment of the last `mpd --vm-setup`, and
+`journalctl` around that time shows `tee /etc/wireguard/mpd.key`.
+
+**Fix.** The guards now run as `sudo test -f`, and the unit is only
+restarted when the conf was just written. To recover a VM that already
+lost its peer: re-add it on the VM
+(`sudo wg set wg0 peer <laptop-pubkey> allowed-ips 10.163.0.1/32`,
+`sudo ip route replace 10.163.0.1/32 dev wg0`, `sudo wg-quick save wg0`)
+and give the host the VM's new public key, the way `mpd-virt adopt`
+does when it first registers the peer.

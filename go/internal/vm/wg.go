@@ -42,13 +42,15 @@ func EnsureWireGuard(ctx context.Context, out io.Writer, octet int) error {
 	script := fmt.Sprintf(`set -e
 sudo sysctl -w net.ipv4.ip_forward=1 net.ipv6.conf.all.forwarding=0 net.ipv6.conf.default.forwarding=0 >/dev/null
 sudo install -d -m 700 /etc/wireguard
-[ -f %[1]s ] || { umask 077; wg genkey | sudo tee %[1]s >/dev/null && sudo chmod 600 %[1]s; }
-if [ ! -f %[2]s ]; then
+# /etc/wireguard is root-only, so a plain test -f always says "missing".
+sudo test -f %[1]s || { umask 077; wg genkey | sudo tee %[1]s >/dev/null && sudo chmod 600 %[1]s; }
+if ! sudo test -f %[2]s; then
   printf '[Interface]\nAddress = 10.163.0.%[3]d/32\nListenPort = %[4]d\nPrivateKey = %%s\n' "$(sudo cat %[1]s)" | sudo tee %[2]s >/dev/null
   sudo chmod 600 %[2]s
+  sudo systemctl restart %[5]s
 fi
 sudo systemctl enable %[5]s >/dev/null 2>&1 || true
-sudo systemctl restart %[5]s
+sudo systemctl start %[5]s
 `, wgKeyPath, wgConfPath, octet, wgListen, unit)
 	if code, err := exec.Run(ctx, exec.Cmd{Name: "bash", Args: []string{"-c", script}}); err != nil || code != 0 {
 		return fmt.Errorf("bringing up %s failed", wgInterface)
