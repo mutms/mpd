@@ -22,6 +22,12 @@ const (
 	dnsmasqBinary   = "/usr/sbin/dnsmasq"
 )
 
+// LLMNR answers on every address, the LAN one included; nothing here uses it.
+const (
+	resolvedDropInPath = "/etc/systemd/resolved.conf.d/mpd.conf"
+	resolvedDropInBody = "# Managed by mpd --vm-setup. Edits are overwritten.\n[Resolve]\nLLMNR=no\n"
+)
+
 // DnsmasqConfBody renders the resolver's configuration. listenIP is the
 // podman bridge gateway — the one address the laptop, the VM and every
 // container all reach; iface is the bridge it sits on.
@@ -139,6 +145,19 @@ func ConfigureDnsmasq(ctx context.Context, out io.Writer, listenIP, iface string
 	}
 
 	ui.OK(out, "Resolver listening on %s:53 (authoritative for .test).", listenIP)
+
+	dropInChanged, err := WriteRootOwnedFile(ctx, resolvedDropInPath, resolvedDropInBody)
+	if err != nil {
+		return err
+	}
+	if dropInChanged {
+		if code, err := exec.Run(ctx, exec.Cmd{
+			Name: "systemctl", Args: []string{"try-restart", "systemd-resolved"}, Sudo: true,
+		}); err != nil || code != 0 {
+			return fmt.Errorf("systemctl try-restart systemd-resolved failed after writing %s.", resolvedDropInPath)
+		}
+		ui.OK(out, "LLMNR switched off in systemd-resolved.")
+	}
 	return nil
 }
 

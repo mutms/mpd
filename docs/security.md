@@ -124,16 +124,18 @@ Laptop
   │  optional: RDP (tcp/3389, after rdp-start, password) → the VM's GNOME desktop
   │
 VM host (Debian Trixie)     exposes :22 (sshd) + :51820 (wg, silent until a
-  │                         peer is registered) on its LAN IP; :3389 only while RDP is on
+  │                         peer is registered) + udp/5353 (mDNS, discovery only)
+  │                         on its LAN IP; :3389 only while RDP is on
   │
   │  mpdbr0 bridge — two VM addresses; nothing binds the LAN IP
-  │    10.163.<NNN>.1  dnsmasq :53 — resolver for .test
+  │    10.163.<NNN>.1  dnsmasq :53 — resolver for .test (also on .2 and loopback)
+  │                    caddy   :80  — redirect to :443
   │                    caddy   :443 — TLS for the zone apex → mpd --web
   │    10.163.<NNN>.2  mpd-caddy :443 — TLS for every project vhost
   │
   mpd-internal network (10.163.<NNN>.0/24) — sealed from the LAN (nft
-    │                         firewall; only the bridge and wg0 route in,
-    │                         on both the forward and the input hook)
+    │                         firewall on the prerouting hook, ahead of
+    │                         netavark's DNAT; only the bridge and wg0 route in)
     +-- DB containers            (10.163.<NNN>.10–.99)
     +-- extra service containers (10.163.<NNN>.100–.199 — optional, plain
                                   HTTP: mailpit, adminer, selenium)
@@ -148,17 +150,24 @@ side of the VM.** The developer's laptop reaches the whole /24 through
 sshd (SOCKS or ProxyJump), or over the optional WireGuard overlay
 (`mpd-virt` sets the peer's AllowedIPs to the /24). An in-VM nftables
 firewall (`mpd-firewall.service`, installed by `mpd --vm-setup`) drops
-any new forwarded connection into `10.163.<NNN>.0/24` from any interface
-other than the bridge and `wg0`. Container→internet (masquerade) is not
-affected.
+any new connection into `10.163.<NNN>.0/24` from any interface other
+than the bridge and `wg0`. It runs on the prerouting hook ahead of
+netavark's DNAT, so a container port published on a subnet address is
+sealed too. Container→internet (masquerade) is not affected.
 
-So the VM exposes **two ports, both cryptographically authenticated**:
+So the VM exposes **two ports, both cryptographically authenticated**,
+plus one discovery responder that accepts no connections:
 
 - **`tcp/22` — SSH.** Pubkey-only, root login disabled. Always open.
   The SOCKS5 proxy and ProxyJump are SSH connections to this port.
 - **`udp/51820` — WireGuard.** Used only with mpd-proxy. The laptop's
   mpd-proxy is the only authorised peer; wg silently drops everything
   else, so without mpd-proxy the port answers nobody.
+- **`udp/5353` — mDNS.** avahi-daemon answers `mpd-<NNN>.local`, which
+  is how `mpd-virt adopt` finds a VM without being given its address. It
+  publishes the hostname and IP and nothing else. systemd-resolved's
+  LLMNR responder (`5355`), which would be a second one, is switched off
+  by `mpd --vm-setup`.
 
 Everything else — portal, project HTTPS, databases, extra services —
 sits behind those two ports. Nothing is published on the VM's
@@ -199,7 +208,7 @@ in a convenient environment.
 ## Network access control
 
 Nothing is published on the VM's own LAN address. caddy and dnsmasq bind
-only the podman bridge gateway `10.163.<NNN>.1`. Every container address
+only the VM's bridge addresses `10.163.<NNN>.1` and `.2`. Every container address
 is inside `10.163.<NNN>.0/24`. The nftables firewall
 (`mpd-firewall.service`, installed by `mpd --vm-setup`) drops new
 inbound connections into that subnet from any interface but the bridge
@@ -211,8 +220,9 @@ SOCKS/ProxyJump), and never from the LAN or a public network.
 container→internet masquerade. The firewall blocks forwarding *into* the
 subnet only. The two are independent: outbound NAT keeps working,
 inbound routing is denied. An mpd VM is therefore safe even on an
-untrusted network. Its only exposed ports are sshd and WireGuard, plus
-`tcp/3389` on a VM where you ran `rdp-start`. See `docs/networking.md`.
+untrusted network. Its only exposed ports are sshd, WireGuard and the
+mDNS responder, plus `tcp/3389` on a VM where you ran `rdp-start`. See
+`docs/networking.md`.
 
 ## Portal security
 

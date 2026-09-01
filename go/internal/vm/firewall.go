@@ -45,24 +45,11 @@ func firewallRuleBody(subnet string) string {
 add table inet %[1]s
 delete table inet %[1]s
 table inet %[1]s {
-	chain forward {
-		type filter hook forward priority -10; policy accept;
-		# Return traffic for container-initiated flows always passes.
-		ct state established,related accept
-		# Drop NEW connections into the container subnet arriving on anything
-		# but the bridge itself or the WireGuard overlay (i.e. eth0 from the
-		# LAN, …). Container outbound (iif %[3]s) and VM-local traffic are
-		# unaffected.
-		ip daddr %[2]s iifname != { "%[3]s", "wg0" } ct state new drop
-	}
-	chain input {
-		type filter hook input priority -10; policy accept;
-		# The VM holds subnet addresses itself (the gateway, and the project
-		# address the project caddy binds). Those arrive on the INPUT hook,
-		# which the forward chain above never sees, and Linux's weak host
-		# model accepts them on any interface. Without this a LAN host that
-		# routes %[2]s at the VM reaches the resolver, the portal and every
-		# project URL.
+	chain prerouting {
+		# Must run before netavark's DNAT (priority -100): a port published
+		# on a subnet address is still addressed to the subnet here, and a
+		# packet dropped here reaches neither the forward nor the input hook.
+		type filter hook prerouting priority -150; policy accept;
 		ct state established,related accept
 		ip daddr %[2]s iifname != { "%[3]s", "wg0", "lo" } ct state new drop
 	}

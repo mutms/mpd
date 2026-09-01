@@ -487,9 +487,10 @@ make run                          # start mpd-test-mdl-demo on 6381/6382
 ```
 
 `make run` also tells the container its public URLs, so the console's
-install form suggests the `site.` address. The container listens on the
-VM's interfaces, which the host-only vmnet keeps private. One test container per VM —
-`make run` replaces the previous one.
+install form suggests the `site.` address. The container's ports are
+bound to the VM's bridge address `10.163.<NNN>.1`, not its LAN IP; reach
+the console at `http://10.163.<NNN>.1:6381/` over the overlay or SOCKS
+tunnel. One test container per VM — `make run` replaces the previous one.
 
 For trying mdl-demo's macOS launcher (or any other script written for
 Apple `container`) on the VM, `/opt/mpd/assets/vm/bin/container` is a podman-backed

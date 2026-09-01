@@ -16,18 +16,18 @@ Laptop (macOS — primary)      reaches the VM by IP; needs only :22 + :51820
   │  WireGuard overlay (mpd-proxy)          → carries the whole 10.163.<NNN>.0/24
   │  or  SOCKS over SSH (ssh -N mpd-<NNN>-socks) → same reach, via sshd on the VM
   │
-VM (Debian Trixie)   hostname mpd-<NNN>;  LAN IP exposes ONLY sshd + wg
+VM (Debian Trixie)   hostname mpd-<NNN>;  LAN IP exposes sshd + wg (+ mDNS discovery)
   │
   │  Static bridge:  mpdbr0  — two VM addresses (nothing binds the LAN IP)
-  │    10.163.<NNN>.1   dnsmasq   :53  — DNS for *.test
+  │    10.163.<NNN>.1   dnsmasq   :53  — DNS for *.test (also on .2 and loopback)
+  │                     caddy     :80  — redirect to :443
   │                     caddy     :443 — the zone apex only (the portal)
   │    10.163.<NNN>.2   mpd-caddy :443 — every project vhost
   │
   `mpd-internal` Podman network    10.163.<NNN>.0/24  (podman DNS disabled)
-    │   SEALED from the LAN by an nft firewall (mpd-firewall.service);
-    │   only mpdbr0 and wg0 may route in, on both the forward and the
-    │   input hook — the VM holds .1 and .2 itself, and those arrive on
-    │   input, which the forward chain never sees
+    │   SEALED from the LAN by an nft firewall (mpd-firewall.service)
+    │   on the prerouting hook, ahead of netavark's DNAT; only mpdbr0
+    │   and wg0 may route in
     +-- DB containers           10.163.<NNN>.10–.99
     +-- extra service containers 10.163.<NNN>.100–.199  (plain HTTP:
                                  mailpit .100, adminer .102, selenium .103)
@@ -112,18 +112,25 @@ tunnel — never the open internet — and close it with `rdp-stop`. See
 ### The container-subnet firewall
 
 `mpd --vm-setup` installs `mpd-firewall.service` — an independent nftables
-table whose forward chain drops NEW connections into `10.163.<NNN>.0/24`
-from any interface but `mpdbr0` and `wg0`, while leaving
+table whose prerouting chain drops NEW connections into `10.163.<NNN>.0/24`
+from any interface but `mpdbr0`, `wg0` and `lo`, while leaving
 `established,related` and the container→internet masquerade (netavark's
-own table) untouched. So a container reaches out to the internet, the VM
-reaches its own containers, and the developer's laptop reaches the whole
-subnet through the WireGuard overlay — but nothing on the LAN or the
-public side can open a connection to a container IP. (SOCKS and ProxyJump
-are unaffected either way: they terminate at sshd and never traverse the
-forward chain.) Combined with caddy and dnsmasq binding only `.1` (never
-the LAN address), the VM's whole external surface is `tcp/22` (sshd) +
-`udp/51820` (WireGuard), both cryptographic — which is what lets an mpd
-VM run safely anywhere reachable by IP.
+own table) untouched. One hook covers routed traffic to containers and
+traffic to the addresses the VM holds itself (`.1`, `.2`), which Linux's
+weak host model would otherwise accept on any interface. It sits at
+priority -150, ahead of netavark's DNAT (-100), so a container port
+published on a subnet address is dropped while the packet still names
+the subnet. So a container reaches out to the internet, the VM reaches
+its own containers, and the developer's laptop reaches the whole subnet
+through the WireGuard overlay — but nothing on the LAN or the public
+side can open a connection to a container IP or a subnet-bound port.
+(SOCKS and ProxyJump are unaffected either way: they terminate at sshd
+and never traverse the hook.) Combined with caddy and dnsmasq binding only `.1` and
+`.2` (never the LAN address), the VM's whole external surface is
+`tcp/22` (sshd) + `udp/51820` (WireGuard), both cryptographic, plus
+avahi's mDNS responder (`udp/5353`, discovery only — see
+`docs/security.md`) — which is what lets an mpd VM run safely anywhere
+reachable by IP.
 
 ## Per-VM addressing
 
