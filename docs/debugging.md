@@ -236,35 +236,6 @@ means any `systemctl start qemu-guest-agent` will hang.
 `bootstrap/20-install-software.sh` does exactly this. A hung job is
 cleared with `sudo systemctl cancel` (or list it: `systemctl list-jobs`).
 
-## `mpd --vm-upgrade` fails: "go.mod requires go >= X (running go Y)"
-
-**Symptom.** The upgrade pulls the new code, then the build refuses:
-
-```
-go: go.mod requires go >= 1.27.0 (running go 1.24.4; GOTOOLCHAIN=local)
-make: *** [Makefile:29: install] Error 1
-Error: make install failed in /opt/mpd.
-```
-
-`make install` run by hand in the same checkout, in the same shell,
-succeeds. Only the upgrade fails.
-
-**Cause.** `vm.MakeInstall` (and `vm.buildMudev`) pass their own
-environment to `make`. They used to pass `GOTOOLCHAIN=local`, which
-forbids the go command from fetching the toolchain `go/go.mod` names. A
-hand-run `make install` inherits the shell's default, `auto`, and fetches
-it — hence the difference. Every VM whose `/usr/local/go` seed predates a
-raised `go` directive hits this, and only through the upgrade path.
-
-**Diagnose.** `go version` (the seed) against the `go` line in
-`go/go.mod`. A seed older than the directive plus `GOTOOLCHAIN` anything
-but `auto` in the failing command's environment is the whole story.
-
-**Fix.** Both call sites now set `GOTOOLCHAIN=auto` explicitly, rather
-than leaving it to the default: /usr/local/go is a seed, and the go.mod
-directive is what picks the compiler. Anything in mpd that builds a
-checkout must do the same.
-
 ## The WireGuard overlay dies after `mpd --vm-setup`
 
 **Symptom.** mpd-proxy on the laptop logs `Sending handshake initiation`
