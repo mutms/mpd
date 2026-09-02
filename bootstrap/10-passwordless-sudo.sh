@@ -1,11 +1,7 @@
 #!/bin/bash
 # bootstrap/10-passwordless-sudo.sh
 #
-# Step 1 of 3, wgettable and self-contained: give the invoking dev user
-# passwordless sudo. Gates on an mpd hostname and Debian Trixie, so an
-# accidental run on a workstation is fatal. Refuses root. When needed it
-# asks for the root password once (`su - -c`) and installs sudo on a
-# minimal netinst. Idempotent: the fast path is one `sudo -n true`.
+# Give the invoking dev user passwordless sudo.
 #
 #   bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/bootstrap/10-passwordless-sudo.sh)
 

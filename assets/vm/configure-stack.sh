@@ -3,11 +3,6 @@
 # matrix, php.ini + FPM pools, the php dispatcher, Composer, Node,
 # /srv permissions. Run by `mpd --vm-setup` as the dev user. Idempotent.
 #
-# The PHP packages are here, not in bootstrap/20-install-software.sh,
-# because that script is wgettable and runs before this repo exists —
-# it cannot read the version matrix below, and duplicating it would
-# leave two lists to keep in step. Sury and PGDG are configured there.
-#
 # Composer and Node are upstream fetches rather than packages, which is
 # the separate reason they are not part of apt provisioning.
 set -euo pipefail

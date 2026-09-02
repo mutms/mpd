@@ -1,11 +1,7 @@
 #!/bin/bash
 # bootstrap/15-secure-ssh.sh
 #
-# Optional hardening between steps 1 and 2, wgettable and self-contained:
-# one sshd drop-in that refuses root login and password auth and keeps
-# public-key auth on. Refuses to disable passwords while the invoking
-# user has no key in ~/.ssh/authorized_keys. No-op without
-# openssh-server. Needs passwordless sudo (step 1). Idempotent.
+# Harden the VM by disabling password and root access via SSH.
 #
 #   bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/bootstrap/15-secure-ssh.sh)
 

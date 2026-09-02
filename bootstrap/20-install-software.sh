@@ -1,20 +1,7 @@
 #!/bin/bash
 # bootstrap/20-install-software.sh
 #
-# Step 2 of 3, wgettable and self-contained: bring the OS current and
-# install the packages mpd needs. Debian packages only — the one
-# exception in the whole bootstrap is upstream Go, in step 3.
-#
-# The PHP matrix is installed here, so a template VM and the Apple
-# container image ship ready rather than apt-ing it at adopt time.
-#
-# Composer and Node are NOT here: they are upstream fetches, not Debian
-# packages, so assets/vm/configure-stack.sh does those at --vm-setup.
-# See bootstrap/README.md.
-#
-# No hostname gate: this also runs at OCI image build, where the
-# hostname is random and step 1 has already validated a VM.
-# Needs passwordless sudo (step 1). Idempotent.
+# Idempotent Debian software pre-installation only, no configuration.
 #
 # Environment overrides:
 #   MPD_APT_LOCK_TIMEOUT  seconds to wait for the dpkg lock (default 300)
@@ -63,9 +50,8 @@ apt_get update -qq
 apt_get dist-upgrade -y -qq
 ok "operating system current"
 
-# Sury for every PHP version Debian does not ship. PGDG because Debian's
-# postgresql-client is older than mpd's default server and pg_dump
-# refuses a newer one.
+# Sury for every PHP version Debian does not ship.
+# PGDG has latest client that works with all PostgreSQL versions.
 step "Third-party repositories (Sury PHP, PGDG)"
 apt_get install -y -qq --no-install-recommends apt-transport-https ca-certificates curl gnupg2 lsb-release
 curl -fsSL https://packages.sury.org/php/apt.gpg | sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/sury-php.gpg
@@ -77,21 +63,20 @@ echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pu
 apt_get update -qq
 ok "sury-php + pgdg configured"
 
-# Base tooling and build needs. bind9-dnsutils, not dnsutils: the latter
-# is virtual and dpkg -s always reports it not-installed. Go is not
-# here: 30-mpd-build.sh installs upstream Go. libnss3-tools provides
-# certutil for the Chromium NSS trust DB `mpd --vm-setup` writes to.
+# Base tooling and build needs.
 #
-# locales-all, not locale-gen: Moodle exercises locale-dependent
-# formatting and its tests name locales the developer never configured
-# (en_AU.UTF-8 among them). All of them, pre-generated, is the only set
-# that does not fail on the next one someone adds.
+# bind9-dnsutils, not dnsutils: the latter is virtual and dpkg -s always
+# reports it not-installed.
+#
+# libnss3-tools provides certutil for the Chromium NSS trust DB `mpd --vm-setup` writes to.
+#
+# locales-all, not locale-gen: Moodle needs all locales.
 BASE_PKGS=(
     sudo openssl bash coreutils git wget curl ca-certificates systemd
     iproute2 iputils-ping bind9-dnsutils traceroute tcpdump lsof less psmisc
     jq build-essential pkg-config make libnss3-tools
     locales locales-all
-    bzip2 xz-utils man-db
+    golang bzip2 xz-utils man-db
 )
 
 # What mpd's control plane needs at run time.
@@ -103,27 +88,20 @@ BASE_PKGS=(
 #   containers); real VMs leave it unused.
 # dnsmasq-base, not dnsmasq: the binary alone. The dnsmasq package adds a
 #   second unit reading /etc/dnsmasq.conf, the sysadmin's file.
-# vim, not vim-tiny: vim-tiny starts in compatible mode, where arrow
-#   keys insert ABCD.
 CONTROL_PKGS=(
     podman catatonit uidmap nftables
     wireguard-tools wireguard-go
-    dnsmasq-base caddy vim
+    dnsmasq-base caddy
 )
 
 # The dev stack's Debian half: DB clients for every engine mpd runs, and
-# inotify-tools for the project caddy's watcher.
+# inotify-tools for the project caddy's watcher. vim for convenience
 STACK_PKGS=(
     postgresql-client mariadb-client default-mysql-client
-    inotify-tools
+    inotify-tools vim
 )
 
-# The PHP matrix, hardcoded so a template VM and the Apple container
-# image ship ready instead of apt-ing it at adopt time. This duplicates
-# MPD_PHP_VERSIONS in assets/vm/lib/php-configure.sh on purpose: this
-# script runs before the repo is cloned and cannot read it. Drift is
-# harmless — assets/vm/configure-stack.sh installs whatever is missing at
-# `mpd --vm-setup`, and `php-install 7.4` adds an EOL version on demand.
+# Basic PHP matrix to speed up provisioning, the rest is installed on demand.
 PHP_VERSIONS="8.1 8.2 8.3 8.4 8.5"
 PHP_EXTS="cli fpm curl gd intl mbstring pgsql soap xml zip mysql"
 PHP_PKGS=()
@@ -133,18 +111,15 @@ for VER in $PHP_VERSIONS; do
     done
 done
 
-# Tools for AI agents working on the VM. Deliberately no `gh`: it needs
-# `gh auth login`, which stores a token, and mpd keeps no credentials.
+# Tools for AI agents working on the VM.
 AGENT_PKGS=(
     shellcheck shfmt ripgrep tree
     bash-completion bc file htop mc nano net-tools netcat-openbsd patch
     rsync screen socat strace time tmux unzip whois zip
 )
 
-# avahi-daemon advertises <hostname>.local over mDNS, which is how
-# `mpd-virt adopt` finds a box when no IP is given. qemu-guest-agent
-# lets KVM-family hypervisors read the guest's IP. Both idle harmlessly
-# where the hypervisor or network ignores them.
+# avahi-daemon advertises <hostname>.local over mDNS
+# which is used as fallback for "mpd-virt adopt" IP lookup
 GUEST_PKGS=(
     avahi-daemon qemu-guest-agent
 )
@@ -183,8 +158,7 @@ else
     warn "avahi-daemon could not be enabled — mDNS discovery unavailable"
 fi
 
-# Gate on the device: starting without it blocks forever; see
-# docs/debugging.md "systemctl start qemu-guest-agent blocks forever".
+# qemu-guest-agent allows some hypervisors to show VM ip.
 if [ "${systemd_running}" = 1 ] && [ -e /dev/virtio-ports/org.qemu.guest_agent.0 ]; then
     if sudo systemctl start qemu-guest-agent >/dev/null 2>&1; then
         ok "qemu-guest-agent running"

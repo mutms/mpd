@@ -1,6 +1,6 @@
 # `bootstrap/` — bring a Debian Trixie vm to the state `mpd --vm-setup` expects
 
-Three steps, each a single self-contained script you can run straight
+Bootstrap steps, each a single self-contained script you can run straight
 from GitHub:
 
 ```bash
@@ -14,34 +14,37 @@ All are idempotent — re-running everything costs one `apt-get update`,
 a `dist-upgrade` that finds nothing and a `make install` that finds
 nothing. There is no orchestrator; callers list the steps.
 
-| File | Interactive? | What it does |
-|---|---|---|
-| `10-passwordless-sudo.sh` | once (root password) | Hostname gate (`mpd-<NNN>`, or a `mpd-template[-<suffix>]` / `mpd-sandbox[-<suffix>]` staging name), Debian Trixie gate, refuses root. No-op if `sudo -n` already works; otherwise `su -c` installs sudo if missing and writes `/etc/sudoers.d/00-mpd-<user>`. |
-| `15-secure-ssh.sh` | no | Hardens a default Debian install's sshd with one drop-in (`/etc/ssh/sshd_config.d/10-mpd.conf`): root over SSH off, password + keyboard-interactive auth off, keys only. Refuses while your `~/.ssh/authorized_keys` holds no key (`ssh-copy-id` first); no-op without openssh-server. |
-| `20-install-software.sh` | no | `apt-get update` + `dist-upgrade`, adds the Sury and PGDG apt repos, then **the Debian package list**: build deps, networking diagnostics, everything the control plane needs at run time (podman, dnsmasq-base, caddy, WireGuard, nftables, …), the DB clients, agent tooling, and avahi + qemu-guest-agent (enabled; started where systemd runs and the hypervisor device exists). No hostname gate — it also runs inside an image build. |
-| `30-mpd-build.sh` | no | Creates `/opt/mpd` + `/var/lib/mpd` owned by the dev user; clones or fast-forwards the mpd repo; installs upstream Go into `/usr/local/go` when the VM has none; `make install`; puts `/opt/mpd/bin`, `assets/vm/bin` and `~/.local/bin` on PATH via `~/.bashrc`. |
+## Scripts
 
-The split with `mpd --vm-setup` is by *kind*, not by convenience.
-Bootstrap installs Debian packages only — upstream Go, in step 30, is the
-sole exception in the whole sequence. `--vm-setup` then runs
-`assets/vm/configure-stack.sh`, which apt-installs the PHP matrix and
-fetches Composer and Node.
+### 10-passwordless-sudo.sh
 
-Two reasons the PHP matrix is not here. This script is wgettable and runs
-before the repo is cloned, so it cannot read `MPD_PHP_VERSIONS` from
-`assets/vm/lib/php-configure.sh` — and duplicating that list would leave
-two to keep in step. Composer and Node are `curl | bash` fetches rather
-than packages, which is the separate reason they are not apt's business.
+Interractive, may ask for root password once.
 
-Everything else `--vm-setup` needs, it only verifies: its preflight
-checks the binaries step 20 provides and names the missing packages plus
-the command to run (`go/internal/vm/host.go`). A new run-time dependency
-is added to step 20 and to that verification table.
+Hostname gate (`mpd-<NNN>`, or a `mpd-template[-<suffix>]` / `mpd-sandbox[-<suffix>]` staging name),
+Debian Trixie gate, refuses root. No-op if `sudo -n` already works; otherwise `su -c` installs
+sudo if missing and writes `/etc/sudoers.d/00-mpd-<user>`.
 
-There is no networking step: hostname, IP and the network stack are the
-platform's job (cloud-init on the automated platforms;
-`setup/mpd-sandbox-setup.sh` / `setup/mpd-prepare-adopt.sh` on a
-hand-installed vm).
+### 15-secure-ssh.sh
+
+Hardens a default Debian sshd with one drop-in (`/etc/ssh/sshd_config.d/10-mpd.conf`):
+root over SSH off, password + keyboard-interactive auth off, keys only.
+Refuses while your `~/.ssh/authorized_keys` holds no key (`ssh-copy-id` first);
+no-op without openssh-server.
+
+### 20-install-software.sh
+
+`apt-get update` + `dist-upgrade`, adds the Sury and PGDG apt repos,
+then **the Debian package list**: build deps, networking diagnostics, everything
+the control plane needs at run time (podman, dnsmasq-base, caddy, WireGuard, nftables, …),
+the DB clients, agent tooling, and avahi + qemu-guest-agent
+(enabled; started where systemd runs and the hypervisor device exists).
+No hostname gate — it also runs inside an image build.
+
+### 30-mpd-build.sh
+
+Creates `/opt/mpd` + `/var/lib/mpd` owned by the dev user; clones or fast-forwards
+the mpd repo; `make install`; puts `/opt/mpd/bin`, `assets/vm/bin` and `~/.local/bin`
+on PATH via `~/.bashrc`.
 
 ## Invocation flows
 
@@ -86,26 +89,11 @@ stale.
 (as root; the script's per-command `sudo` is then a no-op), so a VM
 from the image is pre-baked like a template VM.
 
-### Update (any VM)
-
-```bash
-mpd --vm-upgrade
-```
-
-pulls, rebuilds, updates mudev and the catalogues, and re-runs `mpd
---vm-setup`. It does not touch apt; to bring the operating system and
-the package set forward, run step 20 first. `mpd-virt update <NNN>` does
-exactly that: step 20, then `mpd --vm-upgrade`.
-
 ## Environment variables
 
-| Var | Default | Used by | Meaning |
-|---|---|---|---|
-| `MPD_REPO` | `https://github.com/mutms/mpd.git` | 30 | https URL of the mpd repo |
-| `MPD_BRANCH` | `main` | 30 | branch / ref to clone |
-| `MPD_APT_LOCK_TIMEOUT` | `300` | 20 | seconds to wait for the dpkg lock (GNOME's packagekitd holds it right after login) |
-| `MPD_APT_RETRIES` | `3` | 20 | retries for a stalled package download |
-
-The wget URL encodes the branch in its path
-(`raw.githubusercontent.com/<owner>/mpd/<branch>/bootstrap/…`) — set
-`MPD_BRANCH` to match when you fetch from a non-main branch.
+| Var                    | Default                            | Used by | Meaning                                                                            |
+|------------------------|------------------------------------|---------|------------------------------------------------------------------------------------|
+| `MPD_REPO`             | `https://github.com/mutms/mpd.git` | 30      | https URL of the mpd repo (for mpd development only)                               |
+| `MPD_BRANCH`           | `main`                             | 30      | branch / ref to clone (for mpd development only)                                   |
+| `MPD_APT_LOCK_TIMEOUT` | `300`                              | 20      | seconds to wait for the dpkg lock (GNOME's packagekitd holds it right after login) |
+| `MPD_APT_RETRIES`      | `3`                                | 20      | retries for a stalled package download                                             |
