@@ -310,11 +310,14 @@ mpd code runs, so nothing here needs a root-context script.
 - Prefer additive asset changes for project-type behavior; reserve
   Go edits for control-plane, state, networking, and orchestration.
 - Prefer deterministic behavior over convenience fallbacks.
-- **The `go` directive in `go/go.mod` picks the compiler.** Go comes
-  from upstream, not Debian: `bootstrap/30-mpd-build.sh` installs a
-  pinned release into `/usr/local/go` as the seed, and the go command
-  fetches whatever newer toolchain `go.mod` names (`GOTOOLCHAIN=auto`).
-  Raise the directive on purpose, for a feature you use.
+- **The `go` directive in `go/go.mod` picks the compiler.** The seed is
+  Debian's `golang` package, installed by
+  `bootstrap/20-install-software.sh`; the go command then fetches
+  whatever newer toolchain `go.mod` names (`GOTOOLCHAIN=auto`, which
+  Debian leaves on). Raise the directive on purpose, for a feature you
+  use. `go version` outside `go/` reports the Debian seed — check the
+  effective version with `cd go && go version`, or
+  `go version -m bin/mpd` for the binary that was built.
 - Avoid cross-file doc duplication; link to canonical owners.
 - **History is not a source of truth.** This repo's git history is
   rewritten and discarded periodically, on purpose: an accumulated

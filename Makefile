@@ -14,14 +14,6 @@ GO_DIR := $(CURDIR)/go
 VERSION := $(shell git -C $(CURDIR) describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X main.version=$(VERSION)
 
-# Go comes from upstream, not Debian: bootstrap/30-mpd-build.sh installs a
-# pinned release into /usr/local/go as the seed.
-#
-# The `go` directive in go/go.mod picks the compiler: the go command
-# fetches that toolchain itself when the installed one is older
-# (GOTOOLCHAIN=auto, the default). Bump the directive to move to a newer
-# Go; the VM's own install (bootstrap/30-mpd-build.sh) is only the seed.
-
 .PHONY: build install clean test vet fmt fmt-check lint-shell fmt-shell tidy
 
 build install:
