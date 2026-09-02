@@ -7,4 +7,4 @@
 
   Open https://%%ZONE%%             — status of everything on this VM
   Run   [33mmudev[0m                           — assemble a Moodle tree from a recipe
-  Then  [33mmpd init[0m + [33mmpd start[0m               — register, configure, start (docs/usage.md)
+  Then  [33mmpd init[0m + [33mmpd start[0m            — register, configure, start (docs/usage.md)
