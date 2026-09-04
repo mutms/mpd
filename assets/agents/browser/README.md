@@ -20,6 +20,12 @@ you point it at.
 - **chromium** at `/usr/bin/chromium` (override with `CHROMIUM=/path`).
 - **Node 22+** (needs the global `WebSocket`; tested on Node 24).
 
+No chromium on the VM? Ask a human dev to run the mpd helper **`gnome-install`**
+(`/opt/mpd/assets/vm/bin/gnome-install`) — it installs Chromium (plus a minimal
+GNOME desktop, idempotently). It needs apt/sudo, so it's a dev action, not an
+agent one. Bonus: `rdp-start` then exposes that desktop over RDP, so the dev can
+also click around Chromium interactively on the same VM.
+
 ## Screenshot
 
 ```sh
