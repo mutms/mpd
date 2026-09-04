@@ -1,6 +1,6 @@
 #!/bin/bash
-# gnome-install — add a minimal GNOME desktop plus Chromium to a VM that
-# has none. Idempotent.
+# gnome-install — add a minimal GNOME desktop, Chromium and browser-automation
+# media tools (ffmpeg, emoji font) to a VM that has none. Idempotent.
 #
 # --no-install-recommends keeps NetworkManager out: the VM runs
 # systemd-networkd, so GNOME's network panel stays empty by design.
@@ -23,7 +23,8 @@ usage() {
     cat <<'EOF'
 Usage: gnome-install [--yes]
 
-Install a minimal GNOME desktop and Chromium in this VM.
+Install a minimal GNOME desktop, Chromium and browser-automation media tools
+(ffmpeg, emoji font) in this VM.
 
   --yes, -y   do not ask before downloading
 
@@ -111,6 +112,11 @@ GNOME_PKGS=(
     gnome-session gnome-session-xsession gdm3
     gnome-terminal gnome-control-center
     chromium xdg-utils
+    # Media tooling shared by projects that automate the browser (the agent
+    # "browser" treat, docs-site screenshots): ffmpeg turns captured frames
+    # into GIF/WebP/MP4, and the emoji font makes headless renders match a
+    # real desktop.
+    ffmpeg fonts-noto-color-emoji
 )
 
 step "Desktop packages"
