@@ -59,8 +59,12 @@ export NVM_DIR="$HOME/.nvm"
 if [ -n "${PS1-}" ]; then
     _mpd_prompt() {
         if [ -n "${SSH_AUTH_SOCK-}" ] && [ -n "${SSH_CONNECTION-}" ]; then
+            # Match the marker ANYWHERE, not just as a prefix: terminals with
+            # their own prompt integration (JetBrains JediTerm) prepend escape
+            # sequences to PS1 each prompt, so a prefix-only check misses the
+            # existing 🔑 and stacks a new one every time (🔑 🔑 🔑 …).
             case "$PS1" in
-                '🔑 '*) ;;
+                *'🔑 '*) ;;
                 *) PS1="🔑 $PS1" ;;
             esac
         fi
