@@ -38,21 +38,26 @@ apply_project_template "$PROJECT_NAME" "$TYPE_DIR"
 # /srv/meta is dev-owned, so a plain mkdir works.
 mkdir -p "/srv/meta/${PROJECT_NAME}"
 
+# The console is the entry point and comes first, so it is the project's main
+# URL (what `mpd start` prints). It has NO backend: it is informational only, so
+# gen-caddyfile.sh does not route it — the console answers only to IPs/localhost
+# (its Host allow-list is the DNS-rebinding guard, mdl-demo invariant 10), so a
+# caddy hostname would be rejected. Devs open the console at its VM-bridge IP and
+# reach the site *through* it; the site is never accessed directly.
+#
+# The site IS reverse-proxied (its wwwroot must resolve for the console's "open
+# site" links), on the now-free bare project URL.
 cat > "/srv/meta/${PROJECT_NAME}/urls.json" <<EOF
 [
   {
     "label": "console",
     "kind": "web",
-    "url": "https://${PROJECT_NAME}.${MPD_ZONE}/",
-    "backend": {
-      "type": "reverse-proxy",
-      "upstream": "http://${GATEWAY}:${CONSOLE_PORT}"
-    }
+    "url": "http://${GATEWAY}:${CONSOLE_PORT}/"
   },
   {
     "label": "site",
     "kind": "web",
-    "url": "https://site.${PROJECT_NAME}.${MPD_ZONE}/",
+    "url": "https://${PROJECT_NAME}.${MPD_ZONE}/",
     "backend": {
       "type": "reverse-proxy",
       "upstream": "http://${GATEWAY}:${SITE_PORT}"
@@ -74,4 +79,4 @@ cat > "/srv/meta/${PROJECT_NAME}/effective.json" <<EOF
 }
 EOF
 
-echo "Done: '${PROJECT_NAME}' configured (mdl-demo — https://${PROJECT_NAME}.${MPD_ZONE}/ → VM :${CONSOLE_PORT}, https://site.${PROJECT_NAME}.${MPD_ZONE}/ → VM :${SITE_PORT})."
+echo "Done: '${PROJECT_NAME}' configured (mdl-demo — console http://${GATEWAY}:${CONSOLE_PORT}/ (IP-only, the entry point); site https://${PROJECT_NAME}.${MPD_ZONE}/ → VM :${SITE_PORT}, reached through the console)."
