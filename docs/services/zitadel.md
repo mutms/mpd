@@ -37,7 +37,7 @@ Make sure "Use new Login UI" is OFF.
 
 **In Moodle LMS**
 
-1. set "IdP metadata xml OR public xml URL" to: https://zitadel.caddy.NNN.mpd.test/.well-known/openid-configuration
+1. set "IdP metadata xml OR public xml URL" to: https://zitadel.caddy.NNN.mpd.test/saml/v2/metadata
 2. enable "auth_saml2 | debug"
 3. got to /auth/test_settings.php?auth=saml2 and test login
 4. use the debug info to set up saml to Moodle account mapping
@@ -50,11 +50,20 @@ In project click add New Application and use following info in each numbered ste
 
 1. Name + Type: Web
 2. Auth method: Code
-3. Redirect URI: `https://<project>.NNN.mpd.test/auth/oidc/`
+3. Redirect URI: https://<project>.NNN.mpd.test/auth/oidc/
 4. Press Create button and copy **Client ID + Secret** (secret shown only *once*!)
 
 Make sure "Use new Login UI" is OFF.
 
-### In Moodle LMS
+**In Moodle LMS**
 
-TODO: set up auth
+1. install [auth_oidc](https://github.com/microsoft/moodle-auth_oidc) plugin
+2. login as admin, enable auth_oidc
+3. in auth_oidc settings set:
+   - Identity Provider (IdP) type: **OpenID Connect**
+   - Client ID + Client Secret: from the Zitadel app (step 4 above)
+   - Client authentication method: **Client secret sent in login request** (matches "Code")
+   - Authorization endpoint: `https://zitadel.caddy.NNN.mpd.test/oauth/v2/authorize`
+   - Token endpoint: `https://zitadel.caddy.NNN.mpd.test/oauth/v2/token`
+4. go to the Moodle login page and use the OpenID Connect link to test login
+5. map fields under auth_oidc "Field mapping" (e.g. email → `email`, given_name → `firstname`, family_name → `lastname`)
