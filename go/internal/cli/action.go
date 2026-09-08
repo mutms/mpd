@@ -53,7 +53,7 @@ func Start(ctx context.Context, out io.Writer, d ProjectDeps, stateDir string) e
 	// Republish the records: a VM rebooted on a different network must
 	// not keep answering with its old LAN address. Free when nothing
 	// moved — the block is compared before it is written.
-	if err := PublishDNS(ctx, out, d.Dnsmasq, d.Net, d.State, false); err != nil {
+	if err := PublishDNS(ctx, out, d.Dnsmasq, d.Net, false); err != nil {
 		return err
 	}
 	// The resolver may be `active` without answering if it lost the boot
@@ -314,5 +314,5 @@ func restoreRunningProjects(ctx context.Context, out io.Writer,
 		}
 	}
 	// One publish after the loop covers every project.
-	return PublishDNS(ctx, out, dns, n, s, false)
+	return PublishDNS(ctx, out, dns, n, false)
 }

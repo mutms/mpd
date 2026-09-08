@@ -265,3 +265,36 @@ lost its peer: re-add it on the VM
 `sudo ip route replace 10.163.0.1/32 dev wg0`, `sudo wg-quick save wg0`)
 then run `mpd-virt start <NNN>` on the host: it reads the VM's new
 public key and re-registers the peer in mpd-proxy.
+
+## authentik starts but never creates akadmin (login shows `/setup`)
+
+**Symptom.** The `authentik` pod service starts, its HTTP health
+endpoints answer 200, but visiting it redirects to `/setup` (the
+first-run admin page) and no `akadmin` user exists. Password login and
+the bootstrap API token both fail.
+
+**Cause.** authentik creates `akadmin` from a *blueprint* the **worker**
+applies, not from the entrypoint "bootstrap". A pod's containers share
+one network namespace, so `server` and `worker` — which both open the
+same listeners (`AUTHENTIK_LISTEN__HTTP` 9000, `__HTTPS` 9443,
+`__METRICS` 9300) — collide on those ports. The server wins, the
+worker's HTTP bind fails silently, and its task consumer never starts.
+Blueprint-apply tasks pile up `queued` and never run, so `akadmin` is
+never created. Nothing logs an error; the pod is "running".
+
+**Diagnose.** Tasks stuck queued and blueprints never applied:
+```
+sudo podman exec mpd-svc-authentik-postgres \
+  psql -U authentik -d authentik -tAc \
+  "select state,count(*) from authentik_tasks_task group by state;"
+```
+All `queued`, zero consumed, confirms the worker is not processing. The
+worker log line `starting worker server addr 0.0.0.0:9000` is the tell:
+it is trying the server's port.
+
+**Fix.** Give the worker its own listener ports, off the server's, in
+`go/internal/services/authentik.go` (`AUTHENTIK_LISTEN__HTTP=…:9001`,
+`__HTTPS=…:9444`, `__METRICS=…:9301`). A later `-e` for a key wins in
+podman, so the worker's overrides sit after the shared server env. Any
+new pod service pairing two containers from one image that each bind a
+fixed port must relocate one side the same way.

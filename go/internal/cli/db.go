@@ -90,7 +90,7 @@ func syncDatabaseState(ctx context.Context, p *podman.Client, s state.Store,
 			return err
 		}
 	}
-	return PublishDNS(ctx, io.Discard, dns, n, s, false)
+	return PublishDNS(ctx, io.Discard, dns, n, false)
 }
 
 // DBCreate creates (or starts) a DB container.

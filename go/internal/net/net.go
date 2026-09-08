@@ -174,6 +174,11 @@ func (n Net) Host(name string) string { return name + "." + n.Zone() }
 // Service("adminer") → "adminer.svc.<zone>".
 func (n Net) Service(name string) string { return n.Host(name + ".svc") }
 
+// Caddy names a service's frontdoor host, sibling to Service:
+// Caddy("authentik") → "authentik.caddy.<zone>". The frontdoor
+// terminates TLS here and proxies to the service; .svc stays direct.
+func (n Net) Caddy(name string) string { return n.Host(name + ".caddy") }
+
 // DB names a database container: DB("pg17") → "pg17.db.<zone>".
 func (n Net) DB(name string) string { return n.Host(name + ".db") }
 

@@ -756,19 +756,59 @@ deliberately distinct from the optional extra *services* below):
   URL shapes.
 
 Optional extra services (`go/internal/service/` — nothing installed by
-default; plain HTTP at their own addresses, reached over the overlay or
-SOCKS, never proxied by any caddy):
+default; reached over the overlay or SOCKS). Each answers directly at
+`<name>.svc.<NNN>.mpd.test` on its own static address over plain HTTP (and
+any raw port it opens — SMTP, LDAP). A service that sets `TLS` *also* gets
+a sibling frontdoor name `<name>.caddy.<NNN>.mpd.test` at `.2`, where
+mpd-caddy terminates browser-trusted TLS with an mpd-signed cert and
+reverse-proxies to the service's HTTP port — the same frontdoor and cert
+pipeline projects use. `.svc` stays the direct route for non-HTTP
+protocols; `.caddy` is the pretty HTTPS front. Service addresses are
+static, so every `.svc` (and every TLS service's `.caddy`) name is
+published from the registry in advance, install state aside:
 
 - `mailpit` — `.100`, `http://mailpit.svc.<NNN>.mpd.test:8025/`
   (SMTP `:1025`). One shared inbox; a mailpit-enabled project publishes
   an informational "mail" link filtered to it
   (`?q=<project>.<zone>`). Mail data lives on the `mpd-svc-mailpit`
   volume, which survives uninstall.
+- `authentik` — `.101`, HTTPS at `https://authentik.caddy.<NNN>.mpd.test/`
+  (frontdoor); `authentik.svc.<NNN>` is the direct pod route (HTTP `:9000`,
+  and the LDAP ports once the LDAP outpost lands). A test-only SAML/OIDC
+  identity provider for exercising Moodle auth plugins (`auth/saml2`,
+  `auth/ldap`); it does not manage mpd accounts. It is the first `TLS`
+  service and the first **pod**, not one container: authentik needs a server,
+  a worker, PostgreSQL and Redis, which share the one service address over
+  localhost (see the pod service model below). The akadmin password comes
+  from `MPD_AUTHENTIK_ADMIN_PASSWORD`; see [`security.md`](security.md). Its
+  containers also mount the VM's CA bundle so authentik trusts Moodle's
+  `*.mpd.test` HTTPS in return. Data lives on the `mpd-svc-authentik-db` and
+  `mpd-svc-authentik-media` volumes, which survive uninstall.
 - `adminer` — `.102`, `http://adminer.svc.<NNN>.mpd.test:8080/`.
 - `selenium` — `.103`, `http://selenium.svc.<NNN>.mpd.test:4444/`
   ("v1" so a future Moodle release can require another selenium
   alongside). Started by `mpd start` when a project sets
   `MPD_MOODLE_BEHAT=1` (which adds it to that project's required services).
+
+A service is one container, or — when it sets `PodContainers` — a **pod** of
+several containers (`go/internal/service/pod.go`). The pod holds the single
+service IP, DNS name and restart policy; its members share localhost, so they
+reach each other without extra DNS. Network and DNS options go on the pod, not
+its members. Everything else (the registry, addressing, autostart, `list`, the
+portal rows keyed on the primary member's `mpd.name` label) is identical to a
+single-container service.
+
+A service that sets `TLS` opts into the frontdoor: on start, `cli` issues an
+mpd-signed leaf for `<name>.caddy.<zone>` and writes
+`/srv/meta/<name>/{cert.pem,key.pem,cert.sans,urls.json}` — exactly the
+per-project cert-on-host + `urls.json` reverse-proxy shape mpd-caddy already
+consumes (`ensureServiceTLS` in `go/internal/cli/service.go`); uninstall drops
+that directory. The cert lives on the VM host, never in a container. `caddy`
+joins `svc`, `db` and `vm` as a reserved project name (`reservedNames`), so a
+project can never shadow a service's frontdoor label. (A service that needs its
+*own* cert inside a container for a raw protocol — LDAPS on the `.svc` lane —
+mints one into the pod instead, renewed by reinstall; that is the outpost's
+concern, not the frontdoor's.)
 
 Lifecycle mirrors databases. A project declares the services it needs in
 `MPD_REQUIRE_SERVICES`; on `mpd start` mpd ensures each is running (on demand,

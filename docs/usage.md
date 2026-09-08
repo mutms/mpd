@@ -278,13 +278,16 @@ sticky autostart intent that `mpd --vm-start` reconciles at boot. A
 `--service-stop` cannot hold down a service a running project requires — the
 next `mpd start` ensures it again, just like a stopped database.
 
-The three services and where they answer (HTTP only — their addresses
-are inside the trust boundary, reached via the WireGuard overlay or the
-SOCKS tunnel like everything else; no TLS, no proxying):
+The services and where they answer, reached via the WireGuard overlay or
+the SOCKS tunnel like everything else. Each answers directly at
+`<name>.svc.<NNN>` over plain HTTP (and any raw port it opens); a TLS
+service such as authentik also fronts browser-trusted HTTPS at
+`<name>.caddy.<NNN>` through the project frontdoor:
 
 | Service      | URL                                          | Notes                                                                         |
 |--------------|----------------------------------------------|-------------------------------------------------------------------------------|
 | `mailpit`    | `http://mailpit.svc.<NNN>.mpd.test:8025/`    | Shared mail catch-all; SMTP on `:1025`. Data volume survives uninstall.       |
+| `authentik`  | `https://authentik.caddy.<NNN>.mpd.test/`    | Test-only SAML/OIDC IdP (log in as `akadmin`), browser-trusted HTTPS via the frontdoor; `authentik.svc.<NNN>` is the direct pod route. Set the password with `MPD_AUTHENTIK_ADMIN_PASSWORD`; see [security.md](security.md). |
 | `adminer`    | `http://adminer.svc.<NNN>.mpd.test:8080/`    | DB web UI; the portal offers pre-filled per-project links.                    |
 | `selenium` | `http://selenium.svc.<NNN>.mpd.test:4444/` | Behat browser; started by `mpd start` on a Behat-enabled Moodle project. |
 

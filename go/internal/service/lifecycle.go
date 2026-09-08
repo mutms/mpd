@@ -17,6 +17,10 @@ import (
 func Start(ctx context.Context, out io.Writer, s Service, n net.Net, p *podman.Client) error {
 	ui.Step(out, "Service: %s", s.Name)
 
+	if s.IsPod() {
+		return startPod(ctx, out, s, n, p)
+	}
+
 	if err := ensureImage(ctx, out, s, p); err != nil {
 		return err
 	}
@@ -64,6 +68,9 @@ func Start(ctx context.Context, out io.Writer, s Service, n net.Net, p *podman.C
 // podman-restart.service would resurrect it at the next boot.
 func Stop(ctx context.Context, out io.Writer, s Service, p *podman.Client) error {
 	ui.Step(out, "Service: %s", s.Name)
+	if s.IsPod() {
+		return stopPod(ctx, out, s, p)
+	}
 	container := s.Container()
 	if !p.Exists(ctx, container) {
 		ui.OK(out, "%s is not installed.", s.Name)
@@ -83,6 +90,9 @@ func Stop(ctx context.Context, out io.Writer, s Service, p *podman.Client) error
 // is the destructive step.
 func Uninstall(ctx context.Context, out io.Writer, s Service, p *podman.Client) error {
 	ui.Step(out, "Service: %s", s.Name)
+	if s.IsPod() {
+		return uninstallPod(ctx, out, s, p)
+	}
 	container := s.Container()
 	if p.Exists(ctx, container) {
 		_, _ = p.Stop(ctx, container)
@@ -104,14 +114,14 @@ func Purge(ctx context.Context, out io.Writer, s Service, p *podman.Client) erro
 	if err := Uninstall(ctx, out, s, p); err != nil {
 		return err
 	}
-	if s.Volume == "" {
-		return nil
-	}
-	if p.VolumeExists(ctx, s.Volume) {
-		if code, err := p.VolumeRemove(ctx, s.Volume); err != nil || code != 0 {
-			return fmt.Errorf("Failed to remove volume '%s'.", s.Volume)
+	for _, vol := range s.Volumes() {
+		if !p.VolumeExists(ctx, vol) {
+			continue
 		}
-		ui.OK(out, "volume %s purged.", s.Volume)
+		if code, err := p.VolumeRemove(ctx, vol); err != nil || code != 0 {
+			return fmt.Errorf("Failed to remove volume '%s'.", vol)
+		}
+		ui.OK(out, "volume %s purged.", vol)
 	}
 	return nil
 }

@@ -328,7 +328,7 @@ func ProjectDelete(ctx context.Context, out io.Writer, in io.Reader, name string
 	}
 	// Recomputing after the state change is what retracts the project's
 	// names.
-	if err := PublishDNS(ctx, out, d.Dnsmasq, d.Net, d.State, false); err != nil {
+	if err := PublishDNS(ctx, out, d.Dnsmasq, d.Net, false); err != nil {
 		return err
 	}
 
@@ -415,7 +415,7 @@ func ProjectReset(ctx context.Context, out io.Writer, in io.Reader, name string,
 	}
 	// The entry has no URLs now, so the recompute retracts the
 	// project's names.
-	if err := PublishDNS(ctx, out, d.Dnsmasq, d.Net, d.State, false); err != nil {
+	if err := PublishDNS(ctx, out, d.Dnsmasq, d.Net, false); err != nil {
 		return err
 	}
 
@@ -539,7 +539,7 @@ func reconcileProject(ctx context.Context, out io.Writer, name string, args []st
 	// addressable one, the only rule that works for types whose server
 	// the developer starts by hand (astro). One recompute covers the
 	// project's names and the database created above.
-	if err := PublishDNS(ctx, out, d.Dnsmasq, d.Net, d.State, false); err != nil {
+	if err := PublishDNS(ctx, out, d.Dnsmasq, d.Net, false); err != nil {
 		return err
 	}
 
@@ -633,9 +633,9 @@ var projectVerbs = map[string]bool{
 }
 
 // reservedNames are names a project may not take because they live
-// directly under the project DNS namespace (svc, db, vm records).
+// directly under the project DNS namespace (svc, caddy, db, vm records).
 var reservedNames = map[string]bool{
-	"svc": true, "db": true, "vm": true,
+	"svc": true, "caddy": true, "db": true, "vm": true,
 }
 
 var validProjectName = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)

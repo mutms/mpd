@@ -334,6 +334,53 @@ func DNSOpts(gateway string) []string {
 	}
 }
 
+// --- Pods -------------------------------------------------------------
+
+// PodExists reports whether a pod exists in any state.
+func (c *Client) PodExists(ctx context.Context, name string) bool {
+	res, err := c.run(ctx, []string{"pod", "exists", name})
+	return err == nil && res.Code == 0
+}
+
+// PodRunning reports whether a pod's shared state is Running. A pod with
+// a stopped container reads as Degraded, not Running.
+func (c *Client) PodRunning(ctx context.Context, name string) bool {
+	res, err := c.run(ctx, []string{"pod", "inspect", name, "--format", "{{.State}}"})
+	return err == nil && res.Stdout == "Running"
+}
+
+// PodLabel reads one label from a pod, "" when missing.
+func (c *Client) PodLabel(ctx context.Context, name, key string) string {
+	res, err := c.run(ctx, []string{
+		"pod", "inspect", name, "--format", fmt.Sprintf("{{index .Labels %q}}", key),
+	})
+	if err != nil || res.Code != 0 {
+		return ""
+	}
+	return res.Stdout
+}
+
+// PodCreate creates an empty pod (`podman pod create`).
+func (c *Client) PodCreate(ctx context.Context, args []string) (int, error) {
+	return c.stream(ctx, append([]string{"pod", "create"}, args...))
+}
+
+// PodStart starts an existing pod's containers.
+func (c *Client) PodStart(ctx context.Context, name string) (int, error) {
+	return c.stream(ctx, []string{"pod", "start", name})
+}
+
+// PodStop stops a pod's containers.
+func (c *Client) PodStop(ctx context.Context, name string) (int, error) {
+	return c.stream(ctx, []string{"pod", "stop", name})
+}
+
+// PodRemove force-removes a pod and its containers. Named volumes are
+// left behind and must be reclaimed with VolumeRemove.
+func (c *Client) PodRemove(ctx context.Context, name string) (int, error) {
+	return c.stream(ctx, []string{"pod", "rm", "-f", name})
+}
+
 // RemoveIfOutdated removes a container whose labels no longer match
 // what mpd would create today, so the caller's "create if missing"
 // step rebuilds it. A container matching every checked label is left

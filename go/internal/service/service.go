@@ -3,6 +3,10 @@
 // in internal/services and self-register from an init(); adding one is a
 // new file there, never an edit here. They are HTTP-only, on their own
 // address in the service range; see docs/networking.md.
+//
+// A service is one container, or — when PodContainers is set — a pod of
+// several containers sharing one address and localhost (authentik). The
+// pod path lives in pod.go; the single-container path in lifecycle.go.
 package service
 
 import (
@@ -44,6 +48,35 @@ type Service struct {
 	// LinkFn, when set, contributes per-project dashboard links (see
 	// ProjectLinks); the portal asks instead of hardcoding URL schemes.
 	LinkFn func(s Service, n net.Net, info ProjectInfo) []Link
+	// PodContainers, when set, makes this service a pod of several
+	// containers instead of one. The pod holds the service IP and DNS
+	// name; its containers share localhost. Image, BuildContext, Volume,
+	// VolumePath and RunArgs on the Service itself are then ignored.
+	PodContainers []PodContainer
+	// TLS, when true, also publishes the service over HTTPS through the
+	// project frontdoor (mpd-caddy on .2) with an mpd-signed cert, at the
+	// sibling name <name>.caddy.<zone>. <name>.svc.<zone> is unaffected —
+	// it stays a direct route to the service's own address, for non-HTTP
+	// protocols (LDAP, SMTP) and raw access. See docs/architecture.md.
+	TLS bool
+}
+
+// PodContainer is one container inside a pod service.
+type PodContainer struct {
+	// Suffix names the container: mpd-svc-<service>-<suffix>.
+	Suffix string
+	// Image is pulled; pod containers do not build from a context.
+	Image string
+	// Args is the command and its arguments, after the image.
+	Args []string
+	// RunArgs are extra `podman run` arguments (env vars, flags).
+	RunArgs []string
+	// Volume, when non-empty, is a named volume mounted at VolumePath.
+	Volume     string
+	VolumePath string
+	// Primary marks the container that serves the service Port and
+	// carries the mpd.name=<service> label the status views key on.
+	Primary bool
 }
 
 // ProjectInfo is what a ProjectLinks hook may build links from.
@@ -125,9 +158,46 @@ func (s Service) IP(n net.Net) string { return n.IP(s.HostOctet) }
 // DNS is this service's name on the given VM: <name>.svc.<zone>.
 func (s Service) DNS(n net.Net) string { return n.Service(s.Name) }
 
-// AccessHint is the human-facing URL: plain HTTP, services have no TLS.
+// CaddyDNS is the frontdoor name for a TLS service:
+// <name>.caddy.<zone>, resolving to mpd-caddy (.2), which terminates TLS
+// and reverse-proxies to the service. <name>.svc.<zone> stays a direct
+// route to the service's own address for non-HTTP protocols.
+func (s Service) CaddyDNS(n net.Net) string { return n.Caddy(s.Name) }
+
+// Upstream is the service's own HTTP address, <ip>:<port> — what the
+// frontdoor reverse-proxies to for a TLS service.
+func (s Service) Upstream(n net.Net) string {
+	return fmt.Sprintf("%s:%d", s.IP(n), s.Port)
+}
+
+// AccessHint is the human-facing URL: HTTPS via the frontdoor name for a
+// TLS service, else plain HTTP on the service's own address and port.
 func (s Service) AccessHint(n net.Net) string {
+	if s.TLS {
+		return fmt.Sprintf("https://%s/", s.CaddyDNS(n))
+	}
 	return fmt.Sprintf("http://%s:%d/", s.DNS(n), s.Port)
+}
+
+// IsPod reports whether this service is a pod of several containers.
+func (s Service) IsPod() bool { return len(s.PodContainers) > 0 }
+
+// PodName is the podman pod name for a pod service: mpd-svc-<name>.
+func (s Service) PodName() string { return "mpd-svc-" + s.Name }
+
+// Volumes lists every named volume this service owns, so Purge can
+// reclaim them all: the Service's own volume plus each pod container's.
+func (s Service) Volumes() []string {
+	var out []string
+	if s.Volume != "" {
+		out = append(out, s.Volume)
+	}
+	for _, c := range s.PodContainers {
+		if c.Volume != "" {
+			out = append(out, c.Volume)
+		}
+	}
+	return out
 }
 
 // commonLabels go on every service container.

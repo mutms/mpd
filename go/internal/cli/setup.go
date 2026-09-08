@@ -157,7 +157,7 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 	m := dnsmasq.New(n, p, s)
-	if err := PublishDNS(ctx, out, m, n, s, true); err != nil {
+	if err := PublishDNS(ctx, out, m, n, true); err != nil {
 		return err
 	}
 
@@ -517,7 +517,7 @@ func reconcileCaches(ctx context.Context, out io.Writer, p *podman.Client, s sta
 	}
 	// The rescan may have found projects and databases the DNS block
 	// does not carry yet.
-	if err := PublishDNS(ctx, out, m, n, s, false); err != nil {
+	if err := PublishDNS(ctx, out, m, n, false); err != nil {
 		return err
 	}
 

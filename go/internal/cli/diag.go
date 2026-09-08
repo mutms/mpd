@@ -610,10 +610,10 @@ func diagData(ctx context.Context, r *diagRun, d DiagDeps) {
 			r.warn("service %q is marked autostart but is not a known service", entry.Name)
 			continue
 		}
-		if d.Podman.Running(ctx, svc.Container()) {
+		if svc.IsRunning(ctx, d.Podman) {
 			r.ok("service %s running", entry.Name)
 		} else {
-			r.fail("service %s is marked autostart but %s is not running", entry.Name, svc.Container())
+			r.fail("service %s is marked autostart but is not running", entry.Name)
 		}
 	}
 }
