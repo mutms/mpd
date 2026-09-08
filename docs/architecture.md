@@ -767,11 +767,13 @@ protocols; `.caddy` is the pretty HTTPS front. Service addresses are
 static, so every `.svc` (and every TLS service's `.caddy`) name is
 published from the registry in advance, install state aside:
 
-- `mailpit` — `.100`, `http://mailpit.svc.<NNN>.mpd.test:8025/`
-  (SMTP `:1025`). One shared inbox; a mailpit-enabled project publishes
-  an informational "mail" link filtered to it
-  (`?q=<project>.<zone>`). Mail data lives on the `mpd-svc-mailpit`
-  volume, which survives uninstall.
+- `mailpit` — `.100`, web UI over HTTPS at
+  `https://mailpit.caddy.<NNN>.mpd.test/` (a `TLS` service); SMTP stays
+  direct at `mailpit.svc.<NNN>.mpd.test:1025`, where projects send. One
+  shared inbox; a mailpit-enabled project publishes an informational
+  "mail" link to the frontdoor filtered to it (`?q=<project>.<zone>`).
+  Mail data lives on the `mpd-svc-mailpit` volume, which survives
+  uninstall.
 - `authentik` — `.101`. HTTP(S) — SAML/OIDC/UI/API — at the frontdoor
   `https://authentik.caddy.<NNN>.mpd.test/`; `authentik.svc.<NNN>` is the
   direct pod route, serving raw HTTP `:9000` and **LDAP `:3389` / LDAPS

@@ -286,7 +286,7 @@ service such as authentik also fronts browser-trusted HTTPS at
 
 | Service      | URL                                          | Notes                                                                         |
 |--------------|----------------------------------------------|-------------------------------------------------------------------------------|
-| `mailpit`    | `http://mailpit.svc.<NNN>.mpd.test:8025/`    | Shared mail catch-all; SMTP on `:1025`. Data volume survives uninstall.       |
+| `mailpit`    | `https://mailpit.caddy.<NNN>.mpd.test/`      | Shared mail catch-all; web UI over HTTPS via the frontdoor. SMTP stays direct at `mailpit.svc.<NNN>.mpd.test:1025` (where projects send). Data volume survives uninstall. |
 | `authentik`  | `https://authentik.caddy.<NNN>.mpd.test/`    | Test-only SAML/OIDC/LDAP IdP (log in as `akadmin`), browser-trusted HTTPS via the frontdoor. `auth/ldap` binds to `ldaps://authentik.svc.<NNN>.mpd.test:6636` (or `ldap://…:3389`), base DN `dc=ldap,dc=mpd,dc=test`, bind DN `cn=<user>,ou=users,dc=ldap,dc=mpd,dc=test`. Set the password with `MPD_AUTHENTIK_ADMIN_PASSWORD`; see [security.md](security.md). |
 | `adminer`    | `http://adminer.svc.<NNN>.mpd.test:8080/`    | DB web UI; the portal offers pre-filled per-project links.                    |
 | `selenium` | `http://selenium.svc.<NNN>.mpd.test:4444/` | Behat browser; started by `mpd start` on a Behat-enabled Moodle project. |

@@ -297,4 +297,20 @@ it is trying the server's port.
 `__HTTPS=…:9444`, `__METRICS=…:9301`). A later `-e` for a key wins in
 podman, so the worker's overrides sit after the shared server env. Any
 new pod service pairing two containers from one image that each bind a
-fixed port must relocate one side the same way.
+fixed port must relocate one side the same way. The LDAP outpost
+(`authentik_ldap.go`) moves its metrics to `:9302` for the same reason.
+
+## The dashboard shows stale service info after a rebuild
+
+**Symptom.** You change how a service renders (a URL, an access hint) and
+`make install` succeeds, but `https://<NNN>.mpd.test/` still shows the old
+value — e.g. mailpit's access stays `http://mailpit.svc…:8025/` after it
+became a TLS service.
+
+**Cause.** The status page is served by `mpd --web`, a long-running user
+unit (`mpd-web.service`). `make install` rewrites `bin/mpd` but does not
+restart the unit, so the portal keeps executing the old binary.
+
+**Fix.** `systemctl --user restart mpd-web.service` (or `mpd --vm-setup`,
+which restarts it as part of setup). The same applies to any long-running
+mpd process after a rebuild.

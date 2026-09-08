@@ -194,14 +194,15 @@ if [ "$BEHAT" = "1" ]; then
 fi
 
 # Informational mail link: no backend, so the frontdoor skips it and
-# mpd issues no cert or DNS for it. The query pre-filters the shared
-# mailpit inbox to mail referencing this project's wwwroot.
+# mpd issues no cert or DNS for it. It points at mailpit's HTTPS
+# frontdoor (mailpit.caddy); the query pre-filters the shared inbox to
+# mail referencing this project's wwwroot.
 if _service_required mailpit; then
     URLS="${URLS}"',
   {
     "label": "mail",
     "kind": "mail",
-    "url": "http://mailpit.svc.'"${MPD_ZONE}"':8025/?q='"${PROJECT_NAME}"'.'"${MPD_ZONE}"'"
+    "url": "https://mailpit.caddy.'"${MPD_ZONE}"'/?q='"${PROJECT_NAME}"'.'"${MPD_ZONE}"'"
   }'
 fi
 URLS="${URLS}"'
