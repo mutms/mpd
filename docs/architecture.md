@@ -812,9 +812,11 @@ project can never shadow a service's frontdoor label.
 
 A service may set `PostStart`, a callback run after it is up and its TLS meta
 written — the place for work that needs the service already running.
-authentik uses it to provision its LDAP outpost: authentik serves LDAP from a
-separate outpost container that authenticates with a token the core mints, so
-`PostStart` (in `go/internal/services/authentik_ldap.go`) waits for the core,
+authentik uses it to configure itself: `PostStart` (in
+`go/internal/services/authentik_ldap.go`) waits for the core, sets the system
+`base_url` to the frontdoor URL (else authentik warns it is unconfigured),
+then provisions its LDAP outpost. authentik serves LDAP from a separate
+outpost container that authenticates with a token the core mints, so it
 ensures the LDAP provider/application/outpost via the API (idempotent),
 uploads an mpd-signed LDAPS cert for `authentik.svc.<zone>` and assigns it to
 the provider, reads the outpost token, and launches the outpost into the pod

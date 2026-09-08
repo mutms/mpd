@@ -68,7 +68,7 @@ func init() {
 		Revision:  "3",
 		Port:      9000,
 		TLS:       true,
-		PostStart: provisionLDAP,
+		PostStart: provisionAuthentik,
 		PodContainers: []service.PodContainer{
 			{
 				Suffix:     "postgres",

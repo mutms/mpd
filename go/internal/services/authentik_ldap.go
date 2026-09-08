@@ -1,7 +1,6 @@
 package services
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,7 +8,6 @@ import (
 	gohttp "net/http"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/mutms/mpd/go/internal/cert"
 	"github.com/mutms/mpd/go/internal/net"
@@ -17,13 +15,13 @@ import (
 	"github.com/mutms/mpd/go/internal/service"
 )
 
-// authentik LDAP provisioning. authentik serves LDAP from a dedicated
-// outpost container, not the core, and the outpost authenticates with a
-// service-account token the core generates. So this runs as the service
-// PostStart, once the core is up: it provisions the LDAP provider,
-// application and outpost through the API (idempotent), uploads an
-// mpd-signed LDAPS cert, reads the outpost token, and launches the
-// outpost into the pod. See docs/architecture.md.
+// authentik LDAP. authentik serves LDAP from a dedicated outpost
+// container, not the core, and the outpost authenticates with a
+// service-account token the core generates. setupLDAP provisions the
+// provider, application and outpost through the API (idempotent), uploads
+// an mpd-signed LDAPS cert, reads the outpost token, and launches the
+// outpost into the pod. Called from provisionAuthentik. See
+// docs/architecture.md.
 
 const (
 	ldapImage        = "ghcr.io/goauthentik/ldap:2026.8"
@@ -33,27 +31,6 @@ const (
 	ldapCertName     = "mpd-ldap"
 	ldapBaseDN       = "dc=ldap,dc=mpd,dc=test"
 )
-
-// provisionLDAP is authentik's PostStart. It is best-effort: a failure
-// warns and returns nil, so the core service still counts as started and
-// the developer can re-run --service-start to retry.
-func provisionLDAP(ctx context.Context, out io.Writer, s service.Service, n net.Net, p *podman.Client) error {
-	api := &authentikAPI{
-		base:   fmt.Sprintf("http://%s:%d", s.IP(n), s.Port),
-		token:  envDefault("MPD_AUTHENTIK_ADMIN_TOKEN", "mpd-authentik-dev-token"),
-		client: &gohttp.Client{Timeout: 15 * time.Second},
-	}
-
-	if !api.waitReady(ctx, 120*time.Second) {
-		fmt.Fprintln(out, "  authentik LDAP: core did not become ready; skipping (re-run --service-start=authentik to retry).")
-		return nil
-	}
-
-	if err := setupLDAP(ctx, out, api, s, n, p); err != nil {
-		fmt.Fprintf(out, "  authentik LDAP: %v (re-run --service-start=authentik to retry).\n", err)
-	}
-	return nil
-}
 
 func setupLDAP(ctx context.Context, out io.Writer, api *authentikAPI, s service.Service, n net.Net, p *podman.Client) error {
 	authFlow, err := api.flowBySlug(ctx, "default-authentication-flow")
@@ -127,74 +104,6 @@ func runLDAPOutpost(ctx context.Context, out io.Writer, s service.Service, p *po
 		return fmt.Errorf("starting LDAP outpost container failed")
 	}
 	return nil
-}
-
-// --- authentik API client (minimal, admin-token) --------------------
-
-type authentikAPI struct {
-	base   string
-	token  string
-	client *gohttp.Client
-}
-
-func (a *authentikAPI) do(ctx context.Context, method, path string, body any) (int, []byte, error) {
-	var reader io.Reader
-	if body != nil {
-		buf, err := json.Marshal(body)
-		if err != nil {
-			return 0, nil, err
-		}
-		reader = bytes.NewReader(buf)
-	}
-	req, err := gohttp.NewRequestWithContext(ctx, method, a.base+path, reader)
-	if err != nil {
-		return 0, nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+a.token)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := a.client.Do(req)
-	if err != nil {
-		return 0, nil, err
-	}
-	defer resp.Body.Close()
-	data, _ := io.ReadAll(resp.Body)
-	return resp.StatusCode, data, nil
-}
-
-func (a *authentikAPI) waitReady(ctx context.Context, timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if code, _, err := a.do(ctx, gohttp.MethodGet, "/-/health/ready/", nil); err == nil && code == 200 {
-			return true
-		}
-		select {
-		case <-ctx.Done():
-			return false
-		case <-time.After(3 * time.Second):
-		}
-	}
-	return false
-}
-
-// results decodes a paginated list response's results array.
-func results(data []byte) []map[string]any {
-	var page struct {
-		Results []map[string]any `json:"results"`
-	}
-	_ = json.Unmarshal(data, &page)
-	return page.Results
-}
-
-// pick finds the object whose field equals value. authentik's list
-// endpoints do not all honour a `?field=` query filter (the outpost list
-// ignores `?name=`), so the match is made here, never on results[0].
-func pick(rs []map[string]any, field, value string) (map[string]any, bool) {
-	for _, r := range rs {
-		if str(r[field]) == value {
-			return r, true
-		}
-	}
-	return nil, false
 }
 
 func (a *authentikAPI) flowBySlug(ctx context.Context, slug string) (string, error) {
@@ -365,23 +274,4 @@ func (a *authentikAPI) findCertKeypair(ctx context.Context) (string, bool, error
 		return str(kp["pk"]), true, nil
 	}
 	return "", false, nil
-}
-
-// str renders a JSON value (string or number) as a string.
-func str(v any) string {
-	switch t := v.(type) {
-	case string:
-		return t
-	case float64:
-		return fmt.Sprintf("%v", t)
-	default:
-		return ""
-	}
-}
-
-func num(v any) float64 {
-	if f, ok := v.(float64); ok {
-		return f
-	}
-	return 0
 }
