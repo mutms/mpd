@@ -16,6 +16,12 @@
     # The webroot is the project checkout, so mpd.env, .git/ and friends
     # sit under it. Deny dot-segments, dependency dirs, mpd/project config
     # files, and phars. 404, not 403 — do not acknowledge the file exists.
-    @denied path_regexp /\.|/(vendor|node_modules)/|/(mpd\.env|config-mpd\.php|compose\.yaml|docker-compose\.yml|phpunit\.xml|behat\.yml)$|\.phar$
+    # Exempt /.well-known/: a standard public path (OIDC/SAML discovery,
+    # ACME). RE2 has no lookahead, so the exemption is a separate `not`
+    # matcher AND'd with the deny rule.
+    @denied {
+        not path /.well-known/*
+        path_regexp /\.|/(vendor|node_modules)/|/(mpd\.env|config-mpd\.php|compose\.yaml|docker-compose\.yml|phpunit\.xml|behat\.yml)$|\.phar$
+    }
     respond @denied 404
 }

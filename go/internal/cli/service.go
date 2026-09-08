@@ -99,14 +99,18 @@ func ensureServiceTLS(ctx context.Context, out io.Writer, svc service.Service, n
 		}
 	}
 
+	backend := map[string]any{
+		"type":     "reverse-proxy",
+		"upstream": svc.Upstream(n),
+	}
+	if svc.FrontdoorH2C {
+		backend["h2c"] = true
+	}
 	urls := []map[string]any{{
-		"label": svc.Name,
-		"kind":  "reverse-proxy",
-		"url":   "https://" + host + "/",
-		"backend": map[string]any{
-			"type":     "reverse-proxy",
-			"upstream": svc.Upstream(n),
-		},
+		"label":   svc.Name,
+		"kind":    "reverse-proxy",
+		"url":     "https://" + host + "/",
+		"backend": backend,
 	}}
 	return srv.WriteJSON(srv.MetaFile(svc.Name, "urls.json"), urls)
 }

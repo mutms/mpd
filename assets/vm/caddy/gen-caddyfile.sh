@@ -58,9 +58,15 @@ render_vhost() {
             echo "    file_server"
             ;;
         reverse-proxy)
-            local upstream
+            local upstream h2c
             upstream=$(jq -r '.upstream' <<<"$backend_json")
-            echo "    reverse_proxy ${upstream}"
+            # h2c: reach a gRPC/HTTP2-only backend (Zitadel) over cleartext HTTP/2.
+            h2c=$(jq -r '.h2c // false' <<<"$backend_json")
+            if [ "$h2c" = "true" ]; then
+                echo "    reverse_proxy h2c://${upstream}"
+            else
+                echo "    reverse_proxy ${upstream}"
+            fi
             ;;
         redirect)
             local target

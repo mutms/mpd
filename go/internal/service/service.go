@@ -62,6 +62,11 @@ type Service struct {
 	// it stays a direct route to the service's own address, for non-HTTP
 	// protocols (LDAP, SMTP) and raw access. See docs/architecture.md.
 	TLS bool
+	// FrontdoorH2C makes the frontdoor reach the service over cleartext
+	// HTTP/2 (h2c) instead of HTTP/1.1. Needed by gRPC backends that only
+	// speak HTTP/2 behind a TLS-terminating proxy (Zitadel). TLS must also
+	// be set.
+	FrontdoorH2C bool
 	// PostStart, when set, runs after the service is up and its TLS meta
 	// written. It is the service's chance to do work that needs the
 	// service already running — authentik provisions and launches its

@@ -314,3 +314,43 @@ restart the unit, so the portal keeps executing the old binary.
 **Fix.** `systemctl --user restart mpd-web.service` (or `mpd --vm-setup`,
 which restarts it as part of setup). The same applies to any long-running
 mpd process after a rebuild.
+
+## `/.well-known/…` 404s behind the frontdoor (OIDC/SAML discovery fails)
+
+**Symptom.** A service or project returns 200 for `/.well-known/…` when hit
+directly on its address, but 404 through the frontdoor
+(`<name>.caddy.<zone>` / `<project>.<zone>`). Breaks OIDC discovery
+(`/.well-known/openid-configuration`), SAML metadata under `.well-known`,
+and ACME `http-01`. A Zitadel/authentik console can render "[object
+Object]" because the SPA's discovery call fails.
+
+**Cause.** The `deny_sensitive` snippet
+(`assets/vm/caddy/templates/header.caddyfile`) denies any path with a
+dot-segment (`/\.`) to hide `.git`, `.env` and friends — and `/.well-known/`
+matches. caddy's `path_regexp` is RE2, which has no lookahead, so the dot
+rule cannot exclude `.well-known` inline.
+
+**Diagnose.** `curl -so /dev/null -w '%{http_code}'` the path through the
+frontdoor (404) vs. straight to the backend (200) — the frontdoor is the
+difference.
+
+**Fix.** Exempt `.well-known` with a separate `not path /.well-known/*`
+matcher AND'd into `@denied` (a named matcher's conditions are AND'd).
+Real dotfiles (`/.git/config`, `/.env`) still 404. Restart the frontdoor
+to load the new header: `sudo systemctl restart mpd-caddy.service` (the
+header is read at regenerate; editing it alone triggers no inotify event).
+
+## Zitadel console shows "[object Object]" behind the frontdoor
+
+**Symptom.** Zitadel's health endpoints return 200 and the console HTML
+loads, but the page renders "[object Object]". Its
+`/ui/console/assets/environment.json` shows `"api":"http://…"` while the
+page was served over https.
+
+**Cause.** Zitadel was started with `--tlsMode disabled`, which marks the
+whole deployment insecure and builds the console's `api` URL as http.
+Loaded over https, that api call is mixed-content and the browser blocks
+it. The correct mode when a proxy terminates TLS is `--tlsMode external`
+(ZITADEL serves plain http, external URL is https). See
+`go/internal/services/zitadel.go`. Also ensure `.well-known` is reachable
+(entry above) or discovery-based flows fail even once the scheme is right.
