@@ -10,10 +10,13 @@
 package service
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"sort"
 
 	"github.com/mutms/mpd/go/internal/net"
+	"github.com/mutms/mpd/go/internal/podman"
 )
 
 // RevisionLabel marks the asset revision a container was built from.
@@ -59,6 +62,12 @@ type Service struct {
 	// it stays a direct route to the service's own address, for non-HTTP
 	// protocols (LDAP, SMTP) and raw access. See docs/architecture.md.
 	TLS bool
+	// PostStart, when set, runs after the service is up and its TLS meta
+	// written. It is the service's chance to do work that needs the
+	// service already running — authentik provisions and launches its
+	// LDAP outpost here. It must be idempotent: every start and reconcile
+	// runs it. A returned error is reported, not fatal to the start.
+	PostStart func(ctx context.Context, out io.Writer, s Service, n net.Net, p *podman.Client) error
 }
 
 // PodContainer is one container inside a pod service.

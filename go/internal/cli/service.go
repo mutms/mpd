@@ -46,7 +46,12 @@ func startService(ctx context.Context, out io.Writer, svc service.Service,
 		return err
 	}
 	if svc.TLS {
-		return ensureServiceTLS(ctx, out, svc, n)
+		if err := ensureServiceTLS(ctx, out, svc, n); err != nil {
+			return err
+		}
+	}
+	if svc.PostStart != nil {
+		return svc.PostStart(ctx, out, svc, n, p)
 	}
 	return nil
 }

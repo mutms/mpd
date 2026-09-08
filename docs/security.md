@@ -265,7 +265,12 @@ as a store of real credentials.
   `https://authentik.caddy.<NNN>.mpd.test/` through the project frontdoor
   (mpd-caddy on `.2`), with an mpd-signed cert like any project. The raw
   pod address `authentik.svc.<NNN>.mpd.test` stays plain HTTP for direct
-  access. Still a test IdP — do not point real accounts at it.
+  access, and serves LDAP `:3389` / LDAPS `:6636` from the LDAP outpost.
+  LDAPS presents an mpd-signed leaf for `authentik.svc.<NNN>.mpd.test`,
+  uploaded into authentik and served from **inside** the pod — the one
+  place mpd puts a leaf key in a container, for the raw-protocol lane
+  caddy cannot front; it is regenerated on reinstall. Still a test IdP —
+  do not point real accounts at it.
 - To fetch Moodle's SP metadata over `*.mpd.test` HTTPS in return,
   authentik's containers mount the VM's CA bundle
   (`/etc/ssl/certs/ca-certificates.crt`, read-only) and point Python and
