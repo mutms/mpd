@@ -30,8 +30,8 @@ VM (Debian Trixie)   hostname mpd-<NNN>;  LAN IP exposes sshd + wg (+ mDNS disco
     │   and wg0 may route in
     +-- DB containers           10.163.<NNN>.10–.99
     +-- extra service containers 10.163.<NNN>.100–.199  (direct at
-                                 <name>.svc: mailpit .100, authentik .101,
-                                 adminer .102, selenium .103; a TLS service
+                                 <name>.svc: mailpit .100, adminer .102,
+                                 selenium .103, zitadel .104; a TLS service
                                  also fronts HTTPS at <name>.caddy → .2)
 ```
 
@@ -150,8 +150,8 @@ as the last octet of the VM's static IP). It is the discriminator in
 the addressing: the third octet of the container subnet, and the first
 label of the DNS zone. Nothing else varies: the project frontdoor is
 always `.2`, databases take `.10–.99`, extra service containers
-`.100–.199` (each service pins its own octet: mailpit `.100`, authentik
-`.101`, adminer `.102`, selenium `.103`), and the resolver and the status page answer on
+`.100–.199` (each service pins its own octet: mailpit `.100`, adminer
+`.102`, selenium `.103`, zitadel `.104`), and the resolver and the status page answer on
 the gateway `.1`. Both `.1` and `.2` are the VM itself — the container
 IPAM range starts at `.10` so netavark can never hand either out.
 

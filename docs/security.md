@@ -255,39 +255,26 @@ gateway `.1` can read it: the laptop over the overlay or the SOCKS
 tunnel, and project code running on the VM. It is not reachable from
 the LAN.
 
-## Test identity provider (authentik)
+## Test identity provider (zitadel)
 
-The optional `authentik` service is a **test-only** SAML/OIDC identity
-provider, for exercising Moodle auth plugins. Treat it as disposable, not
-as a store of real credentials.
+The optional `zitadel` service is a **test-only** SAML/OIDC identity
+provider, for exercising Moodle's `auth/saml2` and `auth/oidc`. Treat it
+as disposable, not a store of real credentials. Setup is in
+[`services/zitadel.md`](services/zitadel.md).
 
-- It is served browser-trusted over HTTPS at
-  `https://authentik.caddy.<NNN>.mpd.test/` through the project frontdoor
-  (mpd-caddy on `.2`), with an mpd-signed cert like any project. The raw
-  pod address `authentik.svc.<NNN>.mpd.test` stays plain HTTP for direct
-  access, and serves LDAP `:3389` / LDAPS `:6636` from the LDAP outpost.
-  LDAPS presents an mpd-signed leaf for `authentik.svc.<NNN>.mpd.test`,
-  uploaded into authentik and served from **inside** the pod — the one
-  place mpd puts a leaf key in a container, for the raw-protocol lane
-  caddy cannot front; it is regenerated on reinstall. Still a test IdP —
-  do not point real accounts at it.
-- To fetch Moodle's SP metadata over `*.mpd.test` HTTPS in return,
-  authentik's containers mount the VM's CA bundle
-  (`/etc/ssl/certs/ca-certificates.crt`, read-only) and point Python and
-  OpenSSL at it (`SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`). Only the public
-  anchor enters the container; the CA **key** never does.
-- Its Django secret key and internal database password are **fixed dev
-  constants** baked into `go/internal/services/authentik.go`. They keep
-  the test IdP deterministic; they are not secrets.
-- The akadmin password comes from `MPD_AUTHENTIK_ADMIN_PASSWORD`
-  (`MPD_AUTHENTIK_ADMIN_TOKEN` and `MPD_AUTHENTIK_ADMIN_EMAIL` set the
-  bootstrap API token and email). Put them in `/var/lib/mpd/env/vm.env`,
-  which the dev shell sources before running `mpd`. Unset, the password
-  defaults to `authentik`.
-- authentik reads these bootstrap variables **only on its first start**
-  (a fresh `mpd-svc-authentik-db` volume). To change the password later,
-  run `mpd --service-purge=authentik` (drops both authentik volumes)
-  then start it again.
+- Served browser-trusted over HTTPS at
+  `https://zitadel.caddy.<NNN>.mpd.test/` through the project frontdoor
+  (mpd-caddy on `.2`), with an mpd-signed cert like any project.
+- Its master key and internal database password are **fixed dev
+  constants** in `go/internal/services/zitadel.go`. They keep the test
+  IdP deterministic; they are not secrets.
+- The admin password comes from `MPD_ZITADEL_ADMIN_PASSWORD` (default
+  `Password1!`), applied only on the first start (fresh DB). To change it,
+  `mpd --service-purge=zitadel` then start again.
+- To fetch a project's SP metadata over `*.mpd.test` HTTPS, zitadel's
+  container mounts the VM's CA bundle
+  (`/etc/ssl/certs/ca-certificates.crt`, read-only) via `SSL_CERT_FILE`.
+  Only the public anchor enters the container; the CA **key** never does.
 
 ## TLS and the certificate authority
 

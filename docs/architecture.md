@@ -774,26 +774,13 @@ published from the registry in advance, install state aside:
   "mail" link to the frontdoor filtered to it (`?q=<project>.<zone>`).
   Mail data lives on the `mpd-svc-mailpit` volume, which survives
   uninstall.
-- `authentik` — `.101`. HTTP(S) — SAML/OIDC/UI/API — at the frontdoor
-  `https://authentik.caddy.<NNN>.mpd.test/`; `authentik.svc.<NNN>` is the
-  direct pod route, serving raw HTTP `:9000` and **LDAP `:3389` / LDAPS
-  `:6636`**. A test-only SAML/OIDC/LDAP identity provider for exercising
-  Moodle auth plugins (`auth/saml2`, `auth/ldap`); it does not manage mpd
-  accounts. It is the first `TLS` service and the first **pod**, not one
-  container: server, worker, PostgreSQL and Redis share the one service
-  address over localhost, plus an **LDAP outpost** container launched by
-  the service `PostStart` (see below). The akadmin password comes from
-  `MPD_AUTHENTIK_ADMIN_PASSWORD`; see [`security.md`](security.md). Its
-  containers also mount the VM's CA bundle so authentik trusts Moodle's
-  `*.mpd.test` HTTPS in return. Data lives on the `mpd-svc-authentik-db` and
-  `mpd-svc-authentik-media` volumes, which survive uninstall.
 - `adminer` — `.102`, `http://adminer.svc.<NNN>.mpd.test:8080/`.
 - `selenium` — `.103`, `http://selenium.svc.<NNN>.mpd.test:4444/`
   ("v1" so a future Moodle release can require another selenium
   alongside). Started by `mpd start` when a project sets
   `MPD_MOODLE_BEHAT=1` (which adds it to that project's required services).
 - `zitadel` — `.104`, HTTPS at `https://zitadel.caddy.<NNN>.mpd.test/`. A
-  test SAML/OIDC identity provider (Go, lighter than authentik): a pod of
+  test SAML/OIDC identity provider (Go): a pod of
   the zitadel server plus PostgreSQL, the first `FrontdoorH2C` service (its
   gRPC needs HTTP/2, so the frontdoor reaches it over h2c). Admin password
   from `MPD_ZITADEL_ADMIN_PASSWORD`. Wiring it to Moodle `auth/saml2` and
@@ -815,23 +802,9 @@ per-project cert-on-host + `urls.json` reverse-proxy shape mpd-caddy already
 consumes (`ensureServiceTLS` in `go/internal/cli/service.go`); uninstall drops
 that directory. The cert lives on the VM host, never in a container. `caddy`
 joins `svc`, `db` and `vm` as a reserved project name (`reservedNames`), so a
-project can never shadow a service's frontdoor label.
-
-A service may set `PostStart`, a callback run after it is up and its TLS meta
-written — the place for work that needs the service already running.
-authentik uses it to configure itself: `PostStart` (in
-`go/internal/services/authentik_ldap.go`) waits for the core, sets the system
-`base_url` to the frontdoor URL (else authentik warns it is unconfigured),
-then provisions its LDAP outpost. authentik serves LDAP from a separate
-outpost container that authenticates with a token the core mints, so it
-ensures the LDAP provider/application/outpost via the API (idempotent),
-uploads an mpd-signed LDAPS cert for `authentik.svc.<zone>` and assigns it to
-the provider, reads the outpost token, and launches the outpost into the pod
-(`--pod`, serving LDAP `:3389`/LDAPS `:6636`). It is best-effort and
-idempotent — re-run `--service-start=authentik` to retry — and the outpost's
-LDAPS cert lives inside the pod, renewed by reinstall, the one place mpd puts
-a leaf in a container (a deliberate call for the raw-protocol `.svc` lane; the
-CA key still never enters).
+project can never shadow a service's frontdoor label. A service that also
+needs cleartext HTTP/2 to the backend (gRPC — zitadel) sets `FrontdoorH2C`,
+and the frontdoor reaches it with `reverse_proxy h2c://…`.
 
 Lifecycle mirrors databases. A project declares the services it needs in
 `MPD_REQUIRE_SERVICES`; on `mpd start` mpd ensures each is running (on demand,

@@ -266,39 +266,21 @@ lost its peer: re-add it on the VM
 then run `mpd-virt start <NNN>` on the host: it reads the VM's new
 public key and re-registers the peer in mpd-proxy.
 
-## authentik starts but never creates akadmin (login shows `/setup`)
+## Pod members from one image collide on a shared port
 
-**Symptom.** The `authentik` pod service starts, its HTTP health
-endpoints answer 200, but visiting it redirects to `/setup` (the
-first-run admin page) and no `akadmin` user exists. Password login and
-the bootstrap API token both fail.
+**Symptom.** A pod service starts and reads as "running", but one member
+misbehaves silently — a bind fails with no error in the aggregate health.
 
-**Cause.** authentik creates `akadmin` from a *blueprint* the **worker**
-applies, not from the entrypoint "bootstrap". A pod's containers share
-one network namespace, so `server` and `worker` — which both open the
-same listeners (`AUTHENTIK_LISTEN__HTTP` 9000, `__HTTPS` 9443,
-`__METRICS` 9300) — collide on those ports. The server wins, the
-worker's HTTP bind fails silently, and its task consumer never starts.
-Blueprint-apply tasks pile up `queued` and never run, so `akadmin` is
-never created. Nothing logs an error; the pod is "running".
+**Cause.** A pod's containers share one network namespace. Two members
+built from the **same image** (or otherwise defaulting to the same
+listen port) collide: the first wins the port, the second's bind fails
+quietly. Nothing logs an error at the pod level.
 
-**Diagnose.** Tasks stuck queued and blueprints never applied:
-```
-sudo podman exec mpd-svc-authentik-postgres \
-  psql -U authentik -d authentik -tAc \
-  "select state,count(*) from authentik_tasks_task group by state;"
-```
-All `queued`, zero consumed, confirms the worker is not processing. The
-worker log line `starting worker server addr 0.0.0.0:9000` is the tell:
-it is trying the server's port.
-
-**Fix.** Give the worker its own listener ports, off the server's, in
-`go/internal/services/authentik.go` (`AUTHENTIK_LISTEN__HTTP=…:9001`,
-`__HTTPS=…:9444`, `__METRICS=…:9301`). A later `-e` for a key wins in
-podman, so the worker's overrides sit after the shared server env. Any
-new pod service pairing two containers from one image that each bind a
-fixed port must relocate one side the same way. The LDAP outpost
-(`authentik_ldap.go`) moves its metrics to `:9302` for the same reason.
+**Fix.** Give each colliding member its own port via env, placed *after*
+the shared env so a later `-e` for the key wins in podman. (Not currently
+hit — zitadel's pod pairs `postgres` + `server`, distinct images and
+ports — but any future one-image-twice pod service must relocate one
+side.)
 
 ## The dashboard shows stale service info after a rebuild
 
@@ -321,8 +303,8 @@ mpd process after a rebuild.
 directly on its address, but 404 through the frontdoor
 (`<name>.caddy.<zone>` / `<project>.<zone>`). Breaks OIDC discovery
 (`/.well-known/openid-configuration`), SAML metadata under `.well-known`,
-and ACME `http-01`. A Zitadel/authentik console can render "[object
-Object]" because the SPA's discovery call fails.
+and ACME `http-01`. A Zitadel console can render "[object Object]"
+because the SPA's discovery call fails.
 
 **Cause.** The `deny_sensitive` snippet
 (`assets/vm/caddy/templates/header.caddyfile`) denies any path with a

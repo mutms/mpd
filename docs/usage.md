@@ -281,13 +281,13 @@ next `mpd start` ensures it again, just like a stopped database.
 The services and where they answer, reached via the WireGuard overlay or
 the SOCKS tunnel like everything else. Each answers directly at
 `<name>.svc.<NNN>` over plain HTTP (and any raw port it opens); a TLS
-service such as authentik also fronts browser-trusted HTTPS at
+service such as zitadel also fronts browser-trusted HTTPS at
 `<name>.caddy.<NNN>` through the project frontdoor:
 
 | Service      | URL                                          | Notes                                                                         |
 |--------------|----------------------------------------------|-------------------------------------------------------------------------------|
 | `mailpit`    | `https://mailpit.caddy.<NNN>.mpd.test/`      | Shared mail catch-all; web UI over HTTPS via the frontdoor. SMTP stays direct at `mailpit.svc.<NNN>.mpd.test:1025` (where projects send). Data volume survives uninstall. |
-| `authentik`  | `https://authentik.caddy.<NNN>.mpd.test/`    | Test-only SAML/OIDC/LDAP IdP (log in as `akadmin`), browser-trusted HTTPS via the frontdoor. `auth/ldap` binds to `ldaps://authentik.svc.<NNN>.mpd.test:6636` (or `ldap://…:3389`), base DN `dc=ldap,dc=mpd,dc=test`, bind DN `cn=<user>,ou=users,dc=ldap,dc=mpd,dc=test`. Set the password with `MPD_AUTHENTIK_ADMIN_PASSWORD`; see [security.md](security.md). |
+| `zitadel`    | `https://zitadel.caddy.<NNN>.mpd.test/`      | Test SAML/OIDC IdP for `auth/saml2` + `auth/oidc`, browser-trusted HTTPS via the frontdoor. Admin password `MPD_ZITADEL_ADMIN_PASSWORD` (default `Password1!`). Full wiring in [services/zitadel.md](services/zitadel.md). |
 | `adminer`    | `http://adminer.svc.<NNN>.mpd.test:8080/`    | DB web UI; the portal offers pre-filled per-project links.                    |
 | `selenium` | `http://selenium.svc.<NNN>.mpd.test:4444/` | Behat browser; started by `mpd start` on a Behat-enabled Moodle project. |
 

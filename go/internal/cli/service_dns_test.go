@@ -21,11 +21,11 @@ func TestServiceDNSRecordsTLS(t *testing.T) {
 	}
 
 	want := map[string]string{
-		"authentik.svc.222.mpd.test":   "10.163.222.101",       // pod, direct
-		"authentik.caddy.222.mpd.test": n.IP(net.HostProjects), // frontdoor (TLS)
-		"mailpit.svc.222.mpd.test":     "10.163.222.100",       // pod, direct (SMTP)
-		"mailpit.caddy.222.mpd.test":   n.IP(net.HostProjects), // frontdoor (TLS)
-		"adminer.svc.222.mpd.test":     "10.163.222.102",       // pod, direct
+		"zitadel.svc.222.mpd.test":   "10.163.222.104",       // pod, direct
+		"zitadel.caddy.222.mpd.test": n.IP(net.HostProjects), // frontdoor (TLS)
+		"mailpit.svc.222.mpd.test":   "10.163.222.100",       // pod, direct (SMTP)
+		"mailpit.caddy.222.mpd.test": n.IP(net.HostProjects), // frontdoor (TLS)
+		"adminer.svc.222.mpd.test":   "10.163.222.102",       // pod, direct
 	}
 	for name, ip := range want {
 		if got[name] != ip {

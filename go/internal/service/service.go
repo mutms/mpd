@@ -5,18 +5,15 @@
 // address in the service range; see docs/networking.md.
 //
 // A service is one container, or — when PodContainers is set — a pod of
-// several containers sharing one address and localhost (authentik). The
+// several containers sharing one address and localhost (zitadel). The
 // pod path lives in pod.go; the single-container path in lifecycle.go.
 package service
 
 import (
-	"context"
 	"fmt"
-	"io"
 	"sort"
 
 	"github.com/mutms/mpd/go/internal/net"
-	"github.com/mutms/mpd/go/internal/podman"
 )
 
 // RevisionLabel marks the asset revision a container was built from.
@@ -67,12 +64,6 @@ type Service struct {
 	// speak HTTP/2 behind a TLS-terminating proxy (Zitadel). TLS must also
 	// be set.
 	FrontdoorH2C bool
-	// PostStart, when set, runs after the service is up and its TLS meta
-	// written. It is the service's chance to do work that needs the
-	// service already running — authentik provisions and launches its
-	// LDAP outpost here. It must be idempotent: every start and reconcile
-	// runs it. A returned error is reported, not fatal to the start.
-	PostStart func(ctx context.Context, out io.Writer, s Service, n net.Net, p *podman.Client) error
 }
 
 // PodContainer is one container inside a pod service.

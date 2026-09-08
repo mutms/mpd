@@ -61,15 +61,15 @@ func TestListServices(t *testing.T) {
 	out := buf.String()
 
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
-	if len(lines) != 7 { // header + rule + 5 services
-		t.Fatalf("got %d lines, want 7:\n%s", len(lines), out)
+	if len(lines) != 6 { // header + rule + 4 services
+		t.Fatalf("got %d lines, want 6:\n%s", len(lines), out)
 	}
 	if !strings.HasPrefix(lines[0], "SERVICE") {
 		t.Errorf("header = %q", lines[0])
 	}
 	// Registry order (by host octet); infra (dnsmasq, portal) belongs to
 	// `mpd list infra`, not here.
-	for i, want := range []string{"mailpit", "authentik", "adminer", "selenium", "zitadel"} {
+	for i, want := range []string{"mailpit", "adminer", "selenium", "zitadel"} {
 		if !strings.HasPrefix(lines[i+2], want) {
 			t.Errorf("row %d = %q, want it to start with %q", i, lines[i+2], want)
 		}

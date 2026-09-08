@@ -5,10 +5,10 @@ import (
 	"github.com/mutms/mpd/go/internal/service"
 )
 
-// zitadel — a test identity provider (SAML/OIDC), Go and container-native,
-// as a lighter alternative to authentik. It is a pod of the zitadel server
-// plus its PostgreSQL. Served over HTTPS at zitadel.caddy.<zone>; the
-// frontdoor reaches it over h2c because zitadel's gRPC needs HTTP/2.
+// zitadel — a test identity provider (SAML/OIDC), Go and container-native.
+// It is a pod of the zitadel server plus its PostgreSQL. Served over HTTPS
+// at zitadel.caddy.<zone>; the frontdoor reaches it over h2c because
+// zitadel's gRPC needs HTTP/2. See docs/services/zitadel.md.
 //
 // This is a test IdP: the master key and database password are fixed dev
 // constants (not secrets). The first admin password comes from
