@@ -33,6 +33,15 @@ func init() {
 
 	adminPassword := envDefault("MPD_ZITADEL_ADMIN_PASSWORD", "Password1!")
 
+	// zitadel must trust the mpd CA to fetch a project's SP metadata over
+	// https://<project>.<zone> (SAML app import by URL). The VM host's CA
+	// bundle carries the mpd anchor; mount it in and point Go's TLS at it
+	// via SSL_CERT_FILE. Public anchor only — the CA key never enters.
+	caTrust := []string{
+		"-v", "/etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/mpd-ca-bundle.crt:ro",
+		"-e", "SSL_CERT_FILE=/etc/ssl/certs/mpd-ca-bundle.crt",
+	}
+
 	zitadelEnv := []string{
 		"-e", "ZITADEL_PORT=8080",
 		"-e", "ZITADEL_EXTERNALDOMAIN=" + externalDomain,
@@ -58,7 +67,7 @@ func init() {
 	service.Register(service.Service{
 		Name:         "zitadel",
 		HostOctet:    104,
-		Revision:     "2",
+		Revision:     "3",
 		Port:         8080,
 		TLS:          true,
 		FrontdoorH2C: true,
@@ -79,7 +88,7 @@ func init() {
 				Primary: true,
 				Image:   image,
 				Args:    []string{"start-from-init", "--masterkey", masterKey, "--tlsMode", "external"},
-				RunArgs: zitadelEnv,
+				RunArgs: concat(zitadelEnv, caTrust),
 			},
 		},
 	})

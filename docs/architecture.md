@@ -792,6 +792,13 @@ published from the registry in advance, install state aside:
   ("v1" so a future Moodle release can require another selenium
   alongside). Started by `mpd start` when a project sets
   `MPD_MOODLE_BEHAT=1` (which adds it to that project's required services).
+- `zitadel` — `.104`, HTTPS at `https://zitadel.caddy.<NNN>.mpd.test/`. A
+  test SAML/OIDC identity provider (Go, lighter than authentik): a pod of
+  the zitadel server plus PostgreSQL, the first `FrontdoorH2C` service (its
+  gRPC needs HTTP/2, so the frontdoor reaches it over h2c). Admin password
+  from `MPD_ZITADEL_ADMIN_PASSWORD`. Wiring it to Moodle `auth/saml2` and
+  `auth/oidc` — including the SAML IdP metadata URL that the zitadel UI does
+  not surface — is in [`services/zitadel.md`](services/zitadel.md).
 
 A service is one container, or — when it sets `PodContainers` — a **pod** of
 several containers (`go/internal/service/pod.go`). The pod holds the single

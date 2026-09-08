@@ -31,6 +31,15 @@ In rough order of when you'll want them:
   the diagnostic that confirms each and the fix. Read when the stack
   or IDE session misbehaves (lockups, thread/fork exhaustion, …).
 
+### Service integration guides
+
+How to actually use and wire up an optional extra service (the details
+that live nowhere else — e.g. an IdP's metadata/discovery URLs). One file
+per service under [`services/`](services/):
+
+- [`services/zitadel.md`](services/zitadel.md) — zitadel test IdP: console,
+  admin login, and wiring Moodle `auth/saml2` and `auth/oidc` to it.
+
 ## If you're working on mpd itself
 
 Or you're an AI agent helping out:
