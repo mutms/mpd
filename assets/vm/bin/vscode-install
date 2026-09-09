@@ -1,0 +1,136 @@
+#!/bin/bash
+# vscode-install — install Visual Studio Code from Microsoft's Debian
+# repository, plus the Marp extension for writing slide decks in Markdown.
+# Idempotent: an install that is already there exits 0 without touching apt.
+#
+# The repository is Microsoft's own, signed with their key; the package
+# updates with the rest of the system from then on. Needs a desktop to run
+# in — `gnome-install` first if this VM has none — though the `code` CLI
+# (extensions, tunnels) works headless.
+set -euo pipefail
+
+step() { printf '\n==> %s\n' "$*"; }
+ok()   { printf '    ok: %s\n' "$*"; }
+warn() { printf '    warn: %s\n' "$*"; }
+die()  { printf 'Error: %s\n' "$*" >&2; exit 1; }
+
+# Waits for the dpkg lock (packagekitd holds it after login); retries
+# stalled downloads. Same helper as gnome-install.
+apt_get() {
+    sudo env DEBIAN_FRONTEND=noninteractive \
+        apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 "$@"
+}
+
+usage() {
+    cat <<'EOF'
+Usage: vscode-install [--no-extensions]
+
+Install Visual Studio Code from Microsoft's Debian repository, add it to the
+GNOME favourites, and install the Marp extension for Markdown slide decks.
+
+  --no-extensions   install the editor only
+
+Needs a desktop to run in: `gnome-install` if this VM has none.
+EOF
+}
+
+# marp-team.marp-vscode renders and exports Marp Markdown; it is what makes
+# a .md file a slide deck in the editor, and what mod_mudeck expects authors
+# to have been using when they paste a deck into Moodle.
+EXTENSIONS=(marp-team.marp-vscode)
+WANT_EXTENSIONS=1
+
+case "${1:-}" in
+    --no-extensions) WANT_EXTENSIONS=0 ;;
+    -h | --help)
+        usage
+        exit 0
+        ;;
+    "") ;;
+    *) die "Unknown argument: $1 (accepts --no-extensions)" ;;
+esac
+
+[ "$(id -u)" -ne 0 ] || die "run this as your dev user, not root."
+
+KEYRING=/usr/share/keyrings/microsoft.gpg
+LIST=/etc/apt/sources.list.d/vscode.list
+
+step "Microsoft repository"
+if [ -s "${KEYRING}" ] && [ -f "${LIST}" ]; then
+    ok "already configured"
+else
+    apt_get install -y --no-install-recommends ca-certificates curl gnupg >/dev/null
+    # Dearmor to a keyring of its own: signed-by keeps this key trusted for
+    # Microsoft's repository and nothing else on the system.
+    curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+        | sudo gpg --dearmor --yes -o "${KEYRING}"
+    sudo chmod 644 "${KEYRING}"
+    # amd64 on a PC, arm64 on Apple silicon - the repository carries both.
+    arch="$(dpkg --print-architecture)"
+    echo "deb [arch=${arch} signed-by=${KEYRING}] https://packages.microsoft.com/repos/code stable main" \
+        | sudo tee "${LIST}" >/dev/null
+    sudo chmod 644 "${LIST}"
+    apt_get update -qq
+    ok "packages.microsoft.com/repos/code (${arch})"
+fi
+
+step "Visual Studio Code"
+if command -v code >/dev/null 2>&1; then
+    ok "already installed ($(code --version 2>/dev/null | head -1))"
+else
+    apt_get install -y code
+    ok "installed $(code --version 2>/dev/null | head -1)"
+fi
+
+# The .deb ships /usr/share/applications/code.desktop, so the launcher is
+# already in the applications grid; this only puts it on the dash, where a
+# desktop user expects to find an editor they just installed.
+step "GNOME favourites"
+if ! command -v gsettings >/dev/null 2>&1; then
+    warn "no gsettings — skipping (run gnome-install for a desktop)"
+elif [ ! -f /usr/share/applications/code.desktop ]; then
+    warn "no code.desktop — skipping"
+else
+    favourites="$(gsettings get org.gnome.shell favorite-apps 2>/dev/null || echo "@as []")"
+    case "${favourites}" in
+        *"'code.desktop'"*)
+            ok "already on the dash"
+            ;;
+        "@as []" | "[]")
+            gsettings set org.gnome.shell favorite-apps "['code.desktop']"
+            ok "added to the dash"
+            ;;
+        *)
+            gsettings set org.gnome.shell favorite-apps \
+                "${favourites%]}, 'code.desktop']"
+            ok "added to the dash"
+            ;;
+    esac
+fi
+
+if [ "${WANT_EXTENSIONS}" = 1 ]; then
+    step "Extensions"
+    for extension in "${EXTENSIONS[@]}"; do
+        # The CLI needs no display, and re-installing an extension that is
+        # already there prints a line and changes nothing.
+        if code --install-extension "${extension}" >/dev/null 2>&1; then
+            ok "${extension}"
+        else
+            warn "${extension} could not be installed - try 'code --install-extension ${extension}'"
+        fi
+    done
+fi
+
+cat <<'EOF'
+
+================================================================
+  Visual Studio Code installed
+================================================================
+
+Start it from the dash, or `code .` in a project. Marp turns a Markdown
+file into slides: put "marp: true" in the front matter and open the
+preview beside it.
+
+A deck written here pastes straight into a mod_mudeck presentation - same
+Markdown, same directives, same themes.
+EOF
