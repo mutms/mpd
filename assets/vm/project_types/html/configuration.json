@@ -1,0 +1,10 @@
+{
+  "detect": {
+    "files": [
+      "index.html"
+    ]
+  },
+  "start": {
+    "waitForURL": true
+  }
+}

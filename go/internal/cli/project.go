@@ -664,8 +664,23 @@ func ProjectCreate(ctx context.Context, out io.Writer, name string, opts CreateO
 	if reservedNames[name] {
 		return fmt.Errorf("Project name '%s' is reserved by mpd's DNS naming. Choose another name.", name)
 	}
-	if _, exists := findProject(d.State, name); exists {
-		return fmt.Errorf("Project '%s' already exists.", name)
+	// An existing project is only ever re-scaffolded to change its type,
+	// and only when the new type is spelled out: `mpd init <name>
+	// --type=html` on a project registered as moodle is the one way to
+	// say "this is a different kind of project now".
+	existing, exists := findProject(d.State, name)
+	if exists {
+		if opts.Type == "" {
+			return fmt.Errorf("Project '%s' already exists.\n"+
+				"To change what kind of project it is: mpd init %s --type=<type>", name, name)
+		}
+		if opts.Type == existing.Type {
+			return fmt.Errorf("Project '%s' is already of type '%s'.", name, existing.Type)
+		}
+		if _, ok := d.Assets.ProjectTypeConfig(opts.Type); !ok {
+			return fmt.Errorf("Unknown project type '%s'. Available: %s.",
+				opts.Type, strings.Join(d.Assets.AllProjectTypes(), ", "))
+		}
 	}
 
 	// Type resolution, strongest evidence first: explicit --type, then
@@ -691,6 +706,12 @@ func ProjectCreate(ctx context.Context, out io.Writer, name string, opts CreateO
 		typeName = "moodle"
 	}
 
+	if exists {
+		fmt.Fprintf(out, "\n\033[1m==> Changing project type: %s -> %s\033[0m\n",
+			existing.Type, typeName)
+		fmt.Fprintf(out, "Files the old type seeded are left where they are; delete what you no longer want.\n")
+	}
+
 	fmt.Fprintf(out, "\n\033[1m==> Ensuring /srv/projects/%s/\033[0m\n", name)
 	if err := srv.MkdirAll(srv.ProjectDir(name)); err != nil {
 		return fmt.Errorf("Failed to create /srv/projects/%s: %v", name, err)
@@ -712,9 +733,21 @@ func ProjectCreate(ctx context.Context, out io.Writer, name string, opts CreateO
 	// Register only after scaffolding succeeds; a failure leaves the
 	// directory for the developer to inspect. Not Configured and not
 	// Autostart: Status reports "not initialised" until the first start.
-	if err := d.State.UpsertProject(state.Project{
-		Name: name, Type: typeName,
-	}); err != nil {
+	// A re-typed project keeps its URLs until `mpd start` writes the new
+	// ones. They describe the old type and will be replaced, but dropping
+	// them here would prune the project's DNS record, and a name that
+	// stops resolving mid-change is worse than one that answers with the
+	// wrong thing for a minute - the same reason a stopped database keeps
+	// its record. It counts as not configured either way.
+	record := state.Project{Name: name, Type: typeName}
+	if exists {
+		record.URLs = existing.URLs
+		record.Autostart = existing.Autostart
+		record.DatabaseID = existing.DatabaseID
+		record.DatabaseEngine = existing.DatabaseEngine
+		record.DatabaseVersion = existing.DatabaseVersion
+	}
+	if err := d.State.UpsertProject(record); err != nil {
 		return err
 	}
 
@@ -731,7 +764,7 @@ func ShowHelp(out io.Writer, project string, n net.Net) {
 	fmt.Fprintf(out, "Usage: mpd <verb> %s [options...]\n", project)
 	fmt.Fprintln(out, "\nVerbs:")
 	fmt.Fprintf(out, "  status     %s [--json]              project details (--json for scripts)\n", project)
-	fmt.Fprintf(out, "  init       %s [--type=<type>]       scaffold mpd.env (default type: moodle)\n", project)
+	fmt.Fprintf(out, "  init       %s [--type=<type>]       scaffold mpd.env, or change the type of an existing project\n", project)
 	fmt.Fprintf(out, "  start      %s [KEY=VALUE ...]       configure + start (e.g. MPD_DB=postgres:18,\n", project)
 	fmt.Fprintf(out, "                                              MPD_PHP_VERSION=8.4; full set lives in\n")
 	fmt.Fprintf(out, "                                              /srv/projects/%s/mpd.env)\n", project)

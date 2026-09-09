@@ -424,6 +424,25 @@ use the verb, [`mpd reset`](#starting-over-without-re-cloning-mpd-reset).
 Unlike a tool it can also stop the project first, drop its DNS record,
 and mark it unconfigured.
 
+**Project-type-level (html):** none, and nothing to run.
+
+A `html` project is a directory of files served over HTTPS:
+
+```bash
+mpd init mysite --type=html      # scaffolds mpd.env only
+mpd start mysite                 # https://mysite.<zone>/ answers at once
+```
+
+caddy serves the files where they are, so there is no server to start,
+no build step and nothing to reload — edit a file and refresh the page.
+It is the quickest way to open something that a browser refuses to load
+from a `file://` URL, such as a page using ES modules.
+
+Set `MPD_DOCROOT` in the project's `mpd.env` to publish a subdirectory
+(`MPD_DOCROOT="dist"`), then run `mpd start <project>` again. The usual
+protections apply: `mpd.env`, `.git/`, `node_modules/` and friends
+answer 404.
+
 **Project-type-level (Astro):** none, deliberately.
 
 Astro ships its own commands and its own docs for them, so mpd adds

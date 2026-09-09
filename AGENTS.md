@@ -228,7 +228,7 @@ VM/project-type behavior + service container assets live under `assets/`:
 - `assets/vm/...` — the dev stack: `configure-stack.sh` (PHP config, the
   php dispatcher, Composer, Node — run by `mpd --vm-setup`),
   `home/`, `bin/`, `lib/`, `caddy/` (the project TLS frontdoor),
-  `project_types/{moodle,astro,mdl-demo}/`
+  `project_types/{moodle,astro,mdl-demo,html}/`
 - `assets/services/<n>/...` — built service images (adminer's
   Containerfile; the other extras pull upstream images)
 - `assets/completions/` — shell completion shims

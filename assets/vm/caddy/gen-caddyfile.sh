@@ -68,6 +68,19 @@ render_vhost() {
                 echo "    reverse_proxy ${upstream}"
             fi
             ;;
+        static)
+            # A site that is only files: caddy serves them where they are,
+            # so nothing has to be built, started or kept running.
+            #
+            # browse lists a directory that has no index.html, the way a
+            # local test server is expected to. These VMs answer only to
+            # their own developer, and the deny_sensitive rules above still
+            # refuse the files that matter.
+            local root
+            root=$(jq -r '.root' <<<"$backend_json")
+            echo "    root * ${root}"
+            echo "    file_server browse"
+            ;;
         redirect)
             local target
             target=$(jq -r '.target' <<<"$backend_json")

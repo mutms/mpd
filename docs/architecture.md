@@ -218,7 +218,7 @@ volume.
 - The dev stack's definition: `assets/vm/...` (`configure-stack.sh`,
   `home/`, `bin/`, `lib/`, `caddy/`)
 - Project-type behavior: `assets/vm/project_types/<type>/...`
-  (current types: `moodle`, `astro`, `mdl-demo`)
+  (current types: `moodle`, `astro`, `mdl-demo`, `html`)
 - Project-type files placed in the project directory: `template/` and
   `generated/` (see below)
 - VM / project-type tools: single executable per file under
