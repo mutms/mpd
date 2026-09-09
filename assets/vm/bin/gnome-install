@@ -117,6 +117,9 @@ GNOME_PKGS=(
     # into GIF/WebP/MP4, and the emoji font makes headless renders match a
     # real desktop.
     ffmpeg fonts-noto-color-emoji
+    # The fonts the rest of the world assumes it has.
+    fonts-liberation2 fonts-crosextra-carlito fonts-crosextra-caladea
+    fonts-noto-core fonts-roboto fonts-open-sans fonts-firacode
 )
 
 step "Desktop packages"

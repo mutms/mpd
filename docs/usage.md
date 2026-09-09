@@ -98,8 +98,8 @@ overlay, or a GUI you cannot drive over SSH.
 
 ```bash
 gnome-install    # only on a VM that has no desktop at all: installs
-                 # GNOME Shell, GDM, a terminal and Chromium, and
-                 # nothing else. Points Chromium's home page at this
+                 # GNOME Shell, GDM, a terminal, Chromium and the fonts
+                 # a web page expects. Points Chromium's home page at this
                  # VM's portal. Starts nothing; the boot target is left
                  # exactly as it was. ~320 MB. Idempotent.
 gnome-start      # switch to the desktop now, and at every reboot
