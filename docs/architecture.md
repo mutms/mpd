@@ -567,7 +567,10 @@ the `php` dispatcher's fallback):
 `MPD_DB` follows the same last-wins rule: a project type that doesn't use a DB
 ships `MPD_DB=""` in its `template/mpd.env` (astro) so the seeded project file
 blocks any `MPD_DB=...` reaching it from the ambient environment; types that do
-ship a sensible default (`MPD_DB=postgres:latest` for moodle).
+use a DB set it in their type defaults (`MPD_DB=postgres:17` and
+`MPD_PHP_VERSION=8.3` for moodle, mirroring the mdl-demo demo image so site
+backups transfer between the two — bump both together). The moodle
+`template/mpd.env` leaves `MPD_DB` commented so that type default applies.
 
 **Why the developer's file is scoped to the *developer*, not the VM:** a
 developer routinely runs several VMs that should share one set of values. So
