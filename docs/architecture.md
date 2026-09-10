@@ -658,16 +658,22 @@ Read/write contract:
 
 - **Project backup tools write here.** `mdl-data-backup` /
   `mdl-data-restore` (under
-  `assets/vm/project_types/moodle/bin/`) tar the dataroot plus a
-  DB dump into `/srv/backups/projects/<name>.tgz`.
-  Every project's backups share that one directory, so a bundle
-  can be restored into any project (the manifest records where it came
-  from). Backup is a Moodle-only concern: the dataroot ↔ DB
-  coupling makes "snapshot the project" a real unit, while other project
-  types keep their state in the source tree (so `git` is their backup
-  mechanism). They are tools rather than verbs because they need no
-  control-plane privilege — tar `/srv`, dump over the network to
-  `<databaseId>.db.<zone>` — and neither one touches VM state.
+  `assets/vm/project_types/moodle/bin/`) pack the dataroot, a DB dump and
+  the code tree's recipe into `/srv/backups/projects/<name>.mdb`.
+  The `.mdb` format is **shared with the mdl-demo tool** (a gzipped tar of
+  `meta.json`, `recipe.yaml`, `db.sql`, `dataroot/`; `meta.json` first and
+  carrying a format `revision` and the source `<engine>:<version>`), so a
+  bundle moves between an mpd project and an mdl-demo container in either
+  direction. mpd backs up any engine it runs; mdl-demo restores only
+  PostgreSQL 17 or older (its container's engine), and mpd restore refuses a
+  bundle from a different engine or a newer version than the target project.
+  Every project's backups share that one directory, so a bundle can be
+  restored into any project (`meta.recipe` records where it came from). Backup
+  is a Moodle-only concern: the dataroot ↔ DB coupling makes "snapshot the
+  project" a real unit, while other project types keep their state in the
+  source tree (so `git` is their backup mechanism). They are tools rather than
+  verbs because they need no control-plane privilege — tar `/srv`, dump over
+  the network to `<databaseId>.db.<zone>` — and neither one touches VM state.
 
   There is no separate backup of the dev environment. The home directory
   now lives on the VM, which nothing short of deleting the VM destroys;
