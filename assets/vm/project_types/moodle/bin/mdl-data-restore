@@ -8,9 +8,9 @@ set -euo pipefail
 
 source /opt/mpd/assets/vm/project_types/moodle/scripts/mpd-env.sh
 
-# All projects share this directory; the manifest records the source recipe,
-# which --list shows.
-BACKUP_DIR="/srv/backups/projects"
+# All projects share this directory; each bundle's meta records the source
+# recipe and database, which --list shows.
+BACKUP_DIR="/srv/backups"
 
 # db_major prints the leading integer of a "<engine>:<version>" tag, or nothing
 # when there is no numeric version.

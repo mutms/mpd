@@ -408,7 +408,7 @@ Stack-independent ones first:
 | `mdl-cache-purge`                           | Run `admin/cli/purge_caches.php` for the current project.                                                                                                                                                                   |
 | `mdl-cron`                                  | Run `admin/cli/cron.php` (one cycle) for the current project.                                                                                                                                                               |
 | `mdl-upgrade`                               | Run `admin/cli/upgrade.php --non-interactive` for the current project. Use after a git pull that updates code.                                                                                                              |
-| `mdl-data-backup` / `mdl-data-restore`      | Save and restore the current project's database + dataroot + code recipe as one `.mdb` in the shared `/srv/backups/projects/` pile (restorable into any project, and into an mdl-demo container). `mdl-data-restore --list` shows what is there. See [Backups](#backups). |
+| `mdl-data-backup` / `mdl-data-restore`      | Save and restore the current project's database + dataroot + code recipe as one `.mdb` in the shared `/srv/backups/` pile (restorable into any project, and into an mdl-demo container). `mdl-data-restore --list` shows what is there. See [Backups](#backups). |
 | `phpunit` / `phpunit-init` / `phpunit-util` | Run, initialize, and inspect Moodle's PHPUnit suite.                                                                                                                                                                        |
 | `behat` / `behat-init` / `behat-util`       | Run, initialize, and inspect Moodle's Behat suite.                                                                                                                                                                          |
 | `grunt`                                     | Wraps `npm install` + `grunt` for the current project's Moodle JS build.                                                                                                                                                    |
@@ -528,12 +528,12 @@ Moodle tools you run from the project directory:
 ```bash
 ssh mpd-<NNN>
 cd /srv/projects/moodle45
-mdl-data-backup before-upgrade     # or no name, for a UTC timestamp
+mdl-data-backup before-upgrade     # or no name: <project>-<UTC timestamp>
 mdl-data-restore --list
 mdl-data-restore before-upgrade
 ```
 
-One `.mdb` per backup in `/srv/backups/projects/`, holding the database,
+One `.mdb` per backup in `/srv/backups/`, holding the database,
 the dataroot, the code tree's recipe (`mudev recipe export`), and a
 `meta.json` recording the source database as `<engine>:<version>`. This is
 the **same `.mdb` format mdl-demo uses**, so a bundle made here restores into
@@ -583,7 +583,7 @@ whose bundle happens to come from another project.
 From your laptop, scp a bundle off the VM — `/srv` is mounted there:
 
 ```bash
-scp mpd-<NNN>:/srv/backups/projects/<name>.mdb ~/Downloads/
+scp mpd-<NNN>:/srv/backups/<name>.mdb ~/Downloads/
 ```
 
 Your dev environment needs no backup of its own. The home directory

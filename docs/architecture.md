@@ -659,7 +659,8 @@ Read/write contract:
 - **Project backup tools write here.** `mdl-data-backup` /
   `mdl-data-restore` (under
   `assets/vm/project_types/moodle/bin/`) pack the dataroot, a DB dump and
-  the code tree's recipe into `/srv/backups/projects/<name>.mdb`.
+  the code tree's recipe into `/srv/backups/<name>.mdb` (the default name
+  leads with the project, e.g. `moodle45-20260910-220650Z.mdb`).
   The `.mdb` format is **shared with the mdl-demo tool** (a gzipped tar of
   `meta.json`, `recipe.yaml`, `db.sql`, `dataroot/`; `meta.json` first and
   carrying a format `revision` and the source `<engine>:<version>`), so a

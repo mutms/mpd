@@ -1,13 +1,13 @@
 #!/bin/bash
 # mdl-data-backup [name] — save this project's database, dataroot and code
-# recipe as one .mdb bundle in /srv/backups/projects/. The .mdb format is
+# recipe as one .mdb bundle in /srv/backups/. The .mdb format is
 # shared with mdl-demo, so a bundle restores into either. Restore with
 # mdl-data-restore. See docs/usage.md "Backups".
 set -euo pipefail
 
 source /opt/mpd/assets/vm/project_types/moodle/scripts/mpd-env.sh
 
-BUNDLE_NAME="${1:-$(date -u +%Y%m%d-%H%M%SZ)}"
+BUNDLE_NAME="${1:-${PROJECT}-$(date -u +%Y%m%d-%H%M%SZ)}"
 # The name becomes "<name>.mdb"; keep it to what the .mdb format accepts.
 if ! [[ "$BUNDLE_NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
     echo "Bad bundle name: '$BUNDLE_NAME' (letters, digits, . _ - only; no leading dot or dash)" >&2
@@ -48,7 +48,7 @@ if [ ! -f "${PROJECT_DIR}/.mudev.json" ]; then
 fi
 RECIPE_ID=$(jq -r '.based_on_recipe // ""' "${PROJECT_DIR}/.mudev.json" 2>/dev/null || echo "")
 
-OUT_DIR="/srv/backups/projects"
+OUT_DIR="/srv/backups"
 OUT_FILE="${OUT_DIR}/${BUNDLE_NAME}.mdb"
 if [ -e "$OUT_FILE" ]; then
     echo "Backup '${BUNDLE_NAME}' already exists at ${OUT_FILE}." >&2
