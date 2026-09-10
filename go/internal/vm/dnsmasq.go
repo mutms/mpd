@@ -58,6 +58,13 @@ listen-address=%s
 # while a public resolver is asked about a TLD it can never answer for.
 local=/test/
 
+# A name queried before it is published — a browser opening the URL before
+# "mpd start" adds its record — gets NXDOMAIN. Without a short neg-ttl that
+# miss is cached downstream (the host stub resolver, mpd-proxy) for minutes,
+# so a just-published URL stays "host not found" long after it exists. Cap
+# the negative answer at one second; positive records already carry TTL 0.
+neg-ttl=1
+
 # Records come from /etc/hosts — dnsmasq's default, and deliberately so:
 # mpd keeps its records in a managed block there, which glibc on the VM
 # reads directly and this resolver serves to containers and the laptop.

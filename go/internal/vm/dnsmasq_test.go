@@ -21,6 +21,8 @@ func TestDnsmasqConfCarriesTheLoadBearingDirectives(t *testing.T) {
 			"a .test name must never be forwarded to a public resolver"},
 		{"domain-needed",
 			"a bare name must not be forwarded upstream"},
+		{"neg-ttl=1",
+			"a name probed before it is published would otherwise be cached NXDOMAIN downstream for minutes"},
 	} {
 		if !strings.Contains(body, tc.directive) {
 			t.Errorf("missing %q — %s\n%s", tc.directive, tc.why, body)

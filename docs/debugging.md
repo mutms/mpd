@@ -123,6 +123,35 @@ no cloud-init and never shows this; if its `/etc/hosts` loses the block,
 look for whatever else edits the file (`grep -rl /etc/hosts /etc/dhcp
 /lib/dhcpcd /etc/NetworkManager`).
 
+## A freshly published `*.mpd.test` URL is "host not found" for minutes, then resolves on its own
+
+**Symptoms.** You open `https://<project>.<NNN>.mpd.test/` right after
+`mpd start`, the browser says the host cannot be found, and it stays that
+way for a few minutes before the site appears with no further action. On the
+VM the name resolves the whole time (`getent hosts …` answers).
+
+**Cause.** The name was queried *before* `mpd start` published its record —
+a browser tab opened on a first attempt, or a probe. dnsmasq returned
+NXDOMAIN, and that negative answer was cached downstream (the host's stub
+resolver, and mpd-proxy) for the negative-cache TTL. Until it expires the
+client never re-asks, so the record that now exists is never seen.
+
+**Diagnostic.** The mpd-proxy DNS log shows an early NXDOMAIN and then a gap
+before the next query for the same name:
+
+```
+23:03:46 dns: <name>.<NNN>.mpd.test. A → 10.163.<NNN>.1:53 NXDOMAIN, 0 answer(s)
+23:06:41 dns: <name>.<NNN>.mpd.test. A → 10.163.<NNN>.1:53 NOERROR, 1 answer(s)
+```
+
+**Fix.** mpd's resolver config sets `neg-ttl=1`
+(`go/internal/vm/dnsmasq.go`), so a negative answer expires in a second and
+the next lookup finds the published record. To clear a cache that predates
+this, flush the host resolver (macOS:
+`sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`) or just wait
+out the second. Finishing `mpd start` before opening the URL avoids the
+premature miss entirely.
+
 ## `sudo cat DIR/*` fails on a root-owned 0700 directory
 
 **Symptom.** A command that reads mpd's private state comes back with the
