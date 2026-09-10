@@ -54,15 +54,11 @@ fi
 USER_NAME="$(id -un)"
 SUDOERS_PATH="/etc/sudoers.d/00-mpd-${USER_NAME}"
 
-echo "    No passwordless sudo for ${USER_NAME}. About to ask for the root password"
-echo "    (one-time setup — installs sudo if a minimal install lacks it)."
-echo "    The prompt comes from \`su\`."
-echo
-
-# `su - -c` runs the command as root with root's PATH, where visudo and
-# usermod live. visudo -cf validates the drop-in; an invalid file is
-# removed so sudo is not bricked.
-if ! su - -c "
+# The privileged work: write a NOPASSWD drop-in, validating it with visudo
+# so an invalid file is removed rather than bricking sudo. Same body whether
+# we reach root via `sudo` (user already a sudoer) or `su -` (minimal install,
+# no sudo yet). $USER_NAME is expanded here, before it reaches root.
+ROOT_WORK="
     set -e
     if ! command -v sudo >/dev/null 2>&1; then
         export DEBIAN_FRONTEND=noninteractive
@@ -78,9 +74,27 @@ if ! su - -c "
         echo 'visudo rejected the drop-in; removed.' >&2
         exit 1
     fi
-"; then
-    die "Failed to configure sudo for '${USER_NAME}'. Wrong root password, the
+"
+
+# Expert Debian installs often disable the root account. If the user is
+# already a sudoer, elevate with their own password via sudo; only fall back
+# to `su -` (root password) when sudo is absent or the user can't sudo.
+if command -v sudo >/dev/null 2>&1 && sudo -v 2>/dev/null; then
+    echo "    ${USER_NAME} can sudo. Making it passwordless (sudo may prompt once)."
+    echo
+    if ! sudo bash -c "${ROOT_WORK}"; then
+        die "Failed to configure passwordless sudo for '${USER_NAME}' via sudo."
+    fi
+else
+    echo "    No passwordless sudo for ${USER_NAME}. About to ask for the root password"
+    echo "    (one-time setup — installs sudo if a minimal install lacks it)."
+    echo "    The prompt comes from \`su\`."
+    echo
+    # `su - -c` runs as root with root's PATH, where visudo and usermod live.
+    if ! su - -c "${ROOT_WORK}"; then
+        die "Failed to configure sudo for '${USER_NAME}'. Wrong root password, the
 user isn't permitted to become root via su, or sudo couldn't be installed."
+    fi
 fi
 
 sudo -n true 2>/dev/null \
