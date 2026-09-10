@@ -146,17 +146,21 @@ func ConfigureDnsmasq(ctx context.Context, out io.Writer, listenIP, iface string
 
 	ui.OK(out, "Resolver listening on %s:53 (authoritative for .test).", listenIP)
 
-	dropInChanged, err := WriteRootOwnedFile(ctx, resolvedDropInPath, resolvedDropInBody)
-	if err != nil {
-		return err
-	}
-	if dropInChanged {
-		if code, err := exec.Run(ctx, exec.Cmd{
-			Name: "systemctl", Args: []string{"try-restart", "systemd-resolved"}, Sudo: true,
-		}); err != nil || code != 0 {
-			return fmt.Errorf("systemctl try-restart systemd-resolved failed after writing %s.", resolvedDropInPath)
+	// The drop-in only disables LLMNR in systemd-resolved. An expert Debian
+	// install may not run it at all — then there is nothing to configure.
+	if unitExists(ctx, "systemd-resolved.service") {
+		dropInChanged, err := WriteRootOwnedFile(ctx, resolvedDropInPath, resolvedDropInBody)
+		if err != nil {
+			return err
 		}
-		ui.OK(out, "LLMNR switched off in systemd-resolved.")
+		if dropInChanged {
+			if code, err := exec.Run(ctx, exec.Cmd{
+				Name: "systemctl", Args: []string{"try-restart", "systemd-resolved"}, Sudo: true,
+			}); err != nil || code != 0 {
+				return fmt.Errorf("systemctl try-restart systemd-resolved failed after writing %s.", resolvedDropInPath)
+			}
+			ui.OK(out, "LLMNR switched off in systemd-resolved.")
+		}
 	}
 	return nil
 }

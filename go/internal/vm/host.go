@@ -205,6 +205,16 @@ func unitIsActive(ctx context.Context, unit string) bool {
 	return err == nil && code == 0
 }
 
+// unitExists reports whether systemd knows a unit at all. An expert Debian
+// install may omit systemd-resolved entirely, where try-restart fails hard
+// instead of no-opping. LoadState is "not-found" for an unknown unit.
+func unitExists(ctx context.Context, unit string) bool {
+	res, err := exec.Capture(ctx, exec.Cmd{
+		Name: "systemctl", Args: []string{"show", "-p", "LoadState", "--value", unit},
+	})
+	return err == nil && res.Code == 0 && strings.TrimSpace(res.Stdout) != "not-found"
+}
+
 // WriteRootOwnedFile installs content at a root-owned path via sudo,
 // reporting whether anything changed. An identical file short-circuits
 // before sudo runs. The replacement is staged then renamed: `install`

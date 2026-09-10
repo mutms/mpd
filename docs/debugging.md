@@ -236,6 +236,27 @@ means any `systemctl start qemu-guest-agent` will hang.
 `bootstrap/20-install-software.sh` does exactly this. A hung job is
 cleared with `sudo systemctl cancel` (or list it: `systemctl list-jobs`).
 
+## `mpd --vm-setup` fails at "try-restart systemd-resolved"
+
+**Symptoms.** The DNS-resolver step prints `Resolver listening…`, then
+`Failed to try-restart systemd-resolved.service: Unit
+systemd-resolved.service not found`, and setup aborts. Seen on a fresh
+"expert" Debian install (installer without the standard system utilities
+task), not on the cloud images or the GNOME netinst.
+
+**Cause.** The resolver step writes a drop-in that disables LLMNR in
+systemd-resolved, then `try-restart`s it. An expert install may omit
+systemd-resolved entirely — dnsmasq forwards to `/etc/resolv.conf` and
+does not need it — so the unit does not exist and `try-restart` fails hard
+(non-zero) instead of the no-op it is on a running service.
+
+**Diagnostic.** `systemctl show -p LoadState --value systemd-resolved` —
+`not-found` means it is not installed.
+
+**Fix.** `ConfigureDnsmasq` (`go/internal/vm/dnsmasq.go`) gates the drop-in
+on `unitExists("systemd-resolved.service")`; when absent it skips both the
+file and the restart. There is nothing to configure without the service.
+
 ## The WireGuard overlay dies after `mpd --vm-setup`
 
 **Symptom.** mpd-proxy on the laptop logs `Sending handshake initiation`
