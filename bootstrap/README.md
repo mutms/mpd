@@ -16,6 +16,16 @@ nothing. There is no orchestrator; callers list the steps.
 
 ## Scripts
 
+### 00-reset-vm-clone.sh
+
+Takes one mandatory argument, `mpd-<NNN>`. Gives a **cloned** VM a
+fresh identity: sets the hostname (and the `127.0.1.1` line in
+`/etc/hosts`), regenerates `/etc/machine-id` and the SSH host keys.
+Reboot afterwards. Plain Debian, no mpd involved — for hypervisors
+that clone without cloud-init (UTM, Parallels). The MAC address
+stays the hypervisor's job; the script prints the current one as a
+reminder.
+
 ### 10-passwordless-sudo.sh
 
 Interractive, may ask for root password once.
@@ -76,8 +86,8 @@ silent no-op there. `mpd-virt` fetches the scripts at a pinned commit
 ### Template VM (pre-run 10 + 20)
 
 Give a staging VM the hostname `mpd-template` (or `mpd-template-<x>`),
-run 10, 15 and 20 in it, shut it down and clone from it. A clone renamed to
-`mpd-<NNN>` adopts in the time of step 30 + `mpd --vm-setup` alone, and —
+run 10, 15 and 20 in it, shut it down and clone from it. A clone reset with
+`00-reset-vm-clone.sh mpd-<NNN>` adopts in the time of step 30 + `mpd --vm-setup` alone, and —
 thanks to qemu-guest-agent and avahi — reports its IP to the hypervisor
 and over mDNS, so `mpd-virt adopt <NNN>` finds it without an address.
 Step 20 re-runs during adoption and converges a template that has gone

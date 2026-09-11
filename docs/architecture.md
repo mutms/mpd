@@ -863,7 +863,7 @@ See detailed docs:
   (`dnsmasq.Manager.Reconcile`, service records passed in by the cli
   layer); TLS
 - `assets/` — VM/type/service scripts/config/templates + `vm/home/`
-- `bootstrap/` — VM bring-up steps 10–30 (passwordless sudo, OS upgrade + packages, clone + build)
+- `bootstrap/` — VM bring-up steps 00–30 (clone identity reset, passwordless sudo, OS upgrade + packages, clone + build)
 - `setup/` — the two in-VM scripts: sandbox take-over and adoption prep (the host side lives in the `mpd-virt` repo)
 - `docs/` — behavioral and architecture contracts
 
