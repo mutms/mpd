@@ -152,6 +152,38 @@ this, flush the host resolver (macOS:
 out the second. Finishing `mpd start` before opening the URL avoids the
 premature miss entirely.
 
+## A trycloudflare tunnel works publicly but redirects to `.mpd.test`
+
+**Symptoms.** `trycloudflare-start <project>` prints a working
+`*.trycloudflare.com` URL and the site loads over it, but the browser is
+immediately redirected to `https://<project>.<NNN>.mpd.test/` (which an
+external device cannot reach).
+
+**Cause.** Moodle redirects a request whose Host differs from
+`$CFG->wwwroot` to the wwwroot. The redirect proves `wwwroot` is still the
+`.mpd.test` value, so the tunnel override did not apply. cloudflared *does*
+forward the public Host to the origin — routing works — so the miss is in
+the config, not the tunnel. Either the project's `config-mpd.php` predates
+the tunnel feature (no `MPD_PROJECT_NAME` define, no `require` of
+`/var/lib/mpd/moodle/config-global.php`), or that global file was never
+seeded. Both are written by `configure.sh`, i.e. only by `mpd start`.
+
+**Diagnostic.** On the VM:
+
+```
+grep -n 'MPD_PROJECT_NAME\|config-global' /srv/projects/<project>/config-mpd.php
+ls -l /var/lib/mpd/moodle/config-global.php
+ls -l /srv/meta/<project>/tunnel.json
+```
+
+Missing lines, a missing global file, or a missing `tunnel.json` (the
+tunnel is not running) each explain it.
+
+**Fix.** Run `mpd start <project>` once to regenerate `config-mpd.php` and
+seed the global override, then (re)start the tunnel so `tunnel.json` exists
+while the site is served. `config-global.php` reads `tunnel.json` and sets
+`$CFG->wwwroot` to the tunnel URL for its lifetime.
+
 ## `sudo cat DIR/*` fails on a root-owned 0700 directory
 
 **Symptom.** A command that reads mpd's private state comes back with the
