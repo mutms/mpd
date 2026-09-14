@@ -105,6 +105,15 @@ for meta in "${META_DIR}"/*/urls.json; do
         continue
     fi
 
+    # An active Cloudflare quick tunnel (trycloudflare-start) adds its
+    # public host to this project's php-fpm vhost, so caddy routes the
+    # forwarded requests. cloudflared connects with the in-zone SNI, so
+    # the project cert stays valid.
+    tunnel_host=""
+    if [ -f "${META_DIR}/${project}/tunnel.json" ]; then
+        tunnel_host=$(jq -r '.host // empty' "${META_DIR}/${project}/tunnel.json" 2>/dev/null || true)
+    fi
+
     # URLs with identical backends share a vhost (main + behat pairs).
     jq -c '
         [.[] | select(.backend)]
@@ -114,6 +123,9 @@ for meta in "${META_DIR}"/*/urls.json; do
     ' "$meta" | while IFS= read -r group; do
         hosts=$(jq -r '.hosts | join(", ")' <<<"$group")
         backend=$(jq -c '.backend' <<<"$group")
+        if [ -n "$tunnel_host" ] && [ "$(jq -r '.type' <<<"$backend")" = "php-fpm" ]; then
+            hosts="${hosts}, ${tunnel_host}"
+        fi
         render_vhost "$project" "$hosts" "$backend"
     done
 done

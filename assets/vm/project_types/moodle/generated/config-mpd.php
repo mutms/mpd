@@ -7,6 +7,8 @@ unset($CFG);
 global $CFG;
 $CFG = new stdClass();
 
+define('MPD_PROJECT_NAME', '%%PROJECT%%');
+
 $CFG->dbtype    = '%%DBTYPE%%';
 $CFG->dblibrary = 'native';
 $CFG->dbhost    = '%%DBHOST%%';
@@ -93,3 +95,9 @@ $CFG->behat_profiles = [
         ],
     ],
 ];
+
+// VM-wide overrides shared by every Moodle project (e.g. the Cloudflare
+// quick tunnel wwwroot). Developer-owned; edit that file, not this one.
+if (is_readable('/var/lib/mpd/moodle/config-global.php')) {
+    require '/var/lib/mpd/moodle/config-global.php';
+}

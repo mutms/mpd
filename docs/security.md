@@ -515,6 +515,13 @@ SOCKS/ProxyJump through sshd on the VM.
   all data in it.
 - **Physical access to the host**: anyone with access to
   `~/.mpd-virt/conf/` can read the CA key.
+- **A running Cloudflare quick tunnel (`trycloudflare-start`)**: while it
+  runs, one project is reachable from the public internet at its
+  `*.trycloudflare.com` URL, deliberately bypassing the network boundary
+  above. It has no access control (see "No web-server access control"),
+  so anyone with the URL reaches the site. It is opt-in, foreground, and
+  one project at a time; it ends on Ctrl-C. Only tunnel a site you mean
+  to share, and stop it when done.
 
 ## Intentional compromises
 

@@ -11,6 +11,7 @@ import (
 	"github.com/mutms/mpd/go/internal/net"
 	"github.com/mutms/mpd/go/internal/podman"
 	"github.com/mutms/mpd/go/internal/service"
+	"github.com/mutms/mpd/go/internal/srv"
 	"github.com/mutms/mpd/go/internal/state"
 	"github.com/mutms/mpd/go/internal/vm"
 )
@@ -111,11 +112,23 @@ func projectRows(ctx context.Context, d Deps, projects []state.Project,
 			DBHost:  dbHost(d, p),
 			DBUser:  p.Name,
 			DBPass:  p.Name,
-			Links:   projectLinks(d, p, dbUp, live),
+			Links:   append(tunnelLink(p.Name), projectLinks(d, p, dbUp, live)...),
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
 	return rows
+}
+
+// tunnelLink surfaces an active Cloudflare quick tunnel (written by
+// trycloudflare-start) as a project link. Absent file means no tunnel.
+func tunnelLink(name string) []service.Link {
+	var t struct {
+		URL string `json:"url"`
+	}
+	if srv.ReadMetaJSON(name, "tunnel.json", &t) && t.URL != "" {
+		return []service.Link{{Label: "tunnel", URL: t.URL}}
+	}
+	return nil
 }
 
 // projectLinks collects what every running extra service offers for one

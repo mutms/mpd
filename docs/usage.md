@@ -388,6 +388,8 @@ Stack-independent ones first:
 | `vscode-install` | Idempotent install of Visual Studio Code from Microsoft's own Debian repository (`packages.microsoft.com/repos/code`, signed key in its own keyring), added to the GNOME dash, with the Marp extension for writing Markdown slide decks. `--no-extensions` for the editor alone. Needs `gnome-install` first to have a desktop to run in. |
 | `phpstorm-archive-app` | Pack this VM's Toolbox-installed PhpStorm backend into `~/install/phpstorm.tgz`, and print the `scp` line that seeds it into every future VM through your mpd-virt overlay.                                        |
 | `phpstorm-install-app` | Unpack `/opt/mpd/assets/installers/phpstorm.tgz` (or `~/install/phpstorm.tgz`) into the Toolbox apps directory, so a fresh VM skips the three-gigabyte backend download. No-ops when PhpStorm is already there or neither tarball is. |
+| `trycloudflare-install` | Idempotent install of `cloudflared` from Cloudflare's apt repo. Re-runs no-op. |
+| `trycloudflare-start <project>` | Expose one project on a public `https://<h>.trycloudflare.com` quick tunnel; runs in the foreground, Ctrl-C to stop. The tunnel URL becomes the site's single URL for its lifetime (Moodle redirects `.mpd.test` visitors to it) and reverts on stop. One tunnel per VM. **Exposes a dev site publicly — see [security.md](security.md).** |
 
 **Same directory, the PHP stack:**
 

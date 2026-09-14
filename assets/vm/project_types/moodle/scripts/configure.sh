@@ -30,6 +30,15 @@ apply_project_template "$PROJECT_NAME" "$TYPE_DIR"
 # /srv/meta is dev-owned, so plain mkdir works.
 mkdir -p "/srv/meta/${PROJECT_NAME}"
 
+# Seed the VM-wide Moodle config override, copy-if-absent so developer
+# edits persist. config-mpd.php includes it; it carries the Cloudflare
+# quick tunnel wwwroot (see docs/usage.md). /var/lib/mpd is dev-owned.
+GLOBAL_CFG="/var/lib/mpd/moodle/config-global.php"
+if [ ! -f "$GLOBAL_CFG" ]; then
+    mkdir -p /var/lib/mpd/moodle
+    cp "${TYPE_DIR}/config-global.php" "$GLOBAL_CFG"
+fi
+
 # shellcheck source=/dev/null
 source /opt/mpd/assets/vm/lib/source-mpd-env.sh
 

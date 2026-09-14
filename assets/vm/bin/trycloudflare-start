@@ -1,0 +1,117 @@
+#!/bin/bash
+set -euo pipefail
+# Tool: expose one project on a public Cloudflare quick tunnel.
+# trycloudflare-start <project> — runs cloudflared in the foreground and
+# prints the assigned https://<h>.trycloudflare.com URL. Ctrl-C stops the
+# tunnel and reverts the site. One tunnel per VM: starting a new one
+# clears any previous tunnel and leftover state.
+#
+# The tunnel URL becomes the site's single wwwroot for its lifetime (see
+# /var/lib/mpd/moodle/config-global.php); Moodle redirects .mpd.test
+# visitors to it on its own. Reference: mdl-demo's tunnel feature.
+
+PROJECT="${1:-}"
+if [ -z "$PROJECT" ]; then
+    echo "Usage: trycloudflare-start <project>" >&2
+    exit 1
+fi
+
+STATUS="$(mpd status "$PROJECT" --json)" || {
+    echo "Unknown project '$PROJECT'." >&2
+    exit 1
+}
+ZONE="$(printf '%s' "$STATUS" | jq -r '.zone // empty')"
+TYPE="$(printf '%s' "$STATUS" | jq -r '.type // empty')"
+CONFIGURED="$(printf '%s' "$STATUS" | jq -r '.configured')"
+RUNSTATE="$(printf '%s' "$STATUS" | jq -r '.status // empty')"
+
+if [ "$CONFIGURED" != "true" ] || [ -z "$ZONE" ]; then
+    echo "Project '$PROJECT' is not configured — run 'mpd start $PROJECT' first." >&2
+    exit 1
+fi
+if [ "$RUNSTATE" != "started" ]; then
+    echo "Warning: project '$PROJECT' is not started ($RUNSTATE); the tunnel origin may not answer." >&2
+fi
+
+trycloudflare-install
+
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"
+PIDFILE="${RUNTIME_DIR}/mpd-trycloudflare.pid"
+META="/srv/meta/${PROJECT}/tunnel.json"
+ORIGIN="https://${PROJECT}.${ZONE}"
+
+# One tunnel per VM: stop a previous cloudflared and drop any stale
+# override so a leftover from another project cannot linger.
+if [ -f "$PIDFILE" ]; then
+    OLD_PID="$(cat "$PIDFILE" 2>/dev/null || true)"
+    [ -n "$OLD_PID" ] && kill "$OLD_PID" 2>/dev/null || true
+    rm -f "$PIDFILE"
+fi
+pkill -f 'cloudflared tunnel' 2>/dev/null || true
+rm -f /srv/meta/*/tunnel.json
+
+purge_caches() {
+    [ "$TYPE" = "moodle" ] || return 0
+    ( cd "/srv/projects/${PROJECT}" \
+        && /opt/mpd/assets/vm/project_types/moodle/bin/mdl-cache-purge ) >/dev/null 2>&1 || true
+}
+
+LOG="$(mktemp)"
+CF_PID=""
+CLEANED=0
+cleanup() {
+    [ "$CLEANED" = 1 ] && return 0   # INT then EXIT would run this twice.
+    CLEANED=1
+    rm -f "$META" "$PIDFILE"
+    [ -n "$CF_PID" ] && kill "$CF_PID" 2>/dev/null || true
+    purge_caches
+    rm -f "$LOG"
+    echo
+    echo "Tunnel stopped; '$PROJECT' is back on https://${PROJECT}.${ZONE}/"
+}
+trap cleanup EXIT INT TERM
+
+echo "Starting Cloudflare quick tunnel for '$PROJECT' (origin ${ORIGIN}) ..."
+cloudflared tunnel --no-autoupdate --url "$ORIGIN" >"$LOG" 2>&1 &
+CF_PID=$!
+echo "$CF_PID" > "$PIDFILE"
+
+# Capture the assigned hostname from the log stream.
+URL=""
+for _ in $(seq 1 45); do
+    if ! kill -0 "$CF_PID" 2>/dev/null; then
+        echo "cloudflared exited before announcing a URL:" >&2
+        cat "$LOG" >&2
+        exit 1
+    fi
+    URL="$(grep -Eo 'https://[a-z0-9-]+\.trycloudflare\.com' "$LOG" | head -1 || true)"
+    [ -n "$URL" ] && break
+    sleep 1
+done
+if [ -z "$URL" ]; then
+    echo "Timed out waiting for a tunnel URL:" >&2
+    cat "$LOG" >&2
+    exit 1
+fi
+
+# Wait for the first edge connection; hitting the URL before this yields
+# Cloudflare error 530.
+for _ in $(seq 1 20); do
+    grep -q "Registered tunnel connection" "$LOG" && break
+    sleep 1
+done
+
+HOST="${URL#https://}"
+TMP="$(mktemp)"
+jq -n --arg host "$HOST" --arg url "$URL" '{host: $host, url: $url}' > "$TMP"
+mv "$TMP" "$META"   # atomic: the mpd-caddy watcher reloads on this.
+
+purge_caches
+
+echo
+echo "  Public URL:  ${URL}/"
+echo "  Project:     ${PROJECT}  (also https://${PROJECT}.${ZONE}/ → redirects here)"
+echo
+echo "Press Ctrl-C to stop the tunnel."
+
+wait "$CF_PID"

@@ -1,0 +1,22 @@
+#!/bin/bash
+set -euo pipefail
+# Tool: install cloudflared from Cloudflare's apt repo.
+# VM-wide, idempotent. Runs as the dev user; sudo only on the
+# privileged steps. cloudflared is not in Debian main, so this adds
+# Cloudflare's signed repo (covers Trixie amd64/arm64).
+
+if command -v cloudflared >/dev/null 2>&1; then
+    echo "cloudflared already installed ($(command -v cloudflared)) — skipping."
+    exit 0
+fi
+
+curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg \
+    | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+
+echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main' \
+    | sudo tee /etc/apt/sources.list.d/cloudflared.list >/dev/null
+
+sudo apt-get update
+sudo apt-get install -y cloudflared
+
+echo "cloudflared installed at $(command -v cloudflared)"
