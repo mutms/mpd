@@ -56,7 +56,8 @@ export NVM_DIR="$HOME/.nvm"
 # excludes a desktop agent in the VM's own GNOME session.
 # Applied through PROMPT_COMMAND, not inline: this file runs before
 # Debian assigns PS1, so an inline rewrite would be lost. Idempotent.
-if [ -n "${PS1-}" ]; then
+# Skipped under JetBrains JediTerm (PhpStorm/GoLand), it causes problems and is not needed.
+if [ -n "${PS1-}" ] && [ "${TERMINAL_EMULATOR-}" != "JetBrains-JediTerm" ]; then
     _mpd_prompt() {
         if [ -n "${SSH_AUTH_SOCK-}" ] && [ -n "${SSH_CONNECTION-}" ]; then
             # Match the marker ANYWHERE, not just as a prefix: terminals with
