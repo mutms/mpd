@@ -1,0 +1,153 @@
+#!/bin/bash
+# Tool: admin CLI for the keycloak service, for humans and for agents.
+#
+# Wraps kcadm.sh inside the service container, so nothing has to be
+# installed on the VM and no token handling leaks into scripts. The
+# container is always reachable at localhost:8080 from inside itself,
+# which avoids the frontdoor and its certificate entirely.
+#
+# Usage:
+#   keycloak-admin <kcadm arguments...>   run any kcadm.sh command
+#   keycloak-admin --login                refresh the stored credentials
+#   keycloak-admin --saml-client <name> <sp metadata url>
+#                                         create or replace a SAML client
+#   keycloak-admin --saml-mappers <clientId>
+#                                         add the username, email and name mappers
+#   keycloak-admin --user <username> <password> [email] [first] [last]
+#                                         create or reset a test user
+#
+# The admin password comes from MPD_KEYCLOAK_ADMIN_PASSWORD, default
+# Password1!, same as the service. See docs/services/keycloak.md.
+set -euo pipefail
+
+CONTAINER=mpd-svc-keycloak
+PASSWORD="${MPD_KEYCLOAK_ADMIN_PASSWORD:-Password1!}"
+REALM="${MPD_KEYCLOAK_REALM:-master}"
+# The service address inside the VM, the container image ships no curl.
+BASE="http://$(mpd list services | awk '/^keycloak/ {print $3}'):8080"
+
+# admin_token prints an access token of the admin user, for the REST calls
+# kcadm cannot make (posting an XML descriptor, for one).
+admin_token() {
+    curl -sf "$BASE/realms/master/protocol/openid-connect/token" \
+        -d 'client_id=admin-cli' -d 'grant_type=password' \
+        -d 'username=admin' --data-urlencode "password=$PASSWORD" \
+        | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p'
+}
+
+kcadm() {
+    sudo podman exec "$CONTAINER" /opt/keycloak/bin/kcadm.sh "$@"
+}
+
+login() {
+    kcadm config credentials --server http://localhost:8080 \
+        --realm master --user admin --password "$PASSWORD" >/dev/null
+}
+
+if ! sudo podman container exists "$CONTAINER" 2>/dev/null; then
+    echo "keycloak service is not installed, run: mpd --service-start=keycloak" >&2
+    exit 1
+fi
+
+case "${1:-}" in
+    --login)
+        login
+        echo "logged in as admin of realm master"
+        ;;
+    --saml-client)
+        # $2 client name, $3 URL of the service provider metadata. Keycloak
+        # converts the SP descriptor itself, so ACS and SLO URLs, the entity
+        # ID and the signing certificate all come from the metadata.
+        [[ $# -ge 3 ]] || { echo "usage: keycloak-admin --saml-client <name> <sp metadata url>" >&2; exit 1; }
+        name="$2"
+        metadataurl="$3"
+        login
+        token=$(admin_token)
+        [[ -n "$token" ]] || { echo "cannot authenticate as admin" >&2; exit 1; }
+        descriptor=$(curl -sfL "$metadataurl") \
+            || { echo "cannot download $metadataurl" >&2; exit 1; }
+        client=$(curl -sf "$BASE/admin/realms/$REALM/client-description-converter" \
+            -H "Authorization: Bearer $token" -H 'Content-Type: application/xml' \
+            --data-binary "$descriptor") \
+            || { echo "keycloak could not read the metadata" >&2; exit 1; }
+        # Keycloak defaults to RSA-OAEP with SHA-256, which neither the php-saml
+        # nor the SimpleSAMLphp stack in Moodle can decrypt. The SHA-1 variant works.
+        client=$(printf '%s' "$client" | CLIENT_NAME="$name" python3 -c '
+import json, os, sys
+c = json.load(sys.stdin)
+c["name"] = os.environ["CLIENT_NAME"]
+c.setdefault("attributes", {}).update({
+    "saml.encryption.keyAlgorithm": "http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p",
+    "saml.encryption.digestMethod": "http://www.w3.org/2000/09/xmldsig#sha1",
+    "saml.encryption.maskGenerationFunction": "http://www.w3.org/2009/xmlenc11#mgf1sha1",
+    # A persistent name ID survives a rename, which is what a user mapping needs.
+    "saml_name_id_format": "persistent",
+})
+json.dump(c, sys.stdout)')
+        # The client ID comes from the metadata, not from the name argument.
+        clientid=$(printf '%s' "$client" | python3 -c 'import json,sys; print(json.load(sys.stdin)["clientId"])')
+        existing=$(curl -sf "$BASE/admin/realms/$REALM/clients?clientId=$(printf '%s' "$clientid" | sed 's|/|%2F|g; s|:|%3A|g')" \
+            -H "Authorization: Bearer $token" \
+            | python3 -c 'import json,sys; r=json.load(sys.stdin); print(r[0]["id"] if r else "")')
+        if [[ -n "$existing" ]]; then
+            curl -sf -o /dev/null -X DELETE "$BASE/admin/realms/$REALM/clients/$existing" \
+                -H "Authorization: Bearer $token"
+        fi
+        curl -sf -o /dev/null "$BASE/admin/realms/$REALM/clients" \
+            -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+            --data-binary "$client" \
+            || { echo "client could not be created" >&2; exit 1; }
+        echo "SAML client created in realm '$REALM' from $metadataurl"
+        echo "add the attribute mappers it needs, keycloak sends none by default:"
+        echo "  keycloak-admin --saml-mappers <clientId>"
+        ;;
+    --saml-mappers)
+        # Keycloak sends no attributes unless mappers exist, these are the
+        # four a Moodle plugin needs.
+        [[ $# -ge 2 ]] || { echo "usage: keycloak-admin --saml-mappers <clientId>" >&2; exit 1; }
+        clientid="$2"
+        login
+        id=$(kcadm get clients -r "$REALM" --fields id,clientId 2>/dev/null \
+            | tr -d ' ",' | grep -B 1 "clientId:${clientid}$" | grep "^id:" | cut -d: -f2 || true)
+        [[ -n "$id" ]] || { echo "client '$clientid' not found in realm '$REALM'" >&2; exit 1; }
+        add_mapper() {
+            kcadm create "clients/$id/protocol-mappers/models" -r "$REALM" \
+                -s "name=$1" -s 'protocol=saml' \
+                -s 'protocolMapper=saml-user-property-mapper' \
+                -s "config.\"user.attribute\"=$2" \
+                -s "config.\"attribute.name\"=$1" \
+                -s 'config."attribute.nameformat"=Basic' >/dev/null
+        }
+        add_mapper username username
+        add_mapper email email
+        add_mapper firstName firstName
+        add_mapper lastName lastName
+        echo "mappers username, email, firstName and lastName added to '$clientid'"
+        ;;
+    --user)
+        [[ $# -ge 3 ]] || { echo "usage: keycloak-admin --user <username> <password> [email] [first] [last]" >&2; exit 1; }
+        username="$2"
+        password="$3"
+        email="${4:-$username@example.com}"
+        first="${5:-Test}"
+        last="${6:-User}"
+        login
+        existing=$(kcadm get users -r "$REALM" -q "username=$username" --fields id 2>/dev/null \
+            | tr -d ' "' | grep "^id:" | cut -d: -f2 || true)
+        if [[ -n "$existing" ]]; then
+            kcadm delete "users/$existing" -r "$REALM"
+        fi
+        kcadm create users -r "$REALM" \
+            -s "username=$username" -s "email=$email" -s 'emailVerified=true' \
+            -s "firstName=$first" -s "lastName=$last" -s 'enabled=true' >/dev/null
+        kcadm set-password -r "$REALM" --username "$username" --new-password "$password"
+        echo "user '$username' ready in realm '$REALM'"
+        ;;
+    "")
+        sed -n '3,18p' "$0" | sed 's/^# \{0,1\}//'
+        ;;
+    *)
+        login
+        kcadm "$@"
+        ;;
+esac

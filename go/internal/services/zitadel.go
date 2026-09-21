@@ -62,12 +62,19 @@ func init() {
 		"-e", "ZITADEL_DATABASE_POSTGRES_ADMIN_SSLMODE=disable",
 		"-e", "ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD=" + adminPassword,
 		"-e", "ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED=false",
+		// A machine user with a token written to a volume, so zitadel-admin
+		// can drive the API without a click in the console. First init only,
+		// an instance created before this existed keeps using a stored token.
+		"-e", "ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME=mpd-admin",
+		"-e", "ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME=mpd-admin",
+		"-e", "ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE=2100-01-01T00:00:00Z",
+		"-e", "ZITADEL_FIRSTINSTANCE_PATPATH=/pat/zitadel.pat",
 	}
 
 	service.Register(service.Service{
 		Name:         "zitadel",
 		HostOctet:    104,
-		Revision:     "3",
+		Revision:     "4",
 		Port:         8080,
 		TLS:          true,
 		FrontdoorH2C: true,
@@ -84,11 +91,13 @@ func init() {
 				},
 			},
 			{
-				Suffix:  "server",
-				Primary: true,
-				Image:   image,
-				Args:    []string{"start-from-init", "--masterkey", masterKey, "--tlsMode", "external"},
-				RunArgs: concat(zitadelEnv, caTrust),
+				Suffix:     "server",
+				Primary:    true,
+				Image:      image,
+				Volume:     "mpd-svc-zitadel-pat",
+				VolumePath: "/pat",
+				Args:       []string{"start-from-init", "--masterkey", masterKey, "--tlsMode", "external"},
+				RunArgs:    concat(zitadelEnv, caTrust),
 			},
 		},
 	})

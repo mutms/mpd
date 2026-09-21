@@ -1,0 +1,151 @@
+#!/bin/bash
+# Tool: admin CLI for the zitadel service, for humans and for agents.
+#
+# Talks to the zitadel management API with a personal access token, so
+# nothing has to be clicked in the console for a test setup.
+#
+# Usage:
+#   zitadel-admin <METHOD> <api path> [json body]   raw API call
+#   zitadel-admin --token                           print the token in use
+#   zitadel-admin --pat <token>                     store a token for later runs
+#   zitadel-admin --saml-app <project> <sp metadata url>
+#                                                   create or replace a SAML app
+#   zitadel-admin --user <username> <password> [email] [first] [last]
+#                                                   create or reset a test user
+#
+# Token resolution order: MPD_ZITADEL_PAT, then /srv/meta/zitadel/pat,
+# then the token zitadel writes at first init inside the container. An
+# instance created before this tool existed has none of the last kind, so
+# make a service user in the console with the ORG_OWNER role, add a
+# personal access token to it, and store it with --pat once.
+# See docs/services/zitadel.md.
+set -euo pipefail
+
+CONTAINER=mpd-svc-zitadel-server
+PATFILE=/srv/meta/zitadel/pat
+
+if ! sudo podman container exists "$CONTAINER" 2>/dev/null; then
+    echo "zitadel service is not installed, run: mpd --service-start=zitadel" >&2
+    exit 1
+fi
+
+BASE="https://$(mpd list services | awk '/^zitadel/ {print $4}' | sed 's|https://||; s|/$||')"
+
+token() {
+    if [[ -n "${MPD_ZITADEL_PAT:-}" ]]; then
+        printf '%s' "$MPD_ZITADEL_PAT"
+        return
+    fi
+    if [[ -r "$PATFILE" ]]; then
+        tr -d '\n' < "$PATFILE"
+        return
+    fi
+    sudo podman exec "$CONTAINER" cat /pat/zitadel.pat 2>/dev/null | tr -d '\n'
+}
+
+api() {
+    # $1 method, $2 path, $3 optional JSON body.
+    local method="$1" path="$2" body="${3:-}" tok
+    tok=$(token)
+    if [[ -z "$tok" ]]; then
+        echo "no zitadel token, see: zitadel-admin (usage)" >&2
+        exit 1
+    fi
+    # A failed call must say so, a silent abort is impossible to debug.
+    if [[ -n "$body" ]]; then
+        curl -sf -X "$method" "$BASE$path" \
+            -H "Authorization: Bearer $tok" -H 'Content-Type: application/json' \
+            --data-binary "$body" \
+            || { echo "zitadel API call failed: $method $path" >&2; exit 1; }
+    else
+        curl -sf -X "$method" "$BASE$path" -H "Authorization: Bearer $tok" \
+            || { echo "zitadel API call failed: $method $path" >&2; exit 1; }
+    fi
+}
+
+json_field() {
+    # Crude but dependency free, the API answers are small and flat enough.
+    sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p" | head -1
+}
+
+case "${1:-}" in
+    --token)
+        tok=$(token)
+        [[ -n "$tok" ]] || { echo "no token stored" >&2; exit 1; }
+        printf '%s\n' "$tok"
+        ;;
+    --pat)
+        [[ $# -ge 2 ]] || { echo "usage: zitadel-admin --pat <token>" >&2; exit 1; }
+        mkdir -p "$(dirname "$PATFILE")"
+        printf '%s' "$2" > "$PATFILE"
+        chmod 600 "$PATFILE"
+        echo "token stored in $PATFILE"
+        ;;
+    --saml-app)
+        # $2 project name, $3 URL of the service provider metadata. The app
+        # is named "moodle" and replaced on every run, test sites regenerate
+        # their service provider certificate.
+        [[ $# -ge 3 ]] || { echo "usage: zitadel-admin --saml-app <project> <sp metadata url>" >&2; exit 1; }
+        project="$2"
+        metadataurl="$3"
+        descriptor=$(curl -sfL "$metadataurl") \
+            || { echo "cannot download $metadataurl" >&2; exit 1; }
+        encoded=$(printf '%s' "$descriptor" | base64 -w 0)
+
+        projectid=$(api POST /management/v1/projects/_search \
+            "{\"queries\":[{\"nameQuery\":{\"name\":\"$project\",\"method\":\"TEXT_QUERY_METHOD_EQUALS\"}}]}" \
+            | json_field id || true)
+        if [[ -z "$projectid" ]]; then
+            projectid=$(api POST /management/v1/projects "{\"name\":\"$project\"}" | json_field id)
+        fi
+        [[ -n "$projectid" ]] || { echo "cannot create project '$project'" >&2; exit 1; }
+
+        appid=$(api POST "/management/v1/projects/$projectid/apps/_search" \
+            '{"queries":[{"nameQuery":{"name":"moodle","method":"TEXT_QUERY_METHOD_EQUALS"}}]}' \
+            | json_field id || true)
+        # Login UI v1, the new one does not carry SAML attributes yet.
+        body="{\"name\":\"moodle\",\"metadataXml\":\"$encoded\",\"loginVersion\":{\"loginV1\":{}}}"
+        if [[ -n "$appid" ]]; then
+            api PUT "/management/v1/projects/$projectid/apps/$appid/saml_config" \
+                "{\"metadataXml\":\"$encoded\",\"loginVersion\":{\"loginV1\":{}}}" >/dev/null
+            echo "SAML app replaced in project '$project'"
+        else
+            api POST "/management/v1/projects/$projectid/apps/saml" "$body" >/dev/null
+            echo "SAML app created in project '$project'"
+        fi
+        ;;
+    --user)
+        [[ $# -ge 3 ]] || { echo "usage: zitadel-admin --user <username> <password> [email] [first] [last]" >&2; exit 1; }
+        username="$2"
+        password="$3"
+        email="${4:-$username@example.com}"
+        first="${5:-Test}"
+        last="${6:-User}"
+        existing=$(api POST /management/v1/users/_search \
+            "{\"queries\":[{\"userNameQuery\":{\"userName\":\"$username\",\"method\":\"TEXT_QUERY_METHOD_EQUALS\"}}]}" \
+            | json_field id || true)
+        if [[ -n "$existing" ]]; then
+            api DELETE "/management/v1/users/$existing" >/dev/null
+        fi
+        # Verified email and no forced password change, a test login must not stop to ask.
+        api POST /management/v1/users/human/_import "$(cat <<JSON
+{
+  "userName": "$username",
+  "profile": {"firstName": "$first", "lastName": "$last"},
+  "email": {"email": "$email", "isEmailVerified": true},
+  "password": "$password",
+  "passwordChangeRequired": false
+}
+JSON
+        )" >/dev/null
+        echo "user '$username' ready"
+        ;;
+    "")
+        sed -n '3,21p' "$0" | sed 's/^# \{0,1\}//'
+        ;;
+    *)
+        [[ $# -ge 2 ]] || { echo "usage: zitadel-admin <METHOD> <api path> [json body]" >&2; exit 1; }
+        api "$@"
+        echo
+        ;;
+esac
