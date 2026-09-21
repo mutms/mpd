@@ -797,6 +797,14 @@ published from the registry in advance, install state aside:
   `auth/oidc` — including the SAML IdP metadata URL that the zitadel UI does
   not surface — is in [`services/zitadel.md`](services/zitadel.md).
 
+- `keycloak` — `.105`, HTTPS at `https://keycloak.caddy.<NNN>.mpd.test/`. A
+  test SAML/OIDC identity provider (Java), one container in development mode
+  with the bundled H2 database on a volume. The start verb travels as a
+  podman `--entrypoint` override, because a single container service has no
+  command field. Admin password from `MPD_KEYCLOAK_ADMIN_PASSWORD`. Wiring it
+  to Moodle, the SAML quirks it has, and the `keycloak-admin` helper are in
+  [`services/keycloak.md`](services/keycloak.md).
+
 A service is one container, or — when it sets `PodContainers` — a **pod** of
 several containers (`go/internal/service/pod.go`). The pod holds the single
 service IP, DNS name and restart policy; its members share localhost, so they

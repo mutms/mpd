@@ -288,6 +288,7 @@ service such as zitadel also fronts browser-trusted HTTPS at
 |--------------|----------------------------------------------|-------------------------------------------------------------------------------|
 | `mailpit`    | `https://mailpit.caddy.<NNN>.mpd.test/`      | Shared mail catch-all; web UI over HTTPS via the frontdoor. SMTP stays direct at `mailpit.svc.<NNN>.mpd.test:1025` (where projects send). Data volume survives uninstall. |
 | `zitadel`    | `https://zitadel.caddy.<NNN>.mpd.test/`      | Test SAML/OIDC IdP for `auth/saml2` + `auth/oidc`, browser-trusted HTTPS via the frontdoor. Admin password `MPD_ZITADEL_ADMIN_PASSWORD` (default `Password1!`). Full wiring in [services/zitadel.md](services/zitadel.md). |
+| `keycloak`   | `https://keycloak.caddy.<NNN>.mpd.test/`     | Test SAML/OIDC IdP, the one most sites self-host. Admin `admin`, password `MPD_KEYCLOAK_ADMIN_PASSWORD` (default `Password1!`). Driven from the CLI with `keycloak-admin`. Full wiring in [services/keycloak.md](services/keycloak.md). |
 | `adminer`    | `http://adminer.svc.<NNN>.mpd.test:8080/`    | DB web UI; the portal offers pre-filled per-project links.                    |
 | `selenium` | `http://selenium.svc.<NNN>.mpd.test:4444/` | Behat browser; started by `mpd start` on a Behat-enabled Moodle project. |
 

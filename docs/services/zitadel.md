@@ -12,6 +12,22 @@ Log into the console as admin:
 
 IdP metadata of the instance: https://zitadel.caddy.NNN.mpd.test/saml/v2/metadata
 
+## zitadel-admin
+
+`zitadel-admin` drives the instance from the command line over the management API.
+
+| Command                                              | Does                                          |
+|------------------------------------------------------|-----------------------------------------------|
+| `zitadel-admin <METHOD> <api path> [json body]`      | raw API call                                   |
+| `zitadel-admin --token` / `--pat <token>`            | show or store the token it uses                |
+| `zitadel-admin --saml-app <project> <sp metadata url>` | create or replace a SAML app from the metadata |
+| `zitadel-admin --user <name> <password> [email] [first] [last]` | create or reset a human user       |
+
+The token comes from `MPD_ZITADEL_PAT`, then `/srv/meta/zitadel/pat`, then the token the
+instance writes at first init. An instance created before that existed has none, so make
+a service user in the console with the ORG_OWNER role, add a personal access token to it,
+and store it once with `zitadel-admin --pat <token>`.
+
 ## Create project for Moodle site
 
 First create a new project, then and a new Application separately for
@@ -72,23 +88,24 @@ Make sure "Use new Login UI" is OFF.
 4. press "Generate certificate" and copy the service provider metadata URL:
    https://<project>.NNN.mpd.test/auth/musaml/metadata.php
 
-**In Zitadel**
+**In Zitadel**, console or command line:
 
-Create new Application from your Moodle project.
+```
+zitadel-admin --saml-app moodle https://<project>.NNN.mpd.test/auth/musaml/metadata.php
+zitadel-admin --user testuser1 'Test-User-Pass1!'
+```
 
-1. Name + Type: SAML
-2. Specify metadata URL, or upload the file: https://<project>.NNN.mpd.test/auth/musaml/metadata.php
-
-Make sure "Use new Login UI" is OFF.
+By hand it is a new Application of type SAML in your project, with that metadata URL,
+and "Use new Login UI" OFF, the new one does not carry SAML attributes yet.
 
 **In Moodle LMS**
 
 1. go to Identity providers and press "Add identity provider"
-2. paste https://zitadel.caddy.NNN.mpd.test/saml/v2/metadata, the provider is detected as
-   Zitadel and `UserID` plus the usual attribute mappings are prefilled
-3. run "Test login" from the Attributes tab, the received values stay in your session and
-   are listed under the mapped attributes, unmapped ones can be added with the plus icon
-4. map the test user on the "User mappings" tab, or turn on automatic mapping or automatic
+2. paste https://zitadel.caddy.NNN.mpd.test/saml/v2/metadata into "Metadata URL or XML",
+   the provider is detected as Zitadel and the attribute mappings are prefilled
+3. run "Test login" from the Attributes tab, the received values are listed under the
+   mapped attributes and each unmapped one can be added with the plus icon
+4. map the test user on the "Mapped users" tab, or turn on automatic mapping or automatic
    account creation for the identity provider
 
 ## OICD

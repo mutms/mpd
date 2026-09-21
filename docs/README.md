@@ -38,7 +38,11 @@ that live nowhere else — e.g. an IdP's metadata/discovery URLs). One file
 per service under [`services/`](services/):
 
 - [`services/zitadel.md`](services/zitadel.md) — zitadel test IdP: console,
-  admin login, and wiring Moodle `auth/saml2` and `auth/oidc` to it.
+  admin login, `zitadel-admin`, and wiring Moodle `auth/saml2`, `auth/musaml`
+  and `auth/oidc` to it.
+- [`services/keycloak.md`](services/keycloak.md) — keycloak test IdP: console,
+  `keycloak-admin`, SAML quirks, and wiring Moodle `auth/musaml` and
+  `auth/saml2` to it.
 
 ## If you're working on mpd itself
 
