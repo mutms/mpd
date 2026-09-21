@@ -10,14 +10,34 @@ Log into the console as admin:
 - Username: zitadel-admin@zitadel.zitadel.caddy.NNN.mpd.test
 - Password: Password1! (or `MPD_ZITADEL_ADMIN_PASSWORD`)
 
+IdP metadata of the instance: https://zitadel.caddy.NNN.mpd.test/saml/v2/metadata
+
 ## Create project for Moodle site
 
 First create a new project, then and a new Application separately for
 SAML2 and/or OIDC.
 
+## Test user
+
+Logins need a human user, the admin account is not a good test subject.
+
+1. Users, New
+2. fill in email, first and last name, set a password
+3. tick "Email verified" and untick "Password change required", otherwise the first login
+   asks for a new password
+4. the login name is the user name without a domain suffix
+
 ### SAML
 
 Set up steps must be done in the specified order.
+
+Zitadel sends these attributes: `UserID`, `UserName`, `Email`, `FirstName`, `SurName` and
+`FullName`. `UserID` is the permanent identifier, everything else can change.
+
+Zitadel refuses single logout requests with `RequestDenied`, so a logout in Moodle ends
+the Moodle session only.
+
+#### auth_saml2
 
 **In Moodle LMS**
 
@@ -41,6 +61,35 @@ Make sure "Use new Login UI" is OFF.
 2. enable "auth_saml2 | debug"
 3. got to /auth/test_settings.php?auth=saml2 and test login
 4. use the debug info to set up saml to Moodle account mapping
+
+#### auth_musaml
+
+**In Moodle LMS**
+
+1. install [auth_musaml](https://github.com/mutms/moodle-auth_musaml) plugin
+2. login as admin, enable the SAML authentication plugin
+3. go to Site administration, Plugins, Authentication, SAML authentication, Service provider
+4. press "Generate certificate" and copy the service provider metadata URL:
+   https://<project>.NNN.mpd.test/auth/musaml/metadata.php
+
+**In Zitadel**
+
+Create new Application from your Moodle project.
+
+1. Name + Type: SAML
+2. Specify metadata URL, or upload the file: https://<project>.NNN.mpd.test/auth/musaml/metadata.php
+
+Make sure "Use new Login UI" is OFF.
+
+**In Moodle LMS**
+
+1. go to Identity providers and press "Add identity provider"
+2. paste https://zitadel.caddy.NNN.mpd.test/saml/v2/metadata, the provider is detected as
+   Zitadel and `UserID` plus the usual attribute mappings are prefilled
+3. run "Test login" from the Attributes tab, the received values stay in your session and
+   are listed under the mapped attributes, unmapped ones can be added with the plus icon
+4. map the test user on the "User mappings" tab, or turn on automatic mapping or automatic
+   account creation for the identity provider
 
 ## OICD
 
@@ -67,3 +116,44 @@ Make sure "Use new Login UI" is OFF.
    - Token endpoint: `https://zitadel.caddy.NNN.mpd.test/oauth/v2/token`
 4. go to the Moodle login page and use the OpenID Connect link to test login
 5. map fields under auth_oidc "Field mapping" (e.g. email → `email`, given_name → `firstname`, family_name → `lastname`)
+
+## Automated tests of auth_musaml
+
+The tests create their own Zitadel project named after the test database, register a SAML
+application in it from the current service provider metadata, and log in as a real user.
+No manual project is needed.
+
+**In Zitadel**
+
+1. Users, Service Users, New: user name `moodle-test-automation`, Access Token Type **Bearer**
+2. open it, Personal Access Tokens, Add, set a far expiry and copy the token, it is shown only once
+3. Organization, Members, Add member: the service user with the **ORG_OWNER** role, the tests
+   create projects and applications
+4. create a human test user as described above
+
+**In Moodle LMS**
+
+Add the constants to `config.php`, both test runners read them:
+
+```php
+define('TEST_AUTH_MUSAML_ZITADEL_URL', 'https://zitadel.caddy.NNN.mpd.test');
+define('TEST_AUTH_MUSAML_ZITADEL_PAT', '<personal access token>');
+define('TEST_AUTH_MUSAML_ZITADEL_USERNAME', '<login name of the human user>');
+define('TEST_AUTH_MUSAML_ZITADEL_PASSWORD', '<password of that user>');
+```
+
+Then run the tests:
+
+| Task    | Command                             |
+|---------|-------------------------------------|
+| PHPUnit | `phpunit --filter=auth_musaml`      |
+| Behat   | `behat --tags=@auth_musaml_zitadel` |
+
+Without the constants these tests are skipped and the rest of the suite still runs.
+
+Notes:
+
+- the application metadata is replaced on every run, test sites regenerate the service
+  provider certificate
+- PHPUnit and Behat get separate projects, the name comes from the database name and prefix
+- the test helpers clear `curlsecurityblockedhosts`, the site must reach the Zitadel host
