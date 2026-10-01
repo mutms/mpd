@@ -135,13 +135,14 @@ mpd-virt's `docs/LIBVIRT.md`.
 **From an iPad or another device with no SSH tunnel:**
 
 ```bash
-rdp-start        # installs xrdp, asks for a login password, opens tcp/3389
+rdp-start        # installs xrdp, sets a login password if none, opens tcp/3389
 rdp-stop         # closes it again, now and at boot
 ```
 
-`rdp-start` prompts for a password because it needs one: xrdp
+`rdp-start` prompts for a password the first time because it needs one: xrdp
 authenticates through PAM, and the dev user of an mpd VM normally has no
-password at all (SSH is pubkey-only, sudo is NOPASSWD). Having set it, the
+password at all (SSH is pubkey-only, sudo is NOPASSWD). Once a password is
+set it never asks again — change it with `passwd`. Having set it, the
 tool turns SSH password authentication off — with a key already installed
 — so the password buys RDP and nothing else. Connect to `<vm-ip>:3389` as
 your usual username; the client will warn once about xrdp's self-signed

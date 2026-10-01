@@ -23,7 +23,8 @@ usage() {
     cat <<'EOF'
 Usage: rdp-start
 
-Install and start xrdp, and set the password RDP will ask for.
+Install and start xrdp. If you have no login password yet, set one:
+RDP asks for it. To change it later, run `passwd`.
 Close the port again with `rdp-stop`.
 EOF
 }
@@ -113,31 +114,17 @@ ok "${POLKIT_RULE}"
 # password; mpd's dev user normally has none.
 step "Login password for ${RDP_USER}"
 pw_state="$(sudo passwd -S "${RDP_USER}" | awk '{print $2}')"
-set_password=1
 case "${pw_state}" in
     P | PS)
-        if [ -t 0 ]; then
-            read -r -p "A password is already set. Change it? [y/N] " reply
-            case "${reply}" in
-                y | Y | yes | YES) ;;
-                *) set_password=0 ;;
-            esac
-        else
-            set_password=0
-        fi
+        ok "already set — run 'passwd' to change it"
         ;;
     *)
         [ -t 0 ] || die "${RDP_USER} has no password and this is not a terminal — run rdp-start interactively."
         echo "    ${RDP_USER} has no password yet; RDP cannot authenticate without one."
+        sudo passwd "${RDP_USER}"
+        ok "password set"
         ;;
 esac
-
-if [ "${set_password}" = 1 ]; then
-    sudo passwd "${RDP_USER}"
-    ok "password set"
-else
-    ok "keeping the existing password"
-fi
 
 # The new password must not become an SSH credential; keep SSH
 # pubkey-only. Only when a key is already installed — otherwise this
@@ -182,7 +169,7 @@ cat <<EOF
   RDP open on tcp/${RDP_PORT}
 ================================================================
 
-Connect to any of these, as ${RDP_USER}, with the password above:
+Connect to any of these, as ${RDP_USER}, with your login password:
 
 $(for a in ${addrs}; do printf '    %s:%s\n' "${a}" "${RDP_PORT}"; done)
 
