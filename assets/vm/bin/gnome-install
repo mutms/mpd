@@ -1,6 +1,7 @@
 #!/bin/bash
 # gnome-install — add a minimal GNOME desktop, Chromium and browser-automation
 # media tools (ffmpeg, emoji font) to a VM that has none. Idempotent.
+# Also sets up a dock on the left that is always visible.
 #
 # --no-install-recommends keeps NetworkManager out: the VM runs
 # systemd-networkd, so GNOME's network panel stays empty by design.
@@ -24,7 +25,8 @@ usage() {
 Usage: gnome-install [--yes]
 
 Install a minimal GNOME desktop, Chromium and browser-automation media tools
-(ffmpeg, emoji font) in this VM.
+(ffmpeg, emoji font) in this VM. The desktop gets a dock on the left that
+is always visible; you can change it in the Extensions app.
 
   --yes, -y   do not ask before downloading
 
@@ -62,6 +64,40 @@ install_chromium_homepage() {
 EOF
     sudo chmod 644 "${dir}/mpd-homepage.json"
     ok "${url} — home button and startup page (editable in Chromium)"
+}
+
+# Show the dock on the left, always visible, as Ubuntu does, with
+# Settings, Terminal and Chromium pinned. These are system defaults: a
+# value the user sets in the desktop wins.
+install_dock_defaults() {
+    local profile=/etc/dconf/profile/user
+    local defaults=/etc/dconf/db/local.d/00-mpd-dock
+
+    step "Dock on the left"
+    if [ ! -e "${profile}" ]; then
+        sudo install -d -m 755 /etc/dconf/profile
+        printf 'user-db:user\nsystem-db:local\n' | sudo tee "${profile}" >/dev/null
+        sudo chmod 644 "${profile}"
+    elif ! grep -qx 'system-db:local' "${profile}"; then
+        warn "${profile} exists and does not read system-db:local — leaving the dock at GNOME's default"
+        return 0
+    fi
+
+    sudo install -d -m 755 /etc/dconf/db/local.d
+    sudo tee "${defaults}" >/dev/null <<'EOF'
+# Managed by mpd gnome-install.
+[org/gnome/shell]
+enabled-extensions=['dash-to-dock@micxgx.gmail.com']
+favorite-apps=['org.gnome.Settings.desktop', 'org.gnome.Terminal.desktop', 'chromium.desktop']
+
+[org/gnome/shell/extensions/dash-to-dock]
+dock-position='LEFT'
+dock-fixed=true
+extend-height=true
+EOF
+    sudo chmod 644 "${defaults}"
+    sudo dconf update
+    ok "Dash to Dock on by default (${defaults}) — log out and in again to see it"
 }
 
 ASSUME_YES=0
@@ -112,6 +148,10 @@ GNOME_PKGS=(
     gnome-session gnome-session-xsession gdm3
     gnome-terminal gnome-control-center
     chromium xdg-utils
+    # Dash to Dock is what Ubuntu ships as "Ubuntu Dock". dconf-cli
+    # supplies `dconf update` for its system defaults; -prefs is the
+    # Extensions app where the user changes them.
+    gnome-shell-extension-dashtodock gnome-shell-extension-prefs dconf-cli
     # Media tooling shared by projects that automate the browser (the agent
     # "browser" treat, docs-site screenshots): ffmpeg turns captured frames
     # into GIF/WebP/MP4, and the emoji font makes headless renders match a
@@ -132,6 +172,7 @@ done
 if [ ${#missing[@]} -eq 0 ]; then
     ok "all ${#GNOME_PKGS[@]} packages already installed"
     install_chromium_homepage
+    install_dock_defaults
     echo
     echo "Run 'gnome-start' to switch this VM into the desktop."
     exit 0
@@ -182,6 +223,7 @@ if [ "${gdm_was_active}" = 0 ] && systemctl is-active --quiet gdm3 2>/dev/null; 
 fi
 
 install_chromium_homepage
+install_dock_defaults
 
 cat <<EOF
 

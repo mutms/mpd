@@ -100,7 +100,8 @@ overlay, or a GUI you cannot drive over SSH.
 gnome-install    # only on a VM that has no desktop at all: installs
                  # GNOME Shell, GDM, a terminal, Chromium and the fonts
                  # a web page expects. Points Chromium's home page at this
-                 # VM's portal. Starts nothing; the boot target is left
+                 # VM's portal. Puts an always-visible dock on the left
+                 # (Dash to Dock). Starts nothing; the boot target is left
                  # exactly as it was. ~320 MB. Idempotent.
 gnome-start      # switch to the desktop now, and at every reboot
 gnome-stop       # back to headless, now and at every reboot
@@ -112,6 +113,13 @@ a `mpd-virt`-provisioned VM already have GNOME; there `gnome-start` is
 all you need. NetworkManager is deliberately left out (mpd runs the VM on
 systemd-networkd), so GNOME's network panel is empty. Nothing else
 notices.
+
+The dock is Dash to Dock (what Ubuntu ships as "Ubuntu Dock"), switched
+on through system dconf defaults in `/etc/dconf/db/local.d/00-mpd-dock`,
+with Settings, Terminal and Chromium pinned.
+They are defaults, not locks: change the dock in the Extensions app or
+with `gsettings`, and your value wins. Re-running `gnome-install` adds
+the dock to a desktop installed before this existed.
 
 ## Nested VMs: testing mpd-virt from inside an mpd VM
 
