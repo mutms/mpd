@@ -69,6 +69,19 @@ else
     ok "installed ${missing[*]}"
 fi
 
+# A user manager that started before dbus-user-session was installed has
+# no session bus, and GNOME exits at once. See docs/debugging.md.
+step "Session bus"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+BUS="${XDG_RUNTIME_DIR}/bus"
+if [ -S "${BUS}" ]; then
+    ok "${BUS}"
+elif systemctl --user daemon-reload && systemctl --user start dbus.socket && [ -S "${BUS}" ]; then
+    ok "started dbus.socket (${BUS})"
+else
+    warn "no session bus at ${BUS} — reboot the VM before you connect"
+fi
+
 # xrdp runs /etc/X11/Xsession, which prefers ~/.xsession. Naming GNOME
 # there stops the fall-through to whatever x-session-manager points at.
 step "Session (~/.xsession)"
