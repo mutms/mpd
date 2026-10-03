@@ -316,8 +316,8 @@ ssh mpd-<NNN>
 ```
 
 It goes straight to the VM's sshd — no jump host, no overlay, no proxy.
-Add `-A` only when you need your SSH agent in that session, and never in
-a session where an AI agent works — see [security.md](security.md).
+Add `-A` only when you need your SSH agent on the VM, and never while an
+AI agent works there — see [security.md](security.md).
 
 You land as the dev user, with passwordless sudo, every tool on PATH and
 the project tree at `/srv/projects/<project>/`. From there:
@@ -325,29 +325,43 @@ the project tree at `/srv/projects/<project>/`. From there:
 - **VS Code Remote-SSH** → connect to `mpd-<NNN>`, open
   `/srv/projects/<project>/`. Language server, debugger and terminals all
   run on the VM.
-- **PHPStorm Gateway** → same endpoint, same shape.
+- **PHPStorm Gateway** → same endpoint, same shape. Git runs on the VM
+  here too; Gateway relays your key to it and asks you to approve.
 - **Claude Code over SSH** → `ssh mpd-<NNN>` (no `-A`). The agent
-  reads/writes files and runs composer / phpunit / behat. It has no key,
-  so it cannot push: commit and push from the host (PhpStorm or a host
-  terminal) yourself.
+  reads/writes files and runs composer / phpunit / behat. It has no key
+  of its own, so it cannot push — unless another connection to the same
+  VM is relaying one. An IDE connected at the same time does, by
+  default (see [Pushing to git](#pushing-to-git-from-the-vm)).
 
 Anything you write *outside* mpd-virt's `# >>> mpd-<NNN> ... >>>` markers
 in `~/.ssh/config` is preserved across re-runs; anything inside them is
 regenerated.
 
-The prompt gains a `🔑 ` prefix when the session carries a forwarded SSH
-agent, so whether `git push` can reach your laptop key is something you
+The prompt gains a `🔑 ` prefix when the session has an agent socket set,
+so whether `git push` in this terminal can reach a key is something you
 see rather than something you remember about the `ssh` command you typed
-(see [Pushing to git](#pushing-to-git-from-the-vm)).
+(see [Pushing to git](#pushing-to-git-from-the-vm)). It describes this
+terminal only. A prompt without it does not mean the VM is keyless:
+another connection may have a socket open.
 
 
 ### Pushing to git from the VM
 
-The VM doesn't carry your private SSH key. The simple way is to not push
-from there at all: the IDE on the host (PhpStorm, VS Code) commits and
-pushes with the host's key, and an AI agent on the VM never gets one. For
-a session where you type yourself, **SSH agent forwarding** (`ssh -A`)
-works:
+The VM doesn't carry your private SSH key, and remote IDEs do not change
+where git runs: with VS Code Remote-SSH or PhpStorm Gateway, `git push`
+still executes on the VM. Something has to lend it a key, or the push
+has to happen elsewhere. Three ways, safest first:
+
+1. **Push from the laptop.** Keep a clone (or a bare repository) on the
+   laptop and bring commits over with
+   `git fetch mpd-<NNN>:/srv/projects/<project>`. The laptop pulls
+   through the SSH access it already has; the VM never sees a key.
+   Signing tags belongs here too: a signature requested from the VM is
+   made on data a VM process chose.
+2. **PhpStorm Gateway with approval on every use.** Convenient, and each
+   signature needs a click on the laptop.
+3. **`ssh -A`**, for a session where you type yourself and nothing else
+   runs on the VM:
 
 ```bash
 ssh-add ~/.ssh/id_ed25519           # load the key into your laptop's agent
@@ -360,19 +374,32 @@ git push origin main                # forwarded agent signs; the remote
 
 A session with a forwarded agent shows a `🔑 ` on the prompt, so you
 never have to reconstruct whether you passed `-A` — and `ssh-add -l`
-inside the session is the live check that the agent still answers.
+inside the session is the live check of which keys it offers.
 
-VSCode Remote-SSH forwards the agent silently
-(`remote.ssh.enableAgentForwarding` is on by default). PHPStorm Gateway
-also forwards by default but prompts on each key access — use
-per-access prompts when an AI agent is driving, per-session when you're
-typing. An AI agent launched inside an `-A` SSH session uses the same
-forwarded socket and can push as you — so do not start one there.
+**IDEs forward by default.** VSCode Remote-SSH forwards the agent
+silently (`remote.ssh.enableAgentForwarding`). PHPStorm Gateway runs a
+relay of its own: you pick a key when the session starts, and choose
+between approving every use and approving once for the session.
+
+- Approve every use for a key that matters (your GitHub key). The prompt
+  names the requesting process; approve only what you just triggered.
+- Approve for the session only a key that opens little, such as one for
+  an internal Forgejo.
+
+**The key is lent to the VM, not to one terminal.** A forwarded or
+relayed socket can be used by any process of the dev user, in any
+session. An AI agent in a plain `ssh` session can push as you while an
+IDE on the same VM relays a key with per-session approval, and one
+launched inside an `-A` session can always. So do not combine them: no
+`-A`, and no silently approving IDE relay, on a VM where an agent is
+working.
 
 The private key **never leaves the laptop**. The VM can request
-signatures via the agent's API only while your SSH session is open —
-there's no way to extract the key. Close the session, auth goes away.
-Wipe or compromise the VM, your key is unaffected.
+signatures only while the connection that lent the key is open —
+there's no way to extract it. Close the connection, auth goes away.
+Wipe or compromise the VM, your key is unaffected. What a signature was
+used for while the connection was open is another matter: see
+[security.md](security.md), "Agent forwarding and IDE key relays".
 
 **One more guard.** Agent forwarding lets the AI push commits *under
 your identity* — so the consequence-blocking moves to the remote, not
