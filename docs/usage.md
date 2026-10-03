@@ -329,9 +329,10 @@ the project tree at `/srv/projects/<project>/`. From there:
   here too; Gateway relays your key to it and asks you to approve.
 - **Claude Code over SSH** → `ssh mpd-<NNN>` (no `-A`). The agent
   reads/writes files and runs composer / phpunit / behat. It has no key
-  of its own, so it cannot push — unless another connection to the same
-  VM is relaying one. An IDE connected at the same time does, by
-  default (see [Pushing to git](#pushing-to-git-from-the-vm)).
+  of its own, so a `git push` there fails. A key relayed by an IDE
+  connected at the same time is not picked up by accident, but a process
+  that looks for it can use it (see
+  [Pushing to git](#pushing-to-git-from-the-vm)).
 
 Anything you write *outside* mpd-virt's `# >>> mpd-<NNN> ... >>>` markers
 in `~/.ssh/config` is preserved across re-runs; anything inside them is
@@ -386,13 +387,16 @@ between approving every use and approving once for the session.
 - Approve for the session only a key that opens little, such as one for
   an internal Forgejo.
 
-**The key is lent to the VM, not to one terminal.** A forwarded or
-relayed socket can be used by any process of the dev user, in any
-session. An AI agent in a plain `ssh` session can push as you while an
-IDE on the same VM relays a key with per-session approval, and one
-launched inside an `-A` session can always. So do not combine them: no
-`-A`, and no silently approving IDE relay, on a VM where an agent is
-working.
+**The key is lent to the VM, not to one terminal.** Only the session
+that opened the socket has `SSH_AUTH_SOCK` pointing at it, so a separate
+plain `ssh` session does not use the key by itself: `git push` there
+fails as if there were none. That stops accidents, not intent. The
+socket is a file any process of the dev user can find, and one that sets
+`SSH_AUTH_SOCK` to it pushes as you — silently, if the relay is approved
+for the session. An AI agent launched inside an `-A` session needs no
+such step; it has the socket from the start. So do not start an agent in
+an `-A` session, and do not rely on a separate session to keep a
+silently approved key away from code you do not trust.
 
 The private key **never leaves the laptop**. The VM can request
 signatures only while the connection that lent the key is open —

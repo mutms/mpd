@@ -420,8 +420,11 @@ restrict it, in the IDE.
 **Who can use it.** Every process of the dev user, and root, for as long
 as the connection is open. The socket is a file: a process does not need
 to be a child of the session that created it, it only needs to find the
-path. An AI agent started in a plain `ssh mpd-<NNN>` session is
-therefore not keyless while Gateway is connected to the same VM. Other
+path. A plain `ssh mpd-<NNN>` session next to a Gateway connection does
+not use the relayed key by itself, because its `SSH_AUTH_SOCK` does not
+point there: that prevents accidents. It does not stop a process that
+sets the variable to the socket it found, so such a session is not
+keyless against code that means to use the key. Other
 unprivileged accounts are kept out by file permissions, but on an mpd VM
 the dev user has passwordless sudo, so that distinction buys nothing.
 
