@@ -46,6 +46,8 @@ Idempotent — safe to re-run any time. Walks you through:
 - installing the CA into the VM's system trust store + Firefox + NSS DB
 - quieting the kernel console to warnings and errors
   (`/etc/sysctl.d/99-mpd-printk.conf`)
+- raising the inotify watch limit to 1048576, so an IDE backend can watch
+  a large tree (`/etc/sysctl.d/99-mpd-inotify.conf`)
 - creating the Podman network and data volume
 - mounting the data volume on the VM at `/srv`
 - installing and configuring the apex caddy, which serves the portal at

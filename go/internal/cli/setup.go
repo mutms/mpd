@@ -281,6 +281,9 @@ func preflight(ctx context.Context, out io.Writer) error {
 	if err := vm.QuietConsole(ctx, out); err != nil {
 		return err
 	}
+	if err := vm.RaiseInotifyLimits(ctx, out); err != nil {
+		return err
+	}
 	return vm.EnablePodmanRestart(ctx, out)
 }
 
