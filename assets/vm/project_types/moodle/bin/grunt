@@ -12,6 +12,14 @@ if [[ ! "$PWD" =~ ^/srv/projects/${PROJECT} ]]; then
     cd "${PROJECT_DIR}"
 fi
 
+# Moodle pins its Node version in .nvmrc and Gruntfile.js refuses any other.
+# nvm install selects that version and downloads it only when it is missing.
+if [ -f "${PROJECT_DIR}/.nvmrc" ]; then
+    (cd "${PROJECT_DIR}" && nvm install >/dev/null) \
+        || { echo "Error: could not install the Node version from ${PROJECT_DIR}/.nvmrc" >&2; exit 1; }
+    nvm use "$(nvm version "$(cat "${PROJECT_DIR}/.nvmrc")")" >/dev/null
+fi
+
 if [ ! -d "${PROJECT_DIR}/node_modules" ]; then
     echo "Installing node_modules..."
     (cd "${PROJECT_DIR}" && npm install)
