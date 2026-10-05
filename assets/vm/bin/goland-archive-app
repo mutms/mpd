@@ -1,6 +1,6 @@
 #!/bin/bash
 # goland-archive-app — pack this VM's Toolbox-installed GoLand into
-# ~/install/goland.tgz. Copy the file into your host-side overlay
+# /opt/mpd/assets/installers/goland.tgz. Copy the file into your host-side overlay
 # (~/.mpd-virt/installers/<arch>/) and a VM of that architecture
 # reads it from /opt/mpd/assets/installers/, where `goland-install-app`
 # unpacks it.
@@ -10,7 +10,7 @@ set -euo pipefail
 APPS_DIR="$HOME/.local/share/JetBrains/Toolbox/apps"
 APP_NAME="goland"
 SRC="${APPS_DIR}/${APP_NAME}"
-DEST_DIR="$HOME/install"
+DEST_DIR="/opt/mpd/assets/installers"
 DEST="${DEST_DIR}/${APP_NAME}.tgz"
 
 die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
@@ -19,7 +19,7 @@ usage() {
     cat <<'EOF'
 Usage: goland-archive-app
 
-Pack ~/.local/share/JetBrains/Toolbox/apps/goland into ~/install/goland.tgz.
+Pack ~/.local/share/JetBrains/Toolbox/apps/goland into /opt/mpd/assets/installers/goland.tgz.
 Unpack it on another VM with `goland-install-app`.
 EOF
 }
@@ -76,7 +76,7 @@ cat <<EOF
 To seed it into every future ${ARCH} VM, run this on your workstation:
 
     mkdir -p ${OVERLAY}
-    scp $(hostname):${DEST/#"${HOME}"/\~} ${OVERLAY}/
+    scp $(hostname):${DEST} ${OVERLAY}/
 
 mpd-virt pushes it on adopt and update, to ${ARCH} VMs only; they run
 

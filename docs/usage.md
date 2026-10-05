@@ -429,7 +429,7 @@ Stack-independent ones first:
 | `claude-install` | Idempotent install of Claude Code (Anthropic's CLI) to `~/.local/bin/claude` via the upstream `curl \| bash` installer. Re-runs no-op.                                                                                       |
 | `node-install`   | Idempotent install of nvm + Node.js (LTS by default) into `$HOME/.nvm/` (upstream-standard). After install, `nvm`/`node`/`npm` are on PATH for new login shells; `nvm install <ver>` then works without sudo. Re-runs no-op. |
 | `vscode-install` | Idempotent install of Visual Studio Code from Microsoft's own Debian repository (`packages.microsoft.com/repos/code`, signed key in its own keyring), added to the GNOME dash, with the Marp extension for writing Markdown slide decks. `--no-extensions` for the editor alone. Needs `gnome-install` first to have a desktop to run in. |
-| `phpstorm-archive-app` | Pack this VM's Toolbox-installed PhpStorm backend into `~/install/phpstorm.tgz`, and print the `scp` line that seeds it into every future VM through your mpd-virt overlay.                                        |
+| `phpstorm-archive-app` | Pack this VM's Toolbox-installed PhpStorm backend into `/opt/mpd/assets/installers/phpstorm.tgz`, and print the `scp` line that seeds it into every future VM through your mpd-virt overlay.                                        |
 | `phpstorm-install-app` | Unpack `/opt/mpd/assets/installers/phpstorm.tgz` (or `~/install/phpstorm.tgz`) into the Toolbox apps directory, so a fresh VM skips the three-gigabyte backend download. No-ops when PhpStorm is already there or neither tarball is. |
 | `trycloudflare-install` | Idempotent install of `cloudflared` from Cloudflare's apt repo. Re-runs no-op. |
 | `trycloudflare-start <project>` | Expose one project on a public `https://<h>.trycloudflare.com` quick tunnel; runs in the foreground, Ctrl-C to stop. The tunnel URL becomes the site's single URL for its lifetime (Moodle redirects `.mpd.test` visitors to it) and reverts on stop. One tunnel per VM. **Exposes a dev site publicly — see [security.md](security.md).** |
@@ -727,7 +727,7 @@ gnome-install                    # minimal GNOME + Chromium, on a VM with no des
 gnome-start / gnome-stop         # desktop on / off, persistent across reboots
 rdp-start / rdp-stop             # open / close RDP on tcp/3389 (opt-in, password-authenticated)
 claude-install                   # Claude Code on the VM
-goland-archive-app               # pack this VM's Toolbox GoLand into ~/install/goland.tgz
+goland-archive-app               # pack this VM's Toolbox GoLand into /opt/mpd/assets/installers/goland.tgz
 goland-install-app               # unpack that tarball on a new VM instead of downloading GoLand
 ```
 
