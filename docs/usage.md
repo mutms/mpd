@@ -416,6 +416,10 @@ you can audit. Stricter shops also require PRs for `main`.
 
 ### Tools available in the VM
 
+An AI agent working on a Moodle project should start from
+[`moodle-agents.md`](moodle-agents.md): the same tools ordered by task,
+plus the traps.
+
 The following tools are on PATH — project-aware (cwd-walk to find the
 current project) and ready for either a human or an AI agent to invoke
 directly. Full taxonomy in

@@ -30,6 +30,11 @@ In rough order of when you'll want them:
 - [`debugging.md`](debugging.md) — catalogue of real symptoms with
   the diagnostic that confirms each and the fix. Read when the stack
   or IDE session misbehaves (lockups, thread/fork exhaustion, …).
+- [`moodle-agents.md`](moodle-agents.md) — guide for AI agents doing
+  Moodle project and plugin work inside the VM: which tool for which
+  task, the traps around `mpd reset`, restores and test sites, how to
+  test a database upgrade, git rules. Written to the agent, readable by
+  people. Point your agent at it, or read it to see what the agent is told.
 
 ### Service integration guides
 

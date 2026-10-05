@@ -249,6 +249,7 @@ across docs.
 - *(Host-side design notes for the `mpd-virt` orchestrator live in
   that repo's own `docs/`.)*
 - `docs/usage.md` — day-to-day workflow (bootstrap → first project → SSH in)
+- `docs/moodle-agents.md` — guide for AI agents doing Moodle project and plugin work in the VM: which tool for which task, traps (`mpd reset`, restores, test sites), upgrade testing, git rules. Links to `usage.md` for detail; not for work on mpd itself
 - `docs/debugging.md` — symptom catalogue: real IDE and stack failures, the diagnostic that confirms each, and the fix
 - `docs/networking.md` — networking model (WireGuard overlay / SOCKS via mpd-virt + mpd-proxy)
 - `docs/security.md` — security model
@@ -636,6 +637,8 @@ found." Internal sudo on specific operations is the right shape.
 - The tool itself (executable, `chmod +x`).
 - If the tool deserves dev-facing mention: add a one-line entry under
   "Tools available in the VM" in `docs/usage.md`.
+- If it is a Moodle tool an agent would reach for: add it to the task
+  table in `docs/moodle-agents.md`.
 - If it replaces an existing verb (verb→tool migration): delete the
   obsolete verb files and update any host-side callers that referenced
   the verb by name.
