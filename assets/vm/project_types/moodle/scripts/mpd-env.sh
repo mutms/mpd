@@ -118,3 +118,30 @@ moodle_agent_log() {
             --args -- "$@" >>"${datadir}/agent/log.jsonl"
     ) 2>/dev/null || true
 }
+
+# moodle_behat_instance — which of the project's four behat sites a tool
+# works on, from the name it was called by: behat1-init and behat1 mean
+# site 1, behat2* site 2, behat3* site 3, and plain behat* the unnumbered
+# site (0). Sets and exports
+# MPD_BEHAT_INSTANCE, which config-mpd.php reads, and sets
+# BEHAT_DATAROOT, BEHAT_HOST_LABEL and BEHAT_LOG for the tool itself.
+moodle_behat_instance() {
+    local name
+    name=$(basename "$0")
+    case "$name" in
+        behat1*) MPD_BEHAT_INSTANCE=1 ;;
+        behat2*) MPD_BEHAT_INSTANCE=2 ;;
+        behat3*) MPD_BEHAT_INSTANCE=3 ;;
+        *)       MPD_BEHAT_INSTANCE=0 ;;
+    esac
+    export MPD_BEHAT_INSTANCE
+    if [ "$MPD_BEHAT_INSTANCE" = "0" ]; then
+        BEHAT_DATAROOT="/srv/data/${PROJECT}/dataroot_behat"
+        BEHAT_HOST_LABEL="behat"
+        BEHAT_LOG="/srv/data/${PROJECT}/behat_error.log"
+    else
+        BEHAT_DATAROOT="/srv/data/${PROJECT}/dataroot_behat${MPD_BEHAT_INSTANCE}"
+        BEHAT_HOST_LABEL="behat${MPD_BEHAT_INSTANCE}"
+        BEHAT_LOG="/srv/data/${PROJECT}/behat${MPD_BEHAT_INSTANCE}_error.log"
+    fi
+}

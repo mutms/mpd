@@ -58,14 +58,84 @@ $CFG->cron_keepalive = '0'; // Cron keep alive is problematic, better always avo
 $CFG->phpunit_dataroot  = '/srv/data/%%PROJECT%%/dataroot_phpunit';
 $CFG->phpunit_prefix = 't_';
 
-$CFG->behat_wwwroot   = 'https://behat.%%PROJECT%%.%%ZONE%%';
-$CFG->behat_dataroot  = '/srv/data/%%PROJECT%%/dataroot_behat';
-$CFG->behat_prefix    = 'bht_';
+// Behat: four independent test sites, so one can run a long suite while
+// another is used to write a new test. Each has its own URL, tables,
+// dataroot and failure dumps, and none of them knows about the others.
+//   behat.%%PROJECT%%.%%ZONE%%   bht_  dataroot_behat   (tools: behat)
+//   behat1.%%PROJECT%%.%%ZONE%%  bh1_  dataroot_behat1  (tools: behat1)
+//   behat2.%%PROJECT%%.%%ZONE%%  bh2_  dataroot_behat2  (tools: behat2)
+//   behat3.%%PROJECT%%.%%ZONE%%  bh3_  dataroot_behat3  (tools: behat3)
+// A web request picks its site by host name. A CLI script picks it by
+// MPD_BEHAT_INSTANCE, which the behat tools set. The prefixes must not start
+// with one another: Moodle drops a test site by table prefix.
+// 0 is the unnumbered site.
+$mpdbehat = 0;
+$mpdbehatweb = false;
+if (PHP_SAPI === 'cli') {
+    if (in_array(getenv('MPD_BEHAT_INSTANCE'), ['1', '2', '3'], true)) {
+        $mpdbehat = (int)getenv('MPD_BEHAT_INSTANCE');
+    }
+} else {
+    $mpdbehathost = strtolower(explode(':', $_SERVER['HTTP_HOST'] ?? '')[0]);
+    if ($mpdbehathost === 'behat.%%PROJECT%%.%%ZONE%%') {
+        $mpdbehatweb = true;
+    } else if ($mpdbehathost === 'behat1.%%PROJECT%%.%%ZONE%%') {
+        $mpdbehat = 1;
+        $mpdbehatweb = true;
+    } else if ($mpdbehathost === 'behat2.%%PROJECT%%.%%ZONE%%') {
+        $mpdbehat = 2;
+        $mpdbehatweb = true;
+    } else if ($mpdbehathost === 'behat3.%%PROJECT%%.%%ZONE%%') {
+        $mpdbehat = 3;
+        $mpdbehatweb = true;
+    }
+    unset($mpdbehathost);
+}
+if ($mpdbehat === 0) {
+    $CFG->behat_wwwroot   = 'https://behat.%%PROJECT%%.%%ZONE%%';
+    $CFG->behat_dataroot  = '/srv/data/%%PROJECT%%/dataroot_behat';
+    $CFG->behat_prefix    = 'bht_';
+} else {
+    $CFG->behat_wwwroot   = 'https://behat' . $mpdbehat . '.%%PROJECT%%.%%ZONE%%';
+    $CFG->behat_dataroot  = '/srv/data/%%PROJECT%%/dataroot_behat' . $mpdbehat;
+    $CFG->behat_prefix    = 'bh' . $mpdbehat . '_';
+}
 
 // Screenshots + HTML dumps of failed steps. Kept outside behat_dataroot on
 // purpose: `behat --init` wipes that tree, which would take the evidence
 // from the previous run with it.
-$CFG->behat_faildump_path = '/srv/data/%%PROJECT%%/behat_faildump';
+$CFG->behat_faildump_path = '/srv/data/%%PROJECT%%/behat_faildump' . ($mpdbehat === 0 ? '' : $mpdbehat);
+
+// One log per behat site: behat_error.log, behat1_error.log, behat2_error.log
+// and behat3_error.log,
+// in /srv/data/%%PROJECT%%/. The behat_mpd_log context, which ships with mpd,
+// writes the start and end of every feature and scenario and each failed
+// step into it, and sends the runner's PHP errors there. The PHP errors of
+// the site's web requests are sent there too, so they stay out of the
+// development site's php_error.log and can be matched to a scenario.
+define('MPD_BEHAT_LOG', '/srv/data/%%PROJECT%%/behat' . ($mpdbehat === 0 ? '' : $mpdbehat) . '_error.log');
+if ($mpdbehatweb) {
+    ini_set('error_log', MPD_BEHAT_LOG);
+}
+$CFG->behat_config = [
+    'default' => [
+        'suites' => [
+            'default' => [
+                // A key far past Moodle's own list: its merge would let a
+                // low one replace a core context.
+                'contexts' => [100000 => 'behat_mpd_log'],
+            ],
+        ],
+        'extensions' => [
+            'Moodle\\BehatExtension' => [
+                'steps_definitions' => [
+                    'behat_mpd_log' => '/opt/mpd/assets/vm/project_types/moodle/behat/behat_mpd_log.php',
+                ],
+            ],
+        ],
+    ],
+];
+unset($mpdbehat, $mpdbehatweb);
 
 // Behat runs against the selenium service (standalone-chromium at its
 // own address — `mpd start` starts it whenever MPD_MOODLE_BEHAT=1 adds it
@@ -86,11 +156,6 @@ $CFG->behat_profiles = [
                 // the standard W3C capability for testing against a local cert;
                 // it keeps the service a stock image (no CA install).
                 'acceptInsecureCerts' => true,
-                'goog:chromeOptions' => [
-                    'args' => [
-                        'remote-debugging-port=9222',
-                    ],
-                ],
             ],
         ],
     ],

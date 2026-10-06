@@ -250,6 +250,67 @@ the shared Mailpit inbox pre-filtered to this project.
 points `wd_host` at it, and wires `https://behat.moodle51.<NNN>.mpd.test/`
 automatically.
 
+A project has **four independent Behat sites**, so a long suite can run
+in one while you write a new test against another, or several
+components are tested side by side:
+
+| URL | Tools |
+|---|---|
+| `https://behat.<project>.<NNN>.mpd.test/` | `behat-init`, `behat`, `behat-util` |
+| `https://behat1.<project>.<NNN>.mpd.test/` | `behat1-init`, `behat1`, `behat1-util` |
+| `https://behat2.<project>.<NNN>.mpd.test/` | `behat2-init`, `behat2`, `behat2-util` |
+| `https://behat3.<project>.<NNN>.mpd.test/` | `behat3-init`, `behat3`, `behat3-util` |
+
+By convention `behat` is yours. AI agents take the highest free
+numbered site — `behat3` first, then `behat2`, then `behat1` — and leave
+`behat` alone unless you tell them otherwise. `behat-status` shows which
+sites are initialised and which are busy with a run:
+
+```
+behat   https://behat.moodle51.<NNN>.mpd.test/   free
+behat1  https://behat1.moodle51.<NNN>.mpd.test/  not initialised (run behat1-init)
+behat2  https://behat2.moodle51.<NNN>.mpd.test/  free
+behat3  https://behat3.moodle51.<NNN>.mpd.test/  BUSY for 12:40 (pid 516990): --tags=@tool_muprog
+```
+
+```bash
+behat-init && behat2-init                 # each site is initialised on its own
+behat1 --tags=@tool_muprog &              # a long run in one site ...
+behat path/to/new.feature                 # ... while another tries a new test
+```
+
+Each site has its own tables (`bht_`, `bh1_`, `bh2_`, `bh3_`), dataroot
+(`dataroot_behat`, `dataroot_behat1`, …), failure dumps
+(`behat_faildump`, `behat_faildump1`, …) and log (`behat_error.log`,
+`behat1_error.log`, …) under `/srv/data/<project>/`.
+
+**Watching a run.** `behat` prints where its site's log is before it
+starts. Follow that file to see a long run as it happens:
+
+```bash
+tail -f /srv/data/<project>/behat_error.log
+```
+
+The log gets a line when each feature and scenario starts and ends
+(passed or FAILED), a line for each failed step with its message, and
+every PHP error — those of the Behat runner and those of the site's
+own web requests, which therefore stay out of the development site's
+`php_error.log`. Read together they say which scenario an error
+belongs to. The lines come from a Behat context that ships with mpd
+(`assets/vm/project_types/moodle/behat/behat_mpd_log.php`) and is added
+through `$CFG->behat_config`; nothing is put into the Moodle tree. The
+file only grows: empty it when it gets long.
+
+**A new feature file** is unknown to a site until its configuration is
+rebuilt, and Behat then says "No specifications found". `behat-util
+--enable` (or `behat1-util`, `behat2-util`, `behat3-util`) does that in a few seconds
+and keeps the site's data; a full `-init` is not needed for it.
+Initialising, breaking or re-initialising one does not touch the
+others. They are ordinary single Behat sites: Moodle's own parallel
+runner (`init.php --parallel`) is not used, and would put its `behatrunN`
+symlinks into the checkout. All four share the project's code, so a
+change to `version.php` or `db/` makes every one of them outdated.
+
 Your own environment — a Moodle admin password `mdl-install` reads,
 `MPD_MOODLE_AGREE_LICENSE`, an API token — lives in
 `/var/lib/mpd/env/vm.env` *inside the VM*, sourced into every shell:
@@ -459,12 +520,14 @@ Stack-independent ones first:
 | `mdl-agent-php`                             | Run PHP inside the current project's Moodle: `mdl-agent-php 'echo $CFG->release;'`, a `.php` file with arguments, or `-` for stdin. `config.php` is loaded as a CLI script first; `--user=<username>` runs as that user. |
 | `mdl-agent-sql`                             | Run one SQL statement through Moodle's database layer, tables in braces: `mdl-agent-sql 'SELECT id, username FROM {user}'`. `--json` / `--tsv`, `--limit=<n>` (default 100). A statement that changes data needs `--write`. |
 | `mdl-agent-screenshot`                      | Save a PNG of one page as a given user: `mdl-agent-screenshot [--user=<username>] [--size=1280x1024] /local/path`. Logs in with a single-use link and renders with headless Chromium (needs `gnome-install`). Prints the file's path under `/srv/data/<project>/agent/screenshots/`. |
+| `mdl-agent-downgrade`                       | Lower the version a plugin is recorded as installed at, so the next `mdl-upgrade` runs its upgrade steps again: `mdl-agent-downgrade tool_muprog 2026100553`. Sets the plugin's version and clears Moodle's all-versions hash; tables and data are not touched. |
 | `mdl-agent-log`                             | Show the latest `mdl-agent-*` calls made in the current project — time, caller, tool and arguments: `mdl-agent-log [n]`, `--json` for the stored lines. Every `mdl-agent-*` tool logs itself to `/srv/data/<project>/agent/log.jsonl`. |
 | `mdl-cron`                                  | Run `admin/cli/cron.php` (one cycle) for the current project.                                                                                                                                                               |
 | `mdl-upgrade`                               | Run `admin/cli/upgrade.php --non-interactive` for the current project. Use after a git pull that updates code.                                                                                                              |
 | `mdl-data-backup` / `mdl-data-restore`      | Save and restore the current project's database + dataroot + code recipe as one `.mdb` in the shared `/srv/backups/` pile (restorable into any project, and into an mdl-demo container). `mdl-data-restore --list` shows what is there. See [Backups](#backups). |
 | `phpunit` / `phpunit-init` / `phpunit-util` | Run, initialize, and inspect Moodle's PHPUnit suite.                                                                                                                                                                        |
-| `behat` / `behat-init` / `behat-util`       | Run, initialize, and inspect Moodle's Behat suite.                                                                                                                                                                          |
+| `behat-status`                              | List the project's four Behat sites with their URLs: not initialised, free, or busy with a run (how long, which arguments). |
+| `behat` / `behat-init` / `behat-util`       | Run, initialize, and inspect Moodle's Behat suite. `behat1…`, `behat2…` and `behat3…` do the same for the project's three further Behat sites; all four are independent of each other.                                                                                                                                                                          |
 | `grunt`                                     | Wraps `npm install` + `grunt` for the current project's Moodle JS build. Selects the Node version from the project's `.nvmrc` first, installing it with nvm when it is missing.                                                                                                                                                    |
 | `mpci` / `mpci-install`                     | Moodle Plugin CI runner and installer. The phar lives at `/srv/extra/mpci/`, on the data volume. `rm` it and re-run `mpci-install` to pick up a newer release.                     |
 
@@ -623,6 +686,8 @@ mdl-agent-sql --write 'UPDATE {user} SET suspended = 0 WHERE id = 3'
 
 mdl-agent-screenshot /admin/index.php
 mdl-agent-screenshot --user=student1 --size=1280x2400 /my/
+
+mdl-agent-downgrade tool_muprog 2026100553 && mdl-upgrade
 ```
 
 - `mdl-agent-php` and `mdl-agent-sql --write` act on the real site
@@ -639,6 +704,13 @@ mdl-agent-screenshot --user=student1 --size=1280x2400 /my/
   site. Arguments are logged, output is not; a login token never
   appears in it. Another agent names itself with `MDL_AGENT_NAME` and
   `MDL_AGENT_SESSION`.
+- `mdl-agent-downgrade` is for an upgrade block that is still being
+  written: it makes `mdl-upgrade` run the plugin's steps above the given
+  version once more. Only the recorded version changes. The database
+  keeps what the earlier upgrade did, so a step that checks first
+  (`field_exists()` and the like) repeats safely, and a step that
+  migrates data once does not: restore a backup taken before the
+  upgrade for that.
 - `mdl-agent-screenshot` shows a page as it loads. It cannot click, so
   a dialog or a later step of a form needs Behat or a browser.
 

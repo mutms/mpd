@@ -1,6 +1,10 @@
 #!/bin/bash
 # behat — run Behat tests for the current project.
 # All arguments are passed through to vendor/bin/behat.
+#
+# A project has four independent behat sites. The name this tool is
+# called by picks one: behat, behat1, behat2 or behat3. Each needs its
+# own init: behat-init, behat1-init, behat2-init, behat3-init.
 set -euo pipefail
 
 source /opt/mpd/assets/vm/project_types/moodle/scripts/mpd-env.sh
@@ -19,16 +23,22 @@ fi
 
 cd "${PROJECT_DIR}"
 
-BEHAT_CONFIG="/srv/data/${PROJECT}/dataroot_behat/behatrun/behat/behat.yml"
+moodle_behat_instance
+INIT_TOOL="${BEHAT_HOST_LABEL}-init"
+BEHAT_CONFIG="${BEHAT_DATAROOT}/behatrun/behat/behat.yml"
 
 if [ ! -f "vendor/bin/behat" ]; then
-    echo "Error: vendor/bin/behat not found — run 'behat-init' first" >&2
+    echo "Error: vendor/bin/behat not found — run '${INIT_TOOL}' first" >&2
     exit 1
 fi
 
 if [ ! -f "${BEHAT_CONFIG}" ]; then
-    echo "Error: ${BEHAT_CONFIG} not found — run 'behat-init' first" >&2
+    echo "Error: ${BEHAT_CONFIG} not found — run '${INIT_TOOL}' first" >&2
     exit 1
 fi
+
+# The site's log gets the start and end of every scenario, failed steps
+# and all PHP errors as they happen: follow it to watch a long run.
+echo "Log: ${BEHAT_LOG}  (follow with: tail -f ${BEHAT_LOG})" >&2
 
 exec php vendor/bin/behat --config "${BEHAT_CONFIG}" "$@"

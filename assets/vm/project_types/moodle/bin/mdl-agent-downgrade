@@ -1,0 +1,45 @@
+#!/bin/bash
+# Tool: lower the version one plugin is recorded as installed at, in the
+# current project's site, so the next mdl-upgrade runs that plugin's
+# upgrade steps again. For working on an upgrade block that is not
+# committed yet, without restoring a backup for every try.
+#
+# Usage: mdl-agent-downgrade <plugin> <version>
+#   plugin    component name, such as tool_muprog or mod_forum
+#   version   a version lower than the installed one; every upgrade step
+#             guarded by "$oldversion < X" with X above it runs again
+#
+# Example:
+#   mdl-agent-downgrade tool_muprog 2026100553
+#   mdl-upgrade
+#
+# Only the recorded version changes. Tables, fields and data stay as the
+# earlier upgrade left them, so a step is repeated on an already upgraded
+# database: fine for steps that check first (field_exists and the like),
+# wrong for a step that migrates data once. For that, restore a backup
+# taken before the upgrade (mdl-data-restore).
+set -euo pipefail
+source /opt/mpd/assets/vm/project_types/moodle/scripts/mpd-env.sh
+
+AGENT_DIR="/opt/mpd/assets/vm/project_types/moodle/agent/cli"
+
+case "${1:-}" in
+    -h|--help)
+        sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+        exit 0
+        ;;
+esac
+
+if [ $# -ne 2 ]; then
+    echo "Usage: mdl-agent-downgrade <plugin> <version>" >&2
+    exit 1
+fi
+
+if [ ! -f "${PROJECT_DIR}/config.php" ]; then
+    echo "Project '${PROJECT}' has no config.php — run 'mpd start' first." >&2
+    exit 1
+fi
+
+moodle_agent_log mdl-agent-downgrade "$1" "$2"
+
+exec php "${AGENT_DIR}/run.php" "$PROJECT_DIR" "" file "${AGENT_DIR}/downgrade.php" "$1" "$2"

@@ -78,6 +78,8 @@ done
 # as the same identity. display_errors stays on: a fatal inside
 # config.php happens before Moodle can apply $CFG->debugdisplay, and a
 # bare 500 hides it. php_admin_* so nothing can switch it back off.
+# error_log alone is a plain php_value: config-mpd.php sends the errors
+# of a behat site's requests to that site's own log.
 DEV_USER=$(id -un)
 FPM_CONF_DIR="/etc/php/${PHP_VER}/fpm/pool.d"
 if [ -d "$FPM_CONF_DIR" ]; then
@@ -87,9 +89,9 @@ listen = 127.0.0.1:${FPM_PORT}
 user = ${DEV_USER}
 group = ${DEV_USER}
 pm = ondemand
-pm.max_children = 5
+pm.max_children = 16
 pm.process_idle_timeout = 60s
-php_admin_value[error_log] = ${DATAROOT}/php_error.log
+php_value[error_log] = ${DATAROOT}/php_error.log
 php_admin_flag[log_errors] = on
 php_admin_flag[display_errors] = on
 php_admin_flag[display_startup_errors] = on

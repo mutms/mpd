@@ -1,5 +1,9 @@
 #!/bin/bash
 # behat-init — initialize Behat test environment for the current project.
+#
+# A project has four independent behat sites. The name this tool is
+# called by picks one: behat-init, behat1-init, behat2-init or
+# behat3-init. Initialising one leaves the others alone.
 set -euo pipefail
 source /opt/mpd/assets/vm/project_types/moodle/scripts/mpd-env.sh
 
@@ -16,4 +20,5 @@ if [ "${MPD_MOODLE_BEHAT:-0}" != "1" ]; then
     exit 1
 fi
 
+moodle_behat_instance
 moodle_run admin/tool/behat/cli/init.php "$@"

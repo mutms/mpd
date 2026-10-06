@@ -2,7 +2,9 @@
 # behat-util — Behat utility commands for the current project.
 # Examples: behat-util --enable, behat-util --disable, behat-util --drop
 # All arguments are passed through to admin/tool/behat/cli/util.php.
+# behat1-util, behat2-util and behat3-util work on the numbered behat sites.
 set -euo pipefail
 source /opt/mpd/assets/vm/project_types/moodle/scripts/mpd-env.sh
 
+moodle_behat_instance
 moodle_run admin/tool/behat/cli/util.php "$@"

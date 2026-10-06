@@ -46,11 +46,12 @@ Run them from anywhere inside the project tree. Full list and options:
 | Log a browser in, as any user | `mdl-agent-login [username]` prints a single-use URL |
 | Run PHP with Moodle loaded | `mdl-agent-php '<code>'`, a `.php` file, or `-` for stdin; `--user=<username>` |
 | Query the site database | `mdl-agent-sql 'SELECT … FROM {user}'` (`--json`, `--tsv`, `--limit`); `--write` to change data |
+| Run a plugin's upgrade steps again | `mdl-agent-downgrade <plugin> <version>`, then `mdl-upgrade`; the database is not rolled back |
 | See what earlier sessions did to the site | `mdl-agent-log [n]` lists the logged `mdl-agent-*` calls |
 | See a page as a user | `mdl-agent-screenshot [--user=<username>] /local/path` prints the PNG's path; read the image |
 | Save / restore database + dataroot | `mdl-data-backup [name]` / `mdl-data-restore <name>` (`--list`) |
 | PHPUnit | `phpunit-init`, then `phpunit --testsuite <component>_testsuite` or `phpunit <path to test file>` |
-| Behat | `behat-init`, then `behat --tags=@<component>` or `behat <path to feature>` |
+| Behat | `behat-init`, then `behat --tags=@<component>` or `behat <path to feature>`. Three more independent sites: `behat1-init` / `behat1`, `behat2-init` / `behat2`, `behat3-init` / `behat3` |
 | Code checks | `mpci-install` once, then `mpci <command> <plugin dir>` |
 | JS build | `grunt` |
 
@@ -96,17 +97,32 @@ the template.
 - **Backups are engine-specific.** A bundle restores only into the same
   engine, same or newer major version. To test another engine, set
   `MPD_DB` in `mpd.env`, `mpd start`, install and seed again.
-- **One PHPUnit run and one Behat run per project at a time.** Each has a
-  single test site. Do not start a second run, and do not change
-  `version.php`, `db/install.xml` or `db/access.php` under a running Behat
-  run: the site then demands an upgrade and later scenarios fail.
+- **One PHPUnit run per project at a time, and one Behat run per Behat
+  site.** There is a single PHPUnit site. There are four independent
+  Behat sites (`behat`, `behat1`, `behat2`, `behat3`, each with its own
+  `-init`), so several Behat runs can go at once, one in each; never
+  start a second run in a site that is busy. Do not change `version.php`,
+  `db/install.xml` or `db/access.php` under a running Behat run: all
+  four sites share the code, so each then demands an upgrade and later
+  scenarios fail.
 - **Re-init after schema or version changes.** `phpunit-init` after
   changing `db/install.xml`, `version.php` or adding a plugin;
-  `behat-init` after the same, and after adding Behat step definitions.
+  `behat-init` after the same, and after adding Behat step definitions
+  (`behat1-init`, `behat2-init`, `behat3-init` for the other sites, only
+  when used).
 - **Behat needs `MPD_MOODLE_BEHAT=1`.** It is off by default because the
   Selenium image is large. Enable it with
   `mpd start <project> MPD_MOODLE_BEHAT=1`. Fail dumps are in
-  `/srv/data/<project>/behat_faildump/`.
+  `/srv/data/<project>/behat_faildump/` (`behat_faildump1/` to
+  `behat_faildump3/` for the other sites).
+- **Follow a Behat run in its log.** `/srv/data/<project>/behat_error.log`
+  (`behat1_error.log` to `behat3_error.log`) gets every scenario's start
+  and end, each failed step and all PHP errors as they happen. Read it
+  instead of waiting for a long run to finish.
+- **A new `.feature` file needs `behat-util --enable`** (a few seconds,
+  `behat1-util` to `behat3-util` for the other sites) before a site can
+  run it; a full `behat-init` is only needed after version, schema or
+  step definition changes.
 - **No DDL in normal PHPUnit tests.** Moodle resets data between tests,
   not schema. Test an upgrade step by upgrading a real site (next
   section), not by recreating old tables in a test.
@@ -163,8 +179,14 @@ not order.
 
 ## Working with several agents
 
-- Give exactly one agent the PHPUnit site and one the Behat site, and say
-  so in each brief.
+- Give exactly one agent the PHPUnit site, and each Behat site (`behat`,
+  `behat1`, `behat2`, `behat3`) to at most one agent, and say so in each
+  brief.
+- **Which Behat site an agent uses.** `behat` belongs to the developer.
+  Run `behat-status` and take the highest free numbered site: `behat3`
+  first, then `behat2`, then `behat1`. Initialise it with its own
+  `-init` if `behat-status` says so. Use `behat` only when the developer
+  asks for it, and never start a run in a site shown as BUSY.
 - Tell every agent that `mpd reset` and `mdl-data-restore` are off limits
   unless it owns the whole project for that step.
 - Scratch scripts, seed data and logs go outside the source tree.

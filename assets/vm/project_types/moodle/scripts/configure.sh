@@ -80,7 +80,10 @@ fi
 
 # The script runs as the dev user and /srv/data is dev-owned, so
 # plain mkdir/chmod work.
-for DIR in "$DATAROOT" "$BEHATDATAROOT" "$BEHATFAILDUMP" "$PHPUNITDATAROOT"; do
+# Behat sites 1 to 3 sit beside the unnumbered one, see config-mpd.php.
+for DIR in "$DATAROOT" "$BEHATDATAROOT" "$BEHATFAILDUMP" "$PHPUNITDATAROOT" \
+        "${BEHATDATAROOT}1" "${BEHATFAILDUMP}1" "${BEHATDATAROOT}2" "${BEHATFAILDUMP}2" \
+        "${BEHATDATAROOT}3" "${BEHATFAILDUMP}3"; do
     mkdir -p "$DIR"
     chmod 02777 "$DIR"
 done
@@ -195,12 +198,15 @@ URLS='[
       }
     }
   }'
+# Four behat sites share one backend, so the frontdoor puts their hosts
+# into one vhost. config-mpd.php tells them apart by host name.
 if [ "$BEHAT" = "1" ]; then
-    URLS="${URLS}"',
+    for BEHAT_HOST in behat behat1 behat2 behat3; do
+        URLS="${URLS}"',
   {
-    "label": "behat",
+    "label": "'"${BEHAT_HOST}"'",
     "kind": "behat",
-    "url": "https://behat.'"${PROJECT_NAME}"'.'"${MPD_ZONE}"'/",
+    "url": "https://'"${BEHAT_HOST}"'.'"${PROJECT_NAME}"'.'"${MPD_ZONE}"'/",
     "backend": {
       "type": "php-fpm",
       "fastcgi": "'"${FPM_SOCK}"'",
@@ -208,6 +214,7 @@ if [ "$BEHAT" = "1" ]; then
       "tryFiles": ["{path}", "{path}/index.php", "/r.php"]
     }
   }'
+    done
 fi
 
 # Informational mail link: no backend, so the frontdoor skips it and

@@ -1,0 +1,38 @@
+#!/bin/bash
+# behat-status — say which of the current project's four behat sites are
+# initialised and which are busy with a run right now, with each site's URL.
+#
+# Convention: the developer works in "behat". AI agents take the highest
+# free numbered site — behat3 first, then behat2, then behat1 — and leave
+# "behat" alone unless told otherwise.
+set -euo pipefail
+source /opt/mpd/assets/vm/project_types/moodle/scripts/mpd-env.sh
+
+# The numbered hosts are one character longer than the plain one.
+WIDTH=$(( $(moodle_status_field '.urls[] | select(.label == "behat") | .url' | wc -c) + 1 ))
+
+for SITE in behat behat1 behat2 behat3; do
+    DATAROOT="/srv/data/${PROJECT}/dataroot_${SITE}"
+    CONFIG="${DATAROOT}/behatrun/behat/behat.yml"
+    URL=$(moodle_status_field ".urls[] | select(.label == \"${SITE}\") | .url")
+
+    if [ -z "$URL" ]; then
+        printf '%-7s not published (mpd start %s MPD_MOODLE_BEHAT=1)\n' "$SITE" "$PROJECT"
+        continue
+    fi
+    if [ ! -f "$CONFIG" ]; then
+        printf '%-7s %-*s not initialised (run %s-init)\n' "$SITE" "$WIDTH" "$URL" "$SITE"
+        continue
+    fi
+
+    # A run is the behat process started with this site's config file.
+    RUN=$(pgrep -af -- "--config ${CONFIG}( |\$)" | grep -v pgrep | head -n 1 || true)
+    if [ -n "$RUN" ]; then
+        PID="${RUN%% *}"
+        SINCE=$(ps -o etime= -p "$PID" 2>/dev/null | tr -d ' ' || true)
+        ARGS="${RUN#*"${CONFIG}"}"
+        printf '%-7s %-*s BUSY for %s (pid %s):%s\n' "$SITE" "$WIDTH" "$URL" "${SINCE:-?}" "$PID" "${ARGS:- (whole suite)}"
+    else
+        printf '%-7s %-*s free\n' "$SITE" "$WIDTH" "$URL"
+    fi
+done
