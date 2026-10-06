@@ -17,6 +17,7 @@ use Behat\Behat\Hook\Scope\AfterStepScope;
 use Behat\Behat\Hook\Scope\BeforeFeatureScope;
 use Behat\Behat\Hook\Scope\BeforeScenarioScope;
 use Behat\Testwork\Tester\Result\ExceptionResult;
+use Behat\Testwork\Tester\Result\TestResult;
 
 class behat_mpd_log implements Context {
     /**
@@ -29,6 +30,20 @@ class behat_mpd_log implements Context {
         ini_set('log_errors', '1');
         ini_set('error_log', MPD_BEHAT_LOG);
         error_log($line);
+    }
+
+    /**
+     * Word for a result: only a real failure is written in capitals.
+     * A scenario that a step chose to skip is "skipped", not failed.
+     */
+    protected static function outcome(TestResult $result): string {
+        return match ($result->getResultCode()) {
+            TestResult::PASSED => 'passed',
+            TestResult::SKIPPED => 'skipped',
+            TestResult::PENDING => 'pending',
+            TestResult::FAILED => 'FAILED',
+            default => 'undefined',
+        };
     }
 
     /**
@@ -57,8 +72,7 @@ class behat_mpd_log implements Context {
      * @AfterFeature
      */
     public static function mpd_after_feature(AfterFeatureScope $scope): void {
-        $result = $scope->getTestResult()->isPassed() ? 'passed' : 'FAILED';
-        self::write('=== FEATURE END ' . $result . ': ' . $scope->getFeature()->getTitle());
+        self::write('=== FEATURE END ' . self::outcome($scope->getTestResult()) . ': ' . $scope->getFeature()->getTitle());
     }
 
     /**
@@ -75,12 +89,14 @@ class behat_mpd_log implements Context {
      */
     public function mpd_after_step(AfterStepScope $scope): void {
         $result = $scope->getTestResult();
-        if ($result->isPassed()) {
+        // Skipped steps are not reported: after a failure every later step
+        // of the scenario is skipped, and a step may skip on purpose.
+        if (in_array($result->getResultCode(), [TestResult::PASSED, TestResult::SKIPPED], true)) {
             return;
         }
         $step = $scope->getStep();
         $where = self::location($scope->getFeature()->getFile(), $step->getLine());
-        $line = '!!! STEP FAILED: ' . $step->getKeyword() . ' ' . $step->getText() . ' (' . $where . ')';
+        $line = '!!! STEP ' . strtoupper(self::outcome($result)) . ': ' . $step->getKeyword() . ' ' . $step->getText() . ' (' . $where . ')';
         if ($result instanceof ExceptionResult && $result->hasException()) {
             $message = preg_replace('/\s+/', ' ', $result->getException()->getMessage());
             $line .= ' — ' . mb_substr($message, 0, 500);
@@ -92,7 +108,6 @@ class behat_mpd_log implements Context {
      * @AfterScenario
      */
     public function mpd_after_scenario(AfterScenarioScope $scope): void {
-        $result = $scope->getTestResult()->isPassed() ? 'passed' : 'FAILED';
-        self::write('--- SCENARIO END ' . $result . ': ' . $scope->getScenario()->getTitle());
+        self::write('--- SCENARIO END ' . self::outcome($scope->getTestResult()) . ': ' . $scope->getScenario()->getTitle());
     }
 }
