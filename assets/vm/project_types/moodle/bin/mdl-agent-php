@@ -1,0 +1,67 @@
+#!/bin/bash
+# Tool: run PHP inside the current project's Moodle. config.php is loaded
+# as a CLI script first, so $CFG, $DB and the whole Moodle API are there.
+# For AI agents and developers who want to look at, or poke, a site
+# without writing a throwaway script.
+#
+# Usage: mdl-agent-php [--user=<username>] <code>
+#        mdl-agent-php [--user=<username>] <file.php> [args...]
+#        mdl-agent-php [--user=<username>] -          (code from stdin)
+#   --user   run as this Moodle user; without it there is no user, as in
+#            any Moodle CLI script
+#
+# Examples:
+#   mdl-agent-php 'echo $CFG->release, "\n";'
+#   mdl-agent-php 'print_r($DB->get_records("user", null, "id", "id, username"));'
+#   mdl-agent-php --user=admin 'var_dump(is_siteadmin());'
+#
+# Code may leave out "<?php" and the last semicolon. A file needs "<?php".
+# This writes to the real site database: nothing is rolled back.
+set -euo pipefail
+source /opt/mpd/assets/vm/project_types/moodle/scripts/mpd-env.sh
+
+RUNNER="/opt/mpd/assets/vm/project_types/moodle/agent/cli/run.php"
+
+USERNAME=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --user=*) USERNAME="${1#--user=}"; shift ;;
+        -h|--help)
+            sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        *) break ;;
+    esac
+done
+
+if [ $# -lt 1 ]; then
+    echo "Usage: mdl-agent-php [--user=<username>] <code> | <file.php> [args...] | -" >&2
+    exit 1
+fi
+
+if [ ! -f "${PROJECT_DIR}/config.php" ]; then
+    echo "Project '${PROJECT}' has no config.php — run 'mpd start' first." >&2
+    exit 1
+fi
+
+SOURCE="$1"
+shift
+if [ "$SOURCE" = "-" ]; then
+    MODE="code"
+    SOURCE=$(cat)
+elif [ -f "$SOURCE" ]; then
+    MODE="file"
+    SOURCE=$(realpath "$SOURCE")
+else
+    MODE="code"
+fi
+
+# A pasted snippet often starts with the open tag; eval() must not see it.
+if [ "$MODE" = "code" ]; then
+    SOURCE="${SOURCE#"${SOURCE%%[![:space:]]*}"}"
+    SOURCE="${SOURCE#<?php}"
+fi
+
+moodle_agent_log mdl-agent-php ${USERNAME:+"--user=${USERNAME}"} "$SOURCE" "$@"
+
+exec php "$RUNNER" "$PROJECT_DIR" "$USERNAME" "$MODE" "$SOURCE" "$@"

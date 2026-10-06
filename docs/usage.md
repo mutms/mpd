@@ -455,6 +455,11 @@ Stack-independent ones first:
 |---------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `mdl-install`                               | Run `admin/cli/install_database.php` for the current project, with composer install + sensible defaults from `mpd.env`. Refuses if the project is unconfigured or already installed — checked before composer runs.         |
 | `mdl-cache-purge`                           | Run `admin/cli/purge_caches.php` for the current project.                                                                                                                                                                   |
+| `mdl-agent-login`                           | Print a single-use URL that logs a browser in to the current project's site as `admin` (or `mdl-agent-login <username>`, `--path=/local/path` to choose the landing page). Good for two minutes and one request. For AI agents driving a headless browser, and for you: nobody has to know or change a password. See [Agent route](#agent-route-mdl-agent). |
+| `mdl-agent-php`                             | Run PHP inside the current project's Moodle: `mdl-agent-php 'echo $CFG->release;'`, a `.php` file with arguments, or `-` for stdin. `config.php` is loaded as a CLI script first; `--user=<username>` runs as that user. |
+| `mdl-agent-sql`                             | Run one SQL statement through Moodle's database layer, tables in braces: `mdl-agent-sql 'SELECT id, username FROM {user}'`. `--json` / `--tsv`, `--limit=<n>` (default 100). A statement that changes data needs `--write`. |
+| `mdl-agent-screenshot`                      | Save a PNG of one page as a given user: `mdl-agent-screenshot [--user=<username>] [--size=1280x1024] /local/path`. Logs in with a single-use link and renders with headless Chromium (needs `gnome-install`). Prints the file's path under `/srv/data/<project>/agent/screenshots/`. |
+| `mdl-agent-log`                             | Show the latest `mdl-agent-*` calls made in the current project — time, caller, tool and arguments: `mdl-agent-log [n]`, `--json` for the stored lines. Every `mdl-agent-*` tool logs itself to `/srv/data/<project>/agent/log.jsonl`. |
 | `mdl-cron`                                  | Run `admin/cli/cron.php` (one cycle) for the current project.                                                                                                                                                               |
 | `mdl-upgrade`                               | Run `admin/cli/upgrade.php --non-interactive` for the current project. Use after a git pull that updates code.                                                                                                              |
 | `mdl-data-backup` / `mdl-data-restore`      | Save and restore the current project's database + dataroot + code recipe as one `.mdb` in the shared `/srv/backups/` pile (restorable into any project, and into an mdl-demo container). `mdl-data-restore --list` shows what is there. See [Backups](#backups). |
@@ -568,6 +573,74 @@ For trying mdl-demo's macOS launcher (or any other script written for
 Apple `container`) on the VM, `/opt/mpd/assets/vm/bin/container` is a podman-backed
 stand-in covering the everyday verbs (`run`, `start`, `stop`, `rm`,
 `inspect`, `exec`, `logs`, `ls`).
+
+### Agent route (`/mdl-agent/`)
+
+Every Moodle project's main URL also serves a small set of scripts that
+ship with mpd, under `/mdl-agent/`. They exist so that an AI agent — or
+you — can do something through the web server without touching the
+project's code or its data.
+
+```bash
+mdl-agent-login                      # log in as admin
+mdl-agent-login student1             # ... or as any other user
+mdl-agent-login admin --path=/admin/index.php
+```
+
+`mdl-agent-login` prints a URL. Opening it logs that browser in and
+redirects to the site. The URL works for one request and expires after
+two minutes, so print a new one each time. No password is read or
+changed.
+
+How it is put together:
+
+- **Scripts** live in mpd, at
+  `assets/vm/project_types/moodle/agent/web/mdl-agent/`. The frontdoor
+  serves that directory and nothing else under `/mdl-agent/`; a path
+  with no script behind it answers 404.
+- **State** lives in `/srv/data/<project>/agent/`. It is never served,
+  is outside the dataroot so `mdl-data-backup` does not carry it, and
+  goes away with `mpd reset`. Agents may keep their own files there.
+- **Every script consumes a single-use token** issued by a CLI tool
+  before it does anything (`agent/lib.php`). Only the token's hash is
+  stored. Reaching the route therefore takes shell access to the VM.
+- The behat URL does not have the route, and it is removed from a
+  project for as long as `trycloudflare-start` exposes it.
+
+A project gets the route the next time `mpd start <project>` runs.
+
+The other `mdl-agent-*` tools need no route. They are for looking at a
+site, or changing it, without a throwaway script:
+
+```bash
+mdl-agent-php 'echo $CFG->release, "\n";'
+mdl-agent-php --user=admin 'var_dump(is_siteadmin());'
+mdl-agent-php path/to/script.php arg1 arg2
+
+mdl-agent-sql 'SELECT id, username, suspended FROM {user} ORDER BY id'
+mdl-agent-sql --json 'SELECT * FROM {config} WHERE name LIKE '"'"'%release%'"'"''
+mdl-agent-sql --write 'UPDATE {user} SET suspended = 0 WHERE id = 3'
+
+mdl-agent-screenshot /admin/index.php
+mdl-agent-screenshot --user=student1 --size=1280x2400 /my/
+```
+
+- `mdl-agent-php` and `mdl-agent-sql --write` act on the real site
+  database. Nothing is rolled back, and SQL writes do not purge
+  Moodle's caches (`mdl-cache-purge` does).
+- `mdl-agent-sql` refuses a statement that changes data unless
+  `--write` is given. That guards against slips; it is not a security
+  boundary.
+- Every `mdl-agent-*` call is appended to
+  `/srv/data/<project>/agent/log.jsonl` with its time, arguments,
+  working directory and caller (the agent's name and session id when
+  it can be told, `shell` for a person). `mdl-agent-log` prints the
+  latest ones, so a new session can see what earlier ones did to the
+  site. Arguments are logged, output is not; a login token never
+  appears in it. Another agent names itself with `MDL_AGENT_NAME` and
+  `MDL_AGENT_SESSION`.
+- `mdl-agent-screenshot` shows a page as it loads. It cannot click, so
+  a dialog or a later step of a form needs Behat or a browser.
 
 ## Backups
 

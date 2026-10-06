@@ -573,6 +573,13 @@ SOCKS/ProxyJump through sshd on the VM.
   all data in it.
 - **Physical access to the host**: anyone with access to
   `~/.mpd-virt/conf/` can read the CA key.
+- **The agent route (`/mdl-agent/` on a Moodle project's main URL)**: it
+  can log a browser in as any user of that site with no password, MFA or
+  auth plugin involved. That needs a single-use token, and a token can
+  only be made from a shell in the VM, which already has full access to
+  the site's database. The scripts are mpd's own; a project cannot add
+  to them. The route is absent from the behat URL and is taken away
+  while a Cloudflare quick tunnel exposes the project.
 - **A running Cloudflare quick tunnel (`trycloudflare-start`)**: while it
   runs, one project is reachable from the public internet at its
   `*.trycloudflare.com` URL, deliberately bypassing the network boundary

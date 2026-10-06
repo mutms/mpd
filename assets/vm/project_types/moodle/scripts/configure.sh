@@ -175,6 +175,9 @@ else
     DOCROOT="${PROJECT_DIR}"
 fi
 
+# The main URL also carries the agent route: /mdl-agent/ serves the scripts
+# in agent/web/mdl-agent/, such as the single-use login behind
+# mdl-agent-login. The behat URL does not get it.
 URLS='[
   {
     "label": "main",
@@ -184,7 +187,12 @@ URLS='[
       "type": "php-fpm",
       "fastcgi": "'"${FPM_SOCK}"'",
       "root": "'"${DOCROOT}"'",
-      "tryFiles": ["{path}", "{path}/index.php", "/r.php"]
+      "tryFiles": ["{path}", "{path}/index.php", "/r.php"],
+      "agent": {
+        "prefix": "/mdl-agent",
+        "root": "/opt/mpd/assets/vm/project_types/moodle/agent/web",
+        "env": {"MPD_PROJECT_DIR": "'"${PROJECT_DIR}"'"}
+      }
     }
   }'
 if [ "$BEHAT" = "1" ]; then

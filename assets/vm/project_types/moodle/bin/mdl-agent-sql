@@ -1,0 +1,68 @@
+#!/bin/bash
+# Tool: run one SQL statement against the current project's Moodle
+# database, through Moodle's own database layer. Works the same on every
+# database engine and needs no client, host or password.
+#
+# Usage: mdl-agent-sql [options] <sql>
+#        mdl-agent-sql [options] -          (SQL from stdin)
+#   --json        print rows as JSON
+#   --tsv         print rows tab separated, values not shortened
+#   --limit=<n>   at most n rows, default 100; 0 for all
+#   --write       allow a statement that changes data
+#
+# Write table names the Moodle way, in braces, and the prefix is added:
+#   mdl-agent-sql 'SELECT id, username FROM {user} ORDER BY id'
+#   mdl-agent-sql --json 'SELECT * FROM {config} WHERE name = '"'"'release'"'"''
+#   mdl-agent-sql --write 'UPDATE {user} SET suspended = 0 WHERE id = 3'
+#
+# Without --write only SELECT, WITH, SHOW, EXPLAIN and VALUES run. That
+# is a guard against slips, not a security boundary. One statement per
+# call; changes are final and Moodle's caches are not purged.
+set -euo pipefail
+source /opt/mpd/assets/vm/project_types/moodle/scripts/mpd-env.sh
+
+AGENT_DIR="/opt/mpd/assets/vm/project_types/moodle/agent/cli"
+
+FORMAT="table"
+LIMIT="100"
+WRITE="0"
+SQL=""
+HAVE_SQL=0
+for arg in "$@"; do
+    case "$arg" in
+        --json) FORMAT="json" ;;
+        --tsv)  FORMAT="tsv" ;;
+        --limit=*) LIMIT="${arg#--limit=}" ;;
+        --write) WRITE="1" ;;
+        -h|--help)
+            sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        -) SQL=$(cat); HAVE_SQL=1 ;;
+        --*) echo "Unknown option '${arg}'." >&2; exit 1 ;;
+        *) SQL="$arg"; HAVE_SQL=1 ;;
+    esac
+done
+
+if [ "$HAVE_SQL" = "0" ]; then
+    echo "Usage: mdl-agent-sql [--json|--tsv] [--limit=<n>] [--write] <sql> | -" >&2
+    exit 1
+fi
+if [[ ! "$LIMIT" =~ ^[0-9]+$ ]]; then
+    echo "--limit must be a number." >&2
+    exit 1
+fi
+
+if [ ! -f "${PROJECT_DIR}/config.php" ]; then
+    echo "Project '${PROJECT}' has no config.php — run 'mpd start' first." >&2
+    exit 1
+fi
+
+if [ "$WRITE" = "1" ]; then
+    moodle_agent_log mdl-agent-sql --write "$SQL"
+else
+    moodle_agent_log mdl-agent-sql "$SQL"
+fi
+
+exec php "${AGENT_DIR}/run.php" "$PROJECT_DIR" "" file "${AGENT_DIR}/sql.php" \
+    "$FORMAT" "$LIMIT" "$WRITE" "$SQL"

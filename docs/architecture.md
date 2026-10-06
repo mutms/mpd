@@ -460,7 +460,9 @@ upstream package or whose meaning is clear from the bare word:
 
 **`mdl-` prefix** for Moodle-project-type tools whose bare name would
 be too generic or collide with system commands: `mdl-install`,
-`mdl-cache-purge`, `mdl-cron`, `mdl-upgrade`, `mdl-data-backup`,
+`mdl-cache-purge`, `mdl-cron`, `mdl-upgrade`, `mdl-agent-login`,
+`mdl-agent-php`, `mdl-agent-sql`, `mdl-agent-screenshot`, `mdl-agent-log`,
+`mdl-data-backup`,
 `mdl-data-restore` (bare `mdl-backup` would read as Moodle's own course
 backup, which is a different thing entirely). The prefix is also a
 usability cue — when an AI agent

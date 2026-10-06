@@ -1,0 +1,66 @@
+#!/bin/bash
+# Tool: print a single-use URL that logs a browser in to the current
+# project's site, with no password involved. Meant for AI agents driving a
+# headless browser, and just as handy for the developer.
+#
+# Usage: mdl-agent-login [username] [--path=/local/path]
+#   username   Moodle username, default "admin"
+#   --path     where to land after login, default "/"
+#
+# The URL works once and for two minutes. Only the hash of its token is
+# stored, in /srv/data/<project>/agent/tokens/.
+set -euo pipefail
+source /opt/mpd/assets/vm/project_types/moodle/scripts/mpd-env.sh
+
+TTL=120
+USERNAME="admin"
+LANDING="/"
+for arg in "$@"; do
+    case "$arg" in
+        --path=*) LANDING="${arg#--path=}" ;;
+        -h|--help)
+            sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        -*) echo "Unknown option '${arg}'." >&2; exit 1 ;;
+        *)  USERNAME="$arg" ;;
+    esac
+done
+
+if [[ "$LANDING" != /* || "$LANDING" == //* ]]; then
+    echo "--path must be a local path starting with one '/'." >&2
+    exit 1
+fi
+
+if ! moodle_configured; then
+    echo "Project '${PROJECT}' is not configured — run 'mpd start' first." >&2
+    exit 1
+fi
+
+moodle_agent_log mdl-agent-login "$USERNAME" "--path=${LANDING}"
+
+MAIN_URL=$(moodle_status_field '.urls[] | select(.label == "main") | .url')
+DATA_DIR=$(moodle_status_field '.dataDir')
+if [ -z "$MAIN_URL" ] || [ -z "$DATA_DIR" ]; then
+    echo "Cannot work out the URL or data directory of '${PROJECT}'." >&2
+    exit 1
+fi
+
+# The same umask keeps both the directory and the token files private.
+umask 077
+TOKEN_DIR="${DATA_DIR}/agent/tokens"
+mkdir -p "$TOKEN_DIR"
+
+# Drop tokens nobody used; they are dead after TTL anyway.
+find "$TOKEN_DIR" -type f -mmin +5 -delete 2>/dev/null || true
+
+TOKEN=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+HASH=$(printf '%s' "$TOKEN" | sha256sum | cut -d' ' -f1)
+EXPIRES=$(( $(date +%s) + TTL ))
+
+jq -n --arg username "$USERNAME" --arg path "$LANDING" --argjson expires "$EXPIRES" \
+    '{purpose:"login", username:$username, path:$path, expires:$expires}' \
+    >"${TOKEN_DIR}/${HASH}.json.new"
+mv "${TOKEN_DIR}/${HASH}.json.new" "${TOKEN_DIR}/${HASH}.json"
+
+echo "${MAIN_URL%/}/mdl-agent/login.php?token=${TOKEN}"

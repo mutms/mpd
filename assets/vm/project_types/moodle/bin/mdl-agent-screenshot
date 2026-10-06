@@ -1,0 +1,89 @@
+#!/bin/bash
+# Tool: save a PNG of one page of the current project's site, seen as a
+# given user. Logs in with a single-use link (see mdl-agent-login) and
+# renders with headless Chromium, so no password is involved.
+#
+# Usage: mdl-agent-screenshot [options] [/local/path]
+#   /local/path       page to capture, default "/"
+#   --user=<name>     Moodle username, default "admin"
+#   --size=<W>x<H>    window size, default 1280x1024; the capture is the
+#                     window, so raise H to see more of a long page
+#   --wait=<ms>       time given to the page's JavaScript, default 5000
+#   --out=<file.png>  where to save; default is a new file under
+#                     /srv/data/<project>/agent/screenshots/
+#
+# Prints the path of the PNG. Shows a page as it loads: it cannot click.
+set -euo pipefail
+source /opt/mpd/assets/vm/project_types/moodle/scripts/mpd-env.sh
+
+USERNAME="admin"
+SIZE="1280x1024"
+WAIT="5000"
+OUT=""
+LANDING="/"
+for arg in "$@"; do
+    case "$arg" in
+        --user=*) USERNAME="${arg#--user=}" ;;
+        --size=*) SIZE="${arg#--size=}" ;;
+        --wait=*) WAIT="${arg#--wait=}" ;;
+        --out=*)  OUT="${arg#--out=}" ;;
+        -h|--help)
+            sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        -*) echo "Unknown option '${arg}'." >&2; exit 1 ;;
+        *)  LANDING="$arg" ;;
+    esac
+done
+
+if [[ ! "$SIZE" =~ ^[0-9]+x[0-9]+$ ]]; then
+    echo "--size must look like 1280x1024." >&2
+    exit 1
+fi
+if [[ ! "$WAIT" =~ ^[0-9]+$ ]]; then
+    echo "--wait must be a number of milliseconds." >&2
+    exit 1
+fi
+
+if ! command -v chromium >/dev/null 2>&1; then
+    echo "Chromium is not installed — ask the developer to run 'gnome-install'." >&2
+    exit 1
+fi
+
+DATA_DIR=$(moodle_status_field '.dataDir')
+if [ -z "$DATA_DIR" ]; then
+    echo "Cannot work out the data directory of '${PROJECT}'." >&2
+    exit 1
+fi
+
+if [ -z "$OUT" ]; then
+    SHOT_DIR="${DATA_DIR}/agent/screenshots"
+    mkdir -p "$SHOT_DIR"
+    SLUG=$(printf '%s' "$LANDING" | sed 's/[?#].*//' | tr -c 'A-Za-z0-9' '-' | sed 's/--*/-/g; s/^-//; s/-$//' | cut -c1-60)
+    OUT="${SHOT_DIR}/$(date +%Y%m%d-%H%M%S)-${USERNAME}-${SLUG:-home}.png"
+else
+    OUT=$(realpath -m "$OUT")
+    mkdir -p "$(dirname "$OUT")"
+fi
+
+moodle_agent_log mdl-agent-screenshot "--user=${USERNAME}" "--size=${SIZE}" "$LANDING" "--out=${OUT}"
+
+URL=$(/opt/mpd/assets/vm/project_types/moodle/bin/mdl-agent-login "$USERNAME" "--path=${LANDING}")
+
+# A throwaway profile: the developer's own browser profile stays untouched
+# and no session outlives the capture.
+PROFILE=$(mktemp -d "${DATA_DIR}/agent/chromium.XXXXXX")
+trap 'rm -rf "$PROFILE"' EXIT
+
+LOG="${PROFILE}/chromium.log"
+if ! chromium --headless=new --disable-gpu --no-first-run --hide-scrollbars \
+        --user-data-dir="$PROFILE" \
+        --window-size="${SIZE/x/,}" \
+        --virtual-time-budget="$WAIT" \
+        --screenshot="$OUT" "$URL" >"$LOG" 2>&1 || [ ! -s "$OUT" ]; then
+    echo "Chromium did not produce a screenshot:" >&2
+    tail -n 20 "$LOG" >&2
+    exit 1
+fi
+
+echo "$OUT"

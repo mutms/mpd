@@ -18,12 +18,14 @@ emit_header() {
     echo
 }
 
-# render_vhost <project> <comma-joined hostnames> <backend JSON> — emit one
-# Caddy vhost block. Grouped hostnames share one backend by construction.
+# render_vhost <project> <comma-joined hostnames> <backend JSON> <agent 0|1>
+# — emit one Caddy vhost block. Grouped hostnames share one backend by
+# construction. agent=0 leaves out the backend's agent route.
 render_vhost() {
     local project="$1"
     local hosts="$2"
     local backend_json="$3"
+    local allow_agent="${4:-1}"
 
     local cert_pem="${META_DIR}/${project}/cert.pem"
     local cert_key="${META_DIR}/${project}/key.pem"
@@ -48,6 +50,29 @@ render_vhost() {
                 then .tryFiles | join(" ")
                 else "{path} {path}/index.php /index.php"
                 end' <<<"$backend_json")
+            # Optional agent route: scripts that ship with mpd, served under
+            # a reserved prefix next to the project's own webroot. The root
+            # is mpd code, never a directory a project can write to. Each
+            # script checks a single-use token, see the project type's
+            # agent/lib.php. A request it does not answer gets 404 rather
+            # than falling through to the project.
+            local agent_prefix agent_root
+            agent_prefix=$(jq -r '.agent.prefix // empty' <<<"$backend_json")
+            agent_root=$(  jq -r '.agent.root // empty'   <<<"$backend_json")
+            if [ "$allow_agent" = "1" ] && [ -n "$agent_prefix" ] && [ -n "$agent_root" ]; then
+                echo "    handle ${agent_prefix}/* {"
+                echo "        root * ${agent_root}"
+                echo "        route {"
+                echo "            php_fastcgi ${fastcgi} {"
+                echo "                try_files {path}"
+                echo "                env MPD_PROJECT \"${project}\""
+                jq -r '.agent.env // {} | to_entries[]
+                    | "                env \(.key) \"\(.value)\""' <<<"$backend_json"
+                echo "            }"
+                echo "            respond 404"
+                echo "        }"
+                echo "    }"
+            fi
             echo "    root * ${root}"
             echo "    php_fastcgi ${fastcgi} {"
             echo "        try_files ${tryfiles}"
@@ -123,9 +148,13 @@ for meta in "${META_DIR}"/*/urls.json; do
     ' "$meta" | while IFS= read -r group; do
         hosts=$(jq -r '.hosts | join(", ")' <<<"$group")
         backend=$(jq -c '.backend' <<<"$group")
+        agent=1
         if [ -n "$tunnel_host" ] && [ "$(jq -r '.type' <<<"$backend")" = "php-fpm" ]; then
             hosts="${hosts}, ${tunnel_host}"
+            # The tunnel makes this vhost reachable from the internet, so
+            # the agent route goes away for as long as the tunnel is up.
+            agent=0
         fi
-        render_vhost "$project" "$hosts" "$backend"
+        render_vhost "$project" "$hosts" "$backend" "$agent"
     done
 done

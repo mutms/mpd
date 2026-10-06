@@ -85,3 +85,36 @@ moodle_db_table_count() {
 PROJECT_NAME="${PROJECT}"
 # shellcheck source=/dev/null
 source /opt/mpd/assets/vm/lib/source-mpd-env.sh
+
+# moodle_agent_log <tool> [args...] — append one JSON line about an
+# mdl-agent-* call to /srv/data/<project>/agent/log.jsonl, so a later
+# session can see what earlier ones did to the site (mdl-agent-log shows
+# it). Records who called, when, from where and with what arguments, not
+# the output. Best effort: a call is never refused because the log failed.
+#
+# The caller is named by MDL_AGENT_NAME / MDL_AGENT_SESSION when set, else
+# worked out for Claude Code; empty means a person at a shell.
+moodle_agent_log() {
+    local tool="$1"; shift
+    local datadir agent session
+    datadir=$(moodle_status_field '.dataDir' 2>/dev/null) || return 0
+    [ -n "$datadir" ] || return 0
+
+    agent="${MDL_AGENT_NAME:-}"
+    session="${MDL_AGENT_SESSION:-}"
+    if [ -z "$agent" ] && [ -n "${CLAUDECODE:-}" ]; then
+        agent="claude-code"
+        session="${session:-${CLAUDE_CODE_SESSION_ID:-}}"
+    fi
+
+    (
+        umask 077
+        mkdir -p "${datadir}/agent"
+        # Long code is cut: the log says what was done, it is not a copy.
+        jq -cn --arg time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg tool "$tool" \
+            --arg agent "$agent" --arg session "$session" --arg cwd "$PWD" \
+            '{time:$time, tool:$tool, agent:$agent, session:$session, cwd:$cwd,
+              args:[$ARGS.positional[] | if length > 2000 then .[0:2000] + "…" else . end]}' \
+            --args -- "$@" >>"${datadir}/agent/log.jsonl"
+    ) 2>/dev/null || true
+}

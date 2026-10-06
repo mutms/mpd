@@ -1,0 +1,55 @@
+#!/bin/bash
+# Tool: show what the mdl-agent-* tools were asked to do in the current
+# project, newest last. Every such call is logged with its time, caller
+# and arguments, so one session can see what earlier ones did to the site.
+#
+# Usage: mdl-agent-log [options] [n]
+#   n        how many of the latest calls to show, default 30; 0 for all
+#   --json   print the stored JSON lines as they are
+#
+# The log is /srv/data/<project>/agent/log.jsonl. It is not part of a
+# backup and goes away with 'mpd reset'.
+set -euo pipefail
+source /opt/mpd/assets/vm/project_types/moodle/scripts/mpd-env.sh
+
+COUNT="30"
+JSON="0"
+for arg in "$@"; do
+    case "$arg" in
+        --json) JSON="1" ;;
+        -h|--help)
+            sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        -*) echo "Unknown option '${arg}'." >&2; exit 1 ;;
+        *)  COUNT="$arg" ;;
+    esac
+done
+if [[ ! "$COUNT" =~ ^[0-9]+$ ]]; then
+    echo "The number of calls must be a number." >&2
+    exit 1
+fi
+
+DATA_DIR=$(moodle_status_field '.dataDir')
+LOG="${DATA_DIR}/agent/log.jsonl"
+if [ -z "$DATA_DIR" ] || [ ! -s "$LOG" ]; then
+    echo "No mdl-agent-* calls logged for '${PROJECT}' yet." >&2
+    exit 0
+fi
+
+if [ "$COUNT" = "0" ]; then
+    LINES=$(cat "$LOG")
+else
+    LINES=$(tail -n "$COUNT" "$LOG")
+fi
+
+if [ "$JSON" = "1" ]; then
+    printf '%s\n' "$LINES"
+else
+    printf '%s\n' "$LINES" | jq -r '
+        "\(.time)  \(if .agent == "" then "shell" else .agent end)"
+        + (if .session == "" then "" else " \(.session[0:8])" end)
+        + "  \(.tool) "
+        + ([.args[] | gsub("\\s+"; " ") | if length > 160 then .[0:160] + "…" else . end
+            | if test("[ \"$]") or . == "" then @sh else . end] | join(" "))'
+fi

@@ -15,6 +15,11 @@ Do not copy their content here — link to it.
   the developer has run `gnome-install`. Check with `command -v chromium`
   before relying on it; if it is missing, ask the developer to run
   `gnome-install` rather than installing a browser yourself.
+- To log in through a browser, open the URL that `mdl-agent-login
+  [username]` prints. Never reset or change a password to get in, least
+  of all `admin`'s: the developer uses that account and would be locked
+  out. `/srv/data/<project>/agent/` is yours for scratch files. See
+  [`usage.md` → "Agent route"](usage.md#agent-route-mdl-agent).
 - Several projects sit side by side under `/srv/projects/`. Each has its
   own database, dataroot (`/srv/data/<project>/`), PHP version and URL
   `https://<project>.<NNN>.mpd.test/`. Use a second project for an old
@@ -38,6 +43,11 @@ Run them from anywhere inside the project tree. Full list and options:
 | Install the site | `mdl-install` |
 | Upgrade the database after a code change | `mdl-upgrade` |
 | Purge caches / run cron once | `mdl-cache-purge` / `mdl-cron` |
+| Log a browser in, as any user | `mdl-agent-login [username]` prints a single-use URL |
+| Run PHP with Moodle loaded | `mdl-agent-php '<code>'`, a `.php` file, or `-` for stdin; `--user=<username>` |
+| Query the site database | `mdl-agent-sql 'SELECT … FROM {user}'` (`--json`, `--tsv`, `--limit`); `--write` to change data |
+| See what earlier sessions did to the site | `mdl-agent-log [n]` lists the logged `mdl-agent-*` calls |
+| See a page as a user | `mdl-agent-screenshot [--user=<username>] /local/path` prints the PNG's path; read the image |
 | Save / restore database + dataroot | `mdl-data-backup [name]` / `mdl-data-restore <name>` (`--list`) |
 | PHPUnit | `phpunit-init`, then `phpunit --testsuite <component>_testsuite` or `phpunit <path to test file>` |
 | Behat | `behat-init`, then `behat --tags=@<component>` or `behat <path to feature>` |
