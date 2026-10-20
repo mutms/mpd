@@ -66,6 +66,9 @@ render_vhost() {
                 echo "            php_fastcgi ${fastcgi} {"
                 echo "                try_files {path}"
                 echo "                env MPD_PROJECT \"${project}\""
+                # Agent scripts load the project's config.php, so they need
+                # the same webserver spoof as the project below.
+                echo "                env SERVER_SOFTWARE \"Apache/2.4 (Caddy frontdoor)\""
                 jq -r '.agent.env // {} | to_entries[]
                     | "                env \(.key) \"\(.value)\""' <<<"$backend_json"
                 echo "            }"
