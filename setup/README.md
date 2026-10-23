@@ -16,7 +16,7 @@ If you're new and don't know which to pick — start with **sandbox**.
 | Platform | Path | What it gives you                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 |---|---|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **Sandbox** (any hypervisor — UTM, Parallels, Hyper-V, VirtualBox, VMware, virt-manager, …) | [`mpd-sandbox-setup.sh`](mpd-sandbox-setup.sh) | Install Debian Trixie with the GNOME desktop in your hypervisor, set the hostname to `mpd-<NNN>` (a 3-digit id in 100..254), snapshot, run the script inside the VM (wget one-liner in the top-level README). mpd lives entirely inside the VM; the host gets zero DNS/route/trust changes. The hypervisor owns VM lifecycle from its own GUI.                                                                                                                                                                                                         |
-| **Managed VM from a macOS or Linux host** | [`mpd-virt`](https://github.com/mutms/mpd-virt) (separate repo) | CLI orchestrator. `create` provisions a VM (Parallels, UTM or Apple container on macOS; libvirt/KVM on Linux; a Proxmox clone from either); `adopt <NNN> [IP]` adopts any Debian Trixie VM prepared with [`mpd-prepare-adopt.sh`](mpd-prepare-adopt.sh). Drives the bootstrap pipeline over SSH and wires host reachability (mpd-proxy overlay or SOCKS, DNS resolver, CA trust). `mpd-virt remove` / `uninstall` un-adopt and tear the host side down. |
+| **Managed VM from a macOS or Linux host** | [`mpd-virt`](https://github.com/mutms/mpd-virt) (separate repo) | CLI orchestrator. `create` provisions a VM (UTM or Apple container on macOS; libvirt/KVM on Linux; a Proxmox clone from either); `adopt <NNN> [IP]` adopts any Debian Trixie VM, including one you made in Parallels, prepared with [`mpd-prepare-adopt.sh`](mpd-prepare-adopt.sh). Drives the bootstrap pipeline over SSH and wires host reachability (mpd-proxy overlay or SOCKS, DNS resolver, CA trust). `mpd-virt remove` / `uninstall` un-adopt and tear the host side down. |
 
 **Sandbox** is the lowest-friction path: one bash script, runs inside
 the VM, no host configuration, works on any hypervisor that boots a
@@ -88,8 +88,8 @@ in mpd uses PackageKit — but parts of the GNOME desktop do, on demand,
 which is why it stays unmasked and only its schedulers go away.
 
 VMs `mpd-virt create` builds from a cloud image have no desktop, so
-`packagekitd` never runs there — but the `apt-daily` timers and possibly
-`unattended-upgrades` still are.
+`packagekitd` never runs there — but the `apt-daily` timers still run, and
+possibly `unattended-upgrades` too.
 
 ## What's not here
 

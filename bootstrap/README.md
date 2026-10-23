@@ -28,7 +28,7 @@ reminder.
 
 ### 10-passwordless-sudo.sh
 
-Interractive, may ask for root password once.
+Interactive, may ask for root password once.
 
 Hostname gate (`mpd-<NNN>`, or a `mpd-template[-<suffix>]` / `mpd-sandbox[-<suffix>]` staging name),
 Debian Trixie gate, refuses root. No-op if `sudo -n` already works; otherwise `su -c` installs
@@ -80,10 +80,11 @@ ssh    … mpd --vm-setup
 ```
 
 Cloud-init flows handle sudo in their `user-data`, so step 10 is a
-silent no-op there. `mpd-virt` fetches the scripts at a pinned commit
-(`bootstrapRef` in its `adopt.go`), not `main`.
+silent no-op there. `mpd-virt` fetches the scripts at `bootstrapRef` in its
+`adopt.go`. That is `main` during development; it will be pinned to a
+reviewed commit before the first public release.
 
-### Template VM (pre-run 10 + 20)
+### Template VM (pre-run 10, 15 and 20)
 
 Give a staging VM the hostname `mpd-template` (or `mpd-template-<x>`),
 run 10, 15 and 20 in it, shut it down and clone from it. A clone reset with

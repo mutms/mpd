@@ -1,9 +1,6 @@
 # AI Agent Starting Point
 
-Neutral bootstrap document for AI agents working in this repository. Single
-source of truth; `CLAUDE.md` imports this file via `@AGENTS.md` so Claude
-Code, Codex, Aider, and other tools that read AGENTS.md natively all see
-the same instructions.
+Neutral bootstrap document for AI agents working in this repository.
 
 ## What mpd is
 
