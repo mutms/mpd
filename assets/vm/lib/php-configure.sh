@@ -45,18 +45,25 @@ mpd_php_package_list() {
 # Moodle php.ini defaults, the default pool's unix socket, and
 # enabling + starting php<ver>-fpm. Idempotent; no apt.
 mpd_php_configure_version() {
-    local ver="$1" sapi ini_dir pool_conf
+    local ver="$1" sapi ini_dir ini_file pool_conf ini_changed=0 ini
 
-    for sapi in fpm cli; do
-        ini_dir="/etc/php/${ver}/${sapi}/conf.d"
-        if [ -d "$ini_dir" ]; then
-            sudo tee "${ini_dir}/99-moodle.ini" >/dev/null << 'INIEOF'
-memory_limit = 256M
+    # session.upload_progress is off as the PHP project advises for
+    # CVE-2026-115560; Moodle does not use it.
+    ini='memory_limit = 256M
 max_input_vars = 10000
 upload_max_filesize = 200M
 post_max_size = 206M
 zend.exception_ignore_args = On
-INIEOF
+session.upload_progress.enabled = 0'
+
+    for sapi in fpm cli; do
+        ini_dir="/etc/php/${ver}/${sapi}/conf.d"
+        ini_file="${ini_dir}/99-moodle.ini"
+        if [ -d "$ini_dir" ] && [ "$(cat "$ini_file" 2>/dev/null)" != "$ini" ]; then
+            printf '%s\n' "$ini" | sudo tee "$ini_file" >/dev/null
+            if [ "$sapi" = fpm ]; then
+                ini_changed=1
+            fi
         fi
     done
 
@@ -69,7 +76,12 @@ INIEOF
 
     if [ -f "/lib/systemd/system/php${ver}-fpm.service" ] || [ -f "/usr/lib/systemd/system/php${ver}-fpm.service" ]; then
         sudo systemctl enable "php${ver}-fpm"
-        sudo systemctl start "php${ver}-fpm" || true
+        # A running FPM reads php.ini only at start, so a changed file needs a restart.
+        if [ "$ini_changed" = 1 ]; then
+            sudo systemctl restart "php${ver}-fpm" || true
+        else
+            sudo systemctl start "php${ver}-fpm" || true
+        fi
     else
         echo "Warning: php${ver}-fpm.service does not exist after install — continuing." >&2
     fi
