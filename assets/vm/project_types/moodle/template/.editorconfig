@@ -1,0 +1,59 @@
+# EditorConfig for Moodle plugin development: https://editorconfig.org
+# Based on the Moodle coding style: https://moodledev.io/general/development/policies/codingstyle
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# PhpStorm-only keys: standard EditorConfig has no PHP style settings.
+[*.php]
+ij_php_class_brace_style = end_of_line
+ij_php_method_brace_style = end_of_line
+ij_php_lambda_brace_style = end_of_line
+ij_php_block_brace_style = end_of_line
+ij_php_else_if_style = separate
+ij_php_keep_control_statement_in_one_line = false
+ij_php_keep_blank_lines_in_code = 1
+ij_php_keep_blank_lines_in_declarations = 1
+ij_php_keep_blank_lines_after_lbrace = 1
+ij_php_keep_blank_lines_before_right_brace = 1
+ij_php_align_multiline_parameters = false
+ij_php_comma_after_last_array_element = true
+ij_php_force_short_declaration_array_style = true
+ij_php_lower_case_boolean_const = true
+ij_php_lower_case_null_const = true
+ij_php_getters_setters_naming_style = snake_case
+ij_php_variable_naming_style = snake_case
+ij_php_special_else_if_treatment = true
+ij_php_keep_rparen_and_lbrace_on_one_line = true
+ij_php_if_brace_force = always
+ij_php_for_brace_force = always
+ij_php_while_brace_force = always
+ij_php_do_while_brace_force = always
+ij_php_align_multiline_for = false
+ij_php_space_after_type_cast = true
+ij_php_line_comment_at_first_column = false
+ij_php_keep_first_column_comment = true
+
+[{*.{yml,yaml,feature},**/db/install.xml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{min.js,min.css,map}]
+insert_final_newline = false
+
+[{**/amd/build/**,**/yui/build/**,**/vendor/**,**/node_modules/**}]
+charset = unset
+end_of_line = unset
+insert_final_newline = unset
+trim_trailing_whitespace = unset
+indent_style = unset
+indent_size = unset

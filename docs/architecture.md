@@ -248,7 +248,7 @@ edit, no Go edit.
 
 | Directory    | Copied into the project? | For                                                     |
 |--------------|--------------------------|---------------------------------------------------------|
-| `template/`  | yes, create-if-missing   | static files (`mpd.env`, Moodle's `config.php`, `.phpstorm.meta.php/dml.php`) |
+| `template/`  | yes, create-if-missing   | static files (`mpd.env`, Moodle's `config.php`, `.editorconfig`, `.phpstorm.meta.php/dml.php`) |
 | `generated/` | no                       | files the type's `scripts/configure.sh` renders itself, because they need substitution or conditional logic (Moodle's `config-mpd.php`) |
 
 `assets/vm/lib/project-template.sh` defines the single implementation,
