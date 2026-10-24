@@ -44,6 +44,10 @@ ij_php_keep_first_column_comment = true
 [{*.{yml,yaml,feature},**/db/install.xml}]
 indent_size = 2
 
+[**/db/install.xml]
+ij_continuation_indent_size = 4
+ij_xml_align_attributes = false
+
 [*.md]
 trim_trailing_whitespace = false
 
