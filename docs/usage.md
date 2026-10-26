@@ -518,7 +518,7 @@ Stack-independent ones first:
 | `mdl-cache-purge`                           | Run `admin/cli/purge_caches.php` for the current project.                                                                                                                                                                   |
 | `mdl-agent-login`                           | Print a single-use URL that logs a browser in to the current project's site as `admin` (or `mdl-agent-login <username>`, `--path=/local/path` to choose the landing page). Good for two minutes and one request. For AI agents driving a headless browser, and for you: nobody has to know or change a password. See [Agent route](#agent-route-mdl-agent). |
 | `mdl-agent-php`                             | Run PHP inside the current project's Moodle: `mdl-agent-php 'echo $CFG->release;'`, a `.php` file with arguments, or `-` for stdin. `config.php` is loaded as a CLI script first; `--user=<username>` runs as that user. |
-| `mdl-agent-sql`                             | Run one SQL statement through Moodle's database layer, tables in braces: `mdl-agent-sql 'SELECT id, username FROM {user}'`. `--json` / `--tsv`, `--limit=<n>` (default 100). A statement that changes data needs `--write`. |
+| `mdl-agent-sql`                             | Run one SQL statement through Moodle's database layer, tables in braces: `mdl-agent-sql 'SELECT id, username FROM {user}'`. `--json` / `--tsv`, `--limit=<n>` (default 100). A statement that changes data needs `--write`. `EXPLAIN` and `SHOW` run exactly as written: `mdl-agent-sql --limit=0 'EXPLAIN (ANALYZE, BUFFERS) SELECT …'`. |
 | `mdl-agent-screenshot`                      | Save a PNG of one page as a given user: `mdl-agent-screenshot [--user=<username>] [--size=1280x1024] /local/path`. Logs in with a single-use link and renders with headless Chromium (needs `gnome-install`). Prints the file's path under `/srv/data/<project>/agent/screenshots/`. |
 | `mdl-agent-downgrade`                       | Lower the version a plugin is recorded as installed at, so the next `mdl-upgrade` runs its upgrade steps again: `mdl-agent-downgrade tool_muprog 2026100553`. Sets the plugin's version and clears Moodle's all-versions hash; tables and data are not touched. |
 | `mdl-agent-log`                             | Show the latest `mdl-agent-*` calls made in the current project — time, caller, tool and arguments: `mdl-agent-log [n]`, `--json` for the stored lines. Every `mdl-agent-*` tool logs itself to `/srv/data/<project>/agent/log.jsonl`. |
@@ -694,7 +694,7 @@ mdl-agent-downgrade tool_muprog 2026100553 && mdl-upgrade
   database. Nothing is rolled back, and SQL writes do not purge
   Moodle's caches (`mdl-cache-purge` does).
 - `mdl-agent-sql` refuses a statement that changes data unless
-  `--write` is given. That guards against slips; it is not a security
+  `--write` is given, including `EXPLAIN ANALYZE` of one, which runs it. That guards against slips; it is not a security
   boundary.
 - Every `mdl-agent-*` call is appended to
   `/srv/data/<project>/agent/log.jsonl` with its time, arguments,
