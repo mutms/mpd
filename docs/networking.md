@@ -398,6 +398,21 @@ IDEs (PHPStorm Gateway, VS Code Remote-SSH) need no ProxyJump.
 
 Inside the VM there is nothing to alias: you are already there.
 
+### Jumping to other hosts
+
+A host reachable only through a jump host gets one entry in the VM's
+`~/.ssh/config`:
+
+```
+ssh-jump-add jump.example.com target.example.com
+ssh target.example.com
+ssh-jump-remove target.example.com
+```
+
+The target name is resolved on the jump host, not in the VM. The VM
+holds no key, so both hops sign with your laptop's agent: connect with
+`ssh -A` (see [Pushing to git from the VM](usage.md#pushing-to-git-from-the-vm)).
+
 mpd assumes your laptop user and VM user share the same name. Set up the
 VM with the same account name as your laptop login.
 

@@ -1,0 +1,61 @@
+#!/bin/bash
+# ssh-jump-add — reach <target> over SSH through the jump host <jump>.
+#
+# Usage: ssh-jump-add <jump> <target>
+#   <jump>    [user@]host[:port]; several hops separated by commas
+#   <target>  the host name you type after `ssh`
+#
+# Writes one marked block for <target> into ~/.ssh/config. Text outside
+# the block stays as it is. Run it again to change the jump host.
+# Undo it with: ssh-jump-remove <target>
+set -euo pipefail
+
+if [ $# -ne 2 ]; then
+    echo "Usage: ssh-jump-add <jump> <target>" >&2
+    echo "Example: ssh-jump-add jump.example.com target.example.com" >&2
+    exit 2
+fi
+JUMP=$1
+TARGET=$2
+
+# Both values go into ~/.ssh/config, so allow only host-name characters.
+if ! [[ $JUMP =~ ^[A-Za-z0-9._@][A-Za-z0-9._@:,-]*$ ]]; then
+    echo "Not a valid jump host: $JUMP" >&2
+    exit 2
+fi
+if ! [[ $TARGET =~ ^[A-Za-z0-9._][A-Za-z0-9._-]*$ ]]; then
+    echo "Not a valid target host: $TARGET" >&2
+    exit 2
+fi
+
+BEGIN_MARK="# >>> ssh-jump $TARGET (managed by mpd) >>>"
+END_MARK="# <<< ssh-jump $TARGET <<<"
+
+install -d -m 700 "$HOME/.ssh"
+CONFIG=$HOME/.ssh/config
+[ -e "$CONFIG" ] || install -m 600 /dev/null "$CONFIG"
+CONFIG=$(readlink -f "$CONFIG")
+
+TMP=$(mktemp "$CONFIG.XXXXXX")
+trap 'rm -f "$TMP"' EXIT
+
+awk -v b="$BEGIN_MARK" -v e="$END_MARK" \
+    '$0 == b { skip = 1; next } skip && $0 == e { skip = 0; next } !skip' \
+    "$CONFIG" >"$TMP"
+if [ -s "$TMP" ] && [ -n "$(tail -c1 "$TMP")" ]; then
+    echo >>"$TMP"
+fi
+cat >>"$TMP" <<EOF
+$BEGIN_MARK
+Host $TARGET
+    ProxyJump $JUMP
+$END_MARK
+EOF
+chmod 600 "$TMP"
+mv "$TMP" "$CONFIG"
+trap - EXIT
+
+echo "OK: ssh $TARGET now goes through $JUMP."
+echo "This VM has no SSH key of its own. Connect to the VM with 'ssh -A' so"
+echo "both hops can use the key on your laptop."
+echo "Test it: ssh $TARGET true"

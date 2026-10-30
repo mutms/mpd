@@ -1,0 +1,41 @@
+#!/bin/bash
+# ssh-jump-remove — remove the jump host entry ssh-jump-add wrote for <target>.
+#
+# Usage: ssh-jump-remove <target>
+#
+# Removes only the marked block for <target> from ~/.ssh/config.
+# Text outside the block stays as it is.
+set -euo pipefail
+
+if [ $# -ne 1 ]; then
+    echo "Usage: ssh-jump-remove <target>" >&2
+    exit 2
+fi
+TARGET=$1
+
+if ! [[ $TARGET =~ ^[A-Za-z0-9._][A-Za-z0-9._-]*$ ]]; then
+    echo "Not a valid target host: $TARGET" >&2
+    exit 2
+fi
+
+BEGIN_MARK="# >>> ssh-jump $TARGET (managed by mpd) >>>"
+END_MARK="# <<< ssh-jump $TARGET <<<"
+
+CONFIG=$HOME/.ssh/config
+if [ ! -e "$CONFIG" ] || ! grep -qxF "$BEGIN_MARK" "$CONFIG"; then
+    echo "OK: no jump host entry for $TARGET."
+    exit 0
+fi
+CONFIG=$(readlink -f "$CONFIG")
+
+TMP=$(mktemp "$CONFIG.XXXXXX")
+trap 'rm -f "$TMP"' EXIT
+
+awk -v b="$BEGIN_MARK" -v e="$END_MARK" \
+    '$0 == b { skip = 1; next } skip && $0 == e { skip = 0; next } !skip' \
+    "$CONFIG" >"$TMP"
+chmod 600 "$TMP"
+mv "$TMP" "$CONFIG"
+trap - EXIT
+
+echo "OK: removed the jump host entry for $TARGET."
