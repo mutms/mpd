@@ -1,0 +1,47 @@
+#!/bin/bash
+# Tool: check the language packs a plugin ships in lang/<lang>/ against its
+# lang/en strings. Moodle is not loaded, so it works for any plugin on any
+# branch, without an installed site.
+#
+# Usage: mdl-lang-check [--lang=<code>] [--same] <plugin dir>...
+#   --lang   check only this language; default is every language in lang/
+#   --same   list strings identical to English, each must be intentional
+#
+# Reports syntax errors, a licence header that differs from English, missing
+# and extra strings, wrong order of strings and differences in placeholders,
+# HTML tags and URLs. Differences in backticked code are only warnings,
+# because examples may be translated. A plugin without the language is listed
+# but it is not a failure. Exit code is 1 if any problem was found.
+#
+# Examples:
+#   mdl-lang-check public/admin/tool/muprog
+#   mdl-lang-check --lang=cs public/admin/tool/mu* public/mod/mubook
+set -euo pipefail
+source /opt/mpd/assets/vm/project_types/moodle/scripts/mpd-env.sh
+
+CHECKER="/opt/mpd/assets/vm/project_types/moodle/scripts/lang-check.php"
+
+LANG_CODE=""
+SAME=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --lang=*) LANG_CODE="${1#--lang=}"; shift ;;
+        --same) SAME=1; shift ;;
+        -h|--help)
+            sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        -*)
+            echo "Unknown option: $1" >&2
+            exit 2
+            ;;
+        *) break ;;
+    esac
+done
+
+if [ $# -lt 1 ]; then
+    echo "Usage: mdl-lang-check [--lang=<code>] [--same] <plugin dir>..." >&2
+    exit 2
+fi
+
+exec php "$CHECKER" "$LANG_CODE" "$SAME" "$@"
