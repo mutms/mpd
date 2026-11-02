@@ -1,51 +1,8 @@
 <?php
-// Checker behind mdl-lang-check. Language files are parsed and never run,
-// so it needs no Moodle and is safe on any plugin.
+// Checker behind mdl-lang-check. Language files are loaded with include like
+// Moodle does, Moodle itself is not needed.
 //
 // Arguments: <lang or empty for all> <same 0|1> <plugin dir>...
-
-/**
- * Strings of one language file, without running it.
- *
- * @param string $file
- * @return array
- */
-function mdl_lang_check_load(string $file): array {
-    $strings = [];
-    $tokens = array_values(array_filter(
-        token_get_all(file_get_contents($file)),
-        fn($token) => !(is_array($token) && in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT]))
-    ));
-    $count = count($tokens);
-    for ($i = 0; $i + 5 < $count; $i++) {
-        $isstring = is_array($tokens[$i]) && $tokens[$i][0] === T_VARIABLE && $tokens[$i][1] === '$string';
-        if (!$isstring || $tokens[$i + 1] !== '[' || !is_array($tokens[$i + 2]) || $tokens[$i + 3] !== ']' || $tokens[$i + 4] !== '=') {
-            continue;
-        }
-        $value = '';
-        for ($j = $i + 5; $j < $count && $tokens[$j] !== ';'; $j++) {
-            if (is_array($tokens[$j]) && $tokens[$j][0] === T_CONSTANT_ENCAPSED_STRING) {
-                $value .= mdl_lang_check_unquote($tokens[$j][1]);
-            }
-        }
-        $strings[mdl_lang_check_unquote($tokens[$i + 2][1])] = $value;
-    }
-    return $strings;
-}
-
-/**
- * Value of a PHP string literal.
- *
- * @param string $literal
- * @return string
- */
-function mdl_lang_check_unquote(string $literal): string {
-    $body = substr($literal, 1, -1);
-    if ($literal[0] === "'") {
-        return str_replace(["\\\\", "\\'"], ["\\", "'"], $body);
-    }
-    return stripcslashes($body);
-}
 
 /**
  * Sorted parts of a string that must stay the same in every language.
@@ -70,6 +27,8 @@ function mdl_lang_check_header(string $file): string {
     $content = file_get_contents($file);
     return substr($content, 0, (int)strpos($content, '/**'));
 }
+
+require(__DIR__ . '/lang-lib.php');
 
 $onlylang = $argv[1];
 $showsame = $argv[2] === '1';
@@ -107,11 +66,18 @@ foreach ($dirs as $dir) {
 
             $errors = [];
             $notes = [];
-            $lint = [];
-            exec(escapeshellarg(PHP_BINARY) . ' -l ' . escapeshellarg($file) . ' 2>&1', $lint, $status);
-            if ($status !== 0) {
-                echo "$dir: lang/$lang/$name\n  SYNTAX " . implode(' ', $lint) . "\n";
-                $problems++;
+
+            $enloaded = mdl_lang_load($enfile);
+            $loaded = mdl_lang_load($file);
+            if ($enloaded['problems'] || $loaded['problems']) {
+                echo "$dir: lang/$lang/$name\n";
+                foreach ($enloaded['problems'] as $problem) {
+                    echo "  en $problem\n";
+                }
+                foreach ($loaded['problems'] as $problem) {
+                    echo "  $problem\n";
+                }
+                $problems += count($enloaded['problems']) + count($loaded['problems']);
                 continue;
             }
 
@@ -119,8 +85,8 @@ foreach ($dirs as $dir) {
                 $errors[] = 'HEADER licence header differs from English';
             }
 
-            $en = mdl_lang_check_load($enfile);
-            $strings = mdl_lang_check_load($file);
+            $en = $enloaded['strings'];
+            $strings = $loaded['strings'];
 
             foreach (array_keys(array_diff_key($en, $strings)) as $key) {
                 $errors[] = "MISSING $key";

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Tool: check the language packs a plugin ships in lang/<lang>/ against its
-# lang/en strings. Moodle is not loaded, so it works for any plugin on any
+# lang/en strings. Moodle is not needed, so it works for any plugin on any
 # branch, without an installed site.
 #
 # Usage: mdl-lang-check [--lang=<code>] [--same] <plugin dir>...

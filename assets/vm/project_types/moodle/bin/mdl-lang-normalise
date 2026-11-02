@@ -1,0 +1,46 @@
+#!/bin/bash
+# Tool: normalise the language files a plugin ships in lang/<lang>/. Strings
+# are loaded with include as Moodle does, sorted by key and written back one
+# per line with var_export. Everything above the first $string is kept as it
+# is. Moodle is not needed, so it works for any plugin on any branch.
+#
+# Usage: mdl-lang-normalise [--lang=<code>] [--check] <plugin dir>...
+#   --lang    normalise only this language; default is every language, en too
+#   --check   change nothing, exit 1 if any file is not normalised
+#
+# Anything below the first $string[ is replaced, comments there are lost.
+# Keys are never added or removed, use mdl-lang-check for missing and extra
+# strings.
+#
+# Examples:
+#   mdl-lang-normalise public/admin/tool/muprog
+#   mdl-lang-normalise --check --lang=cs public/admin/tool/mu* public/mod/mubook
+set -euo pipefail
+source /opt/mpd/assets/vm/project_types/moodle/scripts/mpd-env.sh
+
+SCRIPT="/opt/mpd/assets/vm/project_types/moodle/scripts/lang-normalise.php"
+
+LANG_CODE=""
+CHECK=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --lang=*) LANG_CODE="${1#--lang=}"; shift ;;
+        --check) CHECK=1; shift ;;
+        -h|--help)
+            sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        -*)
+            echo "Unknown option: $1" >&2
+            exit 2
+            ;;
+        *) break ;;
+    esac
+done
+
+if [ $# -lt 1 ]; then
+    echo "Usage: mdl-lang-normalise [--lang=<code>] [--check] <plugin dir>..." >&2
+    exit 2
+fi
+
+exec php "$SCRIPT" "$LANG_CODE" "$CHECK" "$@"

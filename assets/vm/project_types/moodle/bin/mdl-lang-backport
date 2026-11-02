@@ -1,0 +1,67 @@
+#!/bin/bash
+# Tool: copy translations of plugins from another Moodle checkout into this
+# project, for example from a newer branch. Only strings whose English text
+# is the same in both are copied by default, those are safe. Run it in the
+# target project, plugin paths are relative to dirroot and public/ is found
+# automatically. Moodle is not needed.
+#
+# Usage: mdl-lang-backport [--lang=<code>] [--changed] [--update] [--dry-run]
+#                          <source moodle root> <plugin path>...
+#   --lang      copy only this language; default is every source translation
+#   --changed   also copy strings whose English differs, listed for review
+#   --update    overwrite existing translations that differ, English the same
+#   --dry-run   only print the report
+#
+# Missing strings are added, existing translations are kept unless --update
+# is used, keys that are not in the target lang/en are never copied. A new
+# file gets the header of the source translation. Files are written in the
+# normalised form of mdl-lang-normalise. Exit code is 1 if any string stays
+# untranslated or a file could not be processed.
+#
+# Examples:
+#   cd /srv/projects/mutms45; mdl-lang-backport --dry-run /srv/projects/mutms53 admin/tool/muprog
+#   mdl-lang-backport --lang=cs --changed /srv/projects/mutms53 admin/tool/muprog mod/mubook
+set -euo pipefail
+source /opt/mpd/assets/vm/project_types/moodle/scripts/mpd-env.sh
+
+SCRIPT="/opt/mpd/assets/vm/project_types/moodle/scripts/lang-backport.php"
+
+LANG_CODE=""
+CHANGED=0
+UPDATE=0
+DRYRUN=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --lang=*) LANG_CODE="${1#--lang=}"; shift ;;
+        --changed) CHANGED=1; shift ;;
+        --update) UPDATE=1; shift ;;
+        --dry-run) DRYRUN=1; shift ;;
+        -h|--help)
+            sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        -*)
+            echo "Unknown option: $1" >&2
+            exit 2
+            ;;
+        *) break ;;
+    esac
+done
+
+if [ $# -lt 2 ]; then
+    echo "Usage: mdl-lang-backport [--lang=<code>] [--changed] [--update] [--dry-run] <source moodle root> <plugin path>..." >&2
+    exit 2
+fi
+
+SOURCE="${1%/}"
+shift
+if [ ! -d "$SOURCE" ]; then
+    echo "Source not found: $SOURCE" >&2
+    exit 2
+fi
+if [ "$(realpath "$SOURCE")" = "$(realpath "$PROJECT_DIR")" ]; then
+    echo "Source is this project, run it in the target project." >&2
+    exit 2
+fi
+
+exec php "$SCRIPT" "$LANG_CODE" "$CHANGED" "$UPDATE" "$DRYRUN" "$SOURCE" "$PROJECT_DIR" "$@"

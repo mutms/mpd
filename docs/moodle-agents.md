@@ -53,6 +53,8 @@ Run them from anywhere inside the project tree. Full list and options:
 | PHPUnit | `phpunit-init`, then `phpunit --testsuite <component>_testsuite` or `phpunit <path to test file>` |
 | Behat | `behat-init`, then `behat --tags=@<component>` or `behat <path to feature>`. Three more independent sites: `behat1-init` / `behat1`, `behat2-init` / `behat2`, `behat3-init` / `behat3` |
 | Check language packs of a plugin against `lang/en` | `mdl-lang-check [--lang=<code>] [--same] <plugin dir>...` |
+| Sort language strings and write them in the standard form | `mdl-lang-normalise [--lang=<code>] [--check] <plugin dir>...` |
+| Copy translations from another checkout where English matches | `mdl-lang-backport [--lang=<code>] [--changed] [--update] [--dry-run] <source moodle root> <plugin path>...`, run in the target project |
 | Code checks | `mpci-install` once, then `mpci <command> <plugin dir>` |
 | JS build | `grunt` |
 
