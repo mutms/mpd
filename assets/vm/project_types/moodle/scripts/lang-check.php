@@ -88,8 +88,11 @@ foreach ($dirs as $dir) {
             $en = $enloaded['strings'];
             $strings = $loaded['strings'];
 
-            foreach (array_keys(array_diff_key($en, $strings)) as $key) {
-                $errors[] = "MISSING $key";
+            // English variants such as en_us are child packs, they override only some strings.
+            if (!str_starts_with($lang, 'en_')) {
+                foreach (array_keys(array_diff_key($en, $strings)) as $key) {
+                    $errors[] = "MISSING $key";
+                }
             }
             foreach (array_keys(array_diff_key($strings, $en)) as $key) {
                 $errors[] = "EXTRA $key";
