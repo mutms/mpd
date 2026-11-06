@@ -237,9 +237,6 @@ Nothing is running yet. From here:
     gnome-stop      back to headless
     rdp-start       reach the desktop over RDP (tablet, thin client)
 
-Chromium already trusts this VM's mpd CA — 'mpd --vm-setup' imports it
-into ~/.pki/nssdb, which is the store Chromium reads. If a project URL
-still warns, re-run 'mpd --vm-setup' and restart Chromium.
 EOF
 
 if [ "${HAS_DRM}" = 0 ]; then
