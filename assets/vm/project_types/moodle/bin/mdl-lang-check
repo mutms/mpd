@@ -4,6 +4,8 @@
 # branch, without an installed site.
 #
 # Usage: mdl-lang-check [--lang=<code>] [--same] <plugin dir>...
+#   A plugin dir is a directory, or a path relative to dirroot of the project
+#   such as admin/tool/muprog, public/ is found automatically.
 #   --lang   check only this language; default is every language in lang/
 #   --same   list strings identical to English, each must be intentional
 #
@@ -28,7 +30,7 @@ while [ $# -gt 0 ]; do
         --lang=*) LANG_CODE="${1#--lang=}"; shift ;;
         --same) SAME=1; shift ;;
         -h|--help)
-            sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
             exit 0
             ;;
         -*)
@@ -44,4 +46,4 @@ if [ $# -lt 1 ]; then
     exit 2
 fi
 
-exec php "$CHECKER" "$LANG_CODE" "$SAME" "$@"
+exec php "$CHECKER" "$LANG_CODE" "$SAME" "$PROJECT_DIR" "$@"

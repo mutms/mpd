@@ -5,6 +5,8 @@
 # is. Moodle is not needed, so it works for any plugin on any branch.
 #
 # Usage: mdl-lang-normalise [--lang=<code>] [--check] <plugin dir>...
+#   A plugin dir is a directory, or a path relative to dirroot of the project
+#   such as admin/tool/muprog, public/ is found automatically.
 #   --lang    normalise only this language; default is every language, en too
 #   --check   change nothing, exit 1 if any file is not normalised
 #
@@ -27,7 +29,7 @@ while [ $# -gt 0 ]; do
         --lang=*) LANG_CODE="${1#--lang=}"; shift ;;
         --check) CHECK=1; shift ;;
         -h|--help)
-            sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
             exit 0
             ;;
         -*)
@@ -43,4 +45,4 @@ if [ $# -lt 1 ]; then
     exit 2
 fi
 
-exec php "$SCRIPT" "$LANG_CODE" "$CHECK" "$@"
+exec php "$SCRIPT" "$LANG_CODE" "$CHECK" "$PROJECT_DIR" "$@"

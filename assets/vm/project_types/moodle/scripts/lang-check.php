@@ -2,7 +2,7 @@
 // Checker behind mdl-lang-check. Language files are loaded with include like
 // Moodle does, Moodle itself is not needed.
 //
-// Arguments: <lang or empty for all> <same 0|1> <plugin dir>...
+// Arguments: <lang or empty for all> <same 0|1> <project root> <plugin dir>...
 
 /**
  * Sorted parts of a string that must stay the same in every language.
@@ -32,7 +32,8 @@ require(__DIR__ . '/lang-lib.php');
 
 $onlylang = $argv[1];
 $showsame = $argv[2] === '1';
-$dirs = array_slice($argv, 3);
+$projectroot = $argv[3];
+$dirs = array_slice($argv, 4);
 
 $tokenpattern = '/\{\$a(?:->[A-Za-z0-9_]+)?\}|\{no\}|<\/?[a-zA-Z][^>]*>|https?:\/\/[^\s\'"<)]+/u';
 $codepattern = '/`[^`\n]+`/u';
@@ -40,7 +41,13 @@ $problems = 0;
 $warnings = 0;
 
 foreach ($dirs as $dir) {
-    $dir = rtrim($dir, '/');
+    $resolved = mdl_lang_resolve_dir($projectroot, $dir);
+    if ($resolved === null) {
+        echo "$dir: directory not found\n";
+        $problems++;
+        continue;
+    }
+    $dir = $resolved;
     $enfiles = glob("$dir/lang/en/*.php") ?: [];
     if (!$enfiles) {
         echo "$dir: no lang/en strings\n";

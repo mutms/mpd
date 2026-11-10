@@ -71,3 +71,33 @@ function mdl_lang_plugin_dir(string $root, string $path): ?string {
     }
     return null;
 }
+
+/**
+ * Plugin directory given on the command line of a tool that works in one project.
+ *
+ * An existing directory is used as it is. Otherwise the path is tried relative to
+ * the dirroot of the project, so admin/tool/muprog works with and without public/.
+ *
+ * @param string $projectroot
+ * @param string $dir
+ * @return string|null null if there is no such directory
+ */
+function mdl_lang_resolve_dir(string $projectroot, string $dir): ?string {
+    $dir = rtrim($dir, '/');
+    if ($dir === '') {
+        return null;
+    }
+    if (is_dir($dir)) {
+        return $dir;
+    }
+    if (str_starts_with($dir, '/') || $projectroot === '') {
+        return null;
+    }
+    $found = mdl_lang_plugin_dir($projectroot, $dir);
+    if ($found === null) {
+        return null;
+    }
+    // Keep the report short when the plugin is below the current directory.
+    $cwd = rtrim((string)getcwd(), '/') . '/';
+    return str_starts_with($found, $cwd) ? substr($found, strlen($cwd)) : $found;
+}
