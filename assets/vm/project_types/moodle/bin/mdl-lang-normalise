@@ -4,11 +4,14 @@
 # per line with var_export. Everything above the first $string is kept as it
 # is. Moodle is not needed, so it works for any plugin on any branch.
 #
-# Usage: mdl-lang-normalise [--lang=<code>] [--check] <plugin dir>...
+# Usage: mdl-lang-normalise [--lang=<code>] [--check] [--header] <plugin dir>...
 #   A plugin dir is a directory, or a path relative to dirroot of the project
 #   such as admin/tool/muprog, public/ is found automatically.
 #   --lang    normalise only this language; default is every language, en too
 #   --check   change nothing, exit 1 if any file is not normalised
+#   --header  also rebuild the header of translations: licence lines of lang/en,
+#             then one standard PHPDoc block. The @copyright lines of the
+#             translation are kept, a note about AI translation too.
 #
 # Anything below the first $string[ is replaced, comments there are lost.
 # Keys are never added or removed, use mdl-lang-check for missing and extra
@@ -24,12 +27,14 @@ SCRIPT="/opt/mpd/assets/vm/project_types/moodle/scripts/lang-normalise.php"
 
 LANG_CODE=""
 CHECK=0
+HEADER=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --lang=*) LANG_CODE="${1#--lang=}"; shift ;;
         --check) CHECK=1; shift ;;
+        --header) HEADER=1; shift ;;
         -h|--help)
-            sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
             exit 0
             ;;
         -*)
@@ -41,8 +46,8 @@ while [ $# -gt 0 ]; do
 done
 
 if [ $# -lt 1 ]; then
-    echo "Usage: mdl-lang-normalise [--lang=<code>] [--check] <plugin dir>..." >&2
+    echo "Usage: mdl-lang-normalise [--lang=<code>] [--check] [--header] <plugin dir>..." >&2
     exit 2
 fi
 
-exec php "$SCRIPT" "$LANG_CODE" "$CHECK" "$PROJECT_DIR" "$@"
+exec php "$SCRIPT" "$LANG_CODE" "$CHECK" "$HEADER" "$PROJECT_DIR" "$@"

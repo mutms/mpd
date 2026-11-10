@@ -101,3 +101,44 @@ function mdl_lang_resolve_dir(string $projectroot, string $dir): ?string {
     $cwd = rtrim((string)getcwd(), '/') . '/';
     return str_starts_with($found, $cwd) ? substr($found, strlen($cwd)) : $found;
 }
+
+/**
+ * Standard header of a translation file, built from the header of the English
+ * file: its licence lines, one PHPDoc block and whatever follows the English
+ * PHPDoc block. The copyright lines of the translation are kept, the English
+ * ones are used if it has none. The note about AI translation is kept if the
+ * translation has it.
+ *
+ * @param string $enheader header of the lang/en file
+ * @param string $header current header of the translation
+ * @param string $lang language code
+ * @return string|null null if the English header has no PHPDoc block with @package
+ */
+function mdl_lang_template_header(string $enheader, string $header, string $lang): ?string {
+    if (!preg_match('/\/\*\*\n.*? \*\/\n/s', $enheader, $doc, PREG_OFFSET_CAPTURE)
+            || !preg_match('/@package\s+(\S+)/', $doc[0][0], $package)) {
+        return null;
+    }
+    $licence = substr($enheader, 0, $doc[0][1]);
+    $tail = substr($enheader, $doc[0][1] + strlen($doc[0][0]));
+    $component = $package[1];
+
+    if (!preg_match_all('/^ \* @copyright\s+(.+?)\s*$/m', $header, $copyrights)) {
+        preg_match_all('/^ \* @copyright\s+(.+?)\s*$/m', $doc[0][0], $copyrights);
+    }
+
+    $name = class_exists(\Locale::class) ? (string)\Locale::getDisplayLanguage($lang, 'en') : '';
+    $name = ($name === '' || $name === $lang) ? '' : $name . ' ';
+
+    $result = $licence . "/**\n * Strings for component '$component', language '$lang'.\n *\n";
+    if (str_contains($header, 'produced automatically by an AI')) {
+        $result .= wordwrap(" * NOTE: This {$name}translation was produced automatically by an AI language model and has"
+            . " not yet been reviewed by a human translator. Corrections are welcome.", 80, "\n * ") . "\n *\n";
+    }
+    $result .= " * @package    $component\n";
+    foreach ($copyrights[1] as $copyright) {
+        $result .= " * @copyright  $copyright\n";
+    }
+    $result .= " * @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later\n */\n";
+    return $result . $tail;
+}

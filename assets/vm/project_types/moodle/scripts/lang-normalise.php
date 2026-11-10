@@ -2,14 +2,17 @@
 // Normaliser behind mdl-lang-normalise. Keeps everything above the first
 // $string, then writes the strings sorted by key with var_export.
 //
-// Arguments: <lang or empty for all> <check 0|1> <project root> <plugin dir>...
+// With the header option the header of translations is rebuilt from lang/en too.
+//
+// Arguments: <lang or empty for all> <check 0|1> <header 0|1> <project root> <plugin dir>...
 
 require(__DIR__ . '/lang-lib.php');
 
 $onlylang = $argv[1];
 $checkonly = $argv[2] === '1';
-$projectroot = $argv[3];
-$dirs = array_slice($argv, 4);
+$fixheader = $argv[3] === '1';
+$projectroot = $argv[4];
+$dirs = array_slice($argv, 5);
 
 $problems = 0;
 $changed = 0;
@@ -45,7 +48,20 @@ foreach ($dirs as $dir) {
             $problems++;
             continue;
         }
-        $content = mdl_lang_export($loaded['header'], $loaded['strings']);
+        $header = $loaded['header'];
+        $lang = basename(dirname($file));
+        // English and its variants such as en_us keep their own headers.
+        if ($fixheader && $lang !== 'en' && !str_starts_with($lang, 'en_')) {
+            $enfile = "$dir/lang/en/" . basename($file);
+            $template = file_exists($enfile) ? mdl_lang_template_header(mdl_lang_load($enfile)['header'], $header, $lang) : null;
+            if ($template === null) {
+                echo "$label: no usable lang/en header\n";
+                $problems++;
+                continue;
+            }
+            $header = $template;
+        }
+        $content = mdl_lang_export($header, $loaded['strings']);
         if ($content === file_get_contents($file)) {
             continue;
         }
