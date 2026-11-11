@@ -205,9 +205,8 @@ Inside the VM:
 ```bash
 # 1. Get the source. /srv is mounted on the VM, so this is ordinary shell —
 #    a mudev recipe, or any git clone you like.
-mkdir -p /srv/projects/moodle51 && cd /srv/projects/moodle51
-mudev clone moodle/release/5.1.5
-#    or: git clone -b MOODLE_501_STABLE https://github.com/moodle/moodle.git .
+mudev clone moodle/release/5.1.5 /srv/projects/moodle51 && cd $_
+#    or: git clone -b MOODLE_501_STABLE https://github.com/moodle/moodle.git /srv/projects/moodle51
 
 # 2. Scaffold (seeds mpd.env from the type's template; no DB yet).
 #    No project name needed — it comes from the directory you are in.

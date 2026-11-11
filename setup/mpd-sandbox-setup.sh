@@ -204,8 +204,8 @@ SSH SOCKS proxy — no host routing or /etc/hosts needed
 Create your first Moodle site (a few minutes) — mudev assembles the
 tree from a recipe, then mpd configures and starts it:
 
-    mkdir -p /srv/projects/moodle50 && cd \$_
-    mudev clone moodle/release/5.0.1   # run 'mudev' alone to list recipes
+    # run 'mudev' alone to list recipes
+    mudev clone moodle/release/5.0.1 /srv/projects/moodle50 && cd \$_
     mpd init                           # register the new project
     mpd start                          # configure + start
     mdl-install                        # install Moodle

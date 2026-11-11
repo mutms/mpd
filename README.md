@@ -39,8 +39,7 @@ bash <(wget -qO- https://raw.githubusercontent.com/mutms/mpd/main/setup/mpd-sand
 It reboots once. Then, for your first Moodle:
 
 ```bash
-mkdir -p /srv/projects/m45 && cd $_
-mudev clone moodle/release/4.5.12       # assemble the tree from a recipe
+mudev clone moodle/release/4.5.12 /srv/projects/m45 && cd $_   # assemble the tree from a recipe
 mpd init                                # register new project
 mpd start                               # configure + start the project
 mdl-install                             # install Moodle
