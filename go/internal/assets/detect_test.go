@@ -16,7 +16,11 @@ func fixtureTree(t *testing.T, types map[string][]string) Tree {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		cfg := `{"detect":{"files":[`
+		cfg := `{"detect":{`
+		if name == "html" {
+			cfg += `"fallback":true,`
+		}
+		cfg += `"files":[`
 		for i, f := range files {
 			if i > 0 {
 				cfg += ","
@@ -49,8 +53,10 @@ func projectDir(t *testing.T, files ...string) string {
 
 func TestDetectTypeFromTree(t *testing.T) {
 	tree := fixtureTree(t, map[string][]string{
-		"astro":  {"astro.config.mjs", "astro.config.ts"},
-		"moodle": {"version.php", "public/version.php"},
+		"astro":    {"astro.config.mjs", "astro.config.ts"},
+		"moodle":   {"version.php", "public/version.php"},
+		"html":     {"index.html"},
+		"exttests": {"downloadtests.md5"},
 	})
 
 	tests := []struct {
@@ -69,6 +75,12 @@ func TestDetectTypeFromTree(t *testing.T) {
 		{"name is irrelevant", []string{"astro.config.mjs", "README.md"}, []string{"astro"}},
 		// Both claim it — the caller must be told, not handed a winner.
 		{"ambiguous tree returns every match", []string{"astro.config.mjs", "version.php"},
+			[]string{"astro", "moodle"}},
+		{"fallback type alone", []string{"index.html"}, []string{"html"}},
+		// html is the "we do not know" type: any specific match wins.
+		{"specific type beats fallback", []string{"index.html", "downloadtests.md5"},
+			[]string{"exttests"}},
+		{"fallback dropped beside an ambiguous pair", []string{"index.html", "astro.config.mjs", "version.php"},
 			[]string{"astro", "moodle"}},
 	}
 

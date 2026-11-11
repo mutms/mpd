@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mutms/mpd/go/internal/assets"
 	"github.com/mutms/mpd/go/internal/cert"
 	"github.com/mutms/mpd/go/internal/current"
 	"github.com/mutms/mpd/go/internal/db"
@@ -238,6 +239,21 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 	ui.OK(out, "project vhosts served on %s:443.", n.IP(net.HostProjects))
+
+	ui.Step(out, "Moodle external test files (project %s)", ExttestsProject)
+	d := ProjectDeps{
+		Podman:   p,
+		State:    s,
+		Dnsmasq:  m,
+		Observer: current.NewObserver(n.VMID(), p),
+		Assets:   assets.New(),
+		Net:      n,
+		DevUser:  user.User,
+		UID:      user.UID,
+	}
+	if err := ensureExttests(ctx, out, d); err != nil {
+		ui.Warn(out, "%v", err)
+	}
 
 	ui.Step(out, "Installing shutdown unit")
 	if err := vm.InstallShutdownUnit(ctx, user.User); err != nil {
@@ -596,4 +612,34 @@ func copyFile(src, dst string, mode os.FileMode) error {
 		return err
 	}
 	return os.WriteFile(dst, data, mode)
+}
+
+// ExttestsProject is the project --vm-setup creates to serve the files
+// Moodle's phpunit tests download.
+const ExttestsProject = "exttests"
+
+const exttestsRemote = "https://github.com/moodlehq/moodle-exttests.git"
+
+// ensureExttests clones, registers and starts the exttests project once.
+// A project already registered under that name is left alone.
+func ensureExttests(ctx context.Context, out io.Writer, d ProjectDeps) error {
+	if _, found := findProject(d.State, ExttestsProject); found {
+		ui.OK(out, "already registered; mpd start %s applies changes.", ExttestsProject)
+		return nil
+	}
+	dir := srv.ProjectDir(ExttestsProject)
+	if entries, err := os.ReadDir(dir); err != nil || len(entries) == 0 {
+		code, err := exec.Run(ctx, exec.Cmd{
+			Name: "git",
+			Args: []string{"clone", "--progress", exttestsRemote, dir},
+		})
+		if err != nil || code != 0 {
+			return fmt.Errorf("Failed to clone %s into %s.", exttestsRemote, dir)
+		}
+	}
+	if err := ProjectCreate(ctx, out, ExttestsProject,
+		CreateOptions{Type: ExttestsProject}, d, ""); err != nil {
+		return err
+	}
+	return ProjectStart(ctx, out, ExttestsProject, nil, d)
 }

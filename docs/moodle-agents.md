@@ -108,6 +108,10 @@ the template.
   `db/install.xml` or `db/access.php` under a running Behat run: all
   four sites share the code, so each then demands an upgrade and later
   scenarios fail.
+- **Tests that download files use the `exttests` project.** They fail or
+  report "data provider … is invalid" when it is missing or stopped; run
+  `mpd start exttests`, then `mpd start <project>`. See
+  [debugging.md](debugging.md).
 - **Re-init after schema or version changes.** `phpunit-init` after
   changing `db/install.xml`, `version.php` or adding a plugin;
   `behat-init` after the same, and after adding Behat step definitions

@@ -38,7 +38,11 @@ render_vhost() {
         echo "    bind ${MPD_CADDY_BIND}"
     fi
     echo "    import deny_sensitive"
-    echo "    tls ${cert_pem} ${cert_key}"
+    # An http:// site is plain HTTP on port 80 and takes no certificate.
+    case "$hosts" in
+        http://*) ;;
+        *) echo "    tls ${cert_pem} ${cert_key}" ;;
+    esac
 
     case "$btype" in
         php-fpm)
@@ -143,16 +147,17 @@ for meta in "${META_DIR}"/*/urls.json; do
     fi
 
     # URLs with identical backends share a vhost (main + behat pairs).
+    # An http:// URL keeps its scheme and gets a vhost of its own.
     jq -c '
         [.[] | select(.backend)]
-        | group_by(.backend | @json)
-        | map({hosts: [.[] | (.url | sub("^https?://"; "") | sub("/$"; "") | sub(":[0-9]+$"; ""))], backend: .[0].backend})
+        | group_by([(.url | startswith("http://")), (.backend | @json)])
+        | map({hosts: [.[] | (.url | sub("^https://"; "") | sub("/$"; "") | sub(":[0-9]+$"; ""))], backend: .[0].backend})
         | .[]
     ' "$meta" | while IFS= read -r group; do
         hosts=$(jq -r '.hosts | join(", ")' <<<"$group")
         backend=$(jq -c '.backend' <<<"$group")
         agent=1
-        if [ -n "$tunnel_host" ] && [ "$(jq -r '.type' <<<"$backend")" = "php-fpm" ]; then
+        if [ -n "$tunnel_host" ] && [[ "$hosts" != http://* ]] && [ "$(jq -r '.type' <<<"$backend")" = "php-fpm" ]; then
             hosts="${hosts}, ${tunnel_host}"
             # The tunnel makes this vhost reachable from the internet, so
             # the agent route goes away for as long as the tunnel is up.

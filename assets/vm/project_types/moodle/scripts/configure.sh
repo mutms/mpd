@@ -117,6 +117,24 @@ else
     MAIL_CONFIG="\$CFG->noemailever = true; // mailpit not in MPD_REQUIRE_SERVICES"
 fi
 
+# PHP literals for TEST_EXTERNAL_FILES_HTTP(S)_URL in config-mpd.php;
+# false makes Moodle skip the tests that download files.
+EXTTESTS="${MPD_MOODLE_EXTTESTS:-}"
+EXTTESTS_HTTP="false"
+EXTTESTS_HTTPS="false"
+if [ -n "$EXTTESTS" ]; then
+    if ! [[ "$EXTTESTS" =~ ^[a-z][a-z0-9]*(-[a-z0-9]+)*$ ]]; then
+        echo "Error: MPD_MOODLE_EXTTESTS='${EXTTESTS}' is not a project name." >&2
+        exit 1
+    fi
+    if [ -f "/srv/projects/${EXTTESTS}/downloadtests.md5" ]; then
+        EXTTESTS_HTTP="'http://${EXTTESTS}.${MPD_ZONE}'"
+        EXTTESTS_HTTPS="'https://${EXTTESTS}.${MPD_ZONE}'"
+    else
+        echo "Warning: no moodle-exttests checkout in /srv/projects/${EXTTESTS} — phpunit skips the tests that download files."
+    fi
+fi
+
 # Render config-mpd.php when Moodle source and a DB are both present.
 # config.php is static, seeded from template/ and left alone.
 if [ -n "$DATABASE_ID" ] && \
@@ -127,6 +145,8 @@ if [ -n "$DATABASE_ID" ] && \
         -e "s|%%DBHOST%%|${DATABASE_ID}.db.${MPD_ZONE}|g" \
         -e "s|%%ZONE%%|${MPD_ZONE}|g" \
         -e "s|%%MAIL_CONFIG%%|${MAIL_CONFIG}|" \
+        -e "s|%%EXTTESTS_HTTP%%|${EXTTESTS_HTTP}|" \
+        -e "s|%%EXTTESTS_HTTPS%%|${EXTTESTS_HTTPS}|" \
         -e "s|%%SELENIUM_WD_HOST%%|http://selenium.svc.${MPD_ZONE}:4444/wd/hub|" \
         "${TYPE_DIR}/generated/config-mpd.php" \
         > "${PROJECT_DIR}/config-mpd.php"

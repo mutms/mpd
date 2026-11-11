@@ -1,0 +1,10 @@
+{
+  "detect": {
+    "files": [
+      "downloadtests.md5"
+    ]
+  },
+  "start": {
+    "waitForURL": true
+  }
+}

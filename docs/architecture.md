@@ -218,7 +218,13 @@ volume.
 - The dev stack's definition: `assets/vm/...` (`configure-stack.sh`,
   `home/`, `bin/`, `lib/`, `caddy/`)
 - Project-type behavior: `assets/vm/project_types/<type>/...`
-  (current types: `moodle`, `astro`, `mdl-demo`, `html`)
+  (current types: `moodle`, `astro`, `mdl-demo`, `html`, `exttests`)
+- Type detection: `mpd init` without `--type` matches the tree against
+  each type's `detect.files` in `configuration.json`. A type marked
+  `"detect": {"fallback": true}` (`html`) wins only when no other type
+  matches. Two or more remaining matches stop `init` and ask for
+  `--type`. An empty tree falls back to a type named like the project,
+  then `moodle`.
 - Project-type files placed in the project directory: `template/` and
   `generated/` (see below)
 - VM / project-type tools: single executable per file under

@@ -34,6 +34,9 @@ type ProjectTypeConfig struct {
 	// DetectFiles are paths, relative to the project directory, whose
 	// presence identifies a source tree as this type. Any one is enough.
 	DetectFiles []string
+	// DetectFallback marks a type that wins detection only when no other
+	// type matches the tree, such as html for any folder with index.html.
+	DetectFallback bool
 	// WaitForURL is set when `mpd start` should block until the
 	// project's main URL answers; false for types whose server the
 	// developer runs by hand.
@@ -55,7 +58,8 @@ func (t Tree) ProjectTypeConfig(name string) (ProjectTypeConfig, bool) {
 	var raw struct {
 		AssetsType string `json:"assetsType"`
 		Detect     struct {
-			Files []string `json:"files"`
+			Files    []string `json:"files"`
+			Fallback bool     `json:"fallback"`
 		} `json:"detect"`
 		Start struct {
 			// Pointer so an absent key keeps the default rather
@@ -67,6 +71,7 @@ func (t Tree) ProjectTypeConfig(name string) (ProjectTypeConfig, bool) {
 		return cfg, true
 	}
 	cfg.DetectFiles = raw.Detect.Files
+	cfg.DetectFallback = raw.Detect.Fallback
 	if raw.Start.WaitForURL != nil {
 		cfg.WaitForURL = *raw.Start.WaitForURL
 	}
@@ -142,10 +147,11 @@ func (t Tree) DetectTypeFromName(name string) string {
 }
 
 // DetectTypeFromTree infers project types from the project directory,
-// matching each type's `detect.files`. Every matching type is returned,
-// in sorted order: the caller must not silently pick a winner.
+// matching each type's `detect.files`. A fallback type is dropped when
+// any other type matches. Every remaining match is returned, in sorted
+// order: the caller must not silently pick a winner.
 func (t Tree) DetectTypeFromTree(dir string) []string {
-	var matched []string
+	var matched, fallbacks []string
 	for _, ty := range t.AllProjectTypes() {
 		cfg, ok := t.ProjectTypeConfig(ty)
 		if !ok {
@@ -158,10 +164,17 @@ func (t Tree) DetectTypeFromTree(dir string) []string {
 				continue
 			}
 			if _, err := os.Stat(filepath.Join(dir, rel)); err == nil {
-				matched = append(matched, ty)
+				if cfg.DetectFallback {
+					fallbacks = append(fallbacks, ty)
+				} else {
+					matched = append(matched, ty)
+				}
 				break
 			}
 		}
+	}
+	if len(matched) == 0 {
+		return fallbacks
 	}
 	return matched
 }

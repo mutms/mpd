@@ -23,6 +23,7 @@ VM (Debian Trixie)   hostname mpd-<NNN>;  LAN IP exposes sshd + wg (+ mDNS disco
   │                     caddy     :80  — redirect to :443
   │                     caddy     :443 — the zone apex only (the portal)
   │    10.163.<NNN>.2   mpd-caddy :443 — every project vhost
+  │                     mpd-caddy :80  — plain-HTTP vhosts (only exttests)
   │
   `mpd-internal` Podman network    10.163.<NNN>.0/24  (podman DNS disabled)
     │   SEALED from the LAN by an nft firewall (mpd-firewall.service)

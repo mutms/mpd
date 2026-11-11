@@ -452,3 +452,30 @@ it. The correct mode when a proxy terminates TLS is `--tlsMode external`
 (ZITADEL serves plain http, external URL is https). See
 `go/internal/services/zitadel.go`. Also ensure `.well-known` is reachable
 (entry above) or discovery-based flows fail even once the scheme is right.
+
+## Moodle phpunit tests that download files fail or error
+
+**Symptoms.** `core\filelib_test` fails with `'HTTP/2 200' matches PCRE
+pattern "|^HTTP/1\.[01] 200 OK$|"`, `'404 '` instead of `'404 Not
+Found'`, or a Cloudflare "Sorry, you have been blocked" page where `'OK'`
+was expected. Or `auth_lti\auth_test`, `tool_httpsreplace` and others
+error with "The data provider specified for … is invalid — Tests using
+external http test files are disabled".
+
+**Cause.** Without `TEST_EXTERNAL_FILES_HTTP_URL`, Moodle downloads its
+test files from `download.moodle.org`. Its Cloudflare blocks many client
+addresses and answers over HTTP/2, which has no reason phrase after the
+status code. Setting the constants to `false` skips most of these tests,
+but a data provider that asks for a URL cannot skip, so PHPUnit reports
+it as invalid instead.
+
+**Diagnose.** `grep TEST_EXTERNAL /srv/projects/<project>/config-mpd.php`.
+`false` means `MPD_MOODLE_EXTTESTS` is empty or names no exttests
+checkout (`mpd start <project>` prints a warning then). A URL that fails:
+`curl -sI http://exttests.<NNN>.mpd.test/test.html` must answer
+`HTTP/1.1 200 OK`.
+
+**Fix.** Make sure the exttests project exists and runs (`mpd --vm-setup`
+creates it; `mpd start exttests`), then `mpd start <project>` to rewrite
+`config-mpd.php`. The plain `http://` URL is needed: the HTTPS one speaks
+HTTP/2 and fails the status-line checks.

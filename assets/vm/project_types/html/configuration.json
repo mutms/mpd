@@ -2,7 +2,8 @@
   "detect": {
     "files": [
       "index.html"
-    ]
+    ],
+    "fallback": true
   },
   "start": {
     "waitForURL": true

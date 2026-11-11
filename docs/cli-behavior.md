@@ -146,7 +146,9 @@ needs no extra step:
 Project-first bootstrap workflow:
 1. stage the source tree under `/srv/projects/<name>/` yourself
    (ordinary shell: `git clone`, `mudev clone`), then `mpd init`
-2. project type defaults to `moodle` when `--type` is not provided
+2. without `--type`, the type is detected from the tree (see
+   [architecture.md §6](architecture.md#6-assets-and-extension-contract)),
+   then from the name, then defaults to `moodle`
 3. `mpd start <name>` configures and brings it up in one step
 
 VM-level global CLI (no project required):

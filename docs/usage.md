@@ -63,6 +63,8 @@ Idempotent — safe to re-run any time. Walks you through:
 - **starting the project frontdoor** `mpd-caddy.service`, which serves
   every project vhost on `10.163.<NNN>.2` — see
   [networking.md](networking.md)
+- cloning and starting the `exttests` project, once — the files Moodle's
+  phpunit tests download (see "Project-type-level (exttests)" below)
 - a final DNS sanity check
 
 (VM-side apt installs, the `mpd` build, and `/opt/mpd/bin/` on PATH all
@@ -640,6 +642,37 @@ For trying mdl-demo's macOS launcher (or any other script written for
 Apple `container`) on the VM, `/opt/mpd/assets/vm/bin/container` is a podman-backed
 stand-in covering the everyday verbs (`run`, `start`, `stop`, `rm`,
 `inspect`, `exec`, `logs`, `ls`).
+
+**Project-type-level (exttests):** none.
+
+An `exttests` project is a checkout of
+[moodle-exttests](https://github.com/moodlehq/moodle-exttests): the files
+and small PHP scripts that some Moodle phpunit tests download, such as
+`test.html` and `test_redir.php`. `mpd --vm-setup` clones it into
+`/srv/projects/exttests` and starts it once. It serves both
+`http://exttests.<NNN>.mpd.test/` and `https://exttests.<NNN>.mpd.test/`:
+the tests check HTTP/1.1 status lines on the plain URL, and the HTTPS one
+speaks HTTP/2. It has no database. As an ordinary project it is also a
+quick check that PHP-FPM, caddy, DNS and TLS work before any Moodle
+project depends on them: its start page, a seeded `index.php` kept out of
+git, shows the protocol, HTTPS and PHP version of the request.
+
+Every Moodle project points its `TEST_EXTERNAL_FILES_HTTP_URL` and
+`TEST_EXTERNAL_FILES_HTTPS_URL` at the project named by
+`MPD_MOODLE_EXTTESTS` (default `exttests`) in `config-mpd.php`. To test
+against an older branch of the files, clone it into another project; the
+type is detected by `downloadtests.md5`:
+
+```bash
+git clone -b <branch> https://github.com/moodlehq/moodle-exttests.git /srv/projects/exttests405
+mpd init exttests405 && mpd start exttests405
+mpd start <moodle-project> MPD_MOODLE_EXTTESTS=exttests405
+```
+
+Writing `MPD_MOODLE_EXTTESTS=""` into the Moodle project's `mpd.env`
+defines both constants as `false`, which skips those tests — except the
+ones that ask for a URL in a data provider, which fail with "The data
+provider … is invalid".
 
 ### Agent route (`/mdl-agent/`)
 
