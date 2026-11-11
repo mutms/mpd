@@ -57,6 +57,15 @@ $CFG->cron_keepalive = '0'; // Cron keep alive is problematic, better always avo
 
 $CFG->phpunit_dataroot  = '/srv/data/%%PROJECT%%/dataroot_phpunit';
 $CFG->phpunit_prefix = 't_';
+// Skip the phpunit tests that fetch download.moodle.org. Its Cloudflare blocks
+// many client addresses and answers over HTTP/2, so they fail here anyway.
+// To run them, define these to a moodle-exttests URL above the require line.
+if (!defined('TEST_EXTERNAL_FILES_HTTP_URL')) {
+    define('TEST_EXTERNAL_FILES_HTTP_URL', false);
+}
+if (!defined('TEST_EXTERNAL_FILES_HTTPS_URL')) {
+    define('TEST_EXTERNAL_FILES_HTTPS_URL', false);
+}
 
 // Behat: four independent test sites, so one can run a long suite while
 // another is used to write a new test. Each has its own URL, tables,
