@@ -117,24 +117,28 @@ define('MPD_BEHAT_LOG', '/srv/data/%%PROJECT%%/behat' . ($mpdbehat === 0 ? '' : 
 if ($mpdbehatweb) {
     ini_set('error_log', MPD_BEHAT_LOG);
 }
-$CFG->behat_config = [
-    'default' => [
-        'suites' => [
-            'default' => [
-                // A key far past Moodle's own list: its merge would let a
-                // low one replace a core context.
-                'contexts' => [100000 => 'behat_mpd_log'],
+// Only the behat tools that write behat.yml get the context. Moodle's own
+// phpunit tests of that writer count the suites and fail otherwise.
+if (defined('BEHAT_UTIL')) {
+    $CFG->behat_config = [
+        'default' => [
+            'suites' => [
+                'default' => [
+                    // A key far past Moodle's own list: its merge would let a
+                    // low one replace a core context.
+                    'contexts' => [100000 => 'behat_mpd_log'],
+                ],
             ],
-        ],
-        'extensions' => [
-            'Moodle\\BehatExtension' => [
-                'steps_definitions' => [
-                    'behat_mpd_log' => '/opt/mpd/assets/vm/project_types/moodle/behat/behat_mpd_log.php',
+            'extensions' => [
+                'Moodle\\BehatExtension' => [
+                    'steps_definitions' => [
+                        'behat_mpd_log' => '/opt/mpd/assets/vm/project_types/moodle/behat/behat_mpd_log.php',
+                    ],
                 ],
             ],
         ],
-    ],
-];
+    ];
+}
 unset($mpdbehat, $mpdbehatweb);
 
 // Behat runs against the selenium service (standalone-chromium at its
