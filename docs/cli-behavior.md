@@ -73,7 +73,7 @@ Operational flags include:
   template change reaches the browser with `make install && mpd --vm-setup`.
   Loopback only; caddy on the VM terminates TLS in front of it.
 - service mutators (`<name>` is one of the extras: mailpit, adminer,
-  selenium; the sticky autostart intent persists in
+  zitadel, keycloak; the sticky autostart intent persists in
   `/var/lib/mpd/state/services.json`). A project usually brings a service up by
   listing it in `MPD_REQUIRE_SERVICES` — mpd then ensures it on `mpd start`,
   like the project's database, without setting the sticky flag. These flags

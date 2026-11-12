@@ -46,8 +46,11 @@ no-op without openssh-server.
 `apt-get update` + `dist-upgrade`, adds the Sury and PGDG apt repos,
 then **the Debian package list**: build deps, networking diagnostics, everything
 the control plane needs at run time (podman, dnsmasq-base, caddy, WireGuard, nftables, …),
-the DB clients, agent tooling, and avahi + qemu-guest-agent
-(enabled; started where systemd runs and the hypervisor device exists).
+the DB clients, agent tooling, avahi + qemu-guest-agent
+(enabled; started where systemd runs and the hypervisor device exists),
+and a minimal GNOME desktop with Chromium and chromedriver. The desktop is
+only installed: the boot target is put back as it was and gdm3 is stopped
+again on a VM that was headless.
 No hostname gate — it also runs inside an image build.
 
 ### 30-mpd-build.sh

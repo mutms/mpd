@@ -11,10 +11,8 @@ Do not copy their content here — link to it.
 - The VM is disposable. Project databases and dataroots can be wiped,
   reseeded or edited with direct SQL. Source trees are not disposable —
   see "Git" below.
-- Chromium (`/usr/bin/chromium`, usable headless) is present only after
-  the developer has run `gnome-install`. Check with `command -v chromium`
-  before relying on it; if it is missing, ask the developer to run
-  `gnome-install` rather than installing a browser yourself.
+- Chromium (`/usr/bin/chromium`, usable headless) is installed when the
+  VM is provisioned.
 - To log in through a browser, open the URL that `mdl-agent-login
   [username]` prints. Never reset or change a password to get in, least
   of all `admin`'s: the developer uses that account and would be locked
@@ -117,16 +115,14 @@ the template.
   `behat-init` after the same, and after adding Behat step definitions
   (`behat1-init`, `behat2-init`, `behat3-init` for the other sites, only
   when used).
-- **Behat needs `MPD_MOODLE_BEHAT=1`.** It is off by default because the
-  Selenium image is large. Enable it with
+- **Behat needs `MPD_MOODLE_BEHAT=1`.** Enable it with
   `mpd start <project> MPD_MOODLE_BEHAT=1`. Fail dumps are in
   `/srv/data/<project>/behat_faildump/` (`behat_faildump1/` to
   `behat_faildump3/` for the other sites).
-- **Parallel Behat runs need headless browsers.** With visible windows,
-  runs that share the selenium service lose focus events and fail steps
-  such as a dropdown that submits on change. Set
-  `mpd start <project> MPD_MOODLE_BEHAT_HEADLESS=1`, then
-  `behat-util --enable` for each site in use.
+- **Behat runs headless.** The `behat` tool starts chromedriver itself;
+  there is nothing to start first. Do not use
+  `--profile=headed`: it opens browser windows on the developer's
+  desktop.
 - **Follow a Behat run in its log.** `/srv/data/<project>/behat_error.log`
   (`behat1_error.log` to `behat3_error.log`) gets every scenario's start
   and end, each failed step and all PHP errors as they happen. Read it

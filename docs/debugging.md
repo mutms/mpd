@@ -96,7 +96,7 @@ console). Both owners at once is the broken state.
 
 ## RDP accepts the password and drops the connection at once
 
-**Symptoms.** Right after `gnome-install` + `rdp-start`, the client
+**Symptoms.** Right after the desktop packages are installed and `rdp-start` is run, the client
 authenticates and then nothing appears — the connection closes or sits
 blank. `gnome-stop` / `gnome-start` change nothing. A reboot fixes it.
 
@@ -114,7 +114,7 @@ connect to D-Bus: /usr/bin/dbus-launch terminated abnormally` in
 the sesman log.
 
 **Cause.** The dev user lingers, so its `systemd --user` manager has been
-running since boot. `gnome-install` pulls in `dbus-user-session`, which
+running since boot. The desktop install pulls in `dbus-user-session`, which
 ships the user unit `dbus.socket` — but a manager that already reached
 `sockets.target` does not start a unit installed afterwards. With no
 `/run/user/<uid>/bus`, Xsession falls back to `dbus-launch`, which is not

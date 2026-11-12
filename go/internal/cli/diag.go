@@ -413,8 +413,8 @@ func diagDesktop(ctx context.Context, r *diagRun) {
 	r.step("Desktop and remote access")
 
 	if _, err := os.Stat("/usr/bin/gnome-session"); err != nil {
-		r.note("GNOME not installed (headless VM — `gnome-install` adds it)")
-		// The kernel flavour decides whether `gnome-install` can ever
+		r.note("GNOME not installed")
+		// The kernel flavour decides whether the desktop can ever
 		// render; finding out afterwards costs a kernel swap and reboot.
 		if k := kernelRelease(); strings.Contains(k, "-cloud") {
 			r.note("kernel %s has no DRM drivers — a desktop here would need "+

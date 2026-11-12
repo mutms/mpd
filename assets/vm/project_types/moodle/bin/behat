@@ -2,6 +2,10 @@
 # behat — run Behat tests for the current project.
 # All arguments are passed through to vendor/bin/behat.
 #
+# The browser is Debian's Chromium, driven through chromedriver. It runs
+# headless. To watch a test in a real browser window on the desktop, add
+# --profile=headed.
+#
 # A project has four independent behat sites. The name this tool is
 # called by picks one: behat, behat1, behat2 or behat3. Each needs its
 # own init: behat-init, behat1-init, behat2-init, behat3-init.
@@ -41,4 +45,28 @@ fi
 # and all PHP errors as they happen: follow it to watch a long run.
 echo "Log: ${BEHAT_LOG}  (follow with: tail -f ${BEHAT_LOG})" >&2
 
-exec php vendor/bin/behat --config "${BEHAT_CONFIG}" "$@"
+# shellcheck source=/dev/null
+source /opt/mpd/assets/vm/project_types/moodle/scripts/chromedriver.sh
+
+# Behat accepts the profile as --profile=headed, --profile headed,
+# -p headed and -pheaded.
+HEADED=0
+PREV=""
+for ARG in "$@"; do
+    case "$ARG" in
+        --profile=headed | -pheaded) HEADED=1 ;;
+        headed) case "$PREV" in --profile | -p) HEADED=1 ;; esac ;;
+    esac
+    PREV="$ARG"
+done
+
+if [ "$HEADED" = "0" ]; then
+    chromedriver_ensure_headless
+    exec php vendor/bin/behat --config "${BEHAT_CONFIG}" "$@"
+fi
+
+# The headed driver lives for this run only, so no exec here: the trap
+# has to stop it afterwards.
+chromedriver_start_headed
+trap '[ -n "${MPD_CHROMEDRIVER_HEADED_PID}" ] && kill "${MPD_CHROMEDRIVER_HEADED_PID}" 2>/dev/null || true' EXIT
+php vendor/bin/behat --config "${BEHAT_CONFIG}" "$@"

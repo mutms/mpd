@@ -32,7 +32,7 @@ VM (Debian Trixie)   hostname mpd-<NNN>;  LAN IP exposes sshd + wg (+ mDNS disco
     +-- DB containers           10.163.<NNN>.10–.99
     +-- extra service containers 10.163.<NNN>.100–.199  (direct at
                                  <name>.svc: mailpit .100, adminer .102,
-                                 selenium .103, zitadel .104; a TLS service
+                                 zitadel .104; a TLS service
                                  also fronts HTTPS at <name>.caddy → .2)
 ```
 
@@ -94,7 +94,7 @@ subnet from the LAN is dropped). Both coexist with a corporate VPN.
 Both paths above exist to export the VM's world to a *remote* browser —
 they carry routing, DNS and certificate trust across to the client. The
 alternative is to leave all three where they already work and move the
-browser instead: run the desktop inside the VM (`gnome-install`), open
+browser instead: run the desktop inside the VM, open
 RDP (`rdp-start`), and view it. Chromium in that session resolves `.test`
 through the VM's own dnsmasq and already trusts the mpd CA, so nothing
 about the network has to be true on the client. Only pixels cross.
@@ -152,7 +152,7 @@ the addressing: the third octet of the container subnet, and the first
 label of the DNS zone. Nothing else varies: the project frontdoor is
 always `.2`, databases take `.10–.99`, extra service containers
 `.100–.199` (each service pins its own octet: mailpit `.100`, adminer
-`.102`, selenium `.103`, zitadel `.104`), and the resolver and the status page answer on
+`.102`, zitadel `.104`), and the resolver and the status page answer on
 the gateway `.1`. Both `.1` and `.2` are the VM itself — the container
 IPAM range starts at `.10` so netavark can never hand either out.
 
@@ -206,7 +206,7 @@ Every name mpd publishes is a line in one managed block in the VM's
 # DNS records for 200.mpd.test, managed by mpd. Edits are overwritten.
 10.163.200.1 200.mpd.test
 10.1.10.200 vm.200.mpd.test
-10.163.200.103 selenium.svc.200.mpd.test
+10.163.200.100 mailpit.svc.200.mpd.test
 10.163.200.2 docs.200.mpd.test
 10.163.200.2 m45.200.mpd.test
 10.163.200.11 postgres-18.db.200.mpd.test

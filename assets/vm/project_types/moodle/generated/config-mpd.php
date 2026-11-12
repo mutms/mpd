@@ -150,31 +150,38 @@ if (defined('BEHAT_UTIL')) {
 }
 unset($mpdbehat, $mpdbehatweb);
 
-// Behat runs against the selenium service (standalone-chromium at its
-// own address — `mpd start` starts it whenever MPD_MOODLE_BEHAT=1 adds it
-// to the project's required services). Without an explicit profile
-// Moodle/Mink defaults to firefox, which the chromium node doesn't offer, so
-// session creation fails with "No nodes support the capabilities". The node
-// advertises browserName 'chrome' (Chromium reports as chrome), so pin that.
+// Behat drives Debian's Chromium through chromedriver on this VM, which
+// the behat tool starts when it is needed. The ports are the ones in
+// scripts/chromedriver.sh. Without an explicit profile Moodle/Mink defaults
+// to firefox, so both profiles pin chrome, the name Chromium answers to.
+//
+//   default  headless, for normal runs. Headless browsers do not compete
+//            for window focus, so any number of runs can share the VM.
+//   headed   a visible browser on the desktop, to watch a test you are
+//            debugging: behat --profile=headed <feature>
+//
+// acceptInsecureCerts: the Behat site is served over HTTPS with mpd's
+// private CA. Without it a browser that does not trust that CA stops every
+// page load at a "your connection is not private" page. It is the standard
+// W3C capability for testing against a local certificate.
 $CFG->behat_profiles = [
     'default' => [
         'browser' => 'chrome',
-        'wd_host' => '%%SELENIUM_WD_HOST%%',
+        'wd_host' => 'http://localhost:9515',
         'capabilities' => [
             'extra_capabilities' => [
-                // The Behat site is served over HTTPS with mpd's private CA,
-                // which the selenium service's Chromium doesn't trust — without
-                // this every page load hits a "your connection is not private"
-                // interstitial (and steps then fail to find elements). This is
-                // the standard W3C capability for testing against a local cert;
-                // it keeps the service a stock image (no CA install).
                 'acceptInsecureCerts' => true,
-                // MPD_MOODLE_BEHAT_HEADLESS=1 puts 'headless=new' here, which
-                // Moodle merges with its own Chrome arguments. Headless
-                // browsers do not compete for window focus, so focus events
-                // stay reliable when several Behat sites run at once, but the
-                // selenium web view no longer shows them.
-                %%BEHAT_CHROME_OPTIONS%%
+                // Moodle merges this with its own Chrome arguments.
+                'goog:chromeOptions' => ['args' => ['headless=new']],
+            ],
+        ],
+    ],
+    'headed' => [
+        'browser' => 'chrome',
+        'wd_host' => 'http://localhost:9516',
+        'capabilities' => [
+            'extra_capabilities' => [
+                'acceptInsecureCerts' => true,
             ],
         ],
     ],

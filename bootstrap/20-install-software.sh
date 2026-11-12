@@ -124,7 +124,29 @@ GUEST_PKGS=(
     avahi-daemon qemu-guest-agent
 )
 
-ALL_PKGS=("${BASE_PKGS[@]}" "${CONTROL_PKGS[@]}" "${STACK_PKGS[@]}" "${PHP_PKGS[@]}" "${AGENT_PKGS[@]}" "${GUEST_PKGS[@]}")
+# A minimal GNOME desktop and Chromium. Every VM gets them: AI agents use
+# Chromium for screenshots, Behat drives it through chromium-driver, and
+# the desktop shows a Behat run in a real browser (behat --profile=headed).
+# Installing is all that happens here. The VM stays headless until
+# `gnome-start` or `rdp-start`.
+#
+# gnome-session-xsession is the X11 session xrdp (`rdp-start`) needs.
+# Dash to Dock, its Extensions app and dconf-cli give the desktop a dock.
+# ffmpeg and the fonts make headless renders match a real desktop.
+#
+# --no-install-recommends below keeps NetworkManager out: the VM runs
+# systemd-networkd.
+DESKTOP_PKGS=(
+    gnome-session gnome-session-xsession gdm3
+    gnome-terminal gnome-control-center
+    chromium chromium-driver xdg-utils
+    gnome-shell-extension-dashtodock gnome-shell-extension-prefs dconf-cli
+    ffmpeg fonts-noto-color-emoji
+    fonts-liberation2 fonts-crosextra-carlito fonts-crosextra-caladea
+    fonts-noto-core fonts-roboto fonts-open-sans fonts-firacode
+)
+
+ALL_PKGS=("${BASE_PKGS[@]}" "${CONTROL_PKGS[@]}" "${STACK_PKGS[@]}" "${PHP_PKGS[@]}" "${AGENT_PKGS[@]}" "${GUEST_PKGS[@]}" "${DESKTOP_PKGS[@]}")
 
 step "Package set (${#ALL_PKGS[@]} packages)"
 missing=()
@@ -134,8 +156,24 @@ done
 if [ ${#missing[@]} -eq 0 ]; then
     ok "all installed"
 else
+    # Installing gdm3 makes the desktop the boot target and starts it.
+    # Remember how the VM was, and put it back below.
+    prev_target="$(systemctl get-default 2>/dev/null || true)"
+    gdm_was_active=0
+    systemctl is-active --quiet gdm3 2>/dev/null && gdm_was_active=1
+
     apt_get install -y -qq --no-install-recommends "${missing[@]}"
     ok "installed ${#missing[@]}: ${missing[*]}"
+
+    now_target="$(systemctl get-default 2>/dev/null || true)"
+    if [ -n "${prev_target}" ] && [ "${now_target}" != "${prev_target}" ]; then
+        sudo systemctl set-default "${prev_target}" >/dev/null
+        ok "boot target kept at ${prev_target} (the gdm3 install had set ${now_target})"
+    fi
+    if [ "${gdm_was_active}" = 0 ] && systemctl is-active --quiet gdm3 2>/dev/null; then
+        sudo systemctl stop gdm3
+        ok "stopped gdm3 (this VM was headless before) — 'gnome-start' brings the desktop up"
+    fi
 fi
 
 # Enable always (symlinks only, works in an OCI build); start only when

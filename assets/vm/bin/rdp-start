@@ -43,7 +43,7 @@ RDP_PORT=3389
 
 step "Desktop check"
 if ! command -v gnome-session >/dev/null 2>&1; then
-    die "No GNOME here. Run 'gnome-install' first, then 'rdp-start'."
+    die "No GNOME here."
 fi
 ok "gnome-session present"
 

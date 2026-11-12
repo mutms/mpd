@@ -24,8 +24,7 @@ the user sits and where `mpd` runs:
   Linux, and Proxmox or any reachable Debian VM from either). Defaults
   to headless; GNOME is installed
   and toggleable on demand via `gnome-start` / `gnome-stop` (persistent
-  across reboots), and `gnome-install` adds a minimal desktop to a VM
-  that never had one. User stays
+  across reboots). User stays
   on their host: host browser visits `*.<NNN>.mpd.test` directly via
   the mpd-proxy WireGuard overlay or a SOCKS-over-SSH tunnel + CA
   trust; host terminal SSHes into the VM to use the `mpd` CLI, and the
@@ -78,10 +77,12 @@ with snapshot/revert as the safety net for letting an agent rip.
   mpd starts them on demand, like its database; `mpd --service-start=<name>`
   drives one directly; nothing installed by default): Mailpit
   (`http://mailpit.svc.<NNN>.mpd.test:8025/` — one shared inbox, each project
-  publishing a pre-filtered link), Adminer, Selenium.
+  publishing a pre-filtered link), Adminer.
   Behat is auto-wired when a project asks: `MPD_MOODLE_BEHAT=1` makes
-  `mpd start` enable the selenium service and publish
-  `https://behat.<project>.<NNN>.mpd.test/`.
+  `mpd start` publish
+  `https://behat.<project>.<NNN>.mpd.test/`. The
+  `behat` tool starts chromedriver itself, headless by default and on
+  the desktop with `--profile=headed`.
 - No host pollution: no Homebrew PHP, no system Apache, no `brew upgrade`
   breakage.
 
@@ -98,7 +99,7 @@ containers instead of a shared stack; tradeoff is a few seconds of container
 startup vs. millisecond-fast native invocation. Vs.
 [moodle-docker](https://github.com/moodlehq/moodle-docker) — same
 daily-driver pattern plus per-project URLs with real HTTPS, one-command
-Mailpit, automatic Behat/Selenium wiring, one SSH endpoint, and
+Mailpit, automatic Behat wiring, one SSH endpoint, and
 the VM boundary. Vs. [DDEV](https://ddev.com/) / [Lando](https://lando.dev/)
 — the Moodle-specific cousin of the same per-project-URL + auto-TLS
 philosophy, hardened with a VM boundary and shaped around AI agents as a
@@ -107,9 +108,9 @@ first-class consumer.
 **Both modes ship GNOME.** Sandbox boots into it; mpd VM defaults to headless
 but GNOME is installed and toggleable — `gnome-start` brings the desktop up
 (and pins it as the boot target until you flip back), `gnome-stop` returns to
-headless. Useful for an occasional in-VM Firefox session or GUI debugging. A
-VM that arrived without a desktop gets a minimal one — GNOME Shell, GDM,
-Chromium, nothing else — from `gnome-install`. `rdp-start` / `rdp-stop` then
+headless. Useful for an occasional in-VM Firefox session or GUI debugging. Provisioning
+installs a minimal one on every VM — GNOME Shell, GDM, Chromium, nothing
+else. `rdp-start` / `rdp-stop` then
 open and close an RDP port onto that desktop, for devices that can hold
 neither an SSH tunnel nor the WireGuard overlay (a tablet). RDP is the one
 mpd port authenticated by a password rather than a key; see
@@ -124,7 +125,7 @@ time, seconds on re-runs; VM resume from suspend, seconds.
 
 **Top-level repo layout:** `bin/` (just the built `bin/mpd`), `go/`
 (control plane), `assets/` (VM/service definitions and shell, plus the
-VM tools under `assets/vm/bin/`: `claude-install`, `gnome-install`,
+VM tools under `assets/vm/bin/`: `claude-install`,
 `gnome-start`/`gnome-stop`, `rdp-start`/`rdp-stop`, `vscode-install`,
 `goland-archive-app`/`goland-install-app` — seed a Toolbox GoLand into new
 VMs as a tarball instead of re-downloading it, `libvirt-install` — make
@@ -179,7 +180,7 @@ The binary is Go, built from `go/` into `bin/mpd` by `make install`:
   portal, systemd units on the VM)
 - `go/internal/project/` — project scaffolding, env mutation, certs, rescan
 - `go/internal/service/` — optional extra service containers (mailpit,
-  adminer, selenium): registry + lifecycle
+  adminer, zitadel, keycloak): registry + lifecycle
 - `go/internal/web/` — the status page `mpd --web` serves, behind the
   VM's caddy
 - `go/internal/db/` — DB containers: tags, images, allocation, lifecycle

@@ -4,7 +4,7 @@ The environment I use for my own daily Moodle work. Every dev tool — PHP,
 Composer, Postgres/MariaDB, Node, the AI coding agent — lives inside a
 Linux VM, not on your laptop. Each project gets its own
 `https://<project>.<NNN>.mpd.test/` URL with trusted TLS, its own PHP
-version and database, and Behat/Selenium wiring. You edit in your IDE over
+version and database, and Behat wiring. You edit in your IDE over
 SSH; the host stays clean.
 
 Design, motivation and comparisons with moodle-docker/DDEV are in

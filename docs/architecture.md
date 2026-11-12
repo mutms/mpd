@@ -122,7 +122,7 @@ Fixed source checkout path: `/opt/mpd`
 
 Directory ownership split:
 
-- `bin/` — the built binary (`bin/mpd`) plus committed VM tools (`claude-install`, `gnome-install`, `gnome-start`/`gnome-stop`, `rdp-start`/`rdp-stop`, `libvirt-install`), on PATH via `bootstrap/30-mpd-build.sh`.
+- `bin/` — the built binary (`bin/mpd`) plus committed VM tools (`claude-install`, `gnome-start`/`gnome-stop`, `rdp-start`/`rdp-stop`, `libvirt-install`), on PATH via `bootstrap/30-mpd-build.sh`.
 - `/var/lib/mpd/conf/` — persistent local trust/network material:
   - `caroot/` — the trust anchor (`rootCA.pem`; public only, on a
     `mpd-virt`-provisioned VM) plus the CA this VM signs leaves with
@@ -795,10 +795,6 @@ published from the registry in advance, install state aside:
   Mail data lives on the `mpd-svc-mailpit` volume, which survives
   uninstall.
 - `adminer` — `.102`, `http://adminer.svc.<NNN>.mpd.test:8080/`.
-- `selenium` — `.103`, `http://selenium.svc.<NNN>.mpd.test:4444/`
-  ("v1" so a future Moodle release can require another selenium
-  alongside). Started by `mpd start` when a project sets
-  `MPD_MOODLE_BEHAT=1` (which adds it to that project's required services).
 - `zitadel` — `.104`, HTTPS at `https://zitadel.caddy.<NNN>.mpd.test/`. A
   test SAML/OIDC identity provider (Go): a pod of
   the zitadel server plus PostgreSQL, the first `FrontdoorH2C` service (its
@@ -871,7 +867,7 @@ See detailed docs:
   and the VM-integral infra registry (dnsmasq + portal, `vm.InfraServices`)
 - `go/internal/project/`, `go/internal/db/` — orchestration and records
 - `go/internal/service/` — the optional extra service containers
-  (mailpit, adminer, selenium): registry and lifecycle
+  (mailpit, adminer, zitadel, keycloak): registry and lifecycle
 - `go/internal/hooks/` — typed `Event` lifecycle hooks
 - `go/internal/state/`, `go/internal/current/` — persisted intent and
   observed state

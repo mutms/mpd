@@ -57,7 +57,7 @@ Idempotent — safe to re-run any time. Walks you through:
   telling cloud-init to leave that file alone), bringing up the infra units
   (dnsmasq, the portal) and reconciling any enabled extra services (none
   by default — see
-  [Extra services](#extra-services-mailpit-adminer-selenium))
+  [Extra services](#extra-services-mailpit-adminer))
 - **installing and configuring the dev stack** — the PHP matrix and its
   FPM pools, the `php` dispatcher, Composer, Node
 - **starting the project frontdoor** `mpd-caddy.service`, which serves
@@ -98,32 +98,22 @@ no host CA trust to set up. Open Firefox inside the VM and browse to
 
 An mpd VM boots headless. The desktop is there for the times a browser
 has to run *inside* the VM — checking a project URL without the host-side
-overlay, or a GUI you cannot drive over SSH.
+overlay, watching a Behat run (`behat --profile=headed`), or a GUI you
+cannot drive over SSH.
+
+Every VM has the desktop installed: provisioning
+(`bootstrap/20-install-software.sh`) puts GNOME Shell, GDM, a terminal,
+Chromium with its WebDriver, and the fonts a web page expects on it.
+Installing starts nothing, and the boot target stays as it was.
 
 ```bash
-gnome-install    # only on a VM that has no desktop at all: installs
-                 # GNOME Shell, GDM, a terminal, Chromium and the fonts
-                 # a web page expects. Points Chromium's home page at this
-                 # VM's portal. Puts an always-visible dock on the left
-                 # (Dash to Dock). Starts nothing; the boot target is left
-                 # exactly as it was. ~320 MB. Idempotent.
 gnome-start      # switch to the desktop now, and at every reboot
 gnome-stop       # back to headless, now and at every reboot
 ```
 
-`gnome-install` is for a VM that arrived without a desktop — a plain
-Debian netinst with no task selected, or a server image. A sandbox VM and
-a `mpd-virt`-provisioned VM already have GNOME; there `gnome-start` is
-all you need. NetworkManager is deliberately left out (mpd runs the VM on
+NetworkManager is deliberately left out (mpd runs the VM on
 systemd-networkd), so GNOME's network panel is empty. Nothing else
 notices.
-
-The dock is Dash to Dock (what Ubuntu ships as "Ubuntu Dock"), switched
-on through system dconf defaults in `/etc/dconf/db/local.d/00-mpd-dock`,
-with Settings, Terminal and Chromium pinned.
-They are defaults, not locks: change the dock in the Extensions app or
-with `gsettings`, and your value wins. Re-running `gnome-install` adds
-the dock to a desktop installed before this existed.
 
 ## Nested VMs: testing mpd-virt from inside an mpd VM
 
@@ -232,7 +222,7 @@ by the local CA), no warnings.
 
 **Outbound mail** is off by default — the generated config carries
 `$CFG->noemailever = true` until this project declares it needs
-[Mailpit](#extra-services-mailpit-adminer-selenium) in its `mpd.env`:
+[Mailpit](#extra-services-mailpit-adminer) in its `mpd.env`:
 
 ```bash
 mpd start moodle51 MPD_REQUIRE_SERVICES=mailpit
@@ -246,19 +236,26 @@ project that has not opted in. The project also publishes an informational
 "mail" link — `http://mailpit.svc.<NNN>.mpd.test:8025/?q=moodle51.<NNN>.mpd.test`,
 the shared Mailpit inbox pre-filtered to this project.
 
-**Behat**: set `MPD_MOODLE_BEHAT=1` and re-run `mpd start` — that adds
-`selenium` to the project's required services (starting it on your behalf),
-points `wd_host` at it, and wires `https://behat.moodle51.<NNN>.mpd.test/`
-automatically.
+**Behat**: set `MPD_MOODLE_BEHAT=1` and re-run `mpd start` — that
+wires `https://behat.moodle51.<NNN>.mpd.test/` automatically.
 
-Behat's Chromium runs with a visible window, so you can watch it in the
-selenium web view (`http://selenium.svc.<NNN>.mpd.test:4444/`). Visible
-windows compete for focus: when several Behat runs share the service, a
-window without focus gets no focus events, and steps that rely on them
-fail. `MPD_MOODLE_BEHAT_HEADLESS=1` runs the browsers headless, which
-avoids that but hides them from the web view. Apply a change with
-`mpd start <project>`, then `behat-util --enable` (`behat1-util` to
-`behat3-util` for the other sites) to rewrite `behat.yml`.
+Tests run in headless Chromium. The `behat` tool starts one chromedriver
+for the whole VM the first time a run needs it and leaves it running; it
+serves every project and every Behat site at once. Headless browsers do
+not compete for window focus, so parallel runs do not disturb each other.
+
+To watch a test in a real browser window, add `--profile=headed`:
+
+```
+behat --profile=headed --name="bulk allocate" path/to/some.feature
+```
+
+That needs a desktop you are logged in to: `rdp-start` for a remote
+desktop or `gnome-start` for the VM console. It works from a terminal inside the
+desktop and from an SSH or IDE terminal alike; the browser opens on the
+desktop either way. Only scenarios tagged `@javascript` open a browser.
+Use it for one run at a time: visible windows compete for focus, and a
+window without focus gets no focus events.
 
 A project has **four independent Behat sites**, so a long suite can run
 in one while you write a new test against another, or several
@@ -338,7 +335,7 @@ configuration model — file paths, sourcing order, reserved keys — is
 documented in
 [`architecture.md` §8](architecture.md#8-configuration-model-mpdenv).
 
-## Extra services (mailpit, adminer, selenium)
+## Extra services (mailpit, adminer)
 
 No extra service is installed by default. The usual way one
 comes up is a project declaring it in `MPD_REQUIRE_SERVICES` (above): mpd then
@@ -372,7 +369,6 @@ service such as zitadel also fronts browser-trusted HTTPS at
 | `zitadel`  | `https://zitadel.caddy.<NNN>.mpd.test/`    | Test SAML/OIDC IdP for `auth/saml2` + `auth/oidc`, browser-trusted HTTPS via the frontdoor. Admin password `MPD_ZITADEL_ADMIN_PASSWORD` (default `Password1!`). Full wiring in [services/zitadel.md](services/zitadel.md).              |
 | `keycloak` | `https://keycloak.caddy.<NNN>.mpd.test/`   | Test SAML/OIDC IdP, the one most sites self-host. Admin `admin`, password `MPD_KEYCLOAK_ADMIN_PASSWORD` (default `Password1!`). Driven from the CLI with `keycloak-admin`. Full wiring in [services/keycloak.md](services/keycloak.md). |
 | `adminer`  | `http://adminer.svc.<NNN>.mpd.test:8080/`  | DB web UI; the portal offers pre-filled per-project links.                                                                                                                                                                              |
-| `selenium` | `http://selenium.svc.<NNN>.mpd.test:4444/` | Behat browser; started by `mpd start` on a Behat-enabled Moodle project.                                                                                                                                                                |
 
 Autostart services survive reboots (`mpd --vm-start` reconciles them);
 required services come back when their project starts. Because a project's
@@ -503,7 +499,7 @@ Stack-independent ones first:
 |---------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `claude-install`                | Idempotent install of Claude Code (Anthropic's CLI) to `~/.local/bin/claude` via the upstream `curl \| bash` installer. Re-runs no-op.                                                                                                                                                                                                     |
 | `node-install`                  | Idempotent install of nvm + Node.js (LTS by default) into `$HOME/.nvm/` (upstream-standard). After install, `nvm`/`node`/`npm` are on PATH for new login shells; `nvm install <ver>` then works without sudo. Re-runs no-op.                                                                                                               |
-| `vscode-install`                | Idempotent install of Visual Studio Code from Microsoft's own Debian repository (`packages.microsoft.com/repos/code`, signed key in its own keyring), added to the GNOME dash, with the Marp extension for writing Markdown slide decks. `--no-extensions` for the editor alone. Needs `gnome-install` first to have a desktop to run in.  |
+| `vscode-install`                | Idempotent install of Visual Studio Code from Microsoft's own Debian repository (`packages.microsoft.com/repos/code`, signed key in its own keyring), added to the GNOME dash, with the Marp extension for writing Markdown slide decks. `--no-extensions` for the editor alone.  |
 | `phpstorm-archive-app`          | Pack this VM's Toolbox-installed PhpStorm backend into `/opt/mpd/assets/installers/phpstorm.tgz`, and print the `scp` line that seeds it into every future VM through your mpd-virt overlay.                                                                                                                                               |
 | `phpstorm-install-app`          | Unpack `/opt/mpd/assets/installers/phpstorm.tgz` (or `~/install/phpstorm.tgz`) into the Toolbox apps directory, so a fresh VM skips the three-gigabyte backend download. No-ops when PhpStorm is already there or neither tarball is.                                                                                                      |
 | `trycloudflare-install`         | Idempotent install of `cloudflared` from Cloudflare's apt repo. Re-runs no-op.                                                                                                                                                                                                                                                             |
@@ -531,7 +527,7 @@ Stack-independent ones first:
 | `mdl-agent-login`                           | Print a single-use URL that logs a browser in to the current project's site as `admin` (or `mdl-agent-login <username>`, `--path=/local/path` to choose the landing page). Good for two minutes and one request. For AI agents driving a headless browser, and for you: nobody has to know or change a password. See [Agent route](#agent-route-mdl-agent). |
 | `mdl-agent-php`                             | Run PHP inside the current project's Moodle: `mdl-agent-php 'echo $CFG->release;'`, a `.php` file with arguments, or `-` for stdin. `config.php` is loaded as a CLI script first; `--user=<username>` runs as that user.                                                                                                                                    |
 | `mdl-agent-sql`                             | Run one SQL statement through Moodle's database layer, tables in braces: `mdl-agent-sql 'SELECT id, username FROM {user}'`. `--json` / `--tsv`, `--limit=<n>` (default 100). A statement that changes data needs `--write`. `EXPLAIN` and `SHOW` run exactly as written: `mdl-agent-sql --limit=0 'EXPLAIN (ANALYZE, BUFFERS) SELECT …'`.                   |
-| `mdl-agent-screenshot`                      | Save a PNG of one page as a given user: `mdl-agent-screenshot [--user=<username>] [--size=1280x1024] /local/path`. Logs in with a single-use link and renders with headless Chromium (needs `gnome-install`). Prints the file's path under `/srv/data/<project>/agent/screenshots/`.                                                                        |
+| `mdl-agent-screenshot`                      | Save a PNG of one page as a given user: `mdl-agent-screenshot [--user=<username>] [--size=1280x1024] /local/path`. Logs in with a single-use link and renders with headless Chromium. Prints the file's path under `/srv/data/<project>/agent/screenshots/`.                                                                        |
 | `mdl-agent-downgrade`                       | Lower the version a plugin is recorded as installed at, so the next `mdl-upgrade` runs its upgrade steps again: `mdl-agent-downgrade tool_muprog 2026100553`. Sets the plugin's version and clears Moodle's all-versions hash; tables and data are not touched.                                                                                             |
 | `mdl-agent-log`                             | Show the latest `mdl-agent-*` calls made in the current project — time, caller, tool and arguments: `mdl-agent-log [n]`, `--json` for the stored lines. Every `mdl-agent-*` tool logs itself to `/srv/data/<project>/agent/log.jsonl`.                                                                                                                      |
 | `mdl-lang-check`                            | Check the language packs a plugin ships in `lang/<lang>/` against `lang/en`, on any plugin and branch. English variants like `en_us` may override only some strings. Moodle is not needed. A plugin dir is a directory or a path relative to dirroot (`admin/tool/muprog`, `public/` is found automatically), a missing directory is an error. |
@@ -893,7 +889,7 @@ mpd --vm-stop                       # graceful DB shutdown via EventMpdPreStop, 
 mpd --vm-restart                    # graceful stop, then sudo systemctl reboot; mpd auto-starts on boot
 
 mpd list                         # list all projects (default)
-mpd list services                # the optional extra services (mailpit, adminer, selenium)
+mpd list services                # the optional extra services (mailpit, adminer, …)
 mpd list infra                   # infra: dnsmasq, the portal, the project frontdoor
 mpd list dbs                     # list DB containers
 mpd list network                 # this VM's addressing: id, zone, subnet, gateway
@@ -918,7 +914,6 @@ VM-side tools, not `mpd` verbs — they act on the VM itself, not on a
 project (see "The VM's desktop, and reaching it from a tablet"):
 
 ```bash
-gnome-install                    # minimal GNOME + Chromium, on a VM with no desktop
 gnome-start / gnome-stop         # desktop on / off, persistent across reboots
 rdp-start / rdp-stop             # open / close RDP on tcp/3389 (opt-in, password-authenticated)
 claude-install                   # Claude Code on the VM

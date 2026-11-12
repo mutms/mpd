@@ -1,5 +1,5 @@
 // Package service is the registry and lifecycle framework for optional
-// extra service containers (mailpit, adminer, selenium). Services live
+// extra service containers (mailpit, adminer, zitadel, keycloak). Services live
 // in internal/services and self-register from an init(); adding one is a
 // new file there, never an edit here. They are HTTP-only, on their own
 // address in the service range; see docs/networking.md.

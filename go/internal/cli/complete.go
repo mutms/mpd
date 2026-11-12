@@ -138,7 +138,7 @@ func verbArgs(verb string) []string {
 		return []string{"--type=", "--yes"}
 	case "start":
 		// Commonly-set keys; any MPD_* key is accepted.
-		return []string{"MPD_DB=", "MPD_PHP_VERSION=", "MPD_MOODLE_BEHAT=", "MPD_MOODLE_BEHAT_HEADLESS="}
+		return []string{"MPD_DB=", "MPD_PHP_VERSION=", "MPD_MOODLE_BEHAT="}
 	case "delete", "rm", "reset":
 		return []string{"--yes"}
 	case "status":
