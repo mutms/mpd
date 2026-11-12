@@ -122,6 +122,11 @@ the template.
   `mpd start <project> MPD_MOODLE_BEHAT=1`. Fail dumps are in
   `/srv/data/<project>/behat_faildump/` (`behat_faildump1/` to
   `behat_faildump3/` for the other sites).
+- **Parallel Behat runs need headless browsers.** With visible windows,
+  runs that share the selenium service lose focus events and fail steps
+  such as a dropdown that submits on change. Set
+  `mpd start <project> MPD_MOODLE_BEHAT_HEADLESS=1`, then
+  `behat-util --enable` for each site in use.
 - **Follow a Behat run in its log.** `/srv/data/<project>/behat_error.log`
   (`behat1_error.log` to `behat3_error.log`) gets every scenario's start
   and end, each failed step and all PHP errors as they happen. Read it

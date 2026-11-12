@@ -169,6 +169,12 @@ $CFG->behat_profiles = [
                 // the standard W3C capability for testing against a local cert;
                 // it keeps the service a stock image (no CA install).
                 'acceptInsecureCerts' => true,
+                // MPD_MOODLE_BEHAT_HEADLESS=1 puts 'headless=new' here, which
+                // Moodle merges with its own Chrome arguments. Headless
+                // browsers do not compete for window focus, so focus events
+                // stay reliable when several Behat sites run at once, but the
+                // selenium web view no longer shows them.
+                %%BEHAT_CHROME_OPTIONS%%
             ],
         ],
     ],

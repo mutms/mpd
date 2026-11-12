@@ -48,6 +48,17 @@ source /opt/mpd/assets/vm/lib/source-mpd-env.sh
 PHP_VER="${MPD_PHP_VERSION:-$MPD_PHP_FALLBACK_VERSION}"
 BEHAT="${MPD_MOODLE_BEHAT}"
 
+# One PHP line for the Behat profile in config-mpd.php. Headless Chromium
+# is opt-in because it hides the browsers from the selenium web view.
+case "${MPD_MOODLE_BEHAT_HEADLESS:-0}" in
+    1) BEHAT_CHROME_OPTIONS="'goog:chromeOptions' => ['args' => ['headless=new']]," ;;
+    0) BEHAT_CHROME_OPTIONS="// Headed: watch the browsers in the selenium web view." ;;
+    *)
+        echo "Error: MPD_MOODLE_BEHAT_HEADLESS='${MPD_MOODLE_BEHAT_HEADLESS}' must be 0 or 1." >&2
+        exit 1
+        ;;
+esac
+
 # php-install no-ops when the version is present and installs a legacy
 # one on demand. Done at configure time so CLI tools run the project's
 # real version, not the php wrapper's fallback.
@@ -147,6 +158,7 @@ if [ -n "$DATABASE_ID" ] && \
         -e "s|%%MAIL_CONFIG%%|${MAIL_CONFIG}|" \
         -e "s|%%EXTTESTS_HTTP%%|${EXTTESTS_HTTP}|" \
         -e "s|%%EXTTESTS_HTTPS%%|${EXTTESTS_HTTPS}|" \
+        -e "s|%%BEHAT_CHROME_OPTIONS%%|${BEHAT_CHROME_OPTIONS}|" \
         -e "s|%%SELENIUM_WD_HOST%%|http://selenium.svc.${MPD_ZONE}:4444/wd/hub|" \
         "${TYPE_DIR}/generated/config-mpd.php" \
         > "${PROJECT_DIR}/config-mpd.php"

@@ -251,6 +251,15 @@ the shared Mailpit inbox pre-filtered to this project.
 points `wd_host` at it, and wires `https://behat.moodle51.<NNN>.mpd.test/`
 automatically.
 
+Behat's Chromium runs with a visible window, so you can watch it in the
+selenium web view (`http://selenium.svc.<NNN>.mpd.test:4444/`). Visible
+windows compete for focus: when several Behat runs share the service, a
+window without focus gets no focus events, and steps that rely on them
+fail. `MPD_MOODLE_BEHAT_HEADLESS=1` runs the browsers headless, which
+avoids that but hides them from the web view. Apply a change with
+`mpd start <project>`, then `behat-util --enable` (`behat1-util` to
+`behat3-util` for the other sites) to rewrite `behat.yml`.
+
 A project has **four independent Behat sites**, so a long suite can run
 in one while you write a new test against another, or several
 components are tested side by side:

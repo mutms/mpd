@@ -7,4 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
-Not released yet.
+### Added
+
+- `MPD_MOODLE_BEHAT_HEADLESS=1` runs Behat's Chromium headless, so parallel
+  Behat runs no longer lose focus events. Off by default, to keep the
+  browsers visible in the selenium web view.
