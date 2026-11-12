@@ -42,7 +42,7 @@ fi
 
 # The site's log gets the start and end of every scenario, failed steps
 # and all PHP errors as they happen: follow it to watch a long run.
-echo "Log: ${BEHAT_LOG}  (follow with: tail -f ${BEHAT_LOG})" >&2
+echo "Log: ${BEHAT_LOG}" >&2
 
 # shellcheck source=/dev/null
 source /opt/mpd/assets/vm/project_types/moodle/scripts/chromedriver.sh
