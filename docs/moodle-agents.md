@@ -115,8 +115,8 @@ the template.
   `behat-init` after the same, and after adding Behat step definitions
   (`behat1-init`, `behat2-init`, `behat3-init` for the other sites, only
   when used).
-- **Behat needs `MPD_MOODLE_BEHAT=1`.** Enable it with
-  `mpd start <project> MPD_MOODLE_BEHAT=1`. Fail dumps are in
+- **Behat is on by default.** A project switches it off with
+  `MPD_MOODLE_BEHAT=0` in its `mpd.env`. Fail dumps are in
   `/srv/data/<project>/behat_faildump/` (`behat_faildump1/` to
   `behat_faildump3/` for the other sites).
 - **Behat runs headless.** The `behat` tool starts chromedriver itself;

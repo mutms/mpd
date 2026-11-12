@@ -17,7 +17,7 @@ for SITE in behat behat1 behat2 behat3; do
     URL=$(moodle_status_field ".urls[] | select(.label == \"${SITE}\") | .url")
 
     if [ -z "$URL" ]; then
-        printf '%-7s not published (mpd start %s MPD_MOODLE_BEHAT=1)\n' "$SITE" "$PROJECT"
+        printf '%-7s not published (run: mpd start %s)\n' "$SITE" "$PROJECT"
         continue
     fi
     if [ ! -f "$CONFIG" ]; then

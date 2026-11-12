@@ -78,9 +78,9 @@ with snapshot/revert as the safety net for letting an agent rip.
   drives one directly; nothing installed by default): Mailpit
   (`http://mailpit.svc.<NNN>.mpd.test:8025/` — one shared inbox, each project
   publishing a pre-filtered link), Adminer.
-  Behat is auto-wired when a project asks: `MPD_MOODLE_BEHAT=1` makes
-  `mpd start` publish
-  `https://behat.<project>.<NNN>.mpd.test/`. The
+  Behat is auto-wired: `mpd start` publishes
+  `https://behat.<project>.<NNN>.mpd.test/` unless the project sets
+  `MPD_MOODLE_BEHAT=0`. The
   `behat` tool starts chromedriver itself, headless by default and on
   the desktop with `--profile=headed`.
 - No host pollution: no Homebrew PHP, no system Apache, no `brew upgrade`

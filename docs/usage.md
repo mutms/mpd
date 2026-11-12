@@ -239,8 +239,9 @@ project that has not opted in. The project also publishes an informational
 "mail" link — `http://mailpit.svc.<NNN>.mpd.test:8025/?q=moodle51.<NNN>.mpd.test`,
 the shared Mailpit inbox pre-filtered to this project.
 
-**Behat**: set `MPD_MOODLE_BEHAT=1` and re-run `mpd start` — that
-wires `https://behat.moodle51.<NNN>.mpd.test/` automatically.
+**Behat** is on by default: `mpd start` wires
+`https://behat.moodle51.<NNN>.mpd.test/` automatically. A project that
+does not want it sets `MPD_MOODLE_BEHAT=0` in its `mpd.env`.
 
 Tests run in headless Chromium. The `behat` tool starts one chromedriver
 for the whole VM the first time a run needs it and leaves it running; it

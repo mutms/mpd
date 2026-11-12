@@ -13,15 +13,14 @@ set -euo pipefail
 
 source /opt/mpd/assets/vm/project_types/moodle/scripts/mpd-env.sh
 
-# Behat must be enabled at the mpd level, which publishes the behat
-# vhost and TLS cert. Otherwise Moodle's reachability check fails with
-# an opaque "site is not available".
-if [ "${MPD_MOODLE_BEHAT:-0}" != "1" ]; then
-    echo "Error: Behat is not enabled for project '${PROJECT}' in mpd." >&2
-    echo "The behat.${PROJECT}.${MPD_ZONE} site is not published. Enable it from" >&2
-    echo "the VM host (or over SSH to the VM), then re-run behat-init:" >&2
+# mpd publishes the behat vhost and TLS cert unless the project switched
+# Behat off. Without them Moodle's reachability check fails with an opaque
+# "site is not available".
+if [ "${MPD_MOODLE_BEHAT:-1}" != "1" ]; then
+    echo "Error: Behat is switched off for project '${PROJECT}'." >&2
+    echo "Remove MPD_MOODLE_BEHAT=0 from ${PROJECT_DIR}/mpd.env, then run:" >&2
     echo >&2
-    echo "    mpd start ${PROJECT} MPD_MOODLE_BEHAT=1" >&2
+    echo "    mpd start ${PROJECT}" >&2
     exit 1
 fi
 
