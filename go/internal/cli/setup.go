@@ -180,6 +180,10 @@ func Setup(ctx context.Context, out io.Writer) error {
 		return err
 	}
 
+	ui.Step(out, "Desktop defaults (dock, Chromium home page)")
+	vm.InstallDockDefaults(ctx, out)
+	vm.InstallChromiumHomepage(ctx, out, n.Zone())
+
 	if err := reconcileCaches(ctx, out, p, s, n, m, vmIP, user.UID, certs.CAChanged); err != nil {
 		return err
 	}

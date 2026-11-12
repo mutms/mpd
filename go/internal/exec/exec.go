@@ -24,6 +24,7 @@ var binaries = map[string]string{
 	"bash":     "/bin/bash",
 	"certutil": "/usr/bin/certutil",
 	"cp":       "/bin/cp",
+	"dconf":    "/usr/bin/dconf",
 	"git":      "/usr/bin/git",
 	"id":       "/usr/bin/id",
 	"install":  "/usr/bin/install",

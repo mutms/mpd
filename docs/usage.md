@@ -105,6 +105,9 @@ Every VM has the desktop installed: provisioning
 (`bootstrap/20-install-software.sh`) puts GNOME Shell, GDM, a terminal,
 Chromium with its WebDriver, and the fonts a web page expects on it.
 Installing starts nothing, and the boot target stays as it was.
+`mpd --vm-setup` adds two defaults you can change in the desktop: an
+always-visible dock on the left (Dash to Dock) with Settings, Terminal
+and Chromium pinned, and this VM's portal as Chromium's home page.
 
 ```bash
 gnome-start      # switch to the desktop now, and at every reboot
