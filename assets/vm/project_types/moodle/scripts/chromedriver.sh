@@ -28,7 +28,9 @@ _chromedriver_listening() {
 _chromedriver_pid() {
     # -x matches the process name, so a shell whose command line merely
     # mentions chromedriver is not mistaken for one.
-    pgrep -u "$(id -u)" -x chromedriver -a | awk -v arg="--port=${1}" '$3 == arg { print $1; exit }'
+    # pgrep exits 1 when nothing matches, which must not end a caller that
+    # runs under `set -eo pipefail`.
+    pgrep -u "$(id -u)" -x chromedriver -a | awk -v arg="--port=${1}" '$3 == arg { print $1; exit }' || true
 }
 
 # _chromedriver_wait <port> — waits up to ten seconds for a driver to answer.
