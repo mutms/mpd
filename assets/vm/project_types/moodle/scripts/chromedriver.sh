@@ -99,20 +99,23 @@ chromedriver_ensure_headless() {
 # an SSH or IDE terminal, take this user's running desktop: an RDP session
 # (`rdp-start`) or the console desktop (`gnome-start`).
 _chromedriver_find_display() {
-    local sock num auth
+    local sock auth
     if [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; then
         return 0
     fi
     for sock in /tmp/.X11-unix/X*; do
         [ -S "$sock" ] && [ -O "$sock" ] || continue
-        num="${sock##*/X}"
-        # xrdp's X server uses ~/.Xauthority. The console desktop runs
-        # Wayland, and its Xwayland keeps the cookie under /run/user.
+        export DISPLAY=":${sock##*/X}"
+        # The cookie is optional. xrdp's X server often runs without one
+        # and then accepts this user's local connections as they are. The
+        # console desktop runs Wayland, and its Xwayland keeps the cookie
+        # under /run/user.
         for auth in "${HOME}/.Xauthority" "/run/user/$(id -u)"/.mutter-Xwaylandauth.*; do
             [ -r "$auth" ] || continue
-            export DISPLAY=":${num}" XAUTHORITY="$auth"
-            return 0
+            export XAUTHORITY="$auth"
+            break
         done
+        return 0
     done
     return 1
 }
