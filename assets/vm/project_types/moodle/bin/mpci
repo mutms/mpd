@@ -2,7 +2,69 @@
 # mpci — run moodle-plugin-ci commands.
 # Install first with: mpci-install
 # All arguments are passed through to moodle-plugin-ci.
+#
+# The exception is 'mpci grunt <plugin dir>': the phar copies the plugin,
+# its .git included, to /tmp and back, which fails here and can mix two
+# plugins when runs start in the same second. The project's own grunt is
+# run in the plugin directory instead, through the grunt tool. The options
+# are those of moodle-plugin-ci, the check for files modified by the build
+# is left out.
 set -euo pipefail
+
+if [ "${1:-}" = "grunt" ]; then
+    shift
+    plugin=""
+    tasks=()
+    gruntopts=()
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help)
+                echo "Usage: mpci grunt [-t <task>]... [--show-lint-warnings] [--max-lint-warnings=<n>] <plugin dir>"
+                echo "Default tasks: amd yui gherkinlint stylelint"
+                exit 0 ;;
+            -t|--tasks)
+                [ $# -ge 2 ] || { echo "Error: $1 needs a task name" >&2; exit 1; }
+                tasks+=("$2"); shift ;;
+            --tasks=*) tasks+=("${1#--tasks=}") ;;
+            -t?*) tasks+=("${1#-t}") ;;
+            -m|--moodle)
+                # The Moodle tree is always the current project.
+                [ $# -ge 2 ] || { echo "Error: $1 needs a path" >&2; exit 1; }
+                shift ;;
+            --moodle=*|-m?*) ;;
+            --show-lint-warnings|--max-lint-warnings=*) gruntopts+=("$1") ;;
+            --max-lint-warnings)
+                [ $# -ge 2 ] || { echo "Error: $1 needs a number" >&2; exit 1; }
+                gruntopts+=("$1=$2"); shift ;;
+            --) ;;
+            -*) echo "Error: unsupported option of mpci grunt: $1" >&2; exit 1 ;;
+            *)
+                [ -z "$plugin" ] || { echo "Error: only one plugin dir is expected" >&2; exit 1; }
+                plugin="$1" ;;
+        esac
+        shift
+    done
+    [ -n "$plugin" ] || { echo "Error: plugin dir is required" >&2; exit 1; }
+    [ -d "$plugin" ] || { echo "Error: plugin dir not found: $plugin" >&2; exit 1; }
+    [ ${#tasks[@]} -gt 0 ] || tasks=(amd yui gherkinlint stylelint)
+
+    # Moodle's Gruntfile.js detects the plugin from the cwd.
+    cd "$plugin"
+
+    # eslint without any files ends the whole grunt run quietly with exit
+    # code 0, the tasks after it would never start.
+    runtasks=()
+    for task in "${tasks[@]}"; do
+        if { [ "$task" = "amd" ] && [ ! -d amd/src ]; } || { [ "$task" = "yui" ] && [ ! -d yui/src ]; }; then
+            echo "Skipping grunt task $task, the plugin has no $task/src"
+            continue
+        fi
+        runtasks+=("$task")
+    done
+    [ ${#runtasks[@]} -gt 0 ] || { echo "No grunt tasks to run"; exit 0; }
+
+    exec /opt/mpd/assets/vm/project_types/moodle/bin/grunt "${runtasks[@]}" "${gruntopts[@]}"
+fi
 
 MPCI_PHAR="/srv/extra/mpci/moodle-plugin-ci.phar"
 
