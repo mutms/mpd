@@ -469,7 +469,7 @@ be too generic or collide with system commands: `mdl-install`,
 `mdl-cache-purge`, `mdl-cron`, `mdl-upgrade`, `mdl-agent-login`,
 `mdl-agent-php`, `mdl-agent-sql`, `mdl-agent-screenshot`, `mdl-agent-log`,
 `mdl-agent-downgrade`, `mdl-lang-check`, `mdl-lang-normalise`,
-`mdl-lang-backport`,
+`mdl-lang-backport`, `mdl-lang-dupes`,
 `mdl-data-backup`,
 `mdl-data-restore` (bare `mdl-backup` would read as Moodle's own course
 backup, which is a different thing entirely). The prefix is also a

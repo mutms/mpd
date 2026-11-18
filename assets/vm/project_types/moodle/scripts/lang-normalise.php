@@ -4,15 +4,17 @@
 //
 // With the header option the header of translations is rebuilt from lang/en too.
 //
-// Arguments: <lang or empty for all> <check 0|1> <header 0|1> <project root> <plugin dir>...
+// Arguments: <lang or empty for all> <check 0|1> <header 0|1> <reviewed 0|1> <all 0|1>
+//            <project root> <plugin dir>...
 
 require(__DIR__ . '/lang-lib.php');
 
 $onlylang = $argv[1];
 $checkonly = $argv[2] === '1';
 $fixheader = $argv[3] === '1';
-$projectroot = $argv[4];
-$dirs = array_slice($argv, 5);
+$reviewed = $argv[4] === '1';
+$projectroot = $argv[6];
+$dirs = $argv[5] === '1' ? mdl_lang_find_plugins($projectroot, $onlylang) : array_slice($argv, 7);
 
 $problems = 0;
 $changed = 0;
@@ -53,7 +55,7 @@ foreach ($dirs as $dir) {
         // English and its variants such as en_us keep their own headers.
         if ($fixheader && $lang !== 'en' && !str_starts_with($lang, 'en_')) {
             $enfile = "$dir/lang/en/" . basename($file);
-            $template = file_exists($enfile) ? mdl_lang_template_header(mdl_lang_load($enfile)['header'], $header, $lang) : null;
+            $template = file_exists($enfile) ? mdl_lang_template_header(mdl_lang_load($enfile)['header'], $header, $lang, $reviewed) : null;
             if ($template === null) {
                 echo "$label: no usable lang/en header\n";
                 $problems++;

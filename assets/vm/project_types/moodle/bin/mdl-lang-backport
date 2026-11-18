@@ -6,21 +6,31 @@
 # automatically. Moodle is not needed.
 #
 # Usage: mdl-lang-backport [--lang=<code>] [--changed] [--update] [--dry-run]
-#                          <source moodle root> <plugin path>...
+#                          [--target-only] <source moodle root> <plugin path>... | --all
 #   --lang      copy only this language; default is every source translation
 #   --changed   also copy strings whose English differs, listed for review
 #   --update    overwrite existing translations that differ, English the same
 #   --dry-run   only print the report
+#   --target-only  list translated strings that do not exist in the source,
+#               they are only counted otherwise; review them by hand after a
+#               change of terminology
+#   --all       every plugin of the source that ships translations and exists
+#               in this project
 #
 # Missing strings are added, existing translations are kept unless --update
 # is used, keys that are not in the target lang/en are never copied. A new
-# file gets the header of the source translation. Files are written in the
-# normalised form of mdl-lang-normalise. Exit code is 1 if any string stays
-# untranslated or a file could not be processed.
+# file gets the header of the source translation, headers of existing files
+# are not touched. Files are written in the normalised form of
+# mdl-lang-normalise. Exit code is 1 if any string stays untranslated or a
+# file could not be processed.
+#
+# SHARED tells that the changed plugin is on a branch that other projects next to this one have checked out
+# too: commit here and pull there instead of running the backport again.
 #
 # Examples:
 #   cd /srv/projects/mutms45; mdl-lang-backport --dry-run /srv/projects/mutms53 admin/tool/muprog
 #   mdl-lang-backport --lang=cs --changed /srv/projects/mutms53 admin/tool/muprog mod/mubook
+#   mdl-lang-backport --lang=it --update /srv/projects/mutms53 --all
 set -euo pipefail
 source /opt/mpd/assets/vm/project_types/moodle/scripts/mpd-env.sh
 
@@ -30,26 +40,32 @@ LANG_CODE=""
 CHANGED=0
 UPDATE=0
 DRYRUN=0
+ALL=0
+TARGETONLY=0
+ARGS=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --lang=*) LANG_CODE="${1#--lang=}"; shift ;;
         --changed) CHANGED=1; shift ;;
         --update) UPDATE=1; shift ;;
         --dry-run) DRYRUN=1; shift ;;
+        --all) ALL=1; shift ;;
+        --target-only) TARGETONLY=1; shift ;;
         -h|--help)
-            sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
             exit 0
             ;;
         -*)
             echo "Unknown option: $1" >&2
             exit 2
             ;;
-        *) break ;;
+        *) ARGS+=("$1"); shift ;;
     esac
 done
+set -- "${ARGS[@]}"
 
-if [ $# -lt 2 ]; then
-    echo "Usage: mdl-lang-backport [--lang=<code>] [--changed] [--update] [--dry-run] <source moodle root> <plugin path>..." >&2
+if { [ "$ALL" = 1 ] && [ $# -ne 1 ]; } || { [ "$ALL" = 0 ] && [ $# -lt 2 ]; }; then
+    echo "Usage: mdl-lang-backport [--lang=<code>] [--changed] [--update] [--dry-run] [--target-only] <source moodle root> <plugin path>... | --all" >&2
     exit 2
 fi
 
@@ -64,4 +80,4 @@ if [ "$(realpath "$SOURCE")" = "$(realpath "$PROJECT_DIR")" ]; then
     exit 2
 fi
 
-exec php "$SCRIPT" "$LANG_CODE" "$CHANGED" "$UPDATE" "$DRYRUN" "$SOURCE" "$PROJECT_DIR" "$@"
+exec php "$SCRIPT" "$LANG_CODE" "$CHANGED" "$UPDATE" "$DRYRUN" "$ALL" "$TARGETONLY" "$SOURCE" "$PROJECT_DIR" "$@"

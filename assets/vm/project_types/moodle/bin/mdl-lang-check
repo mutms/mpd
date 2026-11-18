@@ -3,21 +3,28 @@
 # lang/en strings. Moodle is not needed, so it works for any plugin on any
 # branch, without an installed site.
 #
-# Usage: mdl-lang-check [--lang=<code>] [--same] <plugin dir>...
+# Usage: mdl-lang-check [--lang=<code>] [--same] [--terms=<file>] <plugin dir>...
+#        mdl-lang-check [--lang=<code>] [--same] [--terms=<file>] --all
 #   A plugin dir is a directory, or a path relative to dirroot of the project
 #   such as admin/tool/muprog, public/ is found automatically.
 #   --lang   check only this language; default is every language in lang/
 #   --same   list strings identical to English, each must be intentional
+#   --terms  file with forbidden terms, one per line: language code, PCRE
+#            pattern in slashes and an optional note, # starts a comment:
+#              it /ricertific/i use rinnovo
+#   --all    every plugin of the project that ships translations
 #
 # Reports syntax errors, a licence header that differs from English, missing
-# and extra strings, wrong order of strings and differences in placeholders,
-# HTML tags and URLs. Differences in backticked code are only warnings,
-# because examples may be translated. A plugin without the language is listed
-# but it is not a failure. Exit code is 1 if any problem was found.
+# and extra strings, wrong order of strings, differences in placeholders,
+# HTML tags and URLs and forbidden terms. Differences in backticked code are
+# only warnings, because examples may be translated. A plugin without the
+# language is listed but it is not a failure. Exit code is 1 if any problem
+# was found.
 #
 # Examples:
 #   mdl-lang-check public/admin/tool/muprog
 #   mdl-lang-check --lang=cs public/admin/tool/mu* public/mod/mubook
+#   mdl-lang-check --lang=it --terms=public/admin/tool/mulib/docs/translations-terms.txt --all
 set -euo pipefail
 source /opt/mpd/assets/vm/project_types/moodle/scripts/mpd-env.sh
 
@@ -25,12 +32,16 @@ CHECKER="/opt/mpd/assets/vm/project_types/moodle/scripts/lang-check.php"
 
 LANG_CODE=""
 SAME=0
+ALL=0
+TERMS=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --lang=*) LANG_CODE="${1#--lang=}"; shift ;;
         --same) SAME=1; shift ;;
+        --all) ALL=1; shift ;;
+        --terms=*) TERMS="${1#--terms=}"; shift ;;
         -h|--help)
-            sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
             exit 0
             ;;
         -*)
@@ -41,9 +52,13 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-if [ $# -lt 1 ]; then
-    echo "Usage: mdl-lang-check [--lang=<code>] [--same] <plugin dir>..." >&2
+if [ -n "$TERMS" ] && [ ! -f "$TERMS" ]; then
+    echo "Terms file not found: $TERMS" >&2
+    exit 2
+fi
+if { [ "$ALL" = 1 ] && [ $# -gt 0 ]; } || { [ "$ALL" = 0 ] && [ $# -lt 1 ]; }; then
+    echo "Usage: mdl-lang-check [--lang=<code>] [--same] [--terms=<file>] <plugin dir>... | --all" >&2
     exit 2
 fi
 
-exec php "$CHECKER" "$LANG_CODE" "$SAME" "$PROJECT_DIR" "$@"
+exec php "$CHECKER" "$LANG_CODE" "$SAME" "$ALL" "$TERMS" "$PROJECT_DIR" "$@"

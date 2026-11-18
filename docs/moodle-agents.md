@@ -50,9 +50,10 @@ Run them from anywhere inside the project tree. Full list and options:
 | Save / restore database + dataroot | `mdl-data-backup [name]` / `mdl-data-restore <name>` (`--list`) |
 | PHPUnit | `phpunit-init`, then `phpunit --testsuite <component>_testsuite` or `phpunit <path to test file>` |
 | Behat | `behat-init`, then `behat --tags=@<component>` or `behat <path to feature>`. Three more independent sites: `behat1-init` / `behat1`, `behat2-init` / `behat2`, `behat3-init` / `behat3` |
-| Check language packs of a plugin against `lang/en` | `mdl-lang-check [--lang=<code>] [--same] <plugin dir>...`; a plugin dir is a directory or a dirroot path such as `admin/tool/muprog`, with or without `public/` |
-| Sort language strings and write them in the standard form | `mdl-lang-normalise [--lang=<code>] [--check] [--header] <plugin dir>...`; `--header` rebuilds translation headers from a template |
-| Copy translations from another checkout where English matches | `mdl-lang-backport [--lang=<code>] [--changed] [--update] [--dry-run] <source moodle root> <plugin path>...`, run in the target project |
+| Check language packs of a plugin against `lang/en` | `mdl-lang-check [--lang=<code>] [--same] [--terms=<file>] <plugin dir>...`; a plugin dir is a directory or a dirroot path such as `admin/tool/muprog`, with or without `public/`; `--all` instead of plugin dirs takes every plugin with translations, also in the other `mdl-lang-*` tools; `--terms` reports forbidden terms listed in a file |
+| Sort language strings and write them in the standard form | `mdl-lang-normalise [--lang=<code>] [--check] [--header] [--reviewed] <plugin dir>...`; `--header` rebuilds translation headers from a template, `--reviewed` also removes the AI translation note |
+| Copy translations from another checkout where English matches | `mdl-lang-backport [--lang=<code>] [--changed] [--update] [--dry-run] [--target-only] <source moodle root> <plugin path>...`, run in the target project; a `SHARED` line means the branch is checked out in other projects too, commit and pull there instead |
+| Find English strings translated in more than one way | `mdl-lang-dupes [--lang=<code>] [--min=<chars>] <plugin dir>...`, a report for review |
 | Code checks | `mpci-install` once, then `mpci <command> <plugin dir>` |
 | JS build | `grunt` |
 

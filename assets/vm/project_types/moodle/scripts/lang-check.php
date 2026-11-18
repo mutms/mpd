@@ -2,7 +2,8 @@
 // Checker behind mdl-lang-check. Language files are loaded with include like
 // Moodle does, Moodle itself is not needed.
 //
-// Arguments: <lang or empty for all> <same 0|1> <project root> <plugin dir>...
+// Arguments: <lang or empty for all> <same 0|1> <all 0|1> <terms file or empty>
+//            <project root> <plugin dir>...
 
 /**
  * Sorted parts of a string that must stay the same in every language.
@@ -32,13 +33,24 @@ require(__DIR__ . '/lang-lib.php');
 
 $onlylang = $argv[1];
 $showsame = $argv[2] === '1';
-$projectroot = $argv[3];
-$dirs = array_slice($argv, 4);
+$termsfile = $argv[4];
+$projectroot = $argv[5];
+$dirs = $argv[3] === '1' ? mdl_lang_find_plugins($projectroot, $onlylang) : array_slice($argv, 6);
 
 $tokenpattern = '/\{\$a(?:->[A-Za-z0-9_]+)?\}|\{no\}|<\/?[a-zA-Z][^>]*>|https?:\/\/[^\s\'"<)]+/u';
 $codepattern = '/`[^`\n]+`/u';
 $problems = 0;
 $warnings = 0;
+
+$terms = [];
+if ($termsfile !== '') {
+    $loadedterms = mdl_lang_load_terms($termsfile);
+    $terms = $loadedterms['terms'];
+    foreach ($loadedterms['problems'] as $problem) {
+        echo "TERMS $problem\n";
+        $problems++;
+    }
+}
 
 foreach ($dirs as $dir) {
     $resolved = mdl_lang_resolve_dir($projectroot, $dir);
@@ -125,6 +137,11 @@ foreach ($dirs as $dir) {
                     $diff = array_merge(array_diff($expected, $actual), array_diff($actual, $expected));
                     $notes[] = "WARNING code differs $key: " . implode(' ', $diff);
                     $warnings++;
+                }
+                foreach ($terms[$lang] ?? [] as $term) {
+                    if (preg_match($term['pattern'] . 'u', $strings[$key])) {
+                        $errors[] = rtrim("TERM $key: {$term['pattern']} {$term['note']}");
+                    }
                 }
                 if ($value === $strings[$key] && preg_match('/[a-z]{3}/', $value)) {
                     $same++;

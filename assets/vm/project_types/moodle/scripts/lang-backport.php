@@ -3,18 +3,32 @@
 // another Moodle checkout, only where the English text is the same unless
 // --changed is used. The result is written in the normalised form.
 //
-// Arguments: <lang or empty for all> <changed 0|1> <update 0|1> <dry run 0|1>
-//            <source root> <target root> <plugin path>...
+// Arguments: <lang or empty for all> <changed 0|1> <update 0|1> <dry run 0|1> <all 0|1>
+//            <target only 0|1> <source root> <target root> <plugin path>...
 
 require(__DIR__ . '/lang-lib.php');
 
-[, $onlylang, $changed, $update, $dryrun, $sourceroot, $targetroot] = $argv;
+[, $onlylang, $changed, $update, $dryrun, $all, $targetonly, $sourceroot, $targetroot] = $argv;
 $changed = $changed === '1';
 $update = $update === '1';
 $dryrun = $dryrun === '1';
-$paths = array_slice($argv, 7);
+$paths = array_slice($argv, 9);
 
 $problems = 0;
+
+if ($all === '1') {
+    $missing = [];
+    foreach (mdl_lang_find_plugins($sourceroot, $onlylang) as $path) {
+        if (mdl_lang_plugin_dir($targetroot, $path)) {
+            $paths[] = $path;
+        } else {
+            $missing[] = $path;
+        }
+    }
+    if ($missing) {
+        echo "Not in this project: " . implode(', ', $missing) . "\n";
+    }
+}
 
 /**
  * One line of a string for the report.
@@ -43,6 +57,7 @@ foreach ($paths as $path) {
         continue;
     }
 
+    $written = false;
     foreach ($langs as $lang) {
         foreach (glob("$targetdir/lang/en/*.php") ?: [] as $targetenfile) {
             $name = basename($targetenfile);
@@ -83,13 +98,20 @@ foreach ($paths as $path) {
             $result = $target;
 
             $lines = [];
-            $count = ['added' => 0, 'changed' => 0, 'updated' => 0, 'differs' => 0, 'untranslated' => 0];
+            $count = ['added' => 0, 'changed' => 0, 'updated' => 0, 'differs' => 0, 'untranslated' => 0, 'targetonly' => 0];
             foreach ($targeten as $key => $en) {
                 $sameen = array_key_exists($key, $sourceen) && $sourceen[$key] === $en;
                 if (!array_key_exists($key, $source)) {
+                    if (str_starts_with($lang, 'en_')) {
+                        // English variants such as en_us are child packs, they override only some strings.
+                        continue;
+                    }
                     if (!array_key_exists($key, $target)) {
                         $count['untranslated']++;
                         $lines[] = "  UNTRANSLATED $key";
+                    } else {
+                        $count['targetonly']++;
+                        $targetonly === '1' && $lines[] = "  TARGETONLY $key: " . mb_substr(strtok($target[$key], "\n"), 0, 70);
                     }
                     continue;
                 }
@@ -130,10 +152,10 @@ foreach ($paths as $path) {
                 $lines[] = "  EXTRA $key";
             }
 
-            printf("%s: added %d, %s %d, %s %d, untranslated %d, extra %d\n", $label, $count['added'],
+            printf("%s: added %d, %s %d, %s %d, untranslated %d, target only %d, extra %d\n", $label, $count['added'],
                 $changed ? 'changed imported' : 'changed skipped', $count['changed'],
                 $update ? 'updated' : 'differs', $update ? $count['updated'] : $count['differs'],
-                $count['untranslated'], count($extra));
+                $count['untranslated'], $count['targetonly'], count($extra));
             foreach ($lines as $line) {
                 echo "$line\n";
             }
@@ -142,10 +164,11 @@ foreach ($paths as $path) {
             }
 
             $content = mdl_lang_export($header, $result);
-            if ($dryrun || (file_exists($targetfile) && file_get_contents($targetfile) === $content)) {
+            if (!$result || (file_exists($targetfile) && file_get_contents($targetfile) === $content)) {
                 continue;
             }
-            if (!$result) {
+            $written = true;
+            if ($dryrun) {
                 continue;
             }
             if (!is_dir(dirname($targetfile))) {
@@ -153,6 +176,10 @@ foreach ($paths as $path) {
             }
             file_put_contents($targetfile, $content);
         }
+    }
+    if ($written && ($shared = mdl_lang_shared_branch($targetroot, $path)) && $shared['projects']) {
+        echo "  SHARED branch {$shared['branch']} is also checked out in " . implode(', ', $shared['projects'])
+            . ", change one checkout and pull in the others\n";
     }
 }
 
