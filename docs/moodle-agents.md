@@ -49,6 +49,7 @@ Run them from anywhere inside the project tree. Full list and options:
 | See a page as a user | `mdl-agent-screenshot [--user=<username>] /local/path` prints the PNG's path; read the image |
 | Save / restore database + dataroot | `mdl-data-backup [name]` / `mdl-data-restore <name>` (`--list`) |
 | PHPUnit | `phpunit-init`, then `phpunit --testsuite <component>_testsuite` or `phpunit <path to test file>` |
+| Run the same tests on MariaDB / MySQL | `mdl-mirror <source> <mirror> MPD_DB=mariadb:11.4` creates a mirror; `mdl-mirror` inside it updates it from the source. Edit code only in the source |
 | Behat | `behat-init`, then `behat --tags=@<component>` or `behat <path to feature>`. Three more independent sites: `behat1-init` / `behat1`, `behat2-init` / `behat2`, `behat3-init` / `behat3` |
 | Check language packs of a plugin against `lang/en` | `mdl-lang-check [--lang=<code>] [--same] [--terms=<file>] <plugin dir>...`; a plugin dir is a directory or a dirroot path such as `admin/tool/muprog`, with or without `public/`; `--all` instead of plugin dirs takes every plugin with translations, also in the other `mdl-lang-*` tools; `--terms` reports forbidden terms listed in a file |
 | Sort language strings and write them in the standard form | `mdl-lang-normalise [--lang=<code>] [--check] [--header] [--reviewed] <plugin dir>...`; `--header` rebuilds translation headers from a template, `--reviewed` also removes the AI translation note |

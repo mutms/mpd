@@ -542,6 +542,7 @@ Stack-independent ones first:
 | `mdl-upgrade`                               | Run `admin/cli/upgrade.php --non-interactive` for the current project. Use after a git pull that updates code.                                                                                                                                                                                                                                              |
 | `mdl-data-backup` / `mdl-data-restore`      | Save and restore the current project's database + dataroot + code recipe as one `.mdb` in the shared `/srv/backups/` pile (restorable into any project, and into an mdl-demo container). `mdl-data-restore --list` shows what is there. See [Backups](#backups).                                                                                            |
 | `phpunit` / `phpunit-init` / `phpunit-util` | Run, initialize, and inspect Moodle's PHPUnit suite.                                                                                                                                                                                                                                                                                                        |
+| `mdl-mirror`                                | Copy a development project into a mirror project with another database, and keep it updated: `mdl-mirror <source> <mirror> [KEY=VALUE ...]`. See [Mirror projects](#mirror-projects-testing-on-other-databases). |
 | `behat-status`                              | List the project's four Behat sites with their URLs: not initialised, free, or busy with a run (how long, which arguments).                                                                                                                                                                                                                                 |
 | `behat` / `behat-init` / `behat-util`       | Run, initialize, and inspect Moodle's Behat suite. `behat1…`, `behat2…` and `behat3…` do the same for the project's three further Behat sites; all four are independent of each other.                                                                                                                                                                      |
 | `grunt`                                     | Wraps `npm install` + `grunt` for the current project's Moodle JS build. Selects the Node version from the project's `.nvmrc` first, installing it with nvm when it is missing.                                                                                                                                                                             |
@@ -879,6 +880,57 @@ Both `reset` and `delete` ask you to **type the project name** rather than
 answering `y/N` — `y` is the same keystroke whichever project the prompt is
 about, so a mistyped name plus a reflexive `y` is a plausible way to lose
 the wrong site. `--yes` skips the question for scripted use.
+
+## Mirror projects: testing on other databases
+
+A plugin must pass its tests on PostgreSQL, MariaDB and MySQL, usually
+before you commit. Switching one project between databases is slow. Instead,
+keep a mirror project per extra database and run the tests in all of them
+at once.
+
+```sh
+# Create the mirrors once. Settings go to `mpd start`; Behat is off unless
+# you set MPD_MOODLE_BEHAT.
+mdl-mirror mutms53 mutms53ma MPD_DB=mariadb:11.4
+mdl-mirror mutms53 mutms53my MPD_DB=mysql:8.4
+
+# After you change code in mutms53, update a mirror. Either form works.
+mdl-mirror mutms53 mutms53ma
+cd /srv/projects/mutms53my && mdl-mirror --phpunit-init
+
+# Run PHPUnit in all three at once.
+for p in mutms53 mutms53ma mutms53my; do
+    (cd /srv/projects/$p && phpunit --testsuite tool_muprog_testsuite > /tmp/$p.log 2>&1) &
+done; wait
+```
+
+Rules:
+
+- The source is a development project: it has `.mudev.json`. A mirror has
+  `.mpd-sync.json` instead, and is only ever a target. A mirror cannot be a
+  source.
+- The copy is `rsync --delete`, uncommitted changes included. It never
+  copies `.git`, `.mudev.json`, `mpd.env`, `config.php`, `config-mpd.php`,
+  `phpunit.xml` or `.phpunit.cache`. `vendor/` and `node_modules/` are copied.
+- A new mirror starts with a copy of the source's `config.php`. After that
+  the mirror's `config.php` is its own; edit it there.
+- `mdl-mirror` refuses a target that is not empty and not a mirror of the
+  same source, and a target that contains `.git` anywhere.
+- It never touches databases or dataroots. Do not edit code in a mirror:
+  the next update overwrites it.
+
+Each update compares the checkouts with the last update (from
+`mudev list --format=json`) and lists the ones that changed. When a Moodle
+or plugin version changed, it tells you to run `phpunit-init` in the mirror,
+or runs it with `--phpunit-init`.
+
+To turn an existing hand-made copy into a mirror, remove any `.git` from it,
+then record its source and update it:
+
+```sh
+echo '{"source": "mutms53"}' > /srv/projects/mutms53ma/.mpd-sync.json
+mdl-mirror mutms53 mutms53ma --phpunit-init
+```
 
 ## Day-to-day commands
 

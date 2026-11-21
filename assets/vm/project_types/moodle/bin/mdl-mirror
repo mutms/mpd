@@ -1,0 +1,189 @@
+#!/bin/bash
+set -euo pipefail
+# Tool: copy a Moodle development project into a mirror project, to test it on another database.
+#
+# Usage:
+#
+#   mdl-mirror <source> <mirror> [KEY=VALUE ...] [--phpunit-init]
+#       Create the mirror, or update it when it already exists.
+#       When it creates the mirror, it also runs mpd init and mpd start.
+#       KEY=VALUE settings go to mpd start, for example MPD_DB=mariadb:11.4.
+#       Behat is off in a new mirror unless you set MPD_MOODLE_BEHAT.
+#
+#   mdl-mirror [--phpunit-init]
+#       Run inside a mirror to update it from its source.
+#
+#   --phpunit-init
+#       Run phpunit-init in the mirror after the copy.
+#
+# The source is a project with .mudev.json. The mirror gets no .git and no
+# .mudev.json. mdl-mirror never touches a database or a dataroot.
+# The mirror keeps its own mpd.env, config.php, config-mpd.php, phpunit.xml
+# and .phpunit.cache. It gets everything else from the source.
+# A new mirror starts with a copy of the source's config.php.
+# Later changes to it are not copied: edit each mirror's config.php yourself.
+#
+# Details: docs/usage.md, section "Mirror projects".
+
+PROJECTS=/srv/projects
+SYNC_FILE=.mpd-sync.json
+
+die() {
+    echo "Error: $*" >&2
+    exit 1
+}
+
+SOURCE=""
+MIRROR=""
+SETTINGS=()
+PHPUNIT_INIT=0
+
+for arg in "$@"; do
+    case "$arg" in
+        --phpunit-init) PHPUNIT_INIT=1 ;;
+        -h|--help) awk 'NR > 3 && /^#/ { sub(/^# ?/, ""); print; next } NR > 3 { exit }' "$0"; exit 0 ;;
+        -*) die "unknown option: $arg" ;;
+        *=*) SETTINGS+=("$arg") ;;
+        *)
+            if [ -z "$SOURCE" ]; then
+                SOURCE="$arg"
+            elif [ -z "$MIRROR" ]; then
+                MIRROR="$arg"
+            else
+                die "too many arguments: $arg"
+            fi
+            ;;
+    esac
+done
+
+if [ -n "$SOURCE" ] && [ -z "$MIRROR" ]; then
+    die "give both the source and the mirror, or run mdl-mirror with no names inside a mirror"
+fi
+
+if [ -z "$SOURCE" ]; then
+    if [[ "$PWD" =~ ^${PROJECTS}/([^/]+) ]]; then
+        MIRROR="${BASH_REMATCH[1]}"
+    else
+        die "run this inside a mirror project, or give the source and the mirror"
+    fi
+    [ -f "${PROJECTS}/${MIRROR}/${SYNC_FILE}" ] \
+        || die "${MIRROR} is not a mirror (no ${SYNC_FILE}). To create one, run: mdl-mirror <source> <mirror>"
+    SOURCE=$(jq -r '.source // empty' "${PROJECTS}/${MIRROR}/${SYNC_FILE}")
+    [ -n "$SOURCE" ] || die "${PROJECTS}/${MIRROR}/${SYNC_FILE} names no source"
+fi
+
+for name in "$SOURCE" "$MIRROR"; do
+    [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || die "not a project name: $name"
+done
+[ "$SOURCE" != "$MIRROR" ] || die "the source and the mirror are the same project"
+
+SRC="${PROJECTS}/${SOURCE}"
+DST="${PROJECTS}/${MIRROR}"
+
+[ -d "$SRC" ] || die "${SRC} does not exist"
+[ -f "${SRC}/.mudev.json" ] || die "${SOURCE} is not a development project (no .mudev.json)"
+[ ! -e "${SRC}/${SYNC_FILE}" ] || die "${SOURCE} is a mirror itself. Use its source instead."
+[ -f "${SRC}/version.php" ] || [ -f "${SRC}/public/version.php" ] \
+    || die "${SOURCE} is not a Moodle project (no version.php)"
+
+CREATE=0
+if [ ! -e "$DST" ] || [ -z "$(ls -A "$DST")" ]; then
+    CREATE=1
+else
+    [ -d "$DST" ] || die "${DST} is not a directory"
+    [ ! -e "${DST}/.mudev.json" ] || die "${MIRROR} is a development project (it has .mudev.json)"
+    [ -f "${DST}/${SYNC_FILE}" ] || die "${DST} is not empty and is not a mirror (no ${SYNC_FILE})"
+    recorded=$(jq -r '.source // empty' "${DST}/${SYNC_FILE}")
+    [ "$recorded" = "$SOURCE" ] || die "${MIRROR} is a mirror of '${recorded}', not of '${SOURCE}'"
+    found=$(find "$DST" -name .git -print -quit)
+    [ -z "$found" ] || die "${found} exists. A mirror must not contain git checkouts."
+fi
+
+if [ "$CREATE" = 0 ] && [ "${#SETTINGS[@]}" -gt 0 ]; then
+    die "settings apply only when the mirror is created. To change them, run: mpd start ${MIRROR} ${SETTINGS[*]}"
+fi
+
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+SNAPSHOT=$(cd "$SRC" && mudev list --format=json --columns=path,name,head,state,version,release) \
+    || die "mudev list failed in ${SRC}"
+
+mkdir -p "$DST"
+
+echo "Copying ${SOURCE} to ${MIRROR}..."
+changes=$(rsync -a --delete --out-format='%i %n' \
+    --exclude=.git \
+    --exclude=/.mudev.json \
+    --exclude="/${SYNC_FILE}" \
+    --exclude=/mpd.env \
+    --exclude=/config.php \
+    --exclude=/config-mpd.php \
+    --exclude=/phpunit.xml \
+    --exclude=/.phpunit.cache \
+    "${SRC}/" "${DST}/" | grep -c -v '^\.d' || true)
+echo "${changes} files changed."
+
+OLD='null'
+CREATED="$NOW"
+if [ "$CREATE" = 0 ]; then
+    OLD=$(jq -c '.checkouts // null' "${DST}/${SYNC_FILE}")
+    CREATED=$(jq -r --arg now "$NOW" '.created // $now' "${DST}/${SYNC_FILE}")
+fi
+
+tmp=$(mktemp "${DST}/${SYNC_FILE}.XXXXXX")
+jq -n --arg source "$SOURCE" --arg created "$CREATED" --arg synced "$NOW" \
+    --argjson checkouts "$SNAPSHOT" \
+    '{source: $source, created: $created, synced: $synced, checkouts: $checkouts}' > "$tmp"
+mv "$tmp" "${DST}/${SYNC_FILE}"
+
+NEED_INIT=0
+if [ "$OLD" = null ]; then
+    NEED_INIT=1
+else
+    report=$(jq -n -r --argjson old "$OLD" --argjson new "$SNAPSHOT" '
+        ($old | map({key: .path, value: .}) | from_entries) as $o
+        | ($new | map({key: .path, value: .}) | from_entries) as $n
+        | (($o | keys) + ($n | keys) | unique)[] as $p
+        | if $o[$p] == null then "+\t\($p)\tadded, version \($n[$p].version)"
+          elif $n[$p] == null then "+\t\($p)\tremoved"
+          else
+            [ (if $o[$p].version != $n[$p].version then "version \($o[$p].version) -> \($n[$p].version)" else empty end) ]
+            as $v
+            | [ (if $o[$p].head != $n[$p].head then "head \($o[$p].head) -> \($n[$p].head)" else empty end),
+                (if $o[$p].state != $n[$p].state then "state \"\($o[$p].state)\" -> \"\($n[$p].state)\"" else empty end) ]
+            as $other
+            | if ($v | length) > 0 then "+\t\($p)\t\($v + $other | join(", "))"
+              elif ($other | length) > 0 then "-\t\($p)\t\($other | join(", "))"
+              else empty end
+          end')
+    if [ -n "$report" ]; then
+        echo "Changed checkouts:"
+        printf '%s\n' "$report" | cut -f2- | column -t -s $'\t' | sed 's/^/  /'
+        if printf '%s\n' "$report" | grep -q '^+'; then
+            NEED_INIT=1
+        fi
+    fi
+fi
+
+if [ "$CREATE" = 1 ]; then
+    has_behat=0
+    for s in "${SETTINGS[@]}"; do
+        [[ "$s" == MPD_MOODLE_BEHAT=* ]] && has_behat=1
+    done
+    [ "$has_behat" = 1 ] || SETTINGS+=(MPD_MOODLE_BEHAT=0)
+    if [ -f "${SRC}/config.php" ]; then
+        cp -p "${SRC}/config.php" "${DST}/config.php"
+    fi
+    mpd init "$MIRROR"
+    mpd start "$MIRROR" "${SETTINGS[@]}"
+fi
+
+if [ "$PHPUNIT_INIT" = 1 ]; then
+    (cd "$DST" && phpunit-init)
+elif [ "$NEED_INIT" = 1 ]; then
+    if [ "$OLD" = null ]; then
+        echo "Before you run tests in the mirror, run:"
+    else
+        echo "Moodle or plugin versions changed. Before you run tests, run:"
+    fi
+    echo "  cd ${DST} && phpunit-init"
+fi
