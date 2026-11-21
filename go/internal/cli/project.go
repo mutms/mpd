@@ -307,7 +307,7 @@ func ProjectDelete(ctx context.Context, out io.Writer, in io.Reader, name string
 	if entry.DatabaseEngine != "" {
 		dbContainer := db.ContainerName(entry.DatabaseEngine, entry.DatabaseVersion)
 		if d.Podman.Running(ctx, dbContainer) {
-			if err := db.Drop(ctx, out, entry.DatabaseEngine, dbContainer, name, d.Podman); err != nil {
+			if err := db.Drop(ctx, out, entry.DatabaseEngine, dbContainer, d.Net.DB(entry.DatabaseID), name, d.Podman); err != nil {
 				fmt.Fprintf(out, "Warning: %v\n", err)
 			}
 		}
@@ -387,7 +387,7 @@ func ProjectReset(ctx context.Context, out io.Writer, in io.Reader, name string,
 		dbContainer := db.ContainerName(entry.DatabaseEngine, entry.DatabaseVersion)
 		if d.Podman.Running(ctx, dbContainer) {
 			fmt.Fprintf(out, "\n\033[1m==> Dropping database '%s'\033[0m\n", name)
-			if err := db.Drop(ctx, out, entry.DatabaseEngine, dbContainer, name, d.Podman); err != nil {
+			if err := db.Drop(ctx, out, entry.DatabaseEngine, dbContainer, d.Net.DB(entry.DatabaseID), name, d.Podman); err != nil {
 				fmt.Fprintf(out, "Warning: %v\n", err)
 			}
 		} else {
@@ -508,7 +508,7 @@ func reconcileProject(ctx context.Context, out io.Writer, name string, args []st
 			return err
 		}
 		fmt.Fprintf(out, "\n\033[1m==> Creating database '%s'\033[0m\n", name)
-		if err := db.CreateFor(ctx, out, ref.Engine, ref.Container, name, d.Podman); err != nil {
+		if err := db.CreateFor(ctx, out, ref.Engine, ref.Container, d.Net.DB(ref.ID), name, d.Podman); err != nil {
 			return err
 		}
 		entry.DatabaseEngine, entry.DatabaseVersion, entry.DatabaseID = ref.Engine, ref.Version, ref.ID
