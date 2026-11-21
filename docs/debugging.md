@@ -479,3 +479,36 @@ checkout (`mpd start <project>` prints a warning then). A URL that fails:
 creates it; `mpd start exttests`), then `mpd start <project>` to rewrite
 `config-mpd.php`. The plain `http://` URL is needed: the HTTPS one speaks
 HTTP/2 and fails the status-line checks.
+
+## apt fails on packages.sury.org with "Mirror sync in progress?"
+
+**Symptoms.** `apt update`, `bootstrap/20-install-software.sh`,
+`php-install` or a container image build fails with
+
+```
+E: Failed to fetch https://packages.sury.org/php/dists/trixie/main/binary-arm64/Packages.xz
+   File has unexpected size (291952 != 291292). Mirror sync in progress?
+```
+
+and keeps failing for up to an hour, on every VM.
+
+**Cause.** Sury rebuilds the whole repository often (every PHP or
+extension update). Its CDN caches `InRelease` for up to an hour
+(`cache-control: max-age=3600`) but serves the new `Packages.xz`, so the
+sizes disagree. The repo has no `by-hash` indexes, and the CDN ignores
+`Cache-Control: no-cache`, so nothing client-side gets past it.
+
+**Diagnose.** Compare the cached `InRelease` with the live file. Check
+`InRelease`, not `Release` — apt reads `InRelease`, and `Release` may
+already be fresh:
+
+```bash
+u=https://packages.sury.org/php/dists/trixie
+curl -s "$u/InRelease" | grep -E '^Date|[0-9a-f]{64} +[0-9]+ main/binary-arm64/Packages.xz'
+curl -sI "$u/InRelease" | grep -iE '^age:|cache-control'
+curl -sI "$u/main/binary-arm64/Packages.xz" | grep -i content-length
+```
+
+Sizes differ → stale `InRelease`. `3600 - age` is the seconds left.
+
+**Fix.** Wait until the cached `InRelease` expires, then rerun.
