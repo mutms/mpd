@@ -346,7 +346,7 @@ func Ensure(ctx context.Context, ref Ref, p *podman.Client, n net.Net, uid strin
 // User, password and database are all the project name; see docs/security.md.
 // host is the engine's DNS name, shown to the user.
 func Drop(ctx context.Context, out io.Writer, engine, container, host, dbName string, p *podman.Client) error {
-	fmt.Fprintf(out, "Dropping database and user '%s' from %s...\n", dbName, host)
+	fmt.Fprintf(out, "Dropping database and user '%s' from %s ...\n", dbName, host)
 
 	switch engine {
 	case "postgres":
@@ -378,7 +378,7 @@ func Drop(ctx context.Context, out io.Writer, engine, container, host, dbName st
 // project name; see docs/security.md.
 // host is the engine's DNS name, shown to the user.
 func CreateFor(ctx context.Context, out io.Writer, engine, container, host, dbName string, p *podman.Client) error {
-	fmt.Fprintf(out, "Creating user and database '%s' in %s...\n", dbName, host)
+	fmt.Fprintf(out, "Creating user and database '%s' in %s ...\n", dbName, host)
 
 	switch engine {
 	case "postgres":
