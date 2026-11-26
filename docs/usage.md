@@ -911,7 +911,8 @@ Rules:
   source.
 - The copy is `rsync --delete`, uncommitted changes included. It never
   copies `.git`, `.mudev.json`, `mpd.env`, `config.php`, `config-mpd.php`,
-  `phpunit.xml` or `.phpunit.cache`. `vendor/` and `node_modules/` are copied.
+  `phpunit.xml`, `.phpunit.cache` or the `.idea` IDE settings at the project
+  root. `vendor/` and `node_modules/` are copied.
 - A new mirror starts with a copy of the source's `config.php`. After that
   the mirror's `config.php` is its own; edit it there.
 - `mdl-mirror` refuses a target that is not empty and not a mirror of the

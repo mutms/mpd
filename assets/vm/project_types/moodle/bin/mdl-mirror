@@ -19,7 +19,8 @@ set -euo pipefail
 # The source is a project with .mudev.json. The mirror gets no .git and no
 # .mudev.json. mdl-mirror never touches a database or a dataroot.
 # The mirror keeps its own mpd.env, config.php, config-mpd.php, phpunit.xml
-# and .phpunit.cache. It gets everything else from the source.
+# and .phpunit.cache, and its own /.idea IDE settings. It gets everything else
+# from the source.
 # A new mirror starts with a copy of the source's config.php.
 # Later changes to it are not copied: edit each mirror's config.php yourself.
 #
@@ -119,6 +120,7 @@ changes=$(rsync -a --delete --out-format='%i %n' \
     --exclude=/config-mpd.php \
     --exclude=/phpunit.xml \
     --exclude=/.phpunit.cache \
+    --exclude=/.idea \
     "${SRC}/" "${DST}/" | grep -c -v '^\.d' || true)
 echo "${changes} files changed."
 
